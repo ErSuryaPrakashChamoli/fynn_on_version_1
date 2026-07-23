@@ -585,6 +585,7 @@ class CustomerForm
                                                 $history->status_value = 'Promoted to Underwriting';
                                                 $history->user_id      = auth()->id();
                                                 $history->save();
+
                                             })
                                     ),
 
