@@ -540,12 +540,19 @@ class CustomerForm
                                     // strtolower((string) $get('journey_status')) === 'sfl' &&
                                     //     strtolower((string) $get('documentation_status')) === 'complete')
 
-                                    ->visible(
-                                        fn(Get $get): bool =>
-                                        strtolower((string) $get('journey_status')) === 'sfl'
-                                            && strtolower((string) $get('documentation_status')) === 'complete'
-                                        // && blank($get('underwriting_status'))
-                                    )
+                                    // ->visible(
+                                    //     fn(Get $get): bool =>
+                                    //     strtolower((string) $get('journey_status')) === 'sfl'
+                                    //         && strtolower((string) $get('documentation_status')) === 'complete'
+                                    //     // && blank($get('underwriting_status'))
+                                    // )
+                                    ->visible(function (Get $get): bool {
+                                        $journeyStatus = $get('journey_status');
+
+                                        return filled($journeyStatus)
+                                            && strtolower((string) $journeyStatus) === 'sfl' //not_started
+                                            && strtolower((string) $get('documentation_status')) === 'complete';
+                                    })
                                     ->hintAction(
                                         FormAction::make('promote_to_underwriting')
                                             ->label('Verify & Move to Underwriting')
@@ -585,7 +592,6 @@ class CustomerForm
                                                 $history->status_value = 'Promoted to Underwriting';
                                                 $history->user_id      = auth()->id();
                                                 $history->save();
-
                                             })
                                     ),
 
