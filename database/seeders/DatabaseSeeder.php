@@ -34,5 +34,6 @@ class DatabaseSeeder extends Seeder
         // ]);
 
         //php artisan db:seed --class=CitySeeder
+        //test 1
     }
 }
