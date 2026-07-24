@@ -39,6 +39,33 @@ protected function getStats(): array
     | ADMIN DASHBOARD
     |--------------------------------------------------------------------------
     */
+    // if ($loginUser->hasRole('Admin')) {
+
+    //     $achievement = Customer::whereMonth('created_at', now()->month)
+    //         ->whereYear('created_at', now()->year)
+    //         ->sum('sanctioned_loan_amount');
+
+    //     $totalCashback = Customer::whereMonth('created_at', now()->month)
+    //         ->whereYear('created_at', now()->year)
+    //         ->sum('cashback');
+
+    //     $totalSubvention = Customer::whereMonth('created_at', now()->month)
+    //         ->whereYear('created_at', now()->year)
+    //         ->sum('subvention');
+
+    //     $docking = Customer::whereMonth('created_at', now()->month)
+    //         ->whereYear('created_at', now()->year)
+    //         ->sum('docking');
+
+    //     $target = Employee::where('designation', '1')
+    //         ->get()
+    //         ->sum(fn ($emp) => $this->getCallerTarget($emp));
+
+    //     $targetLevel = '🏢 Company Target';
+    //     $targetColor = 'success';
+    // }
+
+
     if ($loginUser->hasRole('Admin')) {
 
         $achievement = Customer::whereMonth('created_at', now()->month)
@@ -57,13 +84,13 @@ protected function getStats(): array
             ->whereYear('created_at', now()->year)
             ->sum('docking');
 
-        $target = Employee::where('designation', '1')
+        $target = Employee::where('designation', Employee::DESIGNATION_CALLER)
             ->get()
-            ->sum(fn ($emp) => $this->getCallerTarget($emp));
+            ->sum(fn (Employee $emp) => $this->getCallerTarget($emp));
 
         $targetLevel = '🏢 Company Target';
         $targetColor = 'success';
-    }
+ }
 
     /*
     |--------------------------------------------------------------------------
