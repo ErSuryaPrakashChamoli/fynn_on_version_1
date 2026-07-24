@@ -624,7 +624,7 @@ class CustomerForm
                                     ])
                                     ->live()
                                     ->required(function (Get $get) {
-                                        return auth()->user()->hasAnyRole(['Admin', 'Manager'])
+                                        return auth()->user()->hasAnyRole(['Admin', 'Team Leader','Manager','Cluster Manager'])
                                             && $get('documentation_status') === 'complete';
                                     }),
                                 // ->required(fn(Get $get) => $get('documentation_status') === 'complete'),
@@ -782,7 +782,7 @@ class CustomerForm
                             ->columns(2)
                             ->visible(function (Get $get): bool {
 
-                                return auth()->user()->hasAnyRole(['Admin', 'Manager'])
+                                return auth()->user()->hasAnyRole(['Admin', 'Team Leader', 'Manager','Cluster Manager'])
                                     && (
                                         in_array(
                                             strtolower((string) $get('journey_status')),
