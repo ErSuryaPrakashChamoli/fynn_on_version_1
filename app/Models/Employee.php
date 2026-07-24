@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 class Employee extends Model
 {
     use HasFactory;
-    
+
     // public const DESIGNATION_ADMIN = 'Admin';
     // public const DESIGNATION_CLUSTER = 'Cluster Manager';
     // public const DESIGNATION_MANAGER = 'Manager';
@@ -16,11 +16,18 @@ class Employee extends Model
     // public const DESIGNATION_CALLER = 'Caller';
 
 
-    public const DESIGNATION_ADMIN = '1';
-    public const DESIGNATION_CLUSTER = '5';
-    public const DESIGNATION_MANAGER = '2';
-    public const DESIGNATION_TEAM_LEADER = '3';
-    public const DESIGNATION_CALLER = '7';
+    // public const DESIGNATION_ADMIN = '1';
+    // public const DESIGNATION_CLUSTER = '5';
+    // public const DESIGNATION_MANAGER = '2';
+    // public const DESIGNATION_TEAM_LEADER = '3';
+    // public const DESIGNATION_CALLER = '7';
+    //Employee::DESIGNATION_CALLER
+
+    public const DESIGNATION_ADMIN = 1;
+    public const DESIGNATION_MANAGER = 2;
+    public const DESIGNATION_TEAM_LEADER = 3;
+    public const DESIGNATION_CLUSTER = 5;
+    public const DESIGNATION_CALLER = 7;
 
 
     //
@@ -47,20 +54,31 @@ class Employee extends Model
         return $this->belongsTo(Employee::class, 'superviser_id');
     }
 
+    // public function teamLeaders()
+    // {
+    //     return $this->hasMany(Employee::class, 'manager_id')
+    //      ->where('designation', 'Team Leader');
+    // }
+
     public function teamLeaders()
     {
         return $this->hasMany(Employee::class, 'manager_id')
-         ->where('designation', 'Team Leader');
+            ->where('designation', self::DESIGNATION_TEAM_LEADER);
     }
 
 
-    public function managers()
-    {
-        return $this->hasMany(Employee::class, 'cluster_id')
-            ->where('designation', 'Manager');
+    // public function managers()
+    // {
+    //     return $this->hasMany(Employee::class, 'cluster_id')
+    //         ->where('designation', 'Manager');
+    // }
+
+    public function managers(){
+    return $this->hasMany(Employee::class, 'cluster_id')
+        ->where('designation', self::DESIGNATION_MANAGER);
     }
 
-  
+
     public function manager()
     {
         return $this->belongsTo(Employee::class, 'manager_id');
@@ -68,7 +86,7 @@ class Employee extends Model
 
     public function clusterManager()
     {
-       
+
         return $this->belongsTo(Employee::class, 'cluster_id');
     }
 
@@ -78,10 +96,16 @@ class Employee extends Model
         return $this->belongsTo(Employee::class, 'cluster_id');
     }
 
-    public function callers() {
-            return $this->hasMany(Employee::class, 'superviser_id')
-            ->where('designation', 'Caller');
-    }
+    // public function callers() {
+    //         return $this->hasMany(Employee::class, 'superviser_id')
+    //         ->where('designation', 'Caller');
+    // }
+
+
+    public function callers(){
+        return $this->hasMany(Employee::class, 'superviser_id')
+        ->where('designation', self::DESIGNATION_CALLER);
+     }
 
     public function user()
     {
@@ -135,9 +159,9 @@ class Employee extends Model
         }
 
 
-    
 
 
-   
-    
+
+
+
 }

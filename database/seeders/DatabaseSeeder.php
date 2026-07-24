@@ -26,6 +26,7 @@ class DatabaseSeeder extends Seeder
         //create roles with this seeder
         //   $this->call([
         //         RolesSeeder::class,
+        //         AdminUserSeeder::class
         //     ]);
 
         // $this->call([

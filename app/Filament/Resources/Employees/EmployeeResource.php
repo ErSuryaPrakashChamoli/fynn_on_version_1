@@ -79,34 +79,62 @@ class EmployeeResource extends Resource
 
                     TextInput::make('position')
                        ->label('Designation')
-                        ->required(),    
+                        ->required(),
 
                     // TextInput::make('designation')
                     //     ->required(),
 
+                        // Select::make('designation')
+                        // ->label('Position')
+                        // ->options([
+                        //     '1' => 'Admin',
+                        //     '7' => 'Caller',
+                        //     '3' => 'Team Leader',
+                        //     '2' => 'Manager',
+                        //     '5' => 'Cluster Manager',
+                        // ])
+                        // ->required()
+                        // ->searchable()
+                        // ->live()
+                        // ->afterStateUpdated(function (Set $set, $state) {
+                        //     if ($state !== '1') {
+                        //         $set('superviser_id', null);
+                        //     }
+                        //     if (in_array($state, ['3', '4'])) {
+                        //         $set('manager_id', null);
+                        //     }
+                        // })
+
                         Select::make('designation')
                         ->label('Position')
-                        ->options([
-                            '1' => 'Admin',
-                            '7' => 'Caller',
-                            '3' => 'Team Leader',
-                            '2' => 'Manager',
-                            '5' => 'Cluster Manager',
-                        ])
+                        ->options(Employee::designationOptions())
                         ->required()
                         ->searchable()
                         ->live()
+                        ->native(false)
                         ->afterStateUpdated(function (Set $set, $state) {
-                            if ($state !== '1') {
-                                $set('superviser_id', null);
-                            }
-                            if (in_array($state, ['3', '4'])) {
-                                $set('manager_id', null);
-                            }
-                        })
+                                    if ($state != Employee::DESIGNATION_CALLER) {
+                                        $set('superviser_id', null);
+                                    }
+
+                                    if (! in_array($state, [
+                                        Employee::DESIGNATION_TEAM_LEADER,
+                                        Employee::DESIGNATION_CALLER,
+                                    ])) {
+                                        $set('manager_id', null);
+                                    }
+
+                                    if (! in_array($state, [
+                                        Employee::DESIGNATION_MANAGER,
+                                        Employee::DESIGNATION_TEAM_LEADER,
+                                        Employee::DESIGNATION_CALLER,
+                                    ])) {
+                                        $set('cluster_id', null);
+                                    }
+                                })
                         ->native(false),
 
-                
+
 
                     Select::make('category')
                     ->label('Target Category')
@@ -118,10 +146,10 @@ class EmployeeResource extends Resource
                         'manager' => 'Beta',
                         'cluster_manager' => 'Delta',
                     ])
-                    ->required() 
+                    ->required()
                     ->native(false),
 
-                   
+
 
                     Select::make('superviser_id')
                         ->label('Superviser')
@@ -179,7 +207,7 @@ class EmployeeResource extends Resource
                         'prabhat_tyagi'     => 'Prabhat Tyagi',
                         'rohit_sharma'      => 'Rohit Sharma',
                     ])
-                    ->required() 
+                    ->required()
                     ->native(false),
 
                     // TextInput::make('unit_name'),
@@ -189,9 +217,9 @@ class EmployeeResource extends Resource
                     ->options([
                         'kanak_kumar' => 'Kanak Kumar',
                         'rohit_sharma' => 'Rohit Sharma',
-                    
+
                     ])
-                    ->required() 
+                    ->required()
                     ->native(false),
 
                     Select::make('exit_status')
@@ -205,7 +233,7 @@ class EmployeeResource extends Resource
                         ->native(false)
                         ->live()
                         ->afterStateUpdated(function (Set $set, $state) {
-                           
+
                             if ($state === 'no') {
                                 $set('exit_date', null);
                             }
@@ -217,8 +245,8 @@ class EmployeeResource extends Resource
                         ->displayFormat('d F Y')
                         ->suffixIcon('heroicon-m-calendar')
                         ->maxDate(now())
-                        ->visible(fn (Get $get) => $get('exit_status') === 'yes') 
-                        ->required(fn (Get $get) => $get('exit_status') === 'yes'), 
+                        ->visible(fn (Get $get) => $get('exit_status') === 'yes')
+                        ->required(fn (Get $get) => $get('exit_status') === 'yes'),
 
                 ])
                 ->columns(2)
@@ -288,7 +316,7 @@ class EmployeeResource extends Resource
                     DeleteBulkAction::make(),
                 ]);
 
-    
+
         // return EmployeesTable::configure($table);
     }
 
