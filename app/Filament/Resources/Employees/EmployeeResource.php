@@ -250,7 +250,11 @@ class EmployeeResource extends Resource
                 Tables\Columns\TextColumn::make('emp_name')
                     ->searchable(),
 
-                Tables\Columns\TextColumn::make('designation'),
+                // Tables\Columns\TextColumn::make('designation'),
+                Tables\Columns\TextColumn::make('designation')
+                ->label('Designation')
+                ->formatStateUsing(fn ($state) => Employee::designationOptions()[$state] ?? '-')
+                ->sortable(),
 
                 Tables\Columns\TextColumn::make('email'),
 
