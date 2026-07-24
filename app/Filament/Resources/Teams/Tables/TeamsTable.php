@@ -26,16 +26,35 @@ class TeamsTable
                     ->searchable()
                     ->sortable(),
 
-                  TextColumn::make('designation')
+                //   TextColumn::make('designation')
+                //     ->badge()
+                //     ->formatStateUsing(fn (string $state): string => match ($state) {
+
+                //         Employee::DESIGNATION_ADMIN => 'Admin',
+                //         Employee::DESIGNATION_CLUSTER => 'Cluster Manager',
+                //         Employee::DESIGNATION_MANAGER => 'Manager',
+                //         Employee::DESIGNATION_TEAM_LEADER => 'Team Leader',
+                //         Employee::DESIGNATION_CALLER => 'Caller',
+                //         default => $state,
+                //     }),
+
+                    // TextColumn::make('designation')
+                    // ->label('Designation')
+                    // ->formatStateUsing(fn ($state) => Employee::designationOptions()[$state] ?? '-')
+                    // ->sortable(),
+
+                    TextColumn::make('designation')
+                    ->label('Position')
                     ->badge()
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
-                        Employee::DESIGNATION_ADMIN => 'Admin',
-                        Employee::DESIGNATION_CLUSTER => 'Cluster Manager',
-                        Employee::DESIGNATION_MANAGER => 'Manager',
-                        Employee::DESIGNATION_TEAM_LEADER => 'Team Leader',
-                        Employee::DESIGNATION_CALLER => 'Caller',
-                        default => $state,
+                    ->formatStateUsing(fn ($state) => match ((string) $state) {
+                        '1' => 'Admin',
+                        '2' => 'Manager',
+                        '3' => 'Team Leader',
+                        '5' => 'Cluster Manager',
+                        '7' => 'Caller',
+                        default => 'Unknown',
                     }),
+
 
                     TextColumn::make('superviser.emp_name')
                     ->label('Team Leader')
