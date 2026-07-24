@@ -86,7 +86,7 @@ protected function getStats(): array
                 // --- 1. CALLER LOGIC ---
                 // $target = is_numeric($employee->category) ? (float) $employee->category : 2500000;
                 $target = $this->getCallerTarget($employee);
-                
+
                 $achievement = Customer::where('employee_id', $employee->id)
                     ->whereMonth('created_at', Carbon::now()->month)
                     ->whereYear('created_at', Carbon::now()->year)
@@ -106,7 +106,7 @@ protected function getStats(): array
                 ->whereMonth('created_at', now()->month)
                 ->whereYear('created_at', now()->year)
                 ->sum('docking');
-                
+
                 if ($target >= 3500000) {
                     $targetLevel = '💎 Diamond Target';
                     $targetColor = 'success';
@@ -118,12 +118,12 @@ protected function getStats(): array
                     $targetColor = 'info';
                 }
 
-            } elseif ($designation === '2') {
+            } elseif ($designation == Employee::DESIGNATION_TEAM_LEADER) {
                 // --- 2. TEAM LEADER LOGIC ---
                 $callerIds = Employee::where('superviser_id', $employee->id)->pluck('id')->toArray();
                 $callerCount = count($callerIds);
                 $baseTarget = Employee::whereIn('id', $callerIds)
-                            ->where('designation', '1')
+                            ->where('designation', Employee::DESIGNATION_CALLER)
                             ->get()
                             ->sum(fn ($emp) => $this->getCallerTarget($emp));
 
@@ -157,17 +157,17 @@ protected function getStats(): array
                 ->whereYear('created_at', now()->year)
                 ->sum('docking');
 
-            } elseif ($designation === '3') {
+            } elseif ($designation == Employee::DESIGNATION_MANAGER) {
                 // --- 3. MANAGER LOGIC (STRICT HIERARCHY FIX) ---
                 $teamLeaderIds = Employee::where('manager_id', $employee->id)
-                    ->where('designation', '2')
+                    ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
                     ->pluck('id')
                     ->toArray();
 
                 $callerIds = [];
                 if (!empty($teamLeaderIds)) {
                     $callerIds = Employee::whereIn('superviser_id', $teamLeaderIds)
-                        ->where('designation', '1')
+                        ->where('designation', Employee::DESIGNATION_CALLER)
                         ->pluck('id')
                         ->toArray();
                 }
@@ -176,12 +176,12 @@ protected function getStats(): array
                     ->pluck('id')
                     ->toArray();
 
-                
+
                 $allActiveCallers = array_unique(array_merge($callerIds, $directCallers));
                 $allSubordinateIds = array_unique(array_merge($teamLeaderIds, $allActiveCallers));
 
                 if (!empty($allActiveCallers)) {
-                
+
                     $target = Employee::whereIn('id', $allActiveCallers)
                         ->get()
                          ->sum(fn ($emp) => $this->getCallerTarget($emp));
@@ -190,11 +190,11 @@ protected function getStats(): array
                     $target = 0;
                 }
 
-    
+
                 foreach ($teamLeaderIds as $tlId) {
                     $tlCallerCount = Employee::where('superviser_id', $tlId)->where('designation', '1')->count();
                     if ($tlCallerCount < 3) {
-                        $target += 3000000; 
+                        $target += 3000000;
                     }
                 }
 
@@ -223,18 +223,27 @@ protected function getStats(): array
                 $targetLevel = '👔 Manager (Subordinates + TL Penalties)';
                 $targetColor = 'warning';
 
-            } elseif ($designation === '4') {
+            } elseif ($designation == Employee::DESIGNATION_CLUSTER) {
                 // --- 4. CLUSTER MANAGER LOGIC ---
             //    dd("call");
-                $managerIds = Employee::where('cluster_id', $employee->id)->where('designation', '3')->pluck('id')->toArray();
+                $managerIds = Employee::where('cluster_id', $employee->id)
+                // ->where('designation', '3')
+                ->where('designation', Employee::DESIGNATION_MANAGER)
+                ->pluck('id')->toArray();
                 $teamLeaderIds = [];
                 if (!empty($managerIds)) {
-                    $teamLeaderIds = Employee::whereIn('manager_id', $managerIds)->where('designation', '2')->pluck('id')->toArray();
+                    $teamLeaderIds = Employee::whereIn('manager_id', $managerIds)
+                    // ->where('designation', '2')
+                    ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+                    ->pluck('id')->toArray();
                 }
-                
+
                 $callerIds = [];
                 if (!empty($teamLeaderIds)) {
-                    $callerIds = Employee::whereIn('superviser_id', $teamLeaderIds)->where('designation', '1')->pluck('id')->toArray();
+                    $callerIds = Employee::whereIn('superviser_id', $teamLeaderIds)
+                    // ->where('designation', '1')
+                    ->where('designation', Employee::DESIGNATION_CALLER)
+                    ->pluck('id')->toArray();
                 }
 
                 $allTeamIds = array_merge($managerIds, $teamLeaderIds, $callerIds);
@@ -251,11 +260,11 @@ protected function getStats(): array
                 foreach ($teamLeaderIds as $tlId) {
                     $tlCallerCount = Employee::where('superviser_id', $tlId)->where('designation', '1')->count();
                     if ($tlCallerCount < 3) {
-                        $target += 3000000; 
+                        $target += 3000000;
                     }
                 }
 
-               
+
 
                 if (!empty($allTeamIds)) {
                     $achievement = Customer::whereIn('employee_id', $allTeamIds)
@@ -359,7 +368,7 @@ protected function getStats(): array
             */
 
             // if (! empty($employee->reporting_date)) {
-             
+
 
             //     $reportingDate = Carbon::parse($employee->reporting_date);
 

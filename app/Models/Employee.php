@@ -23,6 +23,12 @@ class Employee extends Model
     // public const DESIGNATION_CALLER = '7';
     //Employee::DESIGNATION_CALLER
 
+// Employee::DESIGNATION_ADMIN
+// Employee::DESIGNATION_MANAGER
+// Employee::DESIGNATION_TEAM_LEADER
+// Employee::DESIGNATION_CLUSTER
+// Employee::DESIGNATION_CALLER
+
     public const DESIGNATION_ADMIN = 1;
     public const DESIGNATION_MANAGER = 2;
     public const DESIGNATION_TEAM_LEADER = 3;
