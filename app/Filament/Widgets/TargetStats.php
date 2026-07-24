@@ -82,10 +82,12 @@ protected function getStats(): array
 
 
 
-            if ($designation === '1') {
+           if ($designation === Employee::DESIGNATION_CALLER) {
                 // --- 1. CALLER LOGIC ---
                 // $target = is_numeric($employee->category) ? (float) $employee->category : 2500000;
                 $target = $this->getCallerTarget($employee);
+
+
 
                 $achievement = Customer::where('employee_id', $employee->id)
                     ->whereMonth('created_at', Carbon::now()->month)
@@ -321,7 +323,7 @@ protected function getStats(): array
             ->color($pending > 0 ? 'warning' : 'success'),
 
         Stat::make('📈 DRR', $formatter->formatCurrency($drr, 'INR'))
-            ->description('Daily Required Run Rate')
+            ->description('Daily Required  Rate')
             ->color($drr > 0 ? 'danger' : 'success'),
     ];
 }
@@ -329,6 +331,7 @@ protected function getStats(): array
 
     private function getCallerTarget(Employee $employee): float
         {
+
 
             $today = Carbon::now();
 
