@@ -26,7 +26,8 @@ class DatabaseSeeder extends Seeder
         //create roles with this seeder
         //   $this->call([
         //         RolesSeeder::class,
-        //         AdminUserSeeder::class
+        //         AdminUserSeeder::class,
+        //         CitySeeder::class,
         //     ]);
 
         // $this->call([
@@ -34,6 +35,6 @@ class DatabaseSeeder extends Seeder
         // ]);
 
         //php artisan db:seed --class=CitySeeder
-        //test 1
+        //test 2
     }
 }
