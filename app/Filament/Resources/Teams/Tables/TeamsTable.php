@@ -62,8 +62,16 @@ class TeamsTable
 
                 SelectFilter::make('cluster_id')
                     ->label('Cluster Manager')
+                    // ->relationship(
+                    //     'cluster',
+                    //     'emp_name',
+                    //     fn ($query) => $query->whereIn(
+                    //         'id',
+                    //         HierarchyHelper::visibleEmployeeIds(auth()->user())
+                    //     )
+                    // )
                     ->relationship(
-                        'cluster',
+                        'superviser',
                         'emp_name',
                         fn ($query) => $query->whereIn(
                             'id',

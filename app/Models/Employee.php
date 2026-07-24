@@ -49,6 +49,10 @@ class Employee extends Model
         'exit_date',
     ];
 
+    protected $casts = [
+            'designation' => 'integer',
+        ];
+
     public function superviser()
     {
         return $this->belongsTo(Employee::class, 'superviser_id');

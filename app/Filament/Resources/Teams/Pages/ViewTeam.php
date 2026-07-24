@@ -37,7 +37,7 @@ class ViewTeam extends Page implements HasTable
     public function mount(Employee $record): void
     {
         $this->record = $record;
-        
+
     }
 
     public function table(Table $table): Table
@@ -69,7 +69,7 @@ class ViewTeam extends Page implements HasTable
                 Tables\Columns\TextColumn::make('mobile'),
 
                 Tables\Columns\TextColumn::make('email'),
-            ]) 
+            ])
             ->recordActions([
                 // Action::make('viewTeam')
                 //     ->label('View Team')
