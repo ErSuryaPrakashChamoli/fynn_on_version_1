@@ -313,14 +313,41 @@ class IncentiveStats extends StatsOverviewWidget
             ->whereYear('created_at', now()->year)
             ->sum('sanctioned_loan_amount');
 
+
+        $teamCashback = Customer::whereIn('employee_id', $aros->pluck('id'))
+        ->whereMonth('created_at', now()->month)
+        ->whereYear('created_at', now()->year)
+        ->sum('cashback');
+
+        $teamSubvention = Customer::whereIn('employee_id', $aros->pluck('id'))
+        ->whereMonth('created_at', now()->month)
+        ->whereYear('created_at', now()->year)
+        ->sum('subvention');
+
+        $teamDocking = Customer::whereIn('employee_id', $aros->pluck('id'))
+        ->whereMonth('created_at', now()->month)
+        ->whereYear('created_at', now()->year)
+        ->sum('docking');
+
+        $countAchievement = $teamAchievement
+        - ((($teamCashback + $teamSubvention + $teamDocking) / 2) * 100);
+
+
+
+
         /*
         |--------------------------------------------------------------------------
         | Achievement %
         |--------------------------------------------------------------------------
         */
 
+        // $achievementPercent = $teamTarget > 0
+        //     ? ($teamAchievement / $teamTarget) * 100
+        //     : 0;
+
+
         $achievementPercent = $teamTarget > 0
-            ? ($teamAchievement / $teamTarget) * 100
+            ? ($countAchievement / $teamTarget) * 100
             : 0;
 
         if ($achievementPercent < 90) {
@@ -333,15 +360,39 @@ class IncentiveStats extends StatsOverviewWidget
         |--------------------------------------------------------------------------
         */
 
-        $revenue = $teamAchievement * 0.02;
+        // $revenue = $teamAchievement * 0.02;
+        $revenue = $countAchievement * 0.02;
 
         $targetRevenue = $teamTarget * 0.02;
 
-        $grossRevenue = $revenue - ($aroCount * 30000);
+        // $grossRevenue = $revenue - ($aroCount * 30000);
+        $grossRevenue = max(
+            0,
+            $revenue - ($aroCount * 30000)
+        );
+
+        $extraRevenue = max(
+                0,
+                $revenue - $targetRevenue
+            );
+
+        // $baseIncentive =
+        //     ($grossRevenue * 0.08)
+        //     + (($revenue - $targetRevenue) * 0.05);
+
+
+        $grossRevenuePercent = match (true) {
+                $aroCount == 3 => 0.06,
+                $aroCount == 4 => 0.07,
+                $aroCount >= 5 => 0.08,
+                default => 0,
+            };
+
 
         $baseIncentive =
-            ($grossRevenue * 0.08)
-            + (($revenue - $targetRevenue) * 0.05);
+        ($grossRevenue * $grossRevenuePercent) +
+        ($extraRevenue * 0.05);
+
 
         /*
         |--------------------------------------------------------------------------
@@ -351,27 +402,50 @@ class IncentiveStats extends StatsOverviewWidget
 
         $allAchieved = true;
 
+        // foreach ($aros as $aro) {
+
+        //     $aroAchievement = Customer::where('employee_id', $aro->id)
+        //         ->whereMonth('created_at', now()->month)
+        //         ->whereYear('created_at', now()->year)
+        //         ->sum('sanctioned_loan_amount');
+
+        //     // if ($aroAchievement < 2500000) {
+
+        //     //     $allAchieved = false;
+
+        //     //     break;
+        //     // }
+
+
+        //     $aroTarget = $this->getCallerTarget($aro);
+
+        //     if ($aroAchievement < $aroTarget) {
+
+        //         $allAchieved = false;
+
+        //         break;
+        //     }
+        // }
+
+
         foreach ($aros as $aro) {
 
-            $aroAchievement = Customer::where('employee_id', $aro->id)
+            $query = Customer::where('employee_id', $aro->id)
                 ->whereMonth('created_at', now()->month)
-                ->whereYear('created_at', now()->year)
-                ->sum('sanctioned_loan_amount');
+                ->whereYear('created_at', now()->year);
 
-            // if ($aroAchievement < 2500000) {
+            $aroActualAchievement = (clone $query)->sum('sanctioned_loan_amount');
+            $aroCashback          = (clone $query)->sum('cashback');
+            $aroSubvention        = (clone $query)->sum('subvention');
+            $aroDocking           = (clone $query)->sum('docking');
 
-            //     $allAchieved = false;
-
-            //     break;
-            // }
-
+            $aroCountAchievement = $aroActualAchievement
+                - ((($aroCashback + $aroSubvention + $aroDocking) / 2) * 100);
 
             $aroTarget = $this->getCallerTarget($aro);
 
-            if ($aroAchievement < $aroTarget) {
-
+            if ($aroCountAchievement < $aroTarget) {
                 $allAchieved = false;
-
                 break;
             }
         }
@@ -382,10 +456,14 @@ class IncentiveStats extends StatsOverviewWidget
         |--------------------------------------------------------------------------
         */
 
-        if ($aroCount > 3 && $allAchieved) {
+        // if ($aroCount > 3 && $allAchieved) {
 
-            $baseIncentive *= 1.10;
-        }
+        //     $baseIncentive *= 1.10;
+        // }
+
+        if ($aroCount >= 3 && $allAchieved) {
+                $baseIncentive *= 1.10;
+            }
 
         return round(max($baseIncentive, 0));
     }
