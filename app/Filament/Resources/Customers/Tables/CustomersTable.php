@@ -17,6 +17,7 @@ use Filament\Actions\ExportBulkAction;
 use Filament\Actions\ImportAction;
 use App\Filament\Imports\CustomerImporter;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Facades\Filament;
 
 class CustomersTable
 {
@@ -130,7 +131,8 @@ class CustomersTable
                     ->visible(
                         fn($record) =>
                         // ! $record->documents_submitted &&
-                        auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
+                        // auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
+                        Filament::auth()->user()?->employee?->designation !== Employee::DESIGNATION_CALLER
                     ),
 
                 Action::make('followup')

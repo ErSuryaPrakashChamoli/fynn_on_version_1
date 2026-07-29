@@ -7,6 +7,7 @@ use App\Services\AchievementCalculatorService;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use NumberFormatter;
+use Filament\Facades\Filament;
 
 class ManagerPPPStats extends StatsOverviewWidget
 {
@@ -14,7 +15,9 @@ class ManagerPPPStats extends StatsOverviewWidget
 
     protected function getStats(): array
     {
-        $user = auth()->user();
+        // $user = auth()->user();
+        $user = Filament::auth()->user();
+
 
         $employee = Employee::find($user->employee_id);
 
@@ -69,7 +72,8 @@ class ManagerPPPStats extends StatsOverviewWidget
 
     public static function canView(): bool
     {
-        $employee = auth()->user()->employee;
+        // $employee = auth()->user()->employee;
+        $employee = Filament::auth()->user()?->employee;
 
         return $employee
             && $employee->designation === Employee::DESIGNATION_MANAGER;
