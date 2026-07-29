@@ -119,6 +119,8 @@ class TargetStats extends StatsOverviewWidget
                     ->whereYear('created_at', now()->year)
                     ->sum('docking');
 
+
+
                 $approvedAmount = Customer::where('employee_id', $employee->id)
                     ->whereMonth('created_at', now()->month)
                     ->whereYear('created_at', now()->year)
@@ -168,9 +170,14 @@ class TargetStats extends StatsOverviewWidget
                     ->whereYear('created_at', Carbon::now()->year)
                     ->sum('subvention');
 
-                $docking = Customer::where('employee_id', $employee->id)
-                    ->whereMonth('created_at', now()->month)
-                    ->whereYear('created_at', now()->year)
+                // $docking = Customer::where('employee_id', $employee->id)
+                //     ->whereMonth('created_at', now()->month)
+                //     ->whereYear('created_at', now()->year)
+                //     ->sum('docking');
+
+                $docking = Customer::whereIn('employee_id', $callerIds)
+                    ->whereMonth('created_at', Carbon::now()->month)
+                    ->whereYear('created_at', Carbon::now()->year)
                     ->sum('docking');
 
                 $approvedAmount = Customer::whereIn('employee_id', $callerIds)
@@ -179,6 +186,8 @@ class TargetStats extends StatsOverviewWidget
                     ->sum('approved_loan_amount');
             } elseif ($designation == Employee::DESIGNATION_MANAGER) {
                 // --- 3. MANAGER LOGIC (STRICT HIERARCHY FIX) ---
+
+
 
 
                 $teamLeaderIds = Employee::where('manager_id', $employee->id)
@@ -236,10 +245,18 @@ class TargetStats extends StatsOverviewWidget
                         ->whereYear('created_at', Carbon::now()->year)
                         ->sum('subvention');
 
-                    $docking = Customer::where('employee_id', $employee->id)
-                        ->whereMonth('created_at', now()->month)
-                        ->whereYear('created_at', now()->year)
+                    // $docking = Customer::where('employee_id', $employee->id)
+                    //     ->whereMonth('created_at', Carbon::now()->month)
+                    //     ->whereYear('created_at', Carbon::now()->year)
+                    //     ->sum('docking');
+
+                    $docking = Customer::whereIn('employee_id', $allSubordinateIds)
+                        ->whereMonth('created_at', Carbon::now()->month)
+                        ->whereYear('created_at', Carbon::now()->year)
                         ->sum('docking');
+
+
+
 
                     $approvedAmount = Customer::whereIn('employee_id', $allSubordinateIds)
                         ->whereMonth('created_at', now()->month)
@@ -308,9 +325,14 @@ class TargetStats extends StatsOverviewWidget
                         ->whereYear('created_at', Carbon::now()->year)
                         ->sum('subvention');
 
-                    $docking = Customer::where('employee_id', $employee->id)
-                        ->whereMonth('created_at', now()->month)
-                        ->whereYear('created_at', now()->year)
+                    // $docking = Customer::where('employee_id', $employee->id)
+                    //     ->whereMonth('created_at', now()->month)
+                    //     ->whereYear('created_at', now()->year)
+                    //     ->sum('docking');
+
+                    $docking = Customer::whereIn('employee_id', $allTeamIds)
+                        ->whereMonth('created_at', Carbon::now()->month)
+                        ->whereYear('created_at', Carbon::now()->year)
                         ->sum('docking');
 
                     $approvedAmount = Customer::whereIn('employee_id', $allTeamIds)
@@ -323,6 +345,7 @@ class TargetStats extends StatsOverviewWidget
                 $targetColor = 'danger';
             }
         }
+
         $countAchievement = $achievement - ((($totalCashback + $totalSubvention + $docking) / 2) * 100);
 
 

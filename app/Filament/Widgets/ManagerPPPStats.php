@@ -37,7 +37,9 @@ class ManagerPPPStats extends StatsOverviewWidget
 
         $multiplier = $calculator->getPPPMultiplier($ppp);
 
-        $incentive = $countAchievement * $multiplier;
+        // $incentive = $countAchievement * $multiplier;
+
+        $managerIncentive = $countAchievement * $multiplier;
 
         $formatter = new NumberFormatter('en_IN', NumberFormatter::CURRENCY);
         $formatter->setAttribute(NumberFormatter::MAX_FRACTION_DIGITS, 0);
@@ -63,7 +65,7 @@ class ManagerPPPStats extends StatsOverviewWidget
 
             Stat::make(
                 'Manager Incentive',
-                $formatter->formatCurrency($incentive, 'INR')
+                $formatter->formatCurrency($managerIncentive, 'INR')
             )
                 ->color('success'),
 
