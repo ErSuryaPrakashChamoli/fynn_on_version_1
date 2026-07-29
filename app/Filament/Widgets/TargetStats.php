@@ -352,6 +352,10 @@ protected function getStats(): array
         Stat::make('📈 DRR', $formatter->formatCurrency($drr, 'INR'))
             ->description('Daily Required  Rate')
             ->color($drr > 0 ? 'danger' : 'success'),
+
+        Stat::make('⏳ Approved Amount', $formatter->formatCurrency($pending, 'INR'))
+            ->description('Approved Amount')
+            ->color($pending > 0 ? 'warning' : 'success'),
     ];
 }
 

@@ -73,12 +73,14 @@ class CustomerResource extends Resource
 
                 Tables\Columns\TextColumn::make('customer_name')
                     ->label('Customer Name')
-                    ->searchable()
+                    // ->searchable()
+                    ->searchable(isIndividual: true , isGlobal: false)
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('sanctioned_loan_amount')
                     ->label('Loan Amount')
                     ->formatStateUsing(fn($state) => filled($state) ? '₹' . number_format((float) $state, 0) : '-')
+                    ->alignRight()
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('mobile_no')
@@ -103,6 +105,7 @@ class CustomerResource extends Resource
                 Tables\Columns\TextColumn::make('salary')
                     ->label('Salary')
                     ->formatStateUsing(fn($state) => filled($state) ? '₹' . number_format((float) $state, 0) : '-')
+                    ->alignRight()
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('eligibility_status')
