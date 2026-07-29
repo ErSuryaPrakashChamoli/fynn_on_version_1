@@ -23,7 +23,11 @@ class TargetStats extends StatsOverviewWidget
 
     protected function getStats(): array
     {
+
         $loginUser = auth()->user();
+
+        // dd($loginUser->hasRole('Admin'));
+
 
         $target = 0;
         $achievement = 0;
@@ -59,8 +63,8 @@ class TargetStats extends StatsOverviewWidget
                 ->sum('docking');
 
             $approvedAmount = Customer::whereMonth('created_at', now()->month)
-            ->whereYear('created_at', now()->year)
-            ->sum('approved_loan_amount');
+                ->whereYear('created_at', now()->year)
+                ->sum('approved_loan_amount');
 
             $target = Employee::where('designation', Employee::DESIGNATION_CALLER)
                 ->get()
@@ -83,6 +87,8 @@ class TargetStats extends StatsOverviewWidget
             }
 
             $designation = $employee->designation;
+
+            // dd($designation);
 
 
 
@@ -114,9 +120,9 @@ class TargetStats extends StatsOverviewWidget
                     ->sum('docking');
 
                 $approvedAmount = Customer::where('employee_id', $employee->id)
-                ->whereMonth('created_at', now()->month)
-                ->whereYear('created_at', now()->year)
-                ->sum('approved_loan_amount');
+                    ->whereMonth('created_at', now()->month)
+                    ->whereYear('created_at', now()->year)
+                    ->sum('approved_loan_amount');
 
                 if ($target >= 3500000) {
                     $targetLevel = '💎 Diamond Target';
@@ -168,12 +174,13 @@ class TargetStats extends StatsOverviewWidget
                     ->sum('docking');
 
                 $approvedAmount = Customer::whereIn('employee_id', $callerIds)
-                ->whereMonth('created_at', now()->month)
-                ->whereYear('created_at', now()->year)
-                ->sum('approved_loan_amount');
-
+                    ->whereMonth('created_at', now()->month)
+                    ->whereYear('created_at', now()->year)
+                    ->sum('approved_loan_amount');
             } elseif ($designation == Employee::DESIGNATION_MANAGER) {
                 // --- 3. MANAGER LOGIC (STRICT HIERARCHY FIX) ---
+
+
                 $teamLeaderIds = Employee::where('manager_id', $employee->id)
                     ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
                     ->pluck('id')
@@ -235,10 +242,9 @@ class TargetStats extends StatsOverviewWidget
                         ->sum('docking');
 
                     $approvedAmount = Customer::whereIn('employee_id', $allSubordinateIds)
-                    ->whereMonth('created_at', now()->month)
-                    ->whereYear('created_at', now()->year)
-                    ->sum('approved_loan_amount');
-
+                        ->whereMonth('created_at', now()->month)
+                        ->whereYear('created_at', now()->year)
+                        ->sum('approved_loan_amount');
                 }
 
                 $targetLevel = '👔 Manager (Subordinates + TL Penalties)';
@@ -308,17 +314,18 @@ class TargetStats extends StatsOverviewWidget
                         ->sum('docking');
 
                     $approvedAmount = Customer::whereIn('employee_id', $allTeamIds)
-                    ->whereMonth('created_at', now()->month)
-                    ->whereYear('created_at', now()->year)
-                    ->sum('approved_loan_amount');
+                        ->whereMonth('created_at', now()->month)
+                        ->whereYear('created_at', now()->year)
+                        ->sum('approved_loan_amount');
                 }
 
                 $targetLevel = '🏢 Cluster Manager (Total Hierarchy Sum)';
                 $targetColor = 'danger';
             }
         }
-
         $countAchievement = $achievement - ((($totalCashback + $totalSubvention + $docking) / 2) * 100);
+
+
         $pending = max(0, $target - $countAchievement);
         $remainingDays = max(1, now()->daysInMonth - now()->day);
         $drr = $pending / $remainingDays;
@@ -348,8 +355,8 @@ class TargetStats extends StatsOverviewWidget
                 ->color($drr > 0 ? 'danger' : 'success'),
 
             Stat::make('✅ Approved Amount', $formatter->formatCurrency($approvedAmount, 'INR'))
-            ->description('Total Approved Loan Amount')
-            ->color('success'),
+                ->description('Total Approved Loan Amount')
+                ->color('success'),
 
         ];
     }

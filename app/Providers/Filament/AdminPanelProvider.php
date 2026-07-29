@@ -26,6 +26,7 @@ use App\Filament\Widgets\IncentiveStats;
 
 use Filament\View\PanelsRenderHook;
 use Illuminate\Support\Facades\Blade;
+use App\Filament\Widgets\ManagerPPPStats;
 
 
 
@@ -69,6 +70,7 @@ class AdminPanelProvider extends PanelProvider
                 TargetStats::class,
                 DailyCommitmentStats::class,
                 IncentiveStats::class,
+                ManagerPPPStats::class,
 
 
             ])
