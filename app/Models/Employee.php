@@ -9,25 +9,7 @@ class Employee extends Model
 {
     use HasFactory;
 
-    // public const DESIGNATION_ADMIN = 'Admin';
-    // public const DESIGNATION_CLUSTER = 'Cluster Manager';
-    // public const DESIGNATION_MANAGER = 'Manager';
-    // public const DESIGNATION_TEAM_LEADER = 'Team Leader';
-    // public const DESIGNATION_CALLER = 'Caller';
 
-
-    // public const DESIGNATION_ADMIN = '1';
-    // public const DESIGNATION_CLUSTER = '5';
-    // public const DESIGNATION_MANAGER = '2';
-    // public const DESIGNATION_TEAM_LEADER = '3';
-    // public const DESIGNATION_CALLER = '7';
-    //Employee::DESIGNATION_CALLER
-
-// Employee::DESIGNATION_ADMIN
-// Employee::DESIGNATION_MANAGER
-// Employee::DESIGNATION_TEAM_LEADER
-// Employee::DESIGNATION_CLUSTER
-// Employee::DESIGNATION_CALLER
 
     public const DESIGNATION_ADMIN = 1;
     public const DESIGNATION_MANAGER = 2;
