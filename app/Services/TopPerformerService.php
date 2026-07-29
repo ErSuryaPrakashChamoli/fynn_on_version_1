@@ -2,61 +2,46 @@
 
 namespace App\Services;
 
-use App\Models\Customer;
 use App\Models\Employee;
-use Carbon\Carbon;
 
 class TopPerformerService
 {
-    public function getTopPerformer(): array
+    public function __construct(
+        protected AchievementCalculatorService $calculator
+    ) {}
+
+    public function getTopPerformers(?Employee $loggedInEmployee): array
     {
-        $employees = Employee::where('designation', '1')->get();
-     
+        // If Admin (no employee record), show Top 5 Callers
+        if (!$loggedInEmployee) {
+            $designation = Employee::DESIGNATION_CALLER;
+            $limit = 5;
+        } else {
+            $designation = $loggedInEmployee->designation;
+
+            $limit = $designation == Employee::DESIGNATION_CALLER
+                ? 5
+                : 3;
+        }
+
+        $employees = Employee::where('designation', $designation)
+            ->where('exit_status', 'no')
+            ->get();
+
         $performers = [];
 
         foreach ($employees as $employee) {
 
-            $target = is_numeric($employee->category)
-                ? (float) $employee->category
-                : 2500000;
-
-            $achievement = Customer::where('employee_id', $employee->id)
-                ->whereMonth('created_at', Carbon::now()->month)
-                ->whereYear('created_at', Carbon::now()->year)
-                ->sum('sanctioned_loan_amount');
-
-            $cashback = Customer::where('employee_id', $employee->id)
-                ->whereMonth('created_at', Carbon::now()->month)
-                ->whereYear('created_at', Carbon::now()->year)
-                ->sum('cashback');
-
-            $subvention = Customer::where('employee_id', $employee->id)
-                ->whereMonth('created_at', Carbon::now()->month)
-                ->whereYear('created_at', Carbon::now()->year)
-                ->sum('subvention');
-
-            $docking = Customer::where('employee_id', $employee->id)
-                ->whereMonth('created_at', Carbon::now()->month)
-                ->whereYear('created_at', Carbon::now()->year)
-                ->sum('docking');
-
-            $countAchievement = $achievement - ((($cashback + $subvention + $docking) / 2) * 100);
-
-            $percentage = $target > 0
-                ? round(($countAchievement / $target) * 100, 2)
-                : 0;
-
             $performers[] = [
-                'name' => $employee->emp_name ?? $employee->name,
-                'disbursal' => $achievement,
-                'percentage' => $percentage,
+                'name' => $employee->emp_name,
+                'target' => $this->calculator->getTarget($employee),
+                'countAchievement' => $this->calculator->getCountAchievement($employee),
+                'percentage' => $this->calculator->getPercentage($employee),
             ];
         }
 
-        usort($performers, function ($a, $b) {
-            return $b['percentage'] <=> $a['percentage'];
-        });
+        usort($performers, fn ($a, $b) => $b['percentage'] <=> $a['percentage']);
 
-        return array_slice($performers, 0, 5);
+        return array_slice($performers, 0, $limit);
     }
 }

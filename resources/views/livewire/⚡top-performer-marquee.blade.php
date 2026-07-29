@@ -1,62 +1,77 @@
 <?php
 use Livewire\Component;
-use App\Services\TopPerformerService; 
+use App\Services\TopPerformerService;
+use App\Models\Employee;
 
 new class extends Component
 {
     public string $message = '';
     public bool $readyToLoad = false; // Add a flag to delay calculation
 
-    
+
 
     public function mount(TopPerformerService $service)
     {
-    
-        // $top = $service->getTopPerformer();
-
-        // if ($top && isset($top['name'])) {
-        //     $this->message = "🏆 Top Performer: {$top['name']} | "
-        //         . "Disbursal: ₹" . number_format($top['disbursal']) . " | "
-        //         . "Achievement: {$top['percentage']}%";
-        // } else {
-        //     $this->message = "🏆 Calculating Top Performers...";
-        // }
-
-        // $performers = $service->getTopPerformer();
-        // if (!empty($performers)) {
-        //     $compiledStrings = [];
-
-            
-        //     // Loop through each record and format its marquee message block
-        //     foreach ($performers as $index => $top) {
-        //         $rank = $index + 1;
-        //         $compiledStrings[] = "🏆 Rank #{$rank}: {$top['name']} (Disbursal: ₹" . number_format($top['disbursal']) . " | Achievement: {$top['percentage']}%)";
-        //     }
-            
-        //     // Join all performers together with spaces and a sleek divider symbol
-        //     $this->message = implode("       •       ", $compiledStrings);
-        // } else {
-        //     $this->message = "🏆 Calculating Top Performers...";
-        // }
 
          $this->loadPerformers($service);
     }
 
 
-        public function loadPerformers(TopPerformerService $service)
-    {
-      
-         $service = app(TopPerformerService::class);
-            // dd($service->getTopPerformer());
+    public function loadPerformers(TopPerformerService $service){
 
-        $performers = $service->getTopPerformer();
+        // $employee = auth()->user()->employee;
+        // $performers = $service->getTopPerformers($employee);
+       $service = app(TopPerformerService::class);
+
+        $user = auth()->user();
+        $employee = $user->employee;
+
+        $performers = $service->getTopPerformers($employee);
 
         if (empty($performers)) {
             $this->message = '🏆 No Top Performers Found';
             return;
         }
 
-        $messages = [];
+        if (!$employee) {
+
+            $title = '🏆 Top 5 Callers';
+
+        } else {
+
+            $title = match ($employee->designation) {
+
+                Employee::DESIGNATION_CALLER => '🏆 Top 5 Callers',
+
+                Employee::DESIGNATION_TEAM_LEADER => '🏆 Top 3 Team Leaders',
+
+                Employee::DESIGNATION_MANAGER => '🏆 Top 3 Managers',
+
+                Employee::DESIGNATION_CLUSTER => '🏆 Top 3 Cluster Managers',
+
+                default => '🏆 Top Performers',
+            };
+        }
+
+        // if (empty($performers)) {
+        //     $this->message = '🏆 No Top Performers Found';
+        //     return;
+        // }
+
+        // $title = match ($employee->designation) {
+
+        //     Employee::DESIGNATION_CALLER => '🏆 Top 5 Callers',
+
+        //     Employee::DESIGNATION_TEAM_LEADER => '🏆 Top 3 Team Leaders',
+
+        //     Employee::DESIGNATION_MANAGER => '🏆 Top 3 Managers',
+
+        //     Employee::DESIGNATION_CLUSTER => '🏆 Top 3 Cluster Managers',
+
+        //     default => '🏆 Top Performers',
+        // };
+
+        $messages = [$title];
 
         foreach ($performers as $index => $top) {
 
@@ -67,19 +82,17 @@ new class extends Component
                 default => '🏅',
             };
 
-            $messages[] =
-                "{$rank} {$top['name']} | ₹"
-                . number_format($top['disbursal'])
-                . " | {$top['percentage']}%";
+            $messages[] = "{$rank} {$top['name']} | "
+                . number_format($top['percentage'], 2)
+                . "%";
         }
 
         $this->message = implode('     •     ', $messages);
     }
 
 
-
     // public function render(){
-      
+
     //   return <<<'HTML'
     //         <div class="fi-top-marquee-wrapper">
     //             <div class="ticker-container">
@@ -129,7 +142,7 @@ new class extends Component
             // }
             // </style>
     //         HTML;
-                
+
     //         }
 
 
@@ -187,7 +200,7 @@ new class extends Component
             }
             </style>
 
-             
+
         HTML;
     }
 
