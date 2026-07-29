@@ -41,8 +41,6 @@ class ManagerPPPStats extends StatsOverviewWidget
 
 
 
-
-
         return [
 
             Stat::make(
@@ -52,7 +50,7 @@ class ManagerPPPStats extends StatsOverviewWidget
 
             Stat::make(
                 'PPP',
-               $formatter->formatCurrency($ppp, 'INR')
+                $formatter->formatCurrency($ppp, 'INR')
             ),
 
             Stat::make(

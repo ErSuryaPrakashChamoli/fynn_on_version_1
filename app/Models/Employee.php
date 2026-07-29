@@ -19,7 +19,7 @@ class Employee extends Model
 
 
     //
-     protected $fillable = [
+    protected $fillable = [
         'emp_id',
         'emp_name',
         'email',
@@ -38,8 +38,8 @@ class Employee extends Model
     ];
 
     protected $casts = [
-            'designation' => 'integer',
-        ];
+        'designation' => 'integer',
+    ];
 
     public function superviser()
     {
@@ -65,9 +65,10 @@ class Employee extends Model
     //         ->where('designation', 'Manager');
     // }
 
-    public function managers(){
-    return $this->hasMany(Employee::class, 'cluster_id')
-        ->where('designation', self::DESIGNATION_MANAGER);
+    public function managers()
+    {
+        return $this->hasMany(Employee::class, 'cluster_id')
+            ->where('designation', self::DESIGNATION_MANAGER);
     }
 
 
@@ -94,10 +95,11 @@ class Employee extends Model
     // }
 
 
-    public function callers(){
+    public function callers()
+    {
         return $this->hasMany(Employee::class, 'superviser_id')
-        ->where('designation', self::DESIGNATION_CALLER);
-     }
+            ->where('designation', self::DESIGNATION_CALLER);
+    }
 
     public function user()
     {
@@ -140,20 +142,13 @@ class Employee extends Model
 
 
     public static function designationOptions(): array
-        {
-            return [
-                self::DESIGNATION_ADMIN => 'Admin',
-                self::DESIGNATION_MANAGER => 'Manager',
-                self::DESIGNATION_TEAM_LEADER => 'Team Leader',
-                self::DESIGNATION_CLUSTER => 'Cluster Manager',
-                self::DESIGNATION_CALLER => 'Caller',
-            ];
-        }
-
-
-
-
-
-
-
+    {
+        return [
+            self::DESIGNATION_ADMIN => 'Admin',
+            self::DESIGNATION_MANAGER => 'Manager',
+            self::DESIGNATION_TEAM_LEADER => 'Team Leader',
+            self::DESIGNATION_CLUSTER => 'Cluster Manager',
+            self::DESIGNATION_CALLER => 'Caller',
+        ];
+    }
 }
