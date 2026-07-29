@@ -72,7 +72,7 @@ class IncentiveStats extends StatsOverviewWidget
                 ->whereMonth('created_at', now()->month)
                 ->whereYear('created_at', now()->year);
 
-     
+
 
             $actualAchievement = (clone $query)->sum('sanctioned_loan_amount');
             $cashback          = (clone $query)->sum('cashback');
@@ -138,14 +138,26 @@ $stats[] = Stat::make(
     ->descriptionIcon('heroicon-m-arrow-down-circle')
     ->icon('heroicon-o-arrow-down-circle');
 
-$stats[] = Stat::make(
-    '🎯 Earned Incentive',
-    $indianCurrencyFormatter->formatCurrency($currentIncentive, 'INR')
-)
-    ->color('success')
-    ->description('Current Incentive Earned')
-    ->descriptionIcon('heroicon-m-trophy')
-    ->icon('heroicon-o-trophy');
+if (! $user->hasRole('Manager')) {
+
+    $stats[] = Stat::make(
+        '🎯 Earned Incentive',
+        $indianCurrencyFormatter->formatCurrency($currentIncentive, 'INR')
+    )
+        ->color('success')
+         ->descriptionIcon('heroicon-m-trophy')
+          ->icon('heroicon-o-trophy')
+        ->description('Current Incentive Earned');
+}
+
+// $stats[] = Stat::make(
+//     '🎯 Earned Incentive',
+//     $indianCurrencyFormatter->formatCurrency($currentIncentive, 'INR')
+// )
+//     ->color('success')
+//     ->description('Current Incentive Earned')
+//     ->descriptionIcon('heroicon-m-trophy')
+//     ->icon('heroicon-o-trophy');
 
 /*
 |--------------------------------------------------------------------------
@@ -183,7 +195,7 @@ if ($user->hasRole('Caller')) {
 
 return $stats;
 
-        
+
     }
 
     private function getSlabs(): array
