@@ -268,7 +268,7 @@ class TargetStats extends StatsOverviewWidget
                 $targetColor = 'warning';
             } elseif ($designation == Employee::DESIGNATION_CLUSTER) {
                 // --- 4. CLUSTER MANAGER LOGIC ---
-                //    dd("call");
+
                 $managerIds = Employee::where('cluster_id', $employee->id)
                     // ->where('designation', '3')
                     ->where('designation', Employee::DESIGNATION_MANAGER)
