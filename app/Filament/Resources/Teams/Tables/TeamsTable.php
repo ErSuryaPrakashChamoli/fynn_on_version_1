@@ -200,18 +200,7 @@ class TeamsTable
                     ->searchable()
                     ->preload(),
 
-                // SelectFilter::make('superviser_id')
-                //     ->label('Team Leader')
-                //     ->relationship(
-                //         'supervisor',
-                //         'emp_name',
-                //         fn ($query) => $query->whereIn(
-                //             'id',
-                //             HierarchyHelper::visibleEmployeeIds(auth()->user())
-                //         )
-                //     )
-                //     ->searchable()
-                //     ->preload(),
+
 
             ])
             ->recordActions([
