@@ -385,25 +385,131 @@ class TargetStats extends StatsOverviewWidget
     }
 
 
+    // private function getCallerTarget(Employee $employee): float
+    // {
+
+
+    //     $today = Carbon::now();
+
+    //     $currentMonth = $today->month;
+    //     $currentYear  = $today->year;
+
+    //     $monthStart = $today->copy()->startOfMonth();
+    //     $monthEnd   = $today->copy()->endOfMonth();
+
+    //     /*
+    //         |--------------------------------------------------------------------------
+    //         | EXIT EMPLOYEE (ONLY FOR EXITS IN CURRENT MONTH)
+    //         |--------------------------------------------------------------------------
+    //         */
+
+    //     if (! empty($employee->exit_date)) {
+
+    //         $exitDate = Carbon::parse($employee->exit_date);
+
+    //         if (
+    //             $exitDate->month == $currentMonth &&
+    //             $exitDate->year == $currentYear
+    //         ) {
+
+    //             $workedDays = $monthStart->diffInDays($exitDate) + 1;
+
+    //             return $workedDays >= 10
+    //                 ? 1500000
+    //                 : 0;
+    //         }
+    //     }
+
+    //     /*
+    //         |--------------------------------------------------------------------------
+    //         | NEW JOINER (ONLY IF JOINED THIS MONTH)
+    //         |--------------------------------------------------------------------------
+    //         */
+
+
+
+    //     if (! empty($employee->doj)) {
+
+    //         $joiningDate = Carbon::parse($employee->doj);
+
+    //         if (
+    //             $joiningDate->month == $currentMonth &&
+    //             $joiningDate->year == $currentYear
+    //         ) {
+
+    //             /*
+    //     |--------------------------------------------------------------------------
+    //     | New Joiner
+    //     | Reporting date decides when the employee starts reporting.
+    //     |--------------------------------------------------------------------------
+    //     */
+
+    //             $effectiveDate = ! empty($employee->reporting_date)
+    //                 ? Carbon::parse($employee->reporting_date)
+    //                 : $joiningDate;
+
+    //             $remainingDays = $effectiveDate->diffInDays($monthEnd) + 1;
+
+    //             return $remainingDays >= 10
+    //                 ? 1500000
+    //                 : 0;
+    //         }
+    //     }
+
+    //     /*
+    //         |--------------------------------------------------------------------------
+    //         | EXISTING EMPLOYEE
+    //         |--------------------------------------------------------------------------
+    //         |
+    //         | Joined before current month.
+    //         | Always take category target.
+    //         | Ignore reporting_date.
+    //         | Ignore reporting history.
+    //         |
+    //         */
+
+    //     return is_numeric($employee->category)
+    //         ? (float) $employee->category
+    //         : 2500000;
+    // }
+
+
     private function getCallerTarget(Employee $employee): float
     {
-
-
         $today = Carbon::now();
 
         $currentMonth = $today->month;
         $currentYear  = $today->year;
 
-        $monthStart = $today->copy()->startOfMonth();
-        $monthEnd   = $today->copy()->endOfMonth();
+        $monthEnd = $today->copy()->endOfMonth();
 
         /*
-            |--------------------------------------------------------------------------
-            | EXIT EMPLOYEE (ONLY FOR EXITS IN CURRENT MONTH)
-            |--------------------------------------------------------------------------
-            */
+    |--------------------------------------------------------------------------
+    | Effective Date
+    |--------------------------------------------------------------------------
+    | Reporting Date takes priority.
+    | If reporting date is empty, use DOJ.
+    |--------------------------------------------------------------------------
+    */
 
-        if (! empty($employee->exit_date)) {
+        if (empty($employee->doj)) {
+            return 0;
+        }
+
+        $effectiveDate = !empty($employee->reporting_date)
+            ? Carbon::parse($employee->reporting_date)
+            : Carbon::parse($employee->doj);
+
+        /*
+    |--------------------------------------------------------------------------
+    | EXIT EMPLOYEE (Exited in Current Month)
+    |--------------------------------------------------------------------------
+    |
+    | Calculate days from Reporting Date → Exit Date.
+    |
+    */
+
+        if (!empty($employee->exit_date)) {
 
             $exitDate = Carbon::parse($employee->exit_date);
 
@@ -412,7 +518,7 @@ class TargetStats extends StatsOverviewWidget
                 $exitDate->year == $currentYear
             ) {
 
-                $workedDays = $monthStart->diffInDays($exitDate) + 1;
+                $workedDays = $effectiveDate->diffInDays($exitDate) + 1;
 
                 return $workedDays >= 10
                     ? 1500000
@@ -421,69 +527,33 @@ class TargetStats extends StatsOverviewWidget
         }
 
         /*
-            |--------------------------------------------------------------------------
-            | NEW JOINER (ONLY IF JOINED THIS MONTH)
-            |--------------------------------------------------------------------------
-            */
+    |--------------------------------------------------------------------------
+    | NEW JOINER / REPORTING CHANGE
+    |--------------------------------------------------------------------------
+    |
+    | If Reporting Date (or DOJ) falls in current month,
+    | calculate remaining days till month end.
+    |
+    */
 
-        // if (! empty($employee->reporting_date)) {
+        if (
+            $effectiveDate->month == $currentMonth &&
+            $effectiveDate->year == $currentYear
 
+        ) {
 
-        //     $reportingDate = Carbon::parse($employee->reporting_date);
+            $remainingDays = $effectiveDate->diffInDays($monthEnd) + 1;
 
-        //     if (
-        //         $reportingDate->month == $currentMonth &&
-        //         $reportingDate->year == $currentYear
-        //     ) {
-
-        //         $remainingDays = $reportingDate->diffInDays($monthEnd) + 1;
-
-        //         return $remainingDays >= 10
-        //             ? 1500000
-        //             : 0;
-        //     }
-        // }
-
-
-        if (! empty($employee->doj)) {
-
-            $joiningDate = Carbon::parse($employee->doj);
-
-            if (
-                $joiningDate->month == $currentMonth &&
-                $joiningDate->year == $currentYear
-            ) {
-
-                /*
-        |--------------------------------------------------------------------------
-        | New Joiner
-        | Reporting date decides when the employee starts reporting.
-        |--------------------------------------------------------------------------
-        */
-
-                $effectiveDate = ! empty($employee->reporting_date)
-                    ? Carbon::parse($employee->reporting_date)
-                    : $joiningDate;
-
-                $remainingDays = $effectiveDate->diffInDays($monthEnd) + 1;
-
-                return $remainingDays >= 10
-                    ? 1500000
-                    : 0;
-            }
+            return $remainingDays >= 10
+                ? 1500000
+                : 0;
         }
 
         /*
-            |--------------------------------------------------------------------------
-            | EXISTING EMPLOYEE
-            |--------------------------------------------------------------------------
-            |
-            | Joined before current month.
-            | Always take category target.
-            | Ignore reporting_date.
-            | Ignore reporting history.
-            |
-            */
+    |--------------------------------------------------------------------------
+    | EXISTING EMPLOYEE
+    |--------------------------------------------------------------------------
+    */
 
         return is_numeric($employee->category)
             ? (float) $employee->category
