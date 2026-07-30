@@ -402,9 +402,103 @@ class AchievementCalculatorService
     }
 
 
+    // private function getCallerTarget(Employee $employee): float
+    // {
+    //     $today = Carbon::now();
+
+    //     $currentMonth = $today->month;
+    //     $currentYear  = $today->year;
+    //     $monthEnd     = $today->copy()->endOfMonth();
+
+    //     /*
+    // |--------------------------------------------------------------------------
+    // | Employee must have DOJ
+    // |--------------------------------------------------------------------------
+    // */
+
+    //     if (empty($employee->doj)) {
+    //         return 0;
+    //     }
+
+    //     /*
+    // |--------------------------------------------------------------------------
+    // | Effective Date
+    // |--------------------------------------------------------------------------
+    // | Reporting Date takes priority.
+    // | Otherwise use DOJ.
+    // |--------------------------------------------------------------------------
+    // */
+
+    //     $joiningDate = Carbon::parse($employee->doj);
+
+    //     $effectiveDate = !empty($employee->reporting_date)
+    //         ? Carbon::parse($employee->reporting_date)
+    //         : $joiningDate;
+
+    //     /*
+    // |--------------------------------------------------------------------------
+    // | EXIT EMPLOYEE (Exited in Current Month)
+    // |--------------------------------------------------------------------------
+    // */
+
+    //     if (
+    //         $employee->exit_status === 'yes' &&
+    //         !empty($employee->exit_date)
+    //     ) {
+
+    //         $exitDate = Carbon::parse($employee->exit_date);
+
+    //         if (
+    //             $exitDate->month == $currentMonth &&
+    //             $exitDate->year == $currentYear
+    //         ) {
+
+    //             // Invalid case
+    //             if ($exitDate->lt($effectiveDate)) {
+    //                 return 0;
+    //             }
+
+    //             $workedDays = $effectiveDate->diffInDays($exitDate) + 1;
+
+    //             return $workedDays >= 10
+    //                 ? 1500000
+    //                 : 0;
+    //         }
+    //     }
+
+    //     /*
+    // |--------------------------------------------------------------------------
+    // | New Joiner / Reporting Changed This Month
+    // |--------------------------------------------------------------------------
+    // */
+
+    //     if (
+    //         $effectiveDate->month == $currentMonth &&
+    //         $effectiveDate->year == $currentYear
+    //     ) {
+
+    //         $remainingDays = $effectiveDate->diffInDays($monthEnd) + 1;
+
+    //         return $remainingDays >= 10
+    //             ? 1500000
+    //             : 0;
+    //     }
+
+    //     /*
+    // |--------------------------------------------------------------------------
+    // | Existing Employee
+    // |--------------------------------------------------------------------------
+    // */
+
+    //     return is_numeric($employee->category)
+    //         ? (float) $employee->category
+    //         : 2500000;
+    // }
+
+
     private function getCallerTarget(Employee $employee): float
     {
-        $today = Carbon::now();
+        $today = Carbon::today();
 
         $currentMonth = $today->month;
         $currentYear  = $today->year;
@@ -420,25 +514,16 @@ class AchievementCalculatorService
             return 0;
         }
 
-        /*
-    |--------------------------------------------------------------------------
-    | Effective Date
-    |--------------------------------------------------------------------------
-    | Reporting Date takes priority.
-    | Otherwise use DOJ.
-    |--------------------------------------------------------------------------
-    */
-
         $joiningDate = Carbon::parse($employee->doj);
 
-        $effectiveDate = !empty($employee->reporting_date)
-            ? Carbon::parse($employee->reporting_date)
-            : $joiningDate;
-
         /*
     |--------------------------------------------------------------------------
-    | EXIT EMPLOYEE (Exited in Current Month)
+    | EXIT EMPLOYEE
     |--------------------------------------------------------------------------
+    |
+    | If employee exited in current month,
+    | calculate target based on actual working days.
+    |
     */
 
         if (
@@ -453,12 +538,11 @@ class AchievementCalculatorService
                 $exitDate->year == $currentYear
             ) {
 
-                // Invalid case
-                if ($exitDate->lt($effectiveDate)) {
+                if ($exitDate->lt($joiningDate)) {
                     return 0;
                 }
 
-                $workedDays = $effectiveDate->diffInDays($exitDate) + 1;
+                $workedDays = $joiningDate->diffInDays($exitDate) + 1;
 
                 return $workedDays >= 10
                     ? 1500000
@@ -468,16 +552,20 @@ class AchievementCalculatorService
 
         /*
     |--------------------------------------------------------------------------
-    | New Joiner / Reporting Changed This Month
+    | NEW JOINER
     |--------------------------------------------------------------------------
+    |
+    | Only DOJ determines whether employee is a new joiner.
+    | Reporting date is ignored.
+    |
     */
 
         if (
-            $effectiveDate->month == $currentMonth &&
-            $effectiveDate->year == $currentYear
+            $joiningDate->month == $currentMonth &&
+            $joiningDate->year == $currentYear
         ) {
 
-            $remainingDays = $effectiveDate->diffInDays($monthEnd) + 1;
+            $remainingDays = $joiningDate->diffInDays($monthEnd) + 1;
 
             return $remainingDays >= 10
                 ? 1500000
@@ -486,8 +574,12 @@ class AchievementCalculatorService
 
         /*
     |--------------------------------------------------------------------------
-    | Existing Employee
+    | EXISTING EMPLOYEE
     |--------------------------------------------------------------------------
+    |
+    | Existing employees always carry full target,
+    | even if reporting manager/TL changes.
+    |
     */
 
         return is_numeric($employee->category)
