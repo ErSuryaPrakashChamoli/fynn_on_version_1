@@ -15,13 +15,19 @@ use App\Support\HierarchyHelper;
 use Filament\Forms\Components\Select;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Actions\Action;
-use App\Services\IncentiveCalculator;
+use App\Services\AchievementCalculatorService;
+
+
 
 
 class TeamsTable
 {
+
+
     public static function configure(Table $table): Table
     {
+
+        $calculator = app(AchievementCalculatorService::class);
         return $table
             ->columns([
 
@@ -29,35 +35,21 @@ class TeamsTable
                     ->searchable()
                     ->sortable(),
 
-                //   TextColumn::make('designation')
-                //     ->badge()
-                //     ->formatStateUsing(fn (string $state): string => match ($state) {
-
-                //         Employee::DESIGNATION_ADMIN => 'Admin',
-                //         Employee::DESIGNATION_CLUSTER => 'Cluster Manager',
-                //         Employee::DESIGNATION_MANAGER => 'Manager',
-                //         Employee::DESIGNATION_TEAM_LEADER => 'Team Leader',
-                //         Employee::DESIGNATION_CALLER => 'Caller',
-                //         default => $state,
-                //     }),
-
-                // TextColumn::make('designation')
-                // ->label('Designation')
-                // ->formatStateUsing(fn ($state) => Employee::designationOptions()[$state] ?? '-')
-                // ->sortable(),
 
                 TextColumn::make('designation')
                     ->label('Position')
                     ->badge()
-                    ->formatStateUsing(fn($state) => match ((string) $state) {
-                        '1' => 'Admin',
-                        '2' => 'Manager',
-                        '3' => 'Team Leader',
-                        '5' => 'Cluster Manager',
-                        '7' => 'Caller',
-                        default => 'Unknown',
+                    ->sortable()
+                    ->formatStateUsing(
+                        fn($state) => Employee::designationOptions()[$state] ?? 'Unknown'
+                    )
+                    ->color(fn($state) => match ((int) $state) {
+                        Employee::DESIGNATION_CLUSTER => 'primary',
+                        Employee::DESIGNATION_MANAGER => 'success',
+                        Employee::DESIGNATION_TEAM_LEADER => 'warning',
+                        Employee::DESIGNATION_CALLER => 'info',
+                        default => 'gray',
                     }),
-
 
                 TextColumn::make('superviser.emp_name')
                     ->label('Team Leader')
@@ -71,45 +63,96 @@ class TeamsTable
                     ->default('-'),
 
                 TextColumn::make('target_category')
-                    ->label('Target Category')
-                    ->state(fn($record) => IncentiveCalculator::calculate($record)['target_category'])
-                    ->badge()
-                    ->color('info'),
+                    ->label('Category')
+                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+
+                        return $performanceCache[$record->id]['target_category'];
+                    }),
 
                 TextColumn::make('target')
                     ->label('Target')
-                    ->state(fn($record) => IncentiveCalculator::calculate($record)['target'])
-                    ->money('INR', divideBy: 100),
+                    ->alignEnd()
+                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+
+                        return $performanceCache[$record->id]['target'];
+                    })
+                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null),
 
                 TextColumn::make('actual')
                     ->label('Actual')
-                    ->state(fn($record) => IncentiveCalculator::calculate($record)['actual'])
-                    ->money('INR', divideBy: 100),
+                    ->alignEnd()
+                    ->color('success')
+                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
 
-                TextColumn::make('cashback')
-                    ->label('Cashback')
-                    ->state(fn($record) => IncentiveCalculator::calculate($record)['cashback'])
-                    ->money('INR', divideBy: 100),
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
 
-                TextColumn::make('subvention')
-                    ->label('Subvention')
-                    ->state(fn($record) => IncentiveCalculator::calculate($record)['subvention'])
-                    ->money('INR', divideBy: 100),
-
-                TextColumn::make('docking')
-                    ->label('Docking')
-                    ->state(fn($record) => IncentiveCalculator::calculate($record)['docking'])
-                    ->money('INR', divideBy: 100),
+                        return $performanceCache[$record->id]['actual'];
+                    })
+                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null),
 
                 TextColumn::make('count_achievement')
                     ->label('Count Achievement')
-                    ->state(fn($record) => IncentiveCalculator::calculate($record)['count_achievement'])
-                    ->money('INR', divideBy: 100),
+                    ->alignEnd()
+                    ->weight('bold')
+                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+
+                        return $performanceCache[$record->id]['count_achievement'];
+                    })
+                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null),
 
                 TextColumn::make('incentive')
                     ->label('Incentive')
-                    ->state(fn($record) => IncentiveCalculator::calculate($record)['incentive'])
-                    ->money('INR', divideBy: 100),
+                    ->badge()
+                    ->color('success')
+                    ->alignEnd()
+                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+
+                        return $performanceCache[$record->id]['incentive'];
+                    })
+                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null),
+
+                TextColumn::make('cashback')
+                    ->label('Cashback')
+                    ->alignEnd()
+                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+
+                        return $performanceCache[$record->id]['cashback'];
+                    })
+                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null),
+
+                TextColumn::make('subvention')
+                    ->label('Subvention')
+                    ->alignEnd()
+                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+
+                        return $performanceCache[$record->id]['subvention'];
+                    })
+                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null),
+
+                TextColumn::make('docking')
+                    ->label('Docking')
+                    ->alignEnd()
+                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+
+                        return $performanceCache[$record->id]['docking'];
+                    })
+                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null),
+
+
                 //
             ])
             ->filters([
