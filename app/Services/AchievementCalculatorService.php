@@ -5,55 +5,74 @@ namespace App\Services;
 use App\Models\Customer;
 use App\Models\Employee;
 use Carbon\Carbon;
+use App\Services\HierarchyService;
+use App\Support\HierarchyHelper;
 
 class AchievementCalculatorService
 {
+    // public function getCountAchievement(Employee $employee): float
+    // {
+    //     $teamLeaderIds = Employee::where('manager_id', $employee->id)
+    //         ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+    //         ->pluck('id')
+    //         ->toArray();
+
+    //     $callerIds = Employee::whereIn('superviser_id', $teamLeaderIds)
+    //         ->where('designation', Employee::DESIGNATION_CALLER)
+    //         ->pluck('id')
+    //         ->toArray();
+
+    //     $directCallers = Employee::where('manager_id', $employee->id)
+    //         ->where('designation', Employee::DESIGNATION_CALLER)
+    //         ->pluck('id')
+    //         ->toArray();
+
+    //     $allSubordinateIds = array_unique(array_merge(
+    //         $teamLeaderIds,
+    //         $callerIds,
+    //         $directCallers
+    //     ));
+
+    //     $achievement = Customer::whereIn('employee_id', $allSubordinateIds)
+    //         ->whereMonth('created_at', now()->month)
+    //         ->whereYear('created_at', now()->year)
+    //         ->sum('sanctioned_loan_amount');
+
+    //     $cashback = Customer::whereIn('employee_id', $allSubordinateIds)
+    //         ->whereMonth('created_at', now()->month)
+    //         ->whereYear('created_at', now()->year)
+    //         ->sum('cashback');
+
+    //     $subvention = Customer::whereIn('employee_id', $allSubordinateIds)
+    //         ->whereMonth('created_at', now()->month)
+    //         ->whereYear('created_at', now()->year)
+    //         ->sum('subvention');
+
+    //     $docking = Customer::where('employee_id', $employee->id)
+    //         ->whereMonth('created_at', now()->month)
+    //         ->whereYear('created_at', now()->year)
+    //         ->sum('docking');
+
+    //     return $achievement - ((($cashback + $subvention + $docking) / 2) * 100);
+    // }
+
+
     public function getCountAchievement(Employee $employee): float
     {
-        $teamLeaderIds = Employee::where('manager_id', $employee->id)
-            ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-            ->pluck('id')
-            ->toArray();
+        // $employeeIds = HierarchyService::subordinateEmployeeIds($employee);
+        $employeeIds = HierarchyHelper::subordinateIds($employee);
 
-        $callerIds = Employee::whereIn('superviser_id', $teamLeaderIds)
-            ->where('designation', Employee::DESIGNATION_CALLER)
-            ->pluck('id')
-            ->toArray();
-
-        $directCallers = Employee::where('manager_id', $employee->id)
-            ->where('designation', Employee::DESIGNATION_CALLER)
-            ->pluck('id')
-            ->toArray();
-
-        $allSubordinateIds = array_unique(array_merge(
-            $teamLeaderIds,
-            $callerIds,
-            $directCallers
-        ));
-
-        $achievement = Customer::whereIn('employee_id', $allSubordinateIds)
+        $customers = Customer::whereIn('employee_id', $employeeIds)
             ->whereMonth('created_at', now()->month)
-            ->whereYear('created_at', now()->year)
-            ->sum('sanctioned_loan_amount');
+            ->whereYear('created_at', now()->year);
 
-        $cashback = Customer::whereIn('employee_id', $allSubordinateIds)
-            ->whereMonth('created_at', now()->month)
-            ->whereYear('created_at', now()->year)
-            ->sum('cashback');
-
-        $subvention = Customer::whereIn('employee_id', $allSubordinateIds)
-            ->whereMonth('created_at', now()->month)
-            ->whereYear('created_at', now()->year)
-            ->sum('subvention');
-
-        $docking = Customer::where('employee_id', $employee->id)
-            ->whereMonth('created_at', now()->month)
-            ->whereYear('created_at', now()->year)
-            ->sum('docking');
+        $achievement = (float) $customers->sum('sanctioned_loan_amount');
+        $cashback = (float) $customers->sum('cashback');
+        $subvention = (float) $customers->sum('subvention');
+        $docking = (float) $customers->sum('docking');
 
         return $achievement - ((($cashback + $subvention + $docking) / 2) * 100);
     }
-
     public function getTarget(Employee $employee): float
     {
         return is_numeric($employee->category)
@@ -166,5 +185,98 @@ class AchievementCalculatorService
 
             default => 0,
         };
+    }
+
+
+    public function getPerformance(Employee $employee): array
+    {
+        // $employeeIds = HierarchyService::subordinateEmployeeIds($employee);
+        $employeeIds = HierarchyHelper::subordinateIds($employee);
+
+        $customers = Customer::whereIn('employee_id', $employeeIds)
+            // ->where('employee_id', $employee->id)
+            ->whereMonth('created_at', now()->month)
+            ->whereYear('created_at', now()->year);
+
+        // $actual = (float) $customers->sum('sanctioned_loan_amount');
+        // $cashback = (float) $customers->sum('cashback');
+        // $subvention = (float) $customers->sum('subvention');
+        // $docking = (float) $customers->sum('docking');
+
+
+        $totals = $customers
+            ->selectRaw("
+        SUM(sanctioned_loan_amount) as actual,
+        SUM(cashback) as cashback,
+        SUM(subvention) as subvention,
+        SUM(docking) as docking
+    ")
+            ->first();
+
+
+        $countAchievement = $this->getCountAchievement($employee);
+
+
+        return [
+            'target_category'   => $employee->category,
+            'target'            => $this->getTarget($employee),
+            'actual'            => (float) $totals->actual,
+            'cashback'          => (float) $totals->cashback,
+            'subvention'        => (float) $totals->subvention,
+            'docking'           => (float) $totals->docking,
+            'count_achievement' => $countAchievement,
+            'percentage'        => $this->getPercentage($employee),
+            'incentive'         => $this->getIncentive($countAchievement),
+        ];
+
+
+
+        // $countAchievement = $actual - ((($cashback + $subvention + $docking) / 2) * 100);
+
+        // $target = $this->getTarget($employee);
+
+        // return [
+        //     'target_category' => 'Monthly',
+        //     'target' => $target,
+        //     'actual' => $actual,
+        //     'cashback' => $cashback,
+        //     'subvention' => $subvention,
+        //     'docking' => $docking,
+        //     'count_achievement' => $countAchievement,
+        //     'percentage' => $target > 0
+        //         ? round(($countAchievement / $target) * 100, 2)
+        //         : 0,
+        //     'incentive' => $this->getIncentive($countAchievement),
+        // ];
+    }
+
+
+    public function getIncentive(float $countAchievement): float
+    {
+        $slabs = [
+            2500000 => 4000,
+            3000000 => 5000,
+            3500000 => 6000,
+            4000000 => 7000,
+            4500000 => 8000,
+            5000000 => 9000,
+            5500000 => 10000,
+            6000000 => 12000,
+            7000000 => 15000,
+            8000000 => 20000,
+            9000000 => 30000,
+            10000000 => 50000,
+            11000000 => 70000,
+        ];
+
+        $incentive = 0;
+
+        foreach ($slabs as $target => $amount) {
+            if ($countAchievement >= $target) {
+                $incentive = $amount;
+            }
+        }
+
+        return $incentive;
     }
 }

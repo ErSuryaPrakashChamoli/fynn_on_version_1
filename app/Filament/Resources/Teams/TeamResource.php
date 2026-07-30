@@ -17,12 +17,14 @@ use Filament\Tables\Table;
 use App\Models\Employee;
 use App\Support\HierarchyHelper;
 use Illuminate\Database\Eloquent\Builder;
+use App\Services\AchievementCalculatorService;
+
 
 
 
 class TeamResource extends Resource
 {
-   
+
     protected static ?string $model = Employee::class;
 
     protected static ?string $navigationLabel = 'Teams';
@@ -42,6 +44,11 @@ class TeamResource extends Resource
 
     public static function table(Table $table): Table
     {
+
+        $calculator = app(AchievementCalculatorService::class);
+
+        $performanceCache = [];
+
         return TeamsTable::configure($table);
     }
 
@@ -70,7 +77,8 @@ class TeamResource extends Resource
     //         );
     // }
 
-    public static function getEloquentQuery(): Builder{
+    public static function getEloquentQuery(): Builder
+    {
         // dd("called");
         return HierarchyHelper::directReportees(auth()->user());
     }
@@ -111,5 +119,4 @@ class TeamResource extends Resource
             Employee::DESIGNATION_TEAM_LEADER,
         ]);
     }
-
 }

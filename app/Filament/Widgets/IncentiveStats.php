@@ -30,10 +30,10 @@ class IncentiveStats extends StatsOverviewWidget
 
 
         if (! $user->hasRole('Admin') && ! $employee) {
-                return [
-                    Stat::make('Incentive', 'Employee Not Found'),
-                ];
-            }
+            return [
+                Stat::make('Incentive', 'Employee Not Found'),
+            ];
+        }
 
         // $query = Customer::query()
         //         ->whereMonth('created_at', now()->month)
@@ -45,157 +45,154 @@ class IncentiveStats extends StatsOverviewWidget
 
 
 
-// $query = Customer::query()
-//     ->whereMonth('created_at', now()->month)
-//     ->whereYear('created_at', now()->year);
+        // $query = Customer::query()
+        //     ->whereMonth('created_at', now()->month)
+        //     ->whereYear('created_at', now()->year);
 
 
-            // $employeeIds = $this->getEmployeeIds($employee, $user);
+        // $employeeIds = $this->getEmployeeIds($employee, $user);
 
 
-            if ($user->hasRole('Admin') || $user->hasRole('Cluster Manager')) {
+        if ($user->hasRole('Admin') || $user->hasRole('Cluster Manager')) {
 
-    $employeeIds = Employee::pluck('id');
+            $employeeIds = Employee::pluck('id');
+        } else {
 
-} else {
+            if (! $employee) {
+                return [
+                    Stat::make('Incentive', 'Employee Not Found'),
+                ];
+            }
 
-    if (! $employee) {
-        return [
-            Stat::make('Incentive', 'Employee Not Found'),
-        ];
-    }
+            $employeeIds = $this->getEmployeeIds($employee, $user);
+        }
 
-    $employeeIds = $this->getEmployeeIds($employee, $user);
-}
-
-                $query = Customer::whereIn('employee_id', $employeeIds)
-                ->whereMonth('created_at', now()->month)
-                ->whereYear('created_at', now()->year);
-
-
-
-            $actualAchievement = (clone $query)->sum('sanctioned_loan_amount');
-            $cashback          = (clone $query)->sum('cashback');
-            $subvention        = (clone $query)->sum('subvention');
-            $docking           = (clone $query)->sum('docking');
+        $query = Customer::whereIn('employee_id', $employeeIds)
+            ->whereMonth('created_at', now()->month)
+            ->whereYear('created_at', now()->year);
 
 
 
+        $actualAchievement = (clone $query)->sum('sanctioned_loan_amount');
+        $cashback          = (clone $query)->sum('cashback');
+        $subvention        = (clone $query)->sum('subvention');
+        $docking           = (clone $query)->sum('docking');
 
 
-            $countAchievement = $actualAchievement
+
+
+
+        $countAchievement = $actualAchievement
             - ((($cashback + $subvention + $docking) / 2) * 100);
 
 
-                $slabs = $this->getSlabs();
+        $slabs = $this->getSlabs();
 
-                $currentIncentive = 0;
-                $nextVolume = null;
-                $nextIncentive = null;
+        $currentIncentive = 0;
+        $nextVolume = null;
+        $nextIncentive = null;
 
-                foreach ($slabs as $volume => $incentive) {
+        foreach ($slabs as $volume => $incentive) {
 
-                    if ($countAchievement >= $volume) {
-                        $currentIncentive = $incentive;
-                    } else {
+            if ($countAchievement >= $volume) {
+                $currentIncentive = $incentive;
+            } else {
 
-                        $nextVolume = $volume;
-                        $nextIncentive = $incentive;
+                $nextVolume = $volume;
+                $nextIncentive = $incentive;
 
-                        break;
-                    }
-                }
+                break;
+            }
+        }
 
-$indianCurrencyFormatter = new NumberFormatter('en_IN', NumberFormatter::CURRENCY);
-$indianCurrencyFormatter->setAttribute(NumberFormatter::MAX_FRACTION_DIGITS, 0);
+        $indianCurrencyFormatter = new NumberFormatter('en_IN', NumberFormatter::CURRENCY);
+        $indianCurrencyFormatter->setAttribute(NumberFormatter::MAX_FRACTION_DIGITS, 0);
 
-$stats = [];
+        $stats = [];
 
-$stats[] = Stat::make(
-    '💰 Cashback',
-    $indianCurrencyFormatter->formatCurrency($cashback, 'INR')
-)
-    ->color('success')
-    ->description('Total Cashback Deduction')
-    ->descriptionIcon('heroicon-m-banknotes')
-    ->icon('heroicon-o-currency-rupee');
+        $stats[] = Stat::make(
+            '💰 Cashback',
+            $indianCurrencyFormatter->formatCurrency($cashback, 'INR')
+        )
+            ->color('success')
+            ->description('Total Cashback Deduction')
+            ->descriptionIcon('heroicon-m-banknotes')
+            ->icon('heroicon-o-currency-rupee');
 
-$stats[] = Stat::make(
-    '🏦 Subvention',
-    $indianCurrencyFormatter->formatCurrency($subvention, 'INR')
-)
-    ->color('warning')
-    ->description('Total Subvention')
-    ->descriptionIcon('heroicon-m-building-library')
-    ->icon('heroicon-o-building-library');
+        $stats[] = Stat::make(
+            '🏦 Subvention',
+            $indianCurrencyFormatter->formatCurrency($subvention, 'INR')
+        )
+            ->color('warning')
+            ->description('Total Subvention')
+            ->descriptionIcon('heroicon-m-building-library')
+            ->icon('heroicon-o-building-library');
 
-$stats[] = Stat::make(
-    '⚓ Docking',
-    $indianCurrencyFormatter->formatCurrency($docking, 'INR')
-)
-    ->color('danger')
-    ->description('Docking Charges')
-    ->descriptionIcon('heroicon-m-arrow-down-circle')
-    ->icon('heroicon-o-arrow-down-circle');
+        $stats[] = Stat::make(
+            '⚓ Docking',
+            $indianCurrencyFormatter->formatCurrency($docking, 'INR')
+        )
+            ->color('danger')
+            ->description('Docking Charges')
+            ->descriptionIcon('heroicon-m-arrow-down-circle')
+            ->icon('heroicon-o-arrow-down-circle');
 
-if (! $user->hasRole('Manager')) {
+        if (! $user->hasRole('Manager')) {
 
-    $stats[] = Stat::make(
-        '🎯 Earned Incentive',
-        $indianCurrencyFormatter->formatCurrency($currentIncentive, 'INR')
-    )
-        ->color('success')
-         ->descriptionIcon('heroicon-m-trophy')
-          ->icon('heroicon-o-trophy')
-        ->description('Current Incentive Earned');
-}
+            $stats[] = Stat::make(
+                '🎯 Earned Incentive',
+                $indianCurrencyFormatter->formatCurrency($currentIncentive, 'INR')
+            )
+                ->color('success')
+                ->descriptionIcon('heroicon-m-trophy')
+                ->icon('heroicon-o-trophy')
+                ->description('Current Incentive Earned');
+        }
 
-// $stats[] = Stat::make(
-//     '🎯 Earned Incentive',
-//     $indianCurrencyFormatter->formatCurrency($currentIncentive, 'INR')
-// )
-//     ->color('success')
-//     ->description('Current Incentive Earned')
-//     ->descriptionIcon('heroicon-m-trophy')
-//     ->icon('heroicon-o-trophy');
+        // $stats[] = Stat::make(
+        //     '🎯 Earned Incentive',
+        //     $indianCurrencyFormatter->formatCurrency($currentIncentive, 'INR')
+        // )
+        //     ->color('success')
+        //     ->description('Current Incentive Earned')
+        //     ->descriptionIcon('heroicon-m-trophy')
+        //     ->icon('heroicon-o-trophy');
 
-/*
+        /*
 |--------------------------------------------------------------------------
 | ONLY CALLER CAN SEE NEXT SLAB
 |--------------------------------------------------------------------------
 */
 
-if ($user->hasRole('Caller')) {
+        if ($user->hasRole('Caller')) {
 
-    $stats[] = Stat::make(
-        '📈 Next Slab',
-        $nextVolume
-            ? $indianCurrencyFormatter->formatCurrency($nextVolume, 'INR')
-            : '🏆 Highest Slab'
-    )
-        ->color('primary')
-        ->description('Next Incentive Target')
-        ->descriptionIcon('heroicon-m-arrow-trending-up')
-        ->icon('heroicon-o-chart-bar');
-
-    $stats[] = Stat::make(
-        '🚀 Unlock Next Slab',
-        $nextVolume
-            ? $indianCurrencyFormatter->formatCurrency(
-                max(0, $nextVolume - $countAchievement),
-                'INR'
+            $stats[] = Stat::make(
+                '📈 Next Slab',
+                $nextVolume
+                    ? $indianCurrencyFormatter->formatCurrency($nextVolume, 'INR')
+                    : '🏆 Highest Slab'
             )
-            : $indianCurrencyFormatter->formatCurrency(0, 'INR')
-    )
-        ->color('warning')
-        ->description('Remaining Achievement')
-        ->descriptionIcon('heroicon-m-fire')
-        ->icon('heroicon-o-rocket-launch');
-}
+                ->color('primary')
+                ->description('Next Incentive Target')
+                ->descriptionIcon('heroicon-m-arrow-trending-up')
+                ->icon('heroicon-o-chart-bar');
 
-return $stats;
+            $stats[] = Stat::make(
+                '🚀 Unlock Next Slab',
+                $nextVolume
+                    ? $indianCurrencyFormatter->formatCurrency(
+                        max(0, $nextVolume - $countAchievement),
+                        'INR'
+                    )
+                    : $indianCurrencyFormatter->formatCurrency(0, 'INR')
+            )
+                ->color('warning')
+                ->description('Remaining Achievement')
+                ->descriptionIcon('heroicon-m-fire')
+                ->icon('heroicon-o-rocket-launch');
+        }
 
-
+        return $stats;
     }
 
     private function getSlabs(): array
@@ -227,47 +224,47 @@ return $stats;
     public static function canView(): bool
     {
         // return ! auth()->user()->hasRole('Admin');
-         return true;
+        return true;
     }
 
 
-protected function getEmployeeIds(?Employee $employee, $user)
-{
+    protected function getEmployeeIds(?Employee $employee, $user)
+    {
 
         if (! $employee) {
             return collect();
         }
 
-    if ($user->hasRole('Admin')) {
-        return Employee::pluck('id');
+        if ($user->hasRole('Admin')) {
+            return Employee::pluck('id');
+        }
+
+        if ($user->hasRole('Cluster Manager')) {
+            return Employee::pluck('id');
+        }
+
+        if ($user->hasRole('Manager')) {
+
+            $ids = collect([$employee->id]);
+
+            $teamLeaders = Employee::where('manager_id', $employee->id)->pluck('id');
+
+            $ids = $ids->merge($teamLeaders);
+
+            $callers = Employee::whereIn('superviser_id', $teamLeaders)->pluck('id');
+
+            return $ids->merge($callers)->unique();
+        }
+
+        if ($user->hasRole('Team Leader')) {
+
+            $ids = collect([$employee->id]);
+
+            $callers = Employee::where('superviser_id', $employee->id)->pluck('id');
+
+            return $ids->merge($callers)->unique();
+        }
+
+        return collect([$employee->id]);
     }
-
-    if ($user->hasRole('Cluster Manager')) {
-        return Employee::pluck('id');
-    }
-
-    if ($user->hasRole('Manager')) {
-
-        $ids = collect([$employee->id]);
-
-        $teamLeaders = Employee::where('manager_id', $employee->id)->pluck('id');
-
-        $ids = $ids->merge($teamLeaders);
-
-        $callers = Employee::whereIn('superviser_id', $teamLeaders)->pluck('id');
-
-        return $ids->merge($callers)->unique();
-    }
-
-    if ($user->hasRole('Team Leader')) {
-
-        $ids = collect([$employee->id]);
-
-        $callers = Employee::where('superviser_id', $employee->id)->pluck('id');
-
-        return $ids->merge($callers)->unique();
-    }
-
-    return collect([$employee->id]);
-}
 }

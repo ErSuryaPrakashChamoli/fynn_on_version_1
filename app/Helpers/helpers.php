@@ -21,21 +21,6 @@ function indianCurrencyFormat($number): string
 }
 
 
- function getEmployeeIds(): Collection
-{
-    $employee = auth()->user()->employee;
 
-    if (auth()->user()->hasRole('Admin')) {
-        return Employee::pluck('id');
-    }
 
-    if ($employee->designation === 'Manager') {
-        return Employee::where('manager_id', $employee->id)->pluck('id');
-    }
 
-    if ($employee->designation === 'Team Leader') {
-        return Employee::where('superviser_id', $employee->id)->pluck('id');
-    }
-
-    return collect([$employee->id]);
-}
