@@ -509,7 +509,10 @@ class TargetStats extends StatsOverviewWidget
     |
     */
 
-        if (!empty($employee->exit_date)) {
+        if ( $employee->exit_status === 'yes' &&
+              !empty($employee->exit_date)) {
+
+
 
             $exitDate = Carbon::parse($employee->exit_date);
 
@@ -518,7 +521,11 @@ class TargetStats extends StatsOverviewWidget
                 $exitDate->year == $currentYear
             ) {
 
-                $workedDays = $effectiveDate->diffInDays($exitDate) + 1;
+            if ($exitDate->lt($effectiveDate)) {
+                return 0;
+            }
+
+          $workedDays = $effectiveDate->diffInDays($exitDate) + 1;
 
                 return $workedDays >= 10
                     ? 1500000
