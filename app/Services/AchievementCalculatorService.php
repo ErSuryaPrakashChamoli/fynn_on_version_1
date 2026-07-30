@@ -73,12 +73,133 @@ class AchievementCalculatorService
 
         return $achievement - ((($cashback + $subvention + $docking) / 2) * 100);
     }
+
+    // public function getTarget(Employee $employee): float
+    // {
+    //     return is_numeric($employee->category)
+    //         ? (float) $employee->category
+    //         : 2500000;
+    // }
+
+
     public function getTarget(Employee $employee): float
-    {
-        return is_numeric($employee->category)
-            ? (float) $employee->category
-            : 2500000;
+{
+    /*
+    |--------------------------------------------------------------------------
+    | Caller
+    |--------------------------------------------------------------------------
+    */
+
+    if ($employee->designation === Employee::DESIGNATION_CALLER) {
+        return $this->getCallerTarget($employee);
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Team Leader
+    |--------------------------------------------------------------------------
+    */
+
+    if ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
+
+        $callerIds = HierarchyHelper::callerIds($employee);
+
+        $target = Employee::whereIn('id', $callerIds)
+            ->get()
+            ->sum(fn (Employee $caller) => $this->getCallerTarget($caller));
+
+        if ($callerIds->count() < 3) {
+            $target += 3000000;
+        }
+
+        return $target;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Manager
+    |--------------------------------------------------------------------------
+    */
+
+    if ($employee->designation === Employee::DESIGNATION_MANAGER) {
+
+        $target = Employee::whereIn(
+            'id',
+            HierarchyHelper::callerIds($employee)
+        )
+        ->get()
+        ->sum(fn (Employee $caller) => $this->getCallerTarget($caller));
+
+        $teamLeaderIds = Employee::where('manager_id', $employee->id)
+            ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+            ->pluck('id');
+
+        foreach ($teamLeaderIds as $tlId) {
+
+            $callerCount = Employee::where('superviser_id', $tlId)
+                ->where('designation', Employee::DESIGNATION_CALLER)
+                ->count();
+
+            if ($callerCount < 3) {
+                $target += 3000000;
+            }
+        }
+
+        return $target;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Cluster Manager
+    |--------------------------------------------------------------------------
+    */
+
+    if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
+
+        $target = Employee::whereIn(
+            'id',
+            HierarchyHelper::callerIds($employee)
+        )
+        ->get()
+        ->sum(fn (Employee $caller) => $this->getCallerTarget($caller));
+
+        $managerIds = Employee::where('cluster_id', $employee->id)
+            ->where('designation', Employee::DESIGNATION_MANAGER)
+            ->pluck('id');
+
+        $teamLeaderIds = Employee::whereIn('manager_id', $managerIds)
+            ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+            ->pluck('id');
+
+        foreach ($teamLeaderIds as $tlId) {
+
+            $callerCount = Employee::where('superviser_id', $tlId)
+                ->where('designation', Employee::DESIGNATION_CALLER)
+                ->count();
+
+            if ($callerCount < 3) {
+                $target += 3000000;
+            }
+        }
+
+        return $target;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Admin
+    |--------------------------------------------------------------------------
+    */
+
+    if ($employee->designation === Employee::DESIGNATION_ADMIN) {
+
+        return Employee::where('designation', Employee::DESIGNATION_CALLER)
+            ->get()
+            ->sum(fn (Employee $caller) => $this->getCallerTarget($caller));
+    }
+
+    return 0;
+}
 
     public function getPercentage(Employee $employee): float
     {
@@ -278,5 +399,112 @@ class AchievementCalculatorService
         }
 
         return $incentive;
+    }
+
+
+
+    private function getCallerTarget(Employee $employee): float
+    {
+
+
+        $today = Carbon::now();
+
+        $currentMonth = $today->month;
+        $currentYear  = $today->year;
+
+        $monthStart = $today->copy()->startOfMonth();
+        $monthEnd   = $today->copy()->endOfMonth();
+
+        /*
+            |--------------------------------------------------------------------------
+            | EXIT EMPLOYEE (ONLY FOR EXITS IN CURRENT MONTH)
+            |--------------------------------------------------------------------------
+            */
+
+        if (! empty($employee->exit_date)) {
+
+            $exitDate = Carbon::parse($employee->exit_date);
+
+            if (
+                $exitDate->month == $currentMonth &&
+                $exitDate->year == $currentYear
+            ) {
+
+                $workedDays = $monthStart->diffInDays($exitDate) + 1;
+
+                return $workedDays >= 10
+                    ? 1500000
+                    : 0;
+            }
+        }
+
+        /*
+            |--------------------------------------------------------------------------
+            | NEW JOINER (ONLY IF JOINED THIS MONTH)
+            |--------------------------------------------------------------------------
+            */
+
+        // if (! empty($employee->reporting_date)) {
+
+
+        //     $reportingDate = Carbon::parse($employee->reporting_date);
+
+        //     if (
+        //         $reportingDate->month == $currentMonth &&
+        //         $reportingDate->year == $currentYear
+        //     ) {
+
+        //         $remainingDays = $reportingDate->diffInDays($monthEnd) + 1;
+
+        //         return $remainingDays >= 10
+        //             ? 1500000
+        //             : 0;
+        //     }
+        // }
+
+
+        if (! empty($employee->doj)) {
+
+            $joiningDate = Carbon::parse($employee->doj);
+
+            if (
+                $joiningDate->month == $currentMonth &&
+                $joiningDate->year == $currentYear
+            ) {
+
+                /*
+        |--------------------------------------------------------------------------
+        | New Joiner
+        | Reporting date decides when the employee starts reporting.
+        |--------------------------------------------------------------------------
+        */
+
+                $effectiveDate = ! empty($employee->reporting_date)
+                    ? Carbon::parse($employee->reporting_date)
+                    : $joiningDate;
+
+                $remainingDays = $effectiveDate->diffInDays($monthEnd) + 1;
+
+                return $remainingDays >= 10
+                    ? 1500000
+                    : 0;
+            }
+        }
+
+        /*
+            |--------------------------------------------------------------------------
+            | EXISTING EMPLOYEE
+            |--------------------------------------------------------------------------
+            |
+            | Joined before current month.
+            | Always take category target.
+            | Ignore reporting_date.
+            | Ignore reporting history.
+            |
+            */
+
+        return is_numeric($employee->category)
+            ? (float) $employee->category
+            : 2500000;
     }
 }
