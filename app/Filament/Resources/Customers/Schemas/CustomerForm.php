@@ -296,6 +296,10 @@ class CustomerForm
 
                 // STAGE 1: Journey Requirements (Always Visible for Admin/Manager)
                 Section::make('Journey Configuration')
+                    ->visible(
+                        fn() =>
+                        auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
+                    )
                     ->schema([
                         TextInput::make('company_category')
                             ->label('Company Name')
