@@ -34,6 +34,7 @@ use Filament\Forms\Components\Component;
 
 
 use Filament\Schemas\Components\Utilities\Set;
+use App\Services\CustomerJourneyService;
 
 
 
@@ -563,36 +564,37 @@ class CustomerForm
                                             // FIX: $record ke sath safe evaluation layer pass karein
                                             ->action(function (?\Illuminate\Database\Eloquent\Model $record, callable $set) {
 
+                                                $record = CustomerJourneyService::moveToUnderwriting($record);
 
-                                                if (! $record) {
-                                                    // Sirf UI state change karein agar data abhi pehli baar create ho raha hai
-                                                    // $set('journey_status', 'underwriting');
+                                                $set('journey_status', $record->journey_status);
+                                                $set('underwriting_status', $record->underwriting_status);
 
-                                                    // $set('documentation_status', 'complete');
-                                                    $set('journey_status', 'underwriting');
-                                                    // $set('underwriting_status', 'in_process');
+                                                // if (! $record) {
 
-                                                    return;
-                                                }
+                                                //     $set('journey_status', 'underwriting');
+
+
+                                                //     return;
+                                                // }
 
                                                 // $record->update(['journey_status' => 'underwriting']);
                                                 // $set('journey_status', 'underwriting');
 
 
                                                 // $set('documentation_status', 'complete');
-                                                $set('journey_status', 'underwriting');
+                                                // $set('journey_status', 'underwriting');
 
                                                 // // $set('documentation_status', 'complete');
                                                 // $set('journey_status', 'underwriting');
                                                 // $set('underwriting_status', 'in_process');
 
 
-                                                $history = new \App\Models\CustomerStageHistory();
-                                                $history->customer_id  = $record->id;
-                                                $history->stage_name   = 'Step 1: SFL Pipeline Closed';
-                                                $history->status_value = 'Promoted to Underwriting';
-                                                $history->user_id      = auth()->id();
-                                                $history->save();
+                                                // $history = new \App\Models\CustomerStageHistory();
+                                                // $history->customer_id  = $record->id;
+                                                // $history->stage_name   = 'Step 1: SFL Pipeline Closed';
+                                                // $history->status_value = 'Promoted to Underwriting';
+                                                // $history->user_id      = auth()->id();
+                                                // $history->save();
                                             })
                                     ),
 
@@ -755,28 +757,13 @@ class CustomerForm
                                             ->requiresConfirmation()
                                             // FIX 2: Added $set utility layer
                                             ->action(function (?\Illuminate\Database\Eloquent\Model $record, callable $set) {
-                                                // dd($record);
-
-                                                $record->update([
-                                                    'journey_status' => 'approved',
-                                                ]);
-
-                                                $set('journey_status', 'approved');
 
                                                 if (! $record) {
-                                                    $set('journey_status', 'approved');
-                                                    // $set('underwriting_status', 'approved');
-                                                    // $set('journey_status', 'approved');
                                                     return;
                                                 }
-
-                                                // $set('journey_status', 'approved');
-                                                CustomerStageHistory::create([
-                                                    'customer_id' => $record->id,
-                                                    'stage_name' => 'Underwriting Stage Analysis',
-                                                    'status_value' => 'Underwriting Approved (Sent to Stage 3)',
-                                                    'user_id' => auth()->id()
-                                                ]);
+                                                $record = CustomerJourneyService::approve($record);
+                                                $set('journey_status', $record->journey_status);
+                                                $set('underwriting_status', $record->underwriting_status);
                                             }),
                                     ]),
                             ])
@@ -966,14 +953,8 @@ class CustomerForm
                                             ->color('success')
                                             ->requiresConfirmation()
                                             ->action(function (?\Illuminate\Database\Eloquent\Model $record, callable $set,  Get $get) {
-                                                // ->action(function (array $data, callable $set ,  Get $get) {
-                                                // $record->update([
-                                                //     'journey_status' => 'sanctioned',
-                                                // ]);
 
-                                                $set('journey_status', 'sanctioned');
 
-                                                // dd($record);
                                                 if (! $record) {
                                                     $set('journey_status', 'sanctioned');
                                                     // $set('disbursal_finalized', true);
@@ -981,14 +962,12 @@ class CustomerForm
                                                     return;
                                                 }
 
+                                                $record = CustomerJourneyService::sanction($record);
+                                                $record = CustomerJourneyService::finalize($record);
+                                                $set('journey_status', $record->journey_status);
 
+                                            //    $set('disbursal_finalized', true);
 
-                                                CustomerStageHistory::create([
-                                                    'customer_id'  => $record->id,
-                                                    'stage_name'   => 'Step 4: Disbursal Completed',
-                                                    'status_value' => 'Disbursal Finalized',
-                                                    'user_id'      => auth()->id(),
-                                                ]);
                                             })
                                     ),
                             ])
@@ -1139,12 +1118,12 @@ class CustomerForm
                                                     ->success()
                                                     ->send();
 
-                                                CustomerStageHistory::create([
-                                                    'customer_id'  => $record->id,
-                                                    'stage_name'   => 'Disbursal Documents',
-                                                    'status_value' => $alreadySubmitted ? 'Documents Updated' : 'Documents Submitted',
-                                                    'user_id'      => auth()->id(),
-                                                ]);
+                                                // CustomerStageHistory::create([
+                                                //     'customer_id'  => $record->id,
+                                                //     'stage_name'   => 'Disbursal Documents',
+                                                //     'status_value' => $alreadySubmitted ? 'Documents Updated' : 'Documents Submitted',
+                                                //     'user_id'      => auth()->id(),
+                                                // ]);
                                             })
                                     ),
                             ])

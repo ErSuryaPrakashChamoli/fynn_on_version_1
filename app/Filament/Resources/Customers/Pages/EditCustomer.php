@@ -160,17 +160,17 @@ class EditCustomer extends EditRecord
          * STAGE HISTORY
          * ==========================================
          */
-        $newStatus = strtolower($data['journey_status'] ?? $oldStatus);
+        // $newStatus = strtolower($data['journey_status'] ?? $oldStatus);
 
-        if ($oldStatus !== $newStatus) {
+        // if ($oldStatus !== $newStatus) {
 
-            CustomerStageHistory::create([
-                'customer_id'  => $this->getRecord()->id,
-                'stage_name'   => ucfirst($oldStatus) . ' Stage',
-                'status_value' => 'Moved to ' . ucfirst(str_replace('_', ' ', $newStatus)),
-                'user_id'      => auth()->id(),
-            ]);
-        }
+        //     CustomerStageHistory::create([
+        //         'customer_id'  => $this->getRecord()->id,
+        //         'stage_name'   => ucfirst($oldStatus) . ' Stage',
+        //         'status_value' => 'Moved to ' . ucfirst(str_replace('_', ' ', $newStatus)),
+        //         'user_id'      => auth()->id(),
+        //     ]);
+        // }
 
         /**
          * ==========================================

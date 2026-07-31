@@ -5,3 +5,32 @@
 
 @source '../../../../resources/views/components';
 @source '../../../../resources/views/livewire';
+
+/* =========================================
+   Custom Filament Styles
+========================================= */
+
+/* Bottom form actions */
+
+.fi-ac.fi-align-start {
+    justify-content: flex-end !important;
+}
+
+.fi-ac {
+    display: flex !important;
+    justify-content: flex-end !important;
+}
+
+/* .fi-form-actions {
+    justify-content: flex-end !important;
+} */
+
+/* Page actions */
+/* .fi-page-actions {
+    justify-content: flex-end !important;
+} */
+
+/* Modal footer actions */
+/* .fi-modal-footer {
+    justify-content: flex-end !important;
+} */

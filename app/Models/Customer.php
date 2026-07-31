@@ -13,6 +13,7 @@ use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
 use Spatie\Activitylog\Models\Activity;
 use App\Models\ActivityLog;
+use App\Models\CustomerStageHistory;
 
 class Customer extends Model
 {
@@ -102,6 +103,20 @@ class Customer extends Model
                     $sequence
                 );
             }
+        });
+
+        static::updated(function (Customer $customer) {
+
+            if (! $customer->wasChanged('journey_status')) {
+                return;
+            }
+
+            CustomerStageHistory::create([
+                'customer_id'  => $customer->id,
+                'stage_name'   => ucfirst(str_replace('_', ' ', $customer->getOriginal('journey_status'))) . ' Stage',
+                'status_value' => 'Moved to ' . ucfirst(str_replace('_', ' ', $customer->journey_status)),
+                'user_id'      => auth()->id(),
+            ]);
         });
     }
 
