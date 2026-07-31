@@ -18,6 +18,9 @@ use Filament\Actions\ImportAction;
 use App\Filament\Imports\CustomerImporter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Facades\Filament;
+use Illuminate\Database\Eloquent\Builder;
+use Filament\Tables\Filters\Filter;
+use Filament\Forms\Components\DatePicker;
 
 class CustomersTable
 {
@@ -106,6 +109,7 @@ class CustomersTable
 
             ])
             ->filters([
+
                 SelectFilter::make('journey_status')
                     ->label('Journey Status')
                     ->options([
@@ -121,6 +125,44 @@ class CustomersTable
                     ])
                     ->searchable()
                     ->preload(),
+
+                Filter::make('created_at')
+                    ->label('Created Date')
+                    ->form([
+                        DatePicker::make('created_from')
+                            ->label('From'),
+
+                        DatePicker::make('created_until')
+                            ->label('To'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['created_from'],
+                                fn(Builder $query, $date) => $query->whereDate('created_at', '>=', $date),
+                            )
+                            ->when(
+                                $data['created_until'],
+                                fn(Builder $query, $date) => $query->whereDate('created_at', '<=', $date),
+                            );
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+
+                        if ($data['created_from'] ?? null) {
+                            $indicators[] = 'From: ' . \Carbon\Carbon::parse($data['created_from'])->format('d M Y');
+                        }
+
+                        if ($data['created_until'] ?? null) {
+                            $indicators[] = 'To: ' . \Carbon\Carbon::parse($data['created_until'])->format('d M Y');
+                        }
+
+                        return $indicators;
+                    }),
+
+
+
+
             ])
             ->defaultPaginationPageOption(5)
             ->paginated([5, 10, 25, 50, 100, 'all'])
@@ -162,10 +204,16 @@ class CustomersTable
                 // DeleteBulkAction::make(),
                 // ]),
 
-                DeleteBulkAction::make(),
+                DeleteBulkAction::make()
+                    ->visible(
+                        fn() => auth()->user()->employee?->designation === Employee::DESIGNATION_ADMIN
+                    ),
                 ExportBulkAction::make()
                     ->exporter(CustomerExporter::class)
-                    ->label('Export Selected'),
+                    ->label('Export Selected')
+                    ->visible(
+                        fn() => auth()->user()->employee?->designation === Employee::DESIGNATION_ADMIN
+                    ),
 
 
             ]);

@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Filament\Actions\Action;
 // use Illuminate\Support\Facades\Storage;
+use Carbon\Carbon;
 
 
 
@@ -333,15 +334,6 @@ class CustomerInfolist
 
                                             $newValue = $new[$field] ?? null;
 
-                                            // Convert arrays to readable text
-                                            // if (is_array($oldValue)) {
-                                            //     $oldValue = implode(', ', $oldValue);
-                                            // }
-
-                                            // if (is_array($newValue)) {
-                                            //     $newValue = implode(', ', $newValue);
-                                            // }
-
                                             if (is_array($oldValue)) {
                                                 $oldValue = json_encode($oldValue, JSON_PRETTY_PRINT);
                                             }
@@ -351,8 +343,40 @@ class CustomerInfolist
                                             }
 
                                             // Convert null values
-                                            $oldValue = $oldValue === null ? '-' : e($oldValue);
-                                            $newValue = $newValue === null ? '-' : e($newValue);
+
+                                            $formatValue = function ($value) {
+
+                                                if ($value === null || $value === '') {
+                                                    return '-';
+                                                }
+
+                                                if (is_bool($value)) {
+                                                    return $value ? 'Yes' : 'No';
+                                                }
+
+                                                if (is_array($value)) {
+                                                    return implode(', ', $value);
+                                                }
+
+                                                // Format timestamps
+                                                if (is_string($value)) {
+                                                    try {
+                                                        return Carbon::parse($value)
+                                                            ->timezone(config('app.timezone')) // or 'Asia/Kolkata'
+                                                            ->format('d M Y, h:i:s A');
+                                                    } catch (\Exception $e) {
+                                                        // Not a date, continue
+                                                    }
+                                                }
+
+                                                return e((string) $value);
+                                            };
+
+                                            // $oldValue = $oldValue === null ? '-' : e($oldValue);
+                                            // $newValue = $newValue === null ? '-' : e($newValue);
+
+                                            $oldValue = $formatValue($oldValue);
+                                            $newValue = $formatValue($newValue);
 
                                             // Make field names readable
                                             $label = Str::of($field)

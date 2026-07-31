@@ -294,102 +294,6 @@ class CustomerForm
                             && auth()->user()->hasRole('Employee')
                     ),
 
-                // STAGE 1: Journey Requirements (Always Visible for Admin/Manager)
-                Section::make('Journey Configuration')
-                    ->visible(
-                        fn() =>
-                        auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
-                    )
-                    ->schema([
-                        TextInput::make('company_category')
-                            ->label('Company Name')
-                            ->maxLength(255)
-                            ->live()
-                            //  ->required()
-                            ->required(fn(Get $get) => auth()->user()->hasAnyRole([
-                                'Admin',
-                                'Manager',
-                                'Team Leader',
-                                'Cluster Manager'
-                            ]) && $get('eligibility_status') === 'eligible')
-                            ->afterStateUpdated(fn($state, callable $set) => $set('company_category', Str::title($state))),
-
-                        Select::make('loan_applied')
-                            ->label('Loan Type')
-                            ->options([
-                                'personal_loan' => 'Personal Loan',
-                                'business_loan' => 'Business Loan',
-                                'home_loan' => 'Home Loan',
-                                'car_loan' => 'Car Loan',
-                                'education_loan' => 'Education Loan',
-                                'gold_loan' => 'Gold Loan',
-                                'lap' => 'Loan Against Property',
-                                'credit_card' => 'Credit Card',
-                                'overdraft' => 'Overdraft',
-                                'other' => 'Other',
-                            ])
-                            ->searchable()
-                            ->preload()
-                            ->required(
-                                fn(Get $get) =>
-                                auth()->user()->hasAnyRole([
-                                    'Admin',
-                                    'Manager',
-                                    'Team Leader',
-                                    'Cluster Manager',
-                                ]) && $get('eligibility_status') === 'eligible'
-                            )
-                            ->live(),
-
-                        TextInput::make('other_loan_applied')
-                            ->label('Other Loan Type')
-                            ->visible(fn(Get $get): bool => $get('loan_applied') === 'other')
-                            // ->required(fn(Get $get): bool => $get('loan_applied') === 'other')
-                            ->required(fn(Get $get) =>
-                            auth()->user()->hasAnyRole([
-                                'Admin',
-                                'Manager',
-                                'Team Leader'
-                            ])
-                                && $get('loan_applied') === 'other')
-                            ->maxLength(255),
-
-                        Select::make('bank_eligible_for')
-                            ->label('Bank Eligible For')
-                            ->options($banks)
-                            //  ->required()
-                            ->required(fn(Get $get) => auth()->user()->hasAnyRole([
-                                'Admin',
-                                'Manager',
-                                'Team Leader',
-                                'Cluster Manager'
-                            ])  && $get('eligibility_status') === 'eligible')
-                            ->searchable()
-                            ->preload()
-                            ->live(),
-
-                        TextInput::make('other_bank_eligible_for')
-                            ->label('Other Bank Name')
-                            ->maxLength(255)
-                            ->visible(fn(Get $get): bool => $get('bank_eligible_for') === 'Other')
-                            ->required(fn(Get $get): bool => $get('bank_eligible_for') === 'Other')
-                            ->required(fn(Get $get) =>
-                            auth()->user()->hasAnyRole(['Admin', 'Manager', 'Team Leader'])
-                                && $get('bank_eligible_for') === 'other'),
-
-                        // Displaying Status as a clean read-only text input instead of manual choice dropdown
-                        TextInput::make('journey_status')
-                            ->label('Application Stage')
-                            ->default('sfl')
-                            ->disabled()
-                            ->dehydrated()
-                            ->extraAttributes(['class' => 'font-bold text-primary-600']),
-                    ])
-                    ->columns(2)
-                    ->columnSpanFull(),
-                // ->columnSpan(1),
-                // ->visible(fn (): bool => auth()->check() && auth()->user()?->hasAnyRole(['Admin', 'Manager'])),
-
                 // PIPELINE AREA: Dynamic Sequential Sections Layout Container
                 Section::make('Application Progress Steps')
                     ->visible(fn() => ! auth()->user()->hasRole('Caller'))
@@ -437,6 +341,103 @@ class CustomerForm
 
                                 return new HtmlString($html);
                             }),
+
+                        // STAGE 1: Journey Requirements (Always Visible for Admin/Manager)
+                        Section::make('Journey Configuration')
+                            ->visible(
+                                fn() =>
+                                auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
+                            )
+                            ->schema([
+                                TextInput::make('company_category')
+                                    ->label('Company Name')
+                                    ->maxLength(255)
+                                    ->live()
+                                    //  ->required()
+                                    ->required(fn(Get $get) => auth()->user()->hasAnyRole([
+                                        'Admin',
+                                        'Manager',
+                                        'Team Leader',
+                                        'Cluster Manager'
+                                    ]) && $get('eligibility_status') === 'eligible')
+                                    ->afterStateUpdated(fn($state, callable $set) => $set('company_category', Str::title($state))),
+
+                                Select::make('loan_applied')
+                                    ->label('Loan Type')
+                                    ->options([
+                                        'personal_loan' => 'Personal Loan',
+                                        'business_loan' => 'Business Loan',
+                                        'home_loan' => 'Home Loan',
+                                        'car_loan' => 'Car Loan',
+                                        'education_loan' => 'Education Loan',
+                                        'gold_loan' => 'Gold Loan',
+                                        'lap' => 'Loan Against Property',
+                                        'credit_card' => 'Credit Card',
+                                        'overdraft' => 'Overdraft',
+                                        'other' => 'Other',
+                                    ])
+                                    ->searchable()
+                                    ->preload()
+                                    ->required(
+                                        fn(Get $get) =>
+                                        auth()->user()->hasAnyRole([
+                                            'Admin',
+                                            'Manager',
+                                            'Team Leader',
+                                            'Cluster Manager',
+                                        ]) && $get('eligibility_status') === 'eligible'
+                                    )
+                                    ->live(),
+
+                                TextInput::make('other_loan_applied')
+                                    ->label('Other Loan Type')
+                                    ->visible(fn(Get $get): bool => $get('loan_applied') === 'other')
+                                    // ->required(fn(Get $get): bool => $get('loan_applied') === 'other')
+                                    ->required(fn(Get $get) =>
+                                    auth()->user()->hasAnyRole([
+                                        'Admin',
+                                        'Manager',
+                                        'Team Leader'
+                                    ])
+                                        && $get('loan_applied') === 'other')
+                                    ->maxLength(255),
+
+                                Select::make('bank_eligible_for')
+                                    ->label('Bank Eligible For')
+                                    ->options($banks)
+                                    //  ->required()
+                                    ->required(fn(Get $get) => auth()->user()->hasAnyRole([
+                                        'Admin',
+                                        'Manager',
+                                        'Team Leader',
+                                        'Cluster Manager'
+                                    ])  && $get('eligibility_status') === 'eligible')
+                                    ->searchable()
+                                    ->preload()
+                                    ->live(),
+
+                                TextInput::make('other_bank_eligible_for')
+                                    ->label('Other Bank Name')
+                                    ->maxLength(255)
+                                    ->visible(fn(Get $get): bool => $get('bank_eligible_for') === 'Other')
+                                    ->required(fn(Get $get): bool => $get('bank_eligible_for') === 'Other')
+                                    ->required(fn(Get $get) =>
+                                    auth()->user()->hasAnyRole(['Admin', 'Manager', 'Team Leader'])
+                                        && $get('bank_eligible_for') === 'other'),
+
+                                // Displaying Status as a clean read-only text input instead of manual choice dropdown
+                                TextInput::make('journey_status')
+                                    ->label('Application Stage')
+                                    ->default('sfl')
+                                    ->disabled()
+                                    ->dehydrated()
+                                    ->extraAttributes(['class' => 'font-bold text-primary-600']),
+                            ])
+                            ->columns(2)
+                            ->columnSpanFull(),
+
+
+
 
 
                         // ---------------- PROGRESSIVE STEP 1: SFL SECTION ----------------
@@ -939,10 +940,19 @@ class CustomerForm
 
                                 Placeholder::make('disbursal_actions')
                                     ->label('')
+                                    // ->visible(
+                                    //     fn(Get $get): bool =>
+                                    //     ! $get('disbursal_finalized')
+                                    //         && $get('disbursal_status') === 'disbursed'
+                                    // )
                                     ->visible(
                                         fn(Get $get): bool =>
                                         ! $get('disbursal_finalized')
                                             && $get('disbursal_status') === 'disbursed'
+                                            && (
+                                                auth()->user()->hasRole('Admin')
+                                                || auth()->user()->hasRole('Manager')
+                                            )
                                     )
                                     ->hintAction(
 
@@ -989,16 +999,36 @@ class CustomerForm
 
                             ->columns(2)
                             ->visible(
-                                fn(Get $get) => ($get('credit_approval_completed') ?? false)
-                                    || in_array(strtolower((string) $get('journey_status')), [
-                                        'sanctioned',
-                                        'disbursal_documents',
-                                        'carry_forward',
-                                        'dropped',
-                                        'approved',
-                                        'disbursed'
-                                    ])
+                                fn(Get $get) => (
+                                    auth()->user()->hasRole('Admin')
+                                    || auth()->user()->hasRole('Manager')
+                                )
+                                    && (
+                                        ($get('credit_approval_completed') ?? false)
+                                        || in_array(
+                                            strtolower((string) $get('journey_status')),
+                                            [
+                                                'sanctioned',
+                                                'disbursal_documents',
+                                                'carry_forward',
+                                                'dropped',
+                                                'approved',
+                                                'disbursed',
+                                            ]
+                                        )
+                                    )
                             ),
+                            // ->visible(
+                            //     fn(Get $get) => ($get('credit_approval_completed') ?? false)
+                            //         || in_array(strtolower((string) $get('journey_status')), [
+                            //             'sanctioned',
+                            //             'disbursal_documents',
+                            //             'carry_forward',
+                            //             'dropped',
+                            //             'approved',
+                            //             'disbursed'
+                            //         ])
+                            // ),
 
 
 
