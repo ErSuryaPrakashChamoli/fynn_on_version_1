@@ -376,7 +376,8 @@ class CustomerForm
                             ->extraAttributes(['class' => 'font-bold text-primary-600']),
                     ])
                     ->columns(2)
-                    ->columnSpan(1),
+                    ->columnSpanFull(),
+                // ->columnSpan(1),
                 // ->visible(fn (): bool => auth()->check() && auth()->user()?->hasAnyRole(['Admin', 'Manager'])),
 
                 // PIPELINE AREA: Dynamic Sequential Sections Layout Container
@@ -624,7 +625,7 @@ class CustomerForm
                                     ])
                                     ->live()
                                     ->required(function (Get $get) {
-                                        return auth()->user()->hasAnyRole(['Admin', 'Team Leader','Manager','Cluster Manager'])
+                                        return auth()->user()->hasAnyRole(['Admin', 'Team Leader', 'Manager', 'Cluster Manager'])
                                             && $get('documentation_status') === 'complete';
                                     }),
                                 // ->required(fn(Get $get) => $get('documentation_status') === 'complete'),
@@ -782,7 +783,7 @@ class CustomerForm
                             ->columns(2)
                             ->visible(function (Get $get): bool {
 
-                                return auth()->user()->hasAnyRole(['Admin', 'Team Leader', 'Manager','Cluster Manager'])
+                                return auth()->user()->hasAnyRole(['Admin', 'Team Leader', 'Manager', 'Cluster Manager'])
                                     && (
                                         in_array(
                                             strtolower((string) $get('journey_status')),
@@ -1184,7 +1185,8 @@ class CustomerForm
                             ->columns(2)
                             ->visible(fn(Get $get): bool => strtolower((string) $get('journey_status')) === 'not_approved'),
                     ])
-                    ->columnSpan(1)
+                    // ->columnSpan(1)
+                    ->columnSpanFull()
                     ->hidden(fn() => auth()->user()->hasRole('Employee')),
             ]);
     }
