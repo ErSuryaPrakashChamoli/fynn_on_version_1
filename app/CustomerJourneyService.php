@@ -57,26 +57,55 @@ class CustomerJourneyService
     /**
      * Approve Underwriting
      */
-    public static function approve(Customer $customer): Customer
-    {
-        if ($customer->journey_status !== 'underwriting') {
-            throw ValidationException::withMessages([
-                'journey_status' => 'Customer is not in Underwriting stage.',
-            ]);
-        }
+    // public static function approve(Customer $customer , array $data ): Customer
+    // {
+    //     if ($customer->journey_status !== 'underwriting') {
+    //         throw ValidationException::withMessages([
+    //             'journey_status' => 'Customer is not in Underwriting stage.',
+    //         ]);
+    //     }
 
-        DB::transaction(function () use ($customer) {
+    //     DB::transaction(function () use ($customer) {
+
+    //         $customer->update([
+    //             'journey_status' => 'approved',
+    //             'underwriting_status' => 'approved',
+    //         ]);
+
+    //         self::log(
+    //             $customer,
+    //             'Underwriting',
+    //             'Moved to Credit Approval'
+    //         );
+    //     });
+
+    //     return $customer->fresh();
+    // }
+
+
+    public static function approve(
+        Customer $customer,
+        array $data
+    ): Customer {
+        DB::transaction(function () use ($customer, $data) {
 
             $customer->update([
+
                 'journey_status' => 'approved',
+
                 'underwriting_status' => 'approved',
+
+                'approved_loan_amount' => $data['approved_loan_amount'],
+
+                'sanctioned_bank' => $data['sanctioned_bank'],
+
+                'approved_remarks' => $data['approved_remarks'],
+
+                'other_sanctioned_bank' => $data['other_sanctioned_bank'],
+
             ]);
 
-            self::log(
-                $customer,
-                'Underwriting',
-                'Moved to Credit Approval'
-            );
+            self::log(...);
         });
 
         return $customer->fresh();

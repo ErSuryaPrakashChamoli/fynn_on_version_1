@@ -73,6 +73,7 @@ class CustomerForm
             'Canara Bank' => 'Canara Bank',
             'IDFC First Bank' => 'IDFC First Bank',
             'AU Small Finance Bank' => 'AU Small Finance Bank',
+            'LNT' => 'LNT'
             // 'Other' => 'Other',
         ];
 
@@ -287,7 +288,11 @@ class CustomerForm
                     ])
                     ->columns(2)
                     ->columnSpanFull()
-                    ->disabled(fn(string $operation): bool => $operation === 'edit' && auth()->user()->hasRole('Employee')),
+                    ->disabled(
+                        fn(string $operation): bool =>
+                        $operation === 'edit'
+                            && auth()->user()->hasRole('Employee')
+                    ),
 
                 // STAGE 1: Journey Requirements (Always Visible for Admin/Manager)
                 Section::make('Journey Configuration')
@@ -538,64 +543,60 @@ class CustomerForm
 
                                 Placeholder::make('sfl_promotion_trigger')
                                     ->label('')
-                                    // ->visible(fn(Get $get): bool =>
-                                    // strtolower((string) $get('journey_status')) === 'sfl' &&
-                                    //     strtolower((string) $get('documentation_status')) === 'complete')
-
-                                    // ->visible(
-                                    //     fn(Get $get): bool =>
-                                    //     strtolower((string) $get('journey_status')) === 'sfl'
-                                    //         && strtolower((string) $get('documentation_status')) === 'complete'
-                                    //     // && blank($get('underwriting_status'))
-                                    // )
                                     ->visible(function (Get $get): bool {
                                         $journeyStatus = $get('journey_status');
-
                                         return filled($journeyStatus)
                                             && strtolower((string) $journeyStatus) === 'sfl' //not_started
                                             && strtolower((string) $get('documentation_status')) === 'complete';
                                     })
                                     ->hintAction(
+
+                                        // FormAction::make('promote_to_underwriting')
+                                        //     ->label('Verify & Move to Underwriting')
+                                        //     ->icon('heroicon-m-arrow-right-circle')
+                                        //     ->color('success')
+                                        //     ->requiresConfirmation()
+                                        //     ->action(function (?\Illuminate\Database\Eloquent\Model $record, callable $set) {
+
+                                        //         $record = CustomerJourneyService::moveToUnderwriting($record);
+
+                                        //         $set('journey_status', $record->journey_status);
+                                        //         $set('underwriting_status', $record->underwriting_status);
+                                        //     })
+
+
+
                                         FormAction::make('promote_to_underwriting')
                                             ->label('Verify & Move to Underwriting')
                                             ->icon('heroicon-m-arrow-right-circle')
                                             ->color('success')
+
                                             ->requiresConfirmation()
-                                            // FIX: $record ke sath safe evaluation layer pass karein
-                                            ->action(function (?\Illuminate\Database\Eloquent\Model $record, callable $set) {
+
+                                            ->modalHeading('Move to Underwriting?')
+                                            ->modalDescription('Are you sure you want to move this customer to the Underwriting stage? Once moved, the SFL section will become read-only.')
+                                            ->modalSubmitActionLabel('Yes, Proceed')
+                                            ->modalCancelActionLabel('Cancel')
+
+                                            ->action(function (?Customer $record, callable $set) {
+
+                                                if (! $record) {
+                                                    return;
+                                                }
 
                                                 $record = CustomerJourneyService::moveToUnderwriting($record);
 
                                                 $set('journey_status', $record->journey_status);
                                                 $set('underwriting_status', $record->underwriting_status);
 
-                                                // if (! $record) {
-
-                                                //     $set('journey_status', 'underwriting');
-
-
-                                                //     return;
-                                                // }
-
-                                                // $record->update(['journey_status' => 'underwriting']);
-                                                // $set('journey_status', 'underwriting');
-
-
-                                                // $set('documentation_status', 'complete');
-                                                // $set('journey_status', 'underwriting');
-
-                                                // // $set('documentation_status', 'complete');
-                                                // $set('journey_status', 'underwriting');
-                                                // $set('underwriting_status', 'in_process');
-
-
-                                                // $history = new \App\Models\CustomerStageHistory();
-                                                // $history->customer_id  = $record->id;
-                                                // $history->stage_name   = 'Step 1: SFL Pipeline Closed';
-                                                // $history->status_value = 'Promoted to Underwriting';
-                                                // $history->user_id      = auth()->id();
-                                                // $history->save();
+                                                Notification::make()
+                                                    ->title('Stage will be changed after you click Save Changes.')
+                                                    ->success()
+                                                    ->send();
                                             })
+
+
+
                                     ),
 
 
@@ -761,9 +762,15 @@ class CustomerForm
                                                 if (! $record) {
                                                     return;
                                                 }
-                                                $record = CustomerJourneyService::approve($record);
+                                                $record = CustomerJourneyService::approve($record , $this->data  );
+
                                                 $set('journey_status', $record->journey_status);
                                                 $set('underwriting_status', $record->underwriting_status);
+
+                                                Notification::make()
+                                                    ->success()
+                                                    ->title('Click "Save Changes" to complete this stage.')
+                                                    ->send();
                                             }),
                                     ]),
                             ])
@@ -966,7 +973,7 @@ class CustomerForm
                                                 $record = CustomerJourneyService::finalize($record);
                                                 $set('journey_status', $record->journey_status);
 
-                                            //    $set('disbursal_finalized', true);
+                                                //    $set('disbursal_finalized', true);
 
                                             })
                                     ),
