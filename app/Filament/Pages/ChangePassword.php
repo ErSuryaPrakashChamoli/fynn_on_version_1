@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 use Filament\Support\Icons\Heroicon;
 use BackedEnum;
+use Illuminate\Support\Facades\Auth;
 
 class ChangePassword extends Page
 {
@@ -22,13 +23,14 @@ class ChangePassword extends Page
     protected static ?string $title = 'Change Password';
 
     protected string $view = 'filament.pages.change-password';
+    protected static ?int $navigationSort = PHP_INT_MAX;
 
     public ?array $data = [];
 
     public function mount(): void
     {
         abort_unless(
-            auth()->user()->hasAnyRole(['Caller', 'Team Leader', 'Manager','Cluster Manager','Admin']),
+            auth()->user()->hasAnyRole(['Caller', 'Team Leader', 'Manager', 'Cluster Manager', 'Admin']),
             403
         );
 
@@ -74,12 +76,19 @@ class ChangePassword extends Page
             'password' => Hash::make($this->data['password']),
         ]);
 
+        // Auth::logout();
+        // request()->session()->invalidate();
+        // request()->session()->regenerateToken();
+
+
         $this->form->fill();
 
         Notification::make()
             ->title('Password changed successfully')
             ->success()
             ->send();
+
+
     }
 
     public static function shouldRegisterNavigation(): bool
