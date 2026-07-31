@@ -251,10 +251,15 @@ class CustomerInfolist
                                     ->label('Uploaded By')
                                     ->default('System'),
 
+                                // TextEntry::make('document_path')
+                                //     ->label('Document')
+                                //     ->formatStateUsing(fn() => '📄 View PDF')
+                                //     ->url(fn($state) => Storage::disk('public')->url($state))
+                                //     ->openUrlInNewTab(),
                                 TextEntry::make('document_path')
                                     ->label('Document')
-                                    ->formatStateUsing(fn() => '📄 View PDF')
-                                    ->url(fn($state) => Storage::disk('public')->url($state))
+                                    ->state('📄 View PDF')
+                                    ->url(fn($record) => Storage::disk('public')->url($record->document_path))
                                     ->openUrlInNewTab(),
 
 

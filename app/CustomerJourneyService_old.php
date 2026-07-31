@@ -44,11 +44,11 @@ class CustomerJourneyService
                 'underwriting_status' => 'in_process',
             ]);
 
-            self::log(
-                $customer,
-                'SFL',
-                'Moved to Underwriting'
-            );
+            // self::log(
+            //     $customer,
+            //     'SFL',
+            //     'Moved to Underwriting'
+            // );
         });
 
         return $customer->fresh();
@@ -105,7 +105,7 @@ class CustomerJourneyService
 
             ]);
 
-            self::log(...);
+            // self::log(...);
         });
 
         return $customer->fresh();

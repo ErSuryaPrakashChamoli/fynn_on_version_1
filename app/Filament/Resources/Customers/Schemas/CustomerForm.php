@@ -551,21 +551,6 @@ class CustomerForm
                                     })
                                     ->hintAction(
 
-                                        // FormAction::make('promote_to_underwriting')
-                                        //     ->label('Verify & Move to Underwriting')
-                                        //     ->icon('heroicon-m-arrow-right-circle')
-                                        //     ->color('success')
-                                        //     ->requiresConfirmation()
-                                        //     ->action(function (?\Illuminate\Database\Eloquent\Model $record, callable $set) {
-
-                                        //         $record = CustomerJourneyService::moveToUnderwriting($record);
-
-                                        //         $set('journey_status', $record->journey_status);
-                                        //         $set('underwriting_status', $record->underwriting_status);
-                                        //     })
-
-
-
                                         FormAction::make('promote_to_underwriting')
                                             ->label('Verify & Move to Underwriting')
                                             ->icon('heroicon-m-arrow-right-circle')
@@ -655,16 +640,6 @@ class CustomerForm
 
                             ])
                             ->columns(2)
-                            // ->visible(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'not_approved']))
-                            // ->visible(function (Get $get): bool {
-                            //     return ! auth()->user()->hasRole('Caller')
-                            //         && in_array(
-                            //             strtolower((string) $get('journey_status')),
-                            //             ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']
-                            //         );
-                            // })
-
-
                             ->visible(function (Get $get): bool {
                                 $journeyStatus = strtolower((string) $get('journey_status'));
 
@@ -759,6 +734,7 @@ class CustomerForm
                                             // FIX 2: Added $set utility layer
                                             ->action(function (?\Illuminate\Database\Eloquent\Model $record, callable $set, Get $get) {
 
+
                                                 if (! $record) {
                                                     return;
                                                 }
@@ -768,12 +744,15 @@ class CustomerForm
                                                     'sanctioned_bank'        => $get('sanctioned_bank'),
                                                     'other_sanctioned_bank'  => $get('other_sanctioned_bank'),
                                                     'approved_remarks'       => $get('approved_remarks'),
+                                                    'approval_date'         => $get('approval_date'),
+                                                    'underwriting_remarks'   => $get('underwriting_remarks')
                                                 ];
 
                                                 $record = CustomerJourneyService::approve($record, $data);
-
                                                 $set('journey_status', $record->journey_status);
-                                                $set('underwriting_status', $record->underwriting_status);
+
+                                                // $set('journey_status', $record->journey_status);
+                                                // $set('underwriting_status', $record->underwriting_status);
 
                                                 Notification::make()
                                                     ->success()
@@ -962,6 +941,7 @@ class CustomerForm
                                             && $get('disbursal_status') === 'disbursed'
                                     )
                                     ->hintAction(
+
                                         FormAction::make('finalize_disbursal')
                                             ->label('Finalize Disbursal')
                                             ->icon('heroicon-m-check-circle')
@@ -971,15 +951,31 @@ class CustomerForm
 
 
                                                 if (! $record) {
-                                                    $set('journey_status', 'sanctioned');
-                                                    // $set('disbursal_finalized', true);
-                                                    // $set('disbursal_status', 'disbursed');
                                                     return;
                                                 }
 
-                                                $record = CustomerJourneyService::sanction($record);
-                                                $record = CustomerJourneyService::finalize($record);
+                                                $data = [
+                                                    'disbursal_status'      => $get('disbursal_status'),
+                                                    'channel'               => $get('channel'),
+                                                    'sanctioned_loan_amount' => $get('sanctioned_loan_amount'),
+                                                    'cashback'              => $get('cashback'),
+                                                    'subvention'            => $get('subvention'),
+                                                    'docking'               => $get('docking'),
+                                                    'carry_forward_date'    => $get('carry_forward_date'),
+                                                    'sanctioned_remarks'    => $get('sanctioned_remarks'),
+                                                ];
+
+
+                                                $record = CustomerJourneyService::sanction($record, $data);
+                                                // $record = CustomerJourneyService::finalize($record,$data);
                                                 $set('journey_status', $record->journey_status);
+                                                $set('disbursal_finalized', true);
+
+
+                                                Notification::make()
+                                                    ->success()
+                                                    ->title('Disbursal status updated successfully.')
+                                                    ->send();
 
                                                 //    $set('disbursal_finalized', true);
 
@@ -1017,18 +1013,6 @@ class CustomerForm
 
 
 
-                                // FileUpload::make('disbursal_pdf')
-                                //     ->label('Disbursal Documents')
-                                //     ->directory('disbursal-documents')
-                                //     ->disk('public')
-                                //     ->acceptedFileTypes(['application/pdf'])
-                                //     ->multiple()
-                                //     ->appendFiles()
-                                //     ->reorderable(false)
-                                //     ->downloadable()
-                                //     ->openable()
-                                //     ->dehydrated(true)
-                                //     ->live(),
 
                                 FileUpload::make('disbursal_pdf')
                                     ->disk('public')
@@ -1073,12 +1057,9 @@ class CustomerForm
                                                     return;
                                                 }
 
-                                                // dd($record);
-
-
-
                                                 $uploadedFiles = $get('disbursal_pdf');
-                                                // $uploadedFiles = data_get($this->data, 'disbursal_pdf');
+
+                                                // dd($uploadedFiles);
 
                                                 if (blank($uploadedFiles)) {
                                                     Notification::make()
@@ -1087,6 +1068,11 @@ class CustomerForm
                                                         ->send();
                                                     return;
                                                 }
+
+                                                $alreadySubmitted = (bool) $record->documents_submitted;
+
+                                                // $record = CustomerJourneyService::finalize($record);
+                                                // $set('documents_submitted', true);
 
                                                 $filesArray = is_array($uploadedFiles) ? $uploadedFiles : [$uploadedFiles];
 
@@ -1098,47 +1084,65 @@ class CustomerForm
 
                                                 foreach ($filesArray as $singlePath) {
 
+                                                    // if ($singlePath instanceof \Livewire\Features\SupportFileUploads\TemporaryUploadedFile) {
+                                                    //     $fileName = $singlePath->getClientOriginalName();
+
+                                                    //     if (in_array($fileName, $existingDocuments)) {
+                                                    //         continue;
+                                                    //     }
+
+                                                    //     $singlePath = $singlePath->store(
+                                                    //         'disbursal-documents',
+                                                    //         'public'
+                                                    //     );
+                                                    // }
+
                                                     if ($singlePath instanceof \Livewire\Features\SupportFileUploads\TemporaryUploadedFile) {
-                                                        $fileName = $singlePath->getClientOriginalName();
 
-                                                        if (in_array($fileName, $existingDocuments)) {
-                                                            continue;
-                                                        }
-
-                                                        $singlePath = $singlePath->store(
+                                                        $path = $singlePath->storePublicly(
                                                             'disbursal-documents',
                                                             'public'
                                                         );
+                                                    } else {
+
+                                                        $path = $singlePath;
                                                     }
 
                                                     CustomerDocument::create([
                                                         'customer_id'   => $record->id,
                                                         'document_type' => 'Disbursal Letter',
-                                                        'document_name' => basename($singlePath),
-                                                        'document_path' => $singlePath,
+                                                        'document_name' => basename($path),
+                                                        'document_path' => $path,
                                                         'uploaded_by'   => auth()->id(),
                                                     ]);
+
+
+
+
+                                                    // CustomerDocument::create([
+                                                    //     'customer_id'   => $record->id,
+                                                    //     'document_type' => 'Disbursal Letter',
+                                                    //     'document_name' => basename($singlePath),
+                                                    //     'document_path' => $singlePath,
+                                                    //     'uploaded_by'   => auth()->id(),
+                                                    // ]);
                                                 }
 
-                                                $alreadySubmitted = (bool) $record->documents_submitted;
+
+                                                $record = CustomerJourneyService::finalize($record);
+
+                                                // $alreadySubmitted = (bool) $record->documents_submitted;
                                                 // $record->update(['documents_submitted' => true]);
 
                                                 $set('documents_submitted', true);
                                                 $set('disbursal_pdf', $filesArray);
 
                                                 // session()->put("customer_{$record->id}_docs_submitted", true);
-
+                                                // $record = CustomerJourneyService::finalize($record);
                                                 Notification::make()
                                                     ->title($alreadySubmitted ? 'Documents updated successfully.' : 'Documents submitted successfully.')
                                                     ->success()
                                                     ->send();
-
-                                                // CustomerStageHistory::create([
-                                                //     'customer_id'  => $record->id,
-                                                //     'stage_name'   => 'Disbursal Documents',
-                                                //     'status_value' => $alreadySubmitted ? 'Documents Updated' : 'Documents Submitted',
-                                                //     'user_id'      => auth()->id(),
-                                                // ]);
                                             })
                                     ),
                             ])
