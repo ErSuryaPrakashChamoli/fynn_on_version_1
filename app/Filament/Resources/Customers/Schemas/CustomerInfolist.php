@@ -26,6 +26,7 @@ class CustomerInfolist
             ->components([
 
                 Section::make('👤 Customer Overview')
+                    ->columnSpanFull()
                     ->schema([
                         Grid::make(3)
                             ->schema([
@@ -74,6 +75,7 @@ class CustomerInfolist
 
 
                 Section::make('📍 Personal Details')
+                    ->columnSpanFull()
                     ->schema([
 
                         Grid::make(3)
@@ -98,6 +100,7 @@ class CustomerInfolist
 
 
                 Section::make('🏦 Loan Application Details')
+                    ->columnSpanFull()
                     ->schema([
 
                         Grid::make(3)
@@ -126,6 +129,7 @@ class CustomerInfolist
 
 
                 Section::make('📑 Step 1 - Source File Logging')
+                    ->columnSpanFull()
                     ->schema([
                         Grid::make(3)
                             ->schema([
@@ -155,6 +159,7 @@ class CustomerInfolist
 
 
                 Section::make('🔍 Step 2 - Underwriting')
+                    ->columnSpanFull()
                     ->schema([
 
                         Grid::make(3)
@@ -174,6 +179,7 @@ class CustomerInfolist
 
 
                 Section::make('✅ Step 3 - Credit Approval')
+                    ->columnSpanFull()
                     ->schema([
 
                         Grid::make(3)
@@ -193,6 +199,7 @@ class CustomerInfolist
 
 
                 Section::make('💰 Step 4 - Disbursal')
+                    ->columnSpanFull()
                     ->schema([
 
                         Grid::make(3)
@@ -206,13 +213,13 @@ class CustomerInfolist
                                     ->money('INR'),
 
                                 TextEntry::make('cashback')
-                                ->money('INR'),
+                                    ->money('INR'),
 
                                 TextEntry::make('subvention')
-                                ->money('INR'),
+                                    ->money('INR'),
 
                                 TextEntry::make('docking')
-                                ->money('INR'),
+                                    ->money('INR'),
 
                                 TextEntry::make('payout_rate'),
 
@@ -221,6 +228,7 @@ class CustomerInfolist
 
 
                 Section::make('Customer Documents')
+                    ->columnSpanFull()
                     ->schema([
 
                         RepeatableEntry::make('documents')
@@ -250,35 +258,7 @@ class CustomerInfolist
                                     ->openUrlInNewTab(),
 
 
-                                // TextEntry::make('document_path')
-                                //     ->label('Document')
-                                //     ->formatStateUsing(fn () => '📄 View PDF')
-                                //     ->action(
-                                //         Action::make('viewPdf')
-                                //             ->label('')
 
-                                //             ->modalHeading('Disbursal Document')
-
-                                //             ->modalWidth('7xl')
-
-                                //             ->modalSubmitAction(false)
-
-                                //             ->modalCancelActionLabel('Close')
-
-                                //             ->modalContent(function ($state) {
-                                //                 //   dd($state);
-                                //                 // dd(Storage::disk('public')->url($state));
-                                //                 // dd(Storage::disk('public')->exists($state));
-
-                                //                 return view(
-                                //                     'filament.components.pdf-viewer',
-                                //                     [
-                                //                         'url' => Storage::disk('public')->url($state),
-                                //                     ]
-                                //                 );
-
-                                //             })
-                                //     ),
 
                             ])
                             ->columns(5),
@@ -290,6 +270,7 @@ class CustomerInfolist
 
 
                 Section::make('❌ Rejection Details')
+                    ->columnSpanFull()
                     ->visible(
                         fn($record) =>
                         $record->journey_status === 'rejected'
@@ -303,6 +284,7 @@ class CustomerInfolist
                     ]),
 
                 Section::make('📝 Complete Activity Timeline')
+                    ->columnSpanFull()
                     ->schema([
 
                         RepeatableEntry::make('activities')
@@ -325,63 +307,63 @@ class CustomerInfolist
 
 
 
-                            TextEntry::make('changes')
-                                ->label('Field Changes')
-                                ->html()
-                                ->columnSpanFull()
-                                ->formatStateUsing(function ($state, $record) {
+                                TextEntry::make('changes')
+                                    ->label('Field Changes')
+                                    ->html()
+                                    ->columnSpanFull()
+                                    ->formatStateUsing(function ($state, $record) {
 
-                                    $changes = $record->changes ?? [];
+                                        $changes = $record->changes ?? [];
 
-                                    $old = $changes['old'] ?? [];
-                                    $new = $changes['new'] ?? [];
+                                        $old = $changes['old'] ?? [];
+                                        $new = $changes['new'] ?? [];
 
-                                    if (empty($old) && empty($new)) {
-                                        return '<span class="text-gray-500">No field changes</span>';
-                                    }
-
-                                    $html = '';
-
-                                    foreach ($old as $field => $oldValue) {
-
-                                        $newValue = $new[$field] ?? null;
-
-                                        // Convert arrays to readable text
-                                        // if (is_array($oldValue)) {
-                                        //     $oldValue = implode(', ', $oldValue);
-                                        // }
-
-                                        // if (is_array($newValue)) {
-                                        //     $newValue = implode(', ', $newValue);
-                                        // }
-
-                                        if (is_array($oldValue)) {
-                                        $oldValue = json_encode($oldValue, JSON_PRETTY_PRINT);
+                                        if (empty($old) && empty($new)) {
+                                            return '<span class="text-gray-500">No field changes</span>';
                                         }
 
-                                        if (is_array($newValue)) {
-                                        $newValue = json_encode($newValue, JSON_PRETTY_PRINT);
-                                        }
+                                        $html = '';
 
-                                        // Convert null values
-                                        $oldValue = $oldValue === null ? '-' : e($oldValue);
-                                        $newValue = $newValue === null ? '-' : e($newValue);
+                                        foreach ($old as $field => $oldValue) {
 
-                                        // Make field names readable
-                                        $label = Str::of($field)
-                                            ->replace('_', ' ')
-                                            ->title();
+                                            $newValue = $new[$field] ?? null;
 
-                                        $html .= "
+                                            // Convert arrays to readable text
+                                            // if (is_array($oldValue)) {
+                                            //     $oldValue = implode(', ', $oldValue);
+                                            // }
+
+                                            // if (is_array($newValue)) {
+                                            //     $newValue = implode(', ', $newValue);
+                                            // }
+
+                                            if (is_array($oldValue)) {
+                                                $oldValue = json_encode($oldValue, JSON_PRETTY_PRINT);
+                                            }
+
+                                            if (is_array($newValue)) {
+                                                $newValue = json_encode($newValue, JSON_PRETTY_PRINT);
+                                            }
+
+                                            // Convert null values
+                                            $oldValue = $oldValue === null ? '-' : e($oldValue);
+                                            $newValue = $newValue === null ? '-' : e($newValue);
+
+                                            // Make field names readable
+                                            $label = Str::of($field)
+                                                ->replace('_', ' ')
+                                                ->title();
+
+                                            $html .= "
                                             <div class='mb-4 p-3 rounded border'>
                                                 <div><strong>{$label}</strong></div>
                                                 <div class='text-danger'>Old: {$oldValue}</div>
                                                 <div class='text-success'>New: {$newValue}</div>
                                             </div>
                                         ";
-                                    }
+                                        }
 
-                                    return $html;
+                                        return $html;
                                     })
                                     ->html()
                                     ->columnSpanFull(),

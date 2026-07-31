@@ -757,12 +757,20 @@ class CustomerForm
                                             ->color('success')
                                             ->requiresConfirmation()
                                             // FIX 2: Added $set utility layer
-                                            ->action(function (?\Illuminate\Database\Eloquent\Model $record, callable $set) {
+                                            ->action(function (?\Illuminate\Database\Eloquent\Model $record, callable $set, Get $get) {
 
                                                 if (! $record) {
                                                     return;
                                                 }
-                                                $record = CustomerJourneyService::approve($record , $this->data  );
+
+                                                $data = [
+                                                    'approved_loan_amount'   => $get('approved_loan_amount'),
+                                                    'sanctioned_bank'        => $get('sanctioned_bank'),
+                                                    'other_sanctioned_bank'  => $get('other_sanctioned_bank'),
+                                                    'approved_remarks'       => $get('approved_remarks'),
+                                                ];
+
+                                                $record = CustomerJourneyService::approve($record, $data);
 
                                                 $set('journey_status', $record->journey_status);
                                                 $set('underwriting_status', $record->underwriting_status);
