@@ -16,6 +16,8 @@ use Spatie\Permission\Traits\HasRoles;
 
 #[Fillable(['name', 'email', 'password','is_active'])]
 #[Hidden(['password', 'remember_token'])]
+
+
 class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<UserFactory> */
@@ -46,8 +48,8 @@ class User extends Authenticatable implements FilamentUser
         // return $this->email === 'prakash@gmail.com';
         return true;
     }
-  
 
-    
-    
+
+
+
 }

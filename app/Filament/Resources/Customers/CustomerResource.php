@@ -84,6 +84,7 @@ class CustomerResource extends Resource
     {
         $query = parent::getEloquentQuery();
 
+
         $employee = auth()->user()->employee;
 
         if (! $employee) {
