@@ -205,17 +205,17 @@ class CustomersTable
                 // ]),
 
                 DeleteBulkAction::make()
-                 ->visible(fn () => auth()->user()->hasRole('Admin')),
-                    // ->visible(
-                    //     fn() => auth()->user()->employee?->designation === Employee::DESIGNATION_ADMIN
-                    // ),
+                    ->visible(fn() => auth()->user()->hasRole('Admin')),
+                // ->visible(
+                //     fn() => auth()->user()->employee?->designation === Employee::DESIGNATION_ADMIN
+                // ),
                 ExportBulkAction::make()
                     ->exporter(CustomerExporter::class)
                     ->label('Export Selected')
-                     ->visible(fn () => auth()->user()->hasRole('Admin')),
-                    // ->visible(
-                    //     fn() => auth()->user()->employee?->designation === Employee::DESIGNATION_ADMIN
-                    // ),
+                    ->visible(fn() => auth()->user()->hasRole('Admin')),
+                // ->visible(
+                //     fn() => auth()->user()->employee?->designation === Employee::DESIGNATION_ADMIN
+                // ),
 
 
             ]);
