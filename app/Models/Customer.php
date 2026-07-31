@@ -15,6 +15,128 @@ use Spatie\Activitylog\Models\Activity;
 use App\Models\ActivityLog;
 use App\Models\CustomerStageHistory;
 
+/**
+ * @property int $id
+ * @property string $customer_name
+ * @property string $mobile_no
+ * @property string|null $email
+ * @property string $pan_number
+ * @property string|null $job_location
+ * @property string|null $residence_location
+ * @property numeric|null $salary
+ * @property numeric|null $eligible_loan_amount
+ * @property numeric|null $approved_loan_amount
+ * @property string|null $current_location
+ * @property string|null $company_category
+ * @property string|null $bank_eligible_for
+ * @property string|null $other_bank_eligible_for
+ * @property string|null $loan_applied
+ * @property string|null $channel
+ * @property string|null $sfl_remarks
+ * @property string|null $underwriting_remarks
+ * @property string|null $approved_remarks
+ * @property string|null $sanctioned_remarks
+ * @property string|null $not_approved_remarks
+ * @property string|null $other_loan_applied
+ * @property string $eligibility_status
+ * @property string|null $eligibility_reason
+ * @property string|null $journey_status
+ * @property string|null $disbursal_status
+ * @property string|null $carry_forward_date
+ * @property int $disbursal_finalized
+ * @property array<array-key, mixed>|null $disbursal_pdf
+ * @property bool $documents_submitted
+ * @property string|null $underwriting_status
+ * @property int $credit_approval_completed
+ * @property string|null $approval_date
+ * @property string|null $documentation_status
+ * @property array<array-key, mixed>|null $pending_document
+ * @property string|null $journey_not_approved_reason
+ * @property string|null $application_no
+ * @property string|null $lan_no
+ * @property string|null $sanctioned_bank
+ * @property string|null $other_sanctioned_bank
+ * @property numeric|null $sanctioned_loan_amount
+ * @property numeric|null $cashback
+ * @property numeric|null $subvention
+ * @property string|null $docking
+ * @property numeric|null $payout_rate
+ * @property string|null $bank_condition
+ * @property string|null $attachment_required
+ * @property string|null $attachment_file
+ * @property \Illuminate\Support\Carbon|null $created_at
+ * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property int|null $employee_id
+ * @property int|null $assign_to
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, ActivityLog> $activities
+ * @property-read int|null $activities_count
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, Activity> $activitiesAsSubject
+ * @property-read int|null $activities_as_subject_count
+ * @property-read \App\Models\Employee|null $assignedTo
+ * @property-read \App\Models\Employee|null $createdBy
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\CustomerDocument> $documents
+ * @property-read int|null $documents_count
+ * @property-read \App\Models\Employee|null $employee
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\FollowUp> $followUps
+ * @property-read int|null $follow_ups_count
+ * @method static \Database\Factories\CustomerFactory factory($count = null, $state = [])
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer newModelQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer newQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer query()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereApplicationNo($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereApprovalDate($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereApprovedLoanAmount($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereApprovedRemarks($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereAssignTo($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereAttachmentFile($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereAttachmentRequired($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereBankCondition($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereBankEligibleFor($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereCarryForwardDate($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereCashback($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereChannel($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereCompanyCategory($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereCreatedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereCreditApprovalCompleted($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereCurrentLocation($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereCustomerName($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereDisbursalFinalized($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereDisbursalPdf($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereDisbursalStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereDocking($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereDocumentationStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereDocumentsSubmitted($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereEligibilityReason($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereEligibilityStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereEligibleLoanAmount($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereEmail($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereEmployeeId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereJobLocation($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereJourneyNotApprovedReason($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereJourneyStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereLanNo($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereLoanApplied($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereMobileNo($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereNotApprovedRemarks($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereOtherBankEligibleFor($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereOtherLoanApplied($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereOtherSanctionedBank($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer wherePanNumber($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer wherePayoutRate($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer wherePendingDocument($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereResidenceLocation($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereSalary($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereSanctionedBank($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereSanctionedLoanAmount($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereSanctionedRemarks($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereSflRemarks($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereSubvention($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereUnderwritingRemarks($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereUnderwritingStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereUpdatedAt($value)
+ * @mixin \Eloquent
+ */
 class Customer extends Model
 {
     use HasFactory, LogsActivity;

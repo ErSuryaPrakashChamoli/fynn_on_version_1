@@ -6,6 +6,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Models\Employee;
 
+/**
+ * @property-read Employee|null $employee
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|LeadGeneration newModelQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|LeadGeneration newQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|LeadGeneration query()
+ * @mixin \Eloquent
+ */
 class LeadGeneration extends Model
 {
     use HasFactory;
