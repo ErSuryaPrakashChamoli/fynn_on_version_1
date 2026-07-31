@@ -38,6 +38,7 @@ use Illuminate\Database\Eloquent\Model;
 use Filament\Tables\Filters\SelectFilter;
 
 
+
 class CustomerResource extends Resource
 {
     protected static ?string $model = Customer::class;

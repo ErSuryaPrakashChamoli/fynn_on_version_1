@@ -27,7 +27,7 @@ use App\Filament\Widgets\IncentiveStats;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Support\Facades\Blade;
 use App\Filament\Widgets\ManagerPPPStats;
-
+use App\Filament\Pages\ChangePassword;
 
 
 class AdminPanelProvider extends PanelProvider
@@ -41,11 +41,9 @@ class AdminPanelProvider extends PanelProvider
             ->viteTheme('resources/css/filament/admin/theme.css')
             ->login()
             ->brandLogo(asset('images/fynnedge.jpeg'))
-             ->brandLogoHeight('8.5rem')
-              ->sidebarFullyCollapsibleOnDesktop()
-            //   ->sidebarWidth('13rem')
-              ->globalSearch(false)
-            // ->registration()
+            ->brandLogoHeight('8.5rem')
+            ->sidebarFullyCollapsibleOnDesktop()
+            ->globalSearch(false)
             ->brandName('Finn On')
             ->colors([
                 'primary' => Color::Amber,
@@ -61,12 +59,10 @@ class AdminPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([
                 Dashboard::class,
+                ChangePassword::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
-                // AccountWidget::class,
-                // FilamentInfoWidget::class,
-                // AchievementChart::class,
                 TargetStats::class,
                 DailyCommitmentStats::class,
                 IncentiveStats::class,
