@@ -86,7 +86,21 @@ class IncentiveStats extends StatsOverviewWidget
             - ((($cashback + $subvention + $docking) / 2) * 100);
 
 
-        $slabs = $this->getSlabs();
+        // $slabs = $this->getSlabs();
+
+        $allSlabs = $this->getSlabs();
+
+        if ($user->hasRole('Caller')) {
+
+            $target = $this->getCallerTarget($employee);
+
+            $slabs = collect($allSlabs)
+                ->filter(fn($incentive, $volume) => $volume >= $target)
+                ->toArray();
+        } else {
+
+            $slabs = $allSlabs;
+        }
 
         $currentIncentive = 0;
         $nextVolume = null;
@@ -266,5 +280,94 @@ class IncentiveStats extends StatsOverviewWidget
         }
 
         return collect([$employee->id]);
+    }
+
+
+    private function getCallerTarget(Employee $employee): float
+    {
+        $today = Carbon::now();
+
+        $currentMonth = $today->month;
+        $currentYear  = $today->year;
+
+        $monthEnd = $today->copy()->endOfMonth();
+
+        /*
+    |--------------------------------------------------------------------------
+    | Effective Date
+    |--------------------------------------------------------------------------
+    | Reporting Date takes priority.
+    | If reporting date is empty, use DOJ.
+    |--------------------------------------------------------------------------
+    */
+
+        if (empty($employee->doj)) {
+            return 0;
+        }
+
+        $effectiveDate = !empty($employee->reporting_date)
+            ? Carbon::parse($employee->reporting_date)
+            : Carbon::parse($employee->doj);
+
+        /*
+    |--------------------------------------------------------------------------
+    | EXIT EMPLOYEE (Exited in Current Month)
+    |--------------------------------------------------------------------------
+    |
+    | Calculate days from Reporting Date → Exit Date.
+    |
+    */
+
+        if (!empty($employee->exit_date)) {
+
+
+
+            $exitDate = Carbon::parse($employee->exit_date);
+
+            if (
+                $exitDate->month == $currentMonth &&
+                $exitDate->year == $currentYear
+            ) {
+
+                $workedDays = $effectiveDate->diffInDays($exitDate) + 1;
+
+                return $workedDays >= 10
+                    ? 1500000
+                    : 0;
+            }
+        }
+
+        /*
+    |--------------------------------------------------------------------------
+    | NEW JOINER / REPORTING CHANGE
+    |--------------------------------------------------------------------------
+    |
+    | If Reporting Date (or DOJ) falls in current month,
+    | calculate remaining days till month end.
+    |
+    */
+
+        if (
+            $effectiveDate->month == $currentMonth &&
+            $effectiveDate->year == $currentYear
+
+        ) {
+
+            $remainingDays = $effectiveDate->diffInDays($monthEnd) + 1;
+
+            return $remainingDays >= 10
+                ? 1500000
+                : 0;
+        }
+
+        /*
+    |--------------------------------------------------------------------------
+    | EXISTING EMPLOYEE
+    |--------------------------------------------------------------------------
+    */
+
+        return is_numeric($employee->category)
+            ? (float) $employee->category
+            : 2500000;
     }
 }
