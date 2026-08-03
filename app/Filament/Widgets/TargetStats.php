@@ -346,8 +346,29 @@ class TargetStats extends StatsOverviewWidget
             }
         }
 
-        $countAchievement = $achievement - ((($totalCashback + $totalSubvention + $docking) / 2) * 100);
+        // $countAchievement = $achievement - ((($totalCashback + $totalSubvention + $docking) / 2) * 100);
+        $totalDeduction = Customer::query()
+            ->when($loginUser->hasRole('Admin'), fn($q) => $q)
+            ->when(isset($designation) && $designation === Employee::DESIGNATION_CALLER, fn($q) => $q->where('employee_id', $employee->id))
+            ->when(isset($designation) && $designation === Employee::DESIGNATION_TEAM_LEADER, fn($q) => $q->whereIn('employee_id', $callerIds))
+            ->when(isset($designation) && $designation === Employee::DESIGNATION_MANAGER, fn($q) => $q->whereIn('employee_id', $allSubordinateIds))
+            ->when(isset($designation) && $designation === Employee::DESIGNATION_CLUSTER, fn($q) => $q->whereIn('employee_id', $allTeamIds))
+            ->whereMonth('created_at', now()->month)
+            ->whereYear('created_at', now()->year)
+            ->get()
+            ->sum(function ($customer) {
 
+                $deduction = $customer->cashback + $customer->subvention + $customer->docking;
+
+                return $customer->sanctioned_loan_amount -
+                    (
+                        in_array($customer->sanctioned_bank, ['BFL Prime', 'BFL Growth'])
+                        ? (($deduction / 2) * 100)   // Existing logic
+                        : ($deduction * 100)         // New logic
+                    );
+            });
+
+        $countAchievement = $achievement - $totalDeduction;
 
         $pending = max(0, $target - $countAchievement);
         $remainingDays = max(1, now()->daysInMonth - now()->day);
