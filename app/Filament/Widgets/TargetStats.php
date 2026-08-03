@@ -360,12 +360,16 @@ class TargetStats extends StatsOverviewWidget
 
                 $deduction = $customer->cashback + $customer->subvention + $customer->docking;
 
-                return $customer->sanctioned_loan_amount -
-                    (
-                        in_array($customer->sanctioned_bank, ['BFL Prime', 'BFL Growth'])
-                        ? (($deduction / 2) * 100)   // Existing logic
-                        : ($deduction * 100)         // New logic
-                    );
+                return in_array($customer->sanctioned_bank, ['BFL Prime', 'BFL Growth'])
+                    ? (($deduction / 2) * 100)
+                    : ($deduction * 100);
+
+                // return $customer->sanctioned_loan_amount -
+                //     (
+                //         in_array($customer->sanctioned_bank, ['BFL Prime', 'BFL Growth'])
+                //         ? (($deduction / 2) * 100)   // Existing logic
+                //         : ($deduction * 100)         // New logic
+                //     );
             });
 
         $countAchievement = $achievement - $totalDeduction;
