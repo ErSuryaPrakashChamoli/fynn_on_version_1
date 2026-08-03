@@ -103,6 +103,21 @@ class LeadForm
                                 'regex' => 'Please enter a valid PAN number like ABCDE1234F.',
                             ]),
 
+                        TextInput::make('email')
+                            ->label('Email Address')
+                            ->email()
+                            ->maxLength(255)
+                            ->unique(
+                                table: 'leads',
+                                column: 'email',
+                                ignoreRecord: true,
+                            )
+                            ->placeholder('example@gmail.com')
+                            ->validationMessages([
+                                'email' => 'Please enter a valid email address.',
+                                'unique' => 'This email already exists.',
+                            ]),
+
 
                         Select::make('current_location')
                             ->label('Current Location')

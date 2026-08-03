@@ -63,6 +63,10 @@ class LeadsTable
                             $missingFields[] = 'Salary';
                         }
 
+                        if (blank($record->email)) {
+                            $missingFields[] = 'Email';
+                        }
+
                         if (! empty($missingFields)) {
                             Notification::make()
                                 ->title('Lead cannot be converted')
