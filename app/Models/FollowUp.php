@@ -46,6 +46,7 @@ class FollowUp extends Model
         'remarks',
         'next_follow_up_date',
         'status',
+        'email',
     ];
 
       protected $casts = [

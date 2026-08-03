@@ -18,7 +18,7 @@ class FollowUpForm
     {
         $customer = Customer::find(request('customer'));
 
-    
+
 
         // Changed ->components() to ->schema() at the root level
         return $schema
@@ -36,6 +36,12 @@ class FollowUpForm
                         TextInput::make('mobile_no')
                             ->label('Phone')
                             ->default($customer?->mobile_no)
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        TextInput::make('email')
+                            ->label('Email Address')
+                            ->default($customer?->email)
                             ->disabled()
                             ->dehydrated(false),
 
@@ -57,7 +63,7 @@ class FollowUpForm
                             ->disabled()
                             ->dehydrated(false),
 
-                        
+
                         TextInput::make('salary')
                             ->label('Salary')
                             ->default(
@@ -68,8 +74,8 @@ class FollowUpForm
                             ->disabled()
                             ->dehydrated(false),
 
-                
-                     
+
+
 
                     ])
                     ->columns(2),
@@ -104,12 +110,12 @@ class FollowUpForm
                         // DatePicker::make('next_follow_up_date'),
 
                         DatePicker::make('next_follow_up_date')
-                        ->label('Next Follow Up Date')
-                        ->displayFormat('d F Y')
-                        ->native(false)
-                        ->suffixIcon('heroicon-m-calendar')
-                        ->minDate(now()->addDay())
-                        ->required(),
+                            ->label('Next Follow Up Date')
+                            ->displayFormat('d F Y')
+                            ->native(false)
+                            ->suffixIcon('heroicon-m-calendar')
+                            ->minDate(now()->addDay())
+                            ->required(),
 
                         Textarea::make('remarks')
                             ->rows(5)
@@ -117,9 +123,9 @@ class FollowUpForm
                             ->columnSpanFull(), // Makes the textarea span across both columns cleanly
 
                         Hidden::make('customer_id')
-                        ->default(fn () => request()->query('customer'))
-                        ->dehydrated(true)
-                        ->required()
+                            ->default(fn() => request()->query('customer'))
+                            ->dehydrated(true)
+                            ->required()
 
                     ])
                     ->columns(2),
