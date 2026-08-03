@@ -67,6 +67,7 @@ class Lead extends Model
         'remarks',
         'is_converted',
         'converted_customer_id',
+        'email',
     ];
 
     protected $casts = [
