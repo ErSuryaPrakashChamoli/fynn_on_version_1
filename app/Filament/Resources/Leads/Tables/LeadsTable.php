@@ -15,6 +15,7 @@ use Filament\Actions\Action;
 
 use App\Filament\Imports\LeadImporter;
 use Filament\Actions\ImportAction;
+use Filament\Notifications\Notification;
 
 class LeadsTable
 {
@@ -42,12 +43,37 @@ class LeadsTable
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
                     // Show button only when lead status is marked 'Interested'
-                    ->visible(fn (Lead $record) => $record->status === 'Interested')
+                    ->visible(fn(Lead $record) => $record->status === 'Interested')
                     ->requiresConfirmation()
                     ->modalHeading('Convert Lead to Customer Profile?')
                     ->modalDescription('This will create a unique Customer profile record and initialize their active financial journey.')
                     ->action(function (Lead $record) {
-                        
+
+                        $missingFields = [];
+
+                        if (blank($record->pan_number)) {
+                            $missingFields[] = 'PAN Number';
+                        }
+
+                        if (blank($record->job_location)) {
+                            $missingFields[] = 'Job Location';
+                        }
+
+                        if (blank($record->salary)) {
+                            $missingFields[] = 'Salary';
+                        }
+
+                        if (! empty($missingFields)) {
+                            Notification::make()
+                                ->title('Lead cannot be converted')
+                                ->body('Please fill the following field(s): ' . implode(', ', $missingFields))
+                                ->danger()
+                                ->persistent()
+                                ->send();
+
+                            return;
+                        }
+
                         // 1. Generate unique internal running application parameter
                         $generatedApplicationNo = 'APP-' . strtoupper(Str::random(8));
 
@@ -70,6 +96,11 @@ class LeadsTable
                             'is_converted' => true,
                             'converted_customer_id' => $customer->id
                         ]);
+
+                        Notification::make()
+                            ->title('Lead converted successfully')
+                            ->success()
+                            ->send();
                     }),
             ])
             ->toolbarActions([
@@ -79,14 +110,14 @@ class LeadsTable
             ])
             ->headerActions([
 
-            // ImportAction::make()
-            // ->importer(LeadImporter::class),
+                // ImportAction::make()
+                // ->importer(LeadImporter::class),
 
-            ImportAction::make()
-            ->label('Import Leads')
-            ->icon('heroicon-o-arrow-up-tray')
-            ->color('success')
-            ->importer(LeadImporter::class),
+                ImportAction::make()
+                    ->label('Import Leads')
+                    ->icon('heroicon-o-arrow-up-tray')
+                    ->color('success')
+                    ->importer(LeadImporter::class),
 
             ]);
     }
