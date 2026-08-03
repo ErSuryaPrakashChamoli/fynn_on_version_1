@@ -89,6 +89,15 @@ class ChangePassword extends Page
             ->send();
 
 
+        // Logout user
+        Auth::logout();
+
+        // Invalidate session
+        request()->session()->invalidate();
+        request()->session()->regenerateToken();
+
+        // Redirect to login page
+        $this->redirect(route('filament.admin.auth.login'), navigate: true);
     }
 
     public static function shouldRegisterNavigation(): bool
