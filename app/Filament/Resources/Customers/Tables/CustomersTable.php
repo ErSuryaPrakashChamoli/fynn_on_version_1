@@ -220,6 +220,75 @@ class CustomersTable
                         );
                     }),
 
+                SelectFilter::make('cluster_id')
+                    ->label('Cluster Manager')
+                    ->multiple()
+                    ->options(
+                        Employee::where('designation', Employee::DESIGNATION_CLUSTER)
+                            ->pluck('emp_name', 'id')
+                    )
+                    ->query(
+                        fn(Builder $query, array $data) =>
+                        $query->when(
+                            filled($data['values'] ?? null),
+                            fn($query) => $query->whereHas(
+                                'employee',
+                                fn($q) => $q->whereIn('cluster_id', $data['values'])
+                            )
+                        )
+                    ),
+
+                SelectFilter::make('manager_id')
+                    ->label('Manager')
+                    ->multiple()
+                    ->options(
+                        Employee::where('designation', Employee::DESIGNATION_MANAGER)
+                            ->pluck('emp_name', 'id')
+                    )
+                    ->query(
+                        fn(Builder $query, array $data) =>
+                        $query->when(
+                            filled($data['values'] ?? null),
+                            fn($query) => $query->whereHas(
+                                'employee',
+                                fn($q) => $q->whereIn('manager_id', $data['values'])
+                            )
+                        )
+                    ),
+
+                SelectFilter::make('team_leader_id')
+                    ->label('Team Leader')
+                    ->multiple()
+                    ->options(
+                        Employee::where('designation', Employee::DESIGNATION_TEAM_LEADER)
+                            ->pluck('emp_name', 'id')
+                    )
+                    ->query(
+                        fn(Builder $query, array $data) =>
+                        $query->when(
+                            filled($data['values'] ?? null),
+                            fn($query) => $query->whereHas(
+                                'employee',
+                                fn($q) => $q->whereIn('superviser_id', $data['values'])
+                            )
+                        )
+                    ),
+
+                SelectFilter::make('caller_id')
+                    ->label('Caller')
+                    ->multiple()
+                    ->options(
+                        Employee::where('designation', Employee::DESIGNATION_CALLER)
+                            ->pluck('emp_name', 'id')
+                    )
+                    ->query(
+                        fn(Builder $query, array $data) =>
+                        $query->when(
+                            filled($data['values'] ?? null),
+                            fn($query) => $query->whereIn('employee_id', $data['values'])
+                        )
+                    ),
+
 
 
 
