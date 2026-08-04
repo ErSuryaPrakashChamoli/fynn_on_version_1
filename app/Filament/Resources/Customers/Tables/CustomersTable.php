@@ -198,6 +198,28 @@ class CustomersTable
                         );
                     }),
 
+                SelectFilter::make('employee_id')
+                    ->label('Employee')
+                    ->options(
+                        Employee::query()
+                            ->whereIn('designation', [
+                                Employee::DESIGNATION_CALLER,
+                                Employee::DESIGNATION_TEAM_LEADER,
+                                Employee::DESIGNATION_MANAGER,
+                                Employee::DESIGNATION_CLUSTER,
+                            ])
+                            ->orderBy('emp_name')
+                            ->pluck('emp_name', 'id')
+                    )
+                    ->searchable()
+                    ->preload()
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when(
+                            filled($data['value'] ?? null),
+                            fn(Builder $query) => $query->where('employee_id', $data['value'])
+                        );
+                    }),
+
 
 
 
