@@ -93,6 +93,7 @@ class LeadsTable
                             'eligibility_status' => 'eligible', // Initial baseline default step
                             'journey_status' => 'sfl',          // Initial phase journey status step
                             'assign_to' => $record->employee_id,
+                            'employee_id' => $record->employee_id,
                         ]);
 
                         // 3. Mark the lead as converted so it pulls out of this pending table layout automatically
