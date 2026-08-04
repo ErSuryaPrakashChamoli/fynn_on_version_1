@@ -526,23 +526,58 @@ class AchievementCalculatorService
     |
     */
 
+        // if (
+        //     $employee->exit_status === 'yes' &&
+        //     !empty($employee->exit_date)
+        // ) {
+
+        //     $exitDate = Carbon::parse($employee->exit_date);
+
+        //     if (
+        //         $exitDate->month == $currentMonth &&
+        //         $exitDate->year == $currentYear
+        //     ) {
+
+        //         if ($exitDate->lt($joiningDate)) {
+        //             return 0;
+        //         }
+
+        //         $workedDays = $joiningDate->diffInDays($exitDate) + 1;
+
+        //         return $workedDays >= 10
+        //             ? 1500000
+        //             : 0;
+        //     }
+        // }
+
         if (
             $employee->exit_status === 'yes' &&
             !empty($employee->exit_date)
         ) {
-
             $exitDate = Carbon::parse($employee->exit_date);
+
+            /*
+     |-------------------------------------------------------------
+     | Employee exited before current month
+     |-------------------------------------------------------------
+     */
+
+            if ($exitDate->lt($today->copy()->startOfMonth())) {
+                return 0;
+            }
+
+            /*
+     |-------------------------------------------------------------
+     | Employee exits during current month
+     |-------------------------------------------------------------
+     */
 
             if (
                 $exitDate->month == $currentMonth &&
                 $exitDate->year == $currentYear
             ) {
 
-                if ($exitDate->lt($joiningDate)) {
-                    return 0;
-                }
-
-                $workedDays = $joiningDate->diffInDays($exitDate) + 1;
+                $workedDays = $today->copy()->startOfMonth()->diffInDays($exitDate) + 1;
 
                 return $workedDays >= 10
                     ? 1500000
