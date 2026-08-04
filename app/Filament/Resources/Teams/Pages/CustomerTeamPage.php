@@ -39,84 +39,92 @@ class CustomerTeamPage extends Page implements HasTable
     public function mount(Employee $record): void
     {
         $this->record = $record;
-        
     }
 
-   public function table(Table $table): Table
-        {
-            return $table
-                ->query(
+    public function table(Table $table): Table
+    {
+        return $table
+            ->query(
 
 
-                    // Customer::query()
-                    //     ->whereIn(
-                    //         'employee_id',
-                    //         HierarchyHelper::callerIds($this->record)
-                    //     )
+                // Customer::query()
+                //     ->whereIn(
+                //         'employee_id',
+                //         HierarchyHelper::callerIds($this->record)
+                //     )
 
-                    Customer::query()
+                Customer::query()
                     ->with('employee')
                     ->whereIn(
                         'employee_id',
                         HierarchyHelper::callerIds($this->record)
                     )
-                )
-                ->columns([
-                    Tables\Columns\TextColumn::make('customer_name')
-                        ->searchable(),
+            )
+            ->columns([
+                Tables\Columns\TextColumn::make('customer_name')
+                    ->searchable(),
 
-                    Tables\Columns\TextColumn::make('mobile_no'),
+                // Tables\Columns\TextColumn::make('mobile_no'),
+                Tables\Columns\TextColumn::make('mobile_no')
+                    ->formatStateUsing(function ($state) {
+                        if (blank($state)) {
+                            return '-';
+                        }
 
-                    // Tables\Columns\TextColumn::make('journey_status')
-                    //     ->badge(),
+                        return 'XXXXXX' . substr($state, -4);
+                    }),
 
-                    Tables\Columns\TextColumn::make('journey_status')
-                        ->badge()
-                        ->formatStateUsing(fn ($state) => match ($state) {
-                            'sfl' => 'SFL',
-                            'underwriting' => 'Underwriting',
-                            'approved' => 'Approved',
-                            'sanctioned' => 'Sanctioned',
-                            'disbursed' => 'Disbursed',
-                            'not_approved' => 'Not Approved',
-                            'carry_forward' => 'Carry Forward',
-                            'dropped' => 'Dropped',
-                            default => ucfirst(str_replace('_', ' ', $state)),
-                        })
-                        ->color(fn ($state) => match ($state) {
-                            'sfl' => 'gray',
-                            'underwriting' => 'warning',
-                            'approved' => 'info',
-                            'sanctioned' => 'primary',
-                            'disbursed' => 'success',
-                            'carry_forward' => 'warning',
-                            'dropped', 'not_approved' => 'danger',
-                            default => 'gray',
-                        }),
+                // Tables\Columns\TextColumn::make('journey_status')
+                //     ->badge(),
 
-                    Tables\Columns\TextColumn::make('approved_loan_amount')
-                        ->money('INR'),
+                Tables\Columns\TextColumn::make('journey_status')
+                    ->badge()
+                    ->formatStateUsing(fn($state) => match ($state) {
+                        'sfl' => 'SFL',
+                        'underwriting' => 'Underwriting',
+                        'approved' => 'Approved',
+                        'sanctioned' => 'Sanctioned',
+                        'disbursed' => 'Disbursed',
+                        'not_approved' => 'Not Approved',
+                        'carry_forward' => 'Carry Forward',
+                        'dropped' => 'Dropped',
+                        default => ucfirst(str_replace('_', ' ', $state)),
+                    })
+                    ->color(fn($state) => match ($state) {
+                        'sfl' => 'gray',
+                        'underwriting' => 'warning',
+                        'approved' => 'info',
+                        'sanctioned' => 'primary',
+                        'disbursed' => 'success',
+                        'carry_forward' => 'warning',
+                        'dropped', 'not_approved' => 'danger',
+                        default => 'gray',
+                    }),
 
-                    // Tables\Columns\TextColumn::make('employee.emp_name')
-                    //     ->label('Caller'),
+                Tables\Columns\TextColumn::make('approved_loan_amount')
+                    ->money('INR'),
 
-                    Tables\Columns\TextColumn::make('employee.emp_name')
+
+                // Tables\Columns\TextColumn::make('employee.emp_name')
+                //     ->label('Caller'),
+
+                Tables\Columns\TextColumn::make('employee.emp_name')
                     ->label('Employee Name')
                     ->searchable()
                     ->sortable(),
 
-                    Tables\Columns\TextColumn::make('employee.emp_id')
+                Tables\Columns\TextColumn::make('employee.emp_id')
                     ->label('Employee ID'),
 
-                    Tables\Columns\TextColumn::make('employee.designation')
+                Tables\Columns\TextColumn::make('employee.designation')
                     ->label('Designation')
-                    ->formatStateUsing(fn ($state) => Employee::designationOptions()[$state] ?? 'Unknown')
+                    ->formatStateUsing(fn($state) => Employee::designationOptions()[$state] ?? 'Unknown')
                     ->badge(),
 
-                ])
-                ->filters([
+            ])
+            ->filters([
 
-            SelectFilter::make('journey_status')
+                SelectFilter::make('journey_status')
                     ->label('Journey Status')
                     ->options([
                         'sfl' => 'SFL',
@@ -131,12 +139,12 @@ class CustomerTeamPage extends Page implements HasTable
                     ->searchable()
                     ->preload(),
             ]);
+    }
 
-        }
-
-        public function getTitle(): string{
+    public function getTitle(): string
+    {
         return "{$this->record->emp_name} - Customer List";
-        }
+    }
 
 
     public function getBreadcrumbs(): array
@@ -153,5 +161,4 @@ class CustomerTeamPage extends Page implements HasTable
 
         return $breadcrumbs;
     }
-
 }
