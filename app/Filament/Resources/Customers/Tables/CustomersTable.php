@@ -21,6 +21,8 @@ use Filament\Facades\Filament;
 use Illuminate\Database\Eloquent\Builder;
 use Filament\Tables\Filters\Filter;
 use Filament\Forms\Components\DatePicker;
+use Illuminate\Support\Facades\Auth;
+use App\Services\HierarchyService;
 
 class CustomersTable
 {
@@ -202,12 +204,10 @@ class CustomersTable
                     ->label('Employee')
                     ->options(
                         Employee::query()
-                            ->whereIn('designation', [
-                                Employee::DESIGNATION_CALLER,
-                                Employee::DESIGNATION_TEAM_LEADER,
-                                Employee::DESIGNATION_MANAGER,
-                                Employee::DESIGNATION_CLUSTER,
-                            ])
+                            ->whereIn(
+                                'id',
+                                HierarchyService::visibleEmployeeIds(Auth::user())
+                            )
                             ->orderBy('emp_name')
                             ->pluck('emp_name', 'id')
                     )
