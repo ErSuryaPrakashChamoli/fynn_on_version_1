@@ -23,7 +23,7 @@ class LeadsTable
     {
         return $table
             ->defaultSort('id', 'desc')
-            ->query(Lead::query()->where('is_converted', false))
+            // ->query(Lead::query()->where('is_converted', false))
             ->columns([
                 //
                 TextColumn::make('customer_name')->label('Prospect Name')->searchable(),

@@ -78,4 +78,21 @@ class LeadResource extends Resource
 
     // }
 
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        $user = Auth::user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query
+            ->where('is_converted', false)
+            ->whereIn(
+                'employee_id',
+                HierarchyService::visibleEmployeeIds($user)
+            );
+    }
 }
