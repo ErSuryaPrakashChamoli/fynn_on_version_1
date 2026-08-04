@@ -7,6 +7,7 @@ use Filament\Actions\Exports\ExportColumn;
 use Filament\Actions\Exports\Exporter;
 use Filament\Actions\Exports\Models\Export;
 use Illuminate\Support\Number;
+use Illuminate\Database\Eloquent\Builder;
 
 class CustomerExporter extends Exporter
 {
@@ -57,6 +58,29 @@ class CustomerExporter extends Exporter
             ExportColumn::make('updated_at'),
             ExportColumn::make('employee_id'),
             ExportColumn::make('assign_to'),
+
+            ExportColumn::make('employee.emp_id')
+                ->label('Caller EMP ID'),
+            ExportColumn::make('employee.emp_name')
+                ->label('Caller Name'),
+
+            ExportColumn::make('employee.superviser.emp_id')
+                ->label('Team Leader EMP ID'),
+
+            ExportColumn::make('employee.superviser.emp_name')
+                ->label('Team Leader Name'),
+
+            ExportColumn::make('employee.manager.emp_id')
+                ->label('Manager EMP ID'),
+
+            ExportColumn::make('employee.manager.emp_name')
+                ->label('Manager Name'),
+
+            ExportColumn::make('employee.clusterManager.emp_id')
+                ->label('Cluster Manager EMP ID'),
+
+            ExportColumn::make('employee.clusterManager.emp_name')
+                ->label('Cluster Manager Name'),
         ];
     }
 
@@ -69,5 +93,14 @@ class CustomerExporter extends Exporter
         }
 
         return $body;
+    }
+
+    public static function modifyQuery(Builder $query): Builder
+    {
+        return $query->with([
+            'employee.superviser',
+            'employee.manager',
+            'employee.clusterManager',
+        ]);
     }
 }

@@ -19,6 +19,8 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Actions\Action;
 use App\Models\Customer;
 use Filament\Tables\Filters\SelectFilter;
+use Illuminate\Database\Eloquent\Builder;
+use Filament\Forms\Components\Select;
 
 
 
@@ -138,6 +140,72 @@ class CustomerTeamPage extends Page implements HasTable
                     ])
                     ->searchable()
                     ->preload(),
+
+                SelectFilter::make('employee_id')
+                    ->label('Employee')
+                    ->visible(fn() => $this->record->designation !== Employee::DESIGNATION_CALLER)
+                    ->options(function () {
+                        return Employee::query()
+                            ->whereIn(
+                                'id',
+                                HierarchyHelper::callerIds($this->record)
+                            )
+                            ->orderBy('emp_name')
+                            ->pluck('emp_name', 'id');
+                    })
+                    ->searchable()
+                    ->preload()
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when(
+                            filled($data['value'] ?? null),
+                            fn(Builder $query) => $query->where('employee_id', $data['value'])
+                        );
+                    }),
+
+                SelectFilter::make('month')
+                    ->label('Month')
+                    ->form([
+                        Select::make('month')
+                            ->options([
+                                1 => 'January',
+                                2 => 'February',
+                                3 => 'March',
+                                4 => 'April',
+                                5 => 'May',
+                                6 => 'June',
+                                7 => 'July',
+                                8 => 'August',
+                                9 => 'September',
+                                10 => 'October',
+                                11 => 'November',
+                                12 => 'December',
+                            ])
+                            ->placeholder('All Months'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when(
+                            filled($data['month'] ?? null),
+                            fn(Builder $query) => $query->whereMonth('created_at', $data['month'])
+                        );
+                    }),
+
+                SelectFilter::make('year')
+                    ->label('Year')
+                    ->form([
+                        Select::make('year')
+                            ->options(
+                                collect(range(now()->year, now()->year - 10))
+                                    ->mapWithKeys(fn($year) => [$year => $year])
+                                    ->toArray()
+                            )
+                            ->placeholder('All Years'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when(
+                            filled($data['year'] ?? null),
+                            fn(Builder $query) => $query->whereYear('created_at', $data['year'])
+                        );
+                    }),
             ]);
     }
 
