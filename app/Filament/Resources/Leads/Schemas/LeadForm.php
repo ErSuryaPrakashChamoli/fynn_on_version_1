@@ -121,7 +121,7 @@ class LeadForm
 
                         Select::make('current_location')
                             ->label('Current Location')
-                            ->required()
+                            // ->required()
                             ->searchable()
                             ->preload()
                             ->options(
@@ -136,6 +136,21 @@ class LeadForm
 
                         Select::make('job_location')
                             ->label('Job Location')
+                            ->required()
+                            ->searchable()
+                            ->preload()
+                            ->options(
+                                fn() => City::query()
+                                    ->where('is_active', 1)
+                                    ->orderBy('city')
+                                    ->get()
+                                    ->mapWithKeys(fn($item) => [
+                                        $item->city => "{$item->city}, {$item->state}"
+                                    ])
+                            ),
+
+                        Select::make('residence_location')
+                            ->label('Residence Location')
                             // ->required()
                             ->searchable()
                             ->preload()
@@ -156,9 +171,13 @@ class LeadForm
                             ->live()
 
 
+
+
                             ->formatStateUsing(fn($state) => filled($state)
                                 ? indianCurrencyFormat($state)
                                 : null)
+
+
 
                             ->afterStateUpdated(function ($state, callable $set) {
                                 $value = preg_replace('/[^0-9]/', '', (string) $state);
@@ -167,8 +186,16 @@ class LeadForm
                                     $set('salary', indianCurrencyFormat($value));
                                 }
                             })
+                            ->dehydrateStateUsing(function ($state) {
+                                if (blank($state)) {
+                                    return null;
+                                }
 
-                            ->dehydrateStateUsing(fn($state) => preg_replace('/[^0-9]/', '', (string) $state)),
+                                return preg_replace('/[^0-9.]/', '', $state);
+                            }),
+                        //  ->dehydrateStateUsing(fn($state) => blank($state) ? null : $state),
+
+                        // ->dehydrateStateUsing(fn($state) => preg_replace('/[^0-9]/', '', (string) $state)),
                     ])->columns(2),
 
 

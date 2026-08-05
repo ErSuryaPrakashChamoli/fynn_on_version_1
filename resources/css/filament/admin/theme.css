@@ -21,16 +21,20 @@
     justify-content: flex-end !important;
 }
 
-/* .fi-form-actions {
-    justify-content: flex-end !important;
-} */
 
-/* Page actions */
-/* .fi-page-actions {
-    justify-content: flex-end !important;
-} */
+/* Entire section */
+.fi-section {
+    background-color: #dbeafe !important;
+    border: 2px solid #3b82f6 !important;
+    border-radius: 12px;
+}
 
-/* Modal footer actions */
-/* .fi-modal-footer {
-    justify-content: flex-end !important;
-} */
+/* Section body */
+.fi-section-content {
+    background-color: #dbeafe !important;
+}
+
+/* Section header */
+.fi-section-header {
+    background-color: #bfdbfe !important;
+}

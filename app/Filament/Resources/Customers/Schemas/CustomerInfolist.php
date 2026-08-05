@@ -206,6 +206,25 @@ class CustomerInfolist
                         Grid::make(3)
                             ->schema([
 
+                                // TextEntry::make('disbursal_status'),
+
+                                TextEntry::make('disbursal_status')
+                                    ->label('Disbursal Status')
+                                    ->badge()
+                                    ->color(fn(?string $state): string => match ($state) {
+                                        'disbursed'     => 'success',
+                                        'dropped'       => 'danger',
+                                        'carry_forward' => 'warning',
+                                        'on_hold'       => 'gray',
+                                        default         => 'gray',
+                                    })
+                                    ->formatStateUsing(fn(?string $state) => match ($state) {
+                                        'disbursed'     => 'Disbursed',
+                                        'dropped'       => 'Dropped',
+                                        'carry_forward' => 'Carry Forward',
+                                        'on_hold'       => 'On Hold',
+                                        default         => '-',
+                                    }),
                                 TextEntry::make('channel'),
 
                                 TextEntry::make('sanctioned_bank'),

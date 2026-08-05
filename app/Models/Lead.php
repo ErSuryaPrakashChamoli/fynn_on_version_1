@@ -68,7 +68,8 @@ class Lead extends Model
         'is_converted',
         'converted_customer_id',
         'email',
-        'application_no'
+        'application_no',
+        'residence_location'
     ];
 
     protected $casts = [

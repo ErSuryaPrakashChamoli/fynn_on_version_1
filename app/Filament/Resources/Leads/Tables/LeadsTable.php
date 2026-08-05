@@ -72,6 +72,14 @@ class LeadsTable
                             $missingFields[] = 'Email';
                         }
 
+                        if (blank($record->residence_location)) {
+                            $missingFields[] = 'Residence Location';
+                        }
+
+                        if (blank($record->current_location)) {
+                            $missingFields[] = 'Current Location';
+                        }
+
                         if (! empty($missingFields)) {
                             Notification::make()
                                 ->title('Lead cannot be converted')
@@ -99,6 +107,8 @@ class LeadsTable
                             'journey_status' => 'sfl',          // Initial phase journey status step
                             'assign_to' => $record->employee_id,
                             'employee_id' => $record->employee_id,
+                            'email' => $record->email,
+                            'residence_location' => $record->residence_location,
                         ]);
 
                         // 3. Mark the lead as converted so it pulls out of this pending table layout automatically

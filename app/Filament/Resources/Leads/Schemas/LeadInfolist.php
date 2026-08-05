@@ -5,139 +5,116 @@ namespace App\Filament\Resources\Leads\Schemas;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Fieldset;
 
 class LeadInfolist
 {
     public static function configure(Schema $schema): Schema
     {
+
+
         return $schema
             ->components([
 
-                // 1. Lead Details Section (Full Width inside Modal)
-                Section::make('Lead Information')
-                    ->description('Personal and financial information of the prospect')
-                    ->icon('heroicon-o-user-circle')
+                Grid::make(12)
                     ->schema([
 
-                        TextEntry::make('customer_name')
-                            ->label('Prospect Name')
-                            ->icon('heroicon-o-user')
-                            ->weight('bold')
-                            ->copyable()
-                            ->extraAttributes(['class' => 'text-primary-600 dark:text-primary-400']),
+                        Fieldset::make('Lead Information')
+                            ->columnSpan(12)
+                            ->extraAttributes([
+                                'class' => 'bg-blue-100 border-2 border-blue-400 rounded-xl p-5 shadow',
+                            ])
+                            ->schema([
 
-                        TextEntry::make('mobile_no')
-                            ->label('Mobile Number')
-                            ->icon('heroicon-o-phone')
-                            ->copyable(),
 
-                        TextEntry::make('email')
-                            ->label('Email Address')
-                            ->icon('heroicon-o-envelope')
-                            ->copyable(),
 
-                        TextEntry::make('pan_number')
-                            ->label('PAN Number')
-                            ->icon('heroicon-o-identification')
-                            ->badge()
-                            ->color('gray')
-                            ->copyable(),
+                                        TextEntry::make('customer_name')
+                                            ->label('Prospect Name'),
 
-                        TextEntry::make('current_location')
-                            ->icon('heroicon-o-map-pin'),
+                                        TextEntry::make('mobile_no')
+                                            ->label('Mobile Number'),
 
-                        TextEntry::make('job_location')
-                            ->icon('heroicon-o-briefcase'),
+                                        TextEntry::make('email')
+                                            ->label('Email Address'),
 
-                        TextEntry::make('salary')
-                            ->money('INR')
-                            ->icon('heroicon-o-banknotes')
-                            ->weight('bold')
-                            ->extraAttributes(['class' => 'text-emerald-600 font-mono dark:text-emerald-400']),
+                                        TextEntry::make('pan_number')
+                                            ->label('PAN Number'),
 
-                        TextEntry::make('employee.emp_name')
-                            ->label('Assigned Employee')
-                            ->icon('heroicon-o-user-group')
-                            ->placeholder('Unassigned'),
+                                        TextEntry::make('current_location'),
 
-                        TextEntry::make('follow_up_date')
-                            ->date()
-                            ->icon('heroicon-o-calendar'),
+                                        TextEntry::make('job_location'),
 
-                        TextEntry::make('follow_up_type')
-                            ->badge()
-                            ->color('info')
-                            ->icon('heroicon-o-tag'),
+                                        TextEntry::make('salary')
+                                            ->money('INR'),
 
-                        TextEntry::make('status')
-                            ->badge()
-                            ->color(fn (string $state): string => match (strtolower($state)) {
-                                'new', 'pending' => 'warning',
-                                'contacted', 'in_progress' => 'info',
-                                'converted', 'approved' => 'success',
-                                'rejected', 'lost' => 'danger',
-                                default => 'gray',
-                            }),
+                                        TextEntry::make('employee.emp_name')
+                                            ->label('Assigned Employee'),
 
-                        TextEntry::make('next_follow_up_date')
-                            ->date()
-                            ->icon('heroicon-o-clock')
-                            ->weight('bold')
-                            ->extraAttributes(['class' => 'text-amber-600 dark:text-amber-400']),
+                                        TextEntry::make('follow_up_date')
+                                            ->date(),
 
-                        TextEntry::make('remarks')
-                            ->columnSpanFull()
-                            ->markdown()
-                            ->placeholder('No remarks available')
-                            ->extraAttributes(['class' => 'p-3 bg-gray-50 rounded-lg dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700/50']),
+                                        TextEntry::make('follow_up_type'),
 
-                    ])
-                    ->columns(2)
-                    ->collapsible(),
+                                        TextEntry::make('status')
+                                            ->badge(),
 
-                // 2. Conversion Section
-                Section::make('Conversion Status')
-                    ->icon('heroicon-o-arrow-path-rounded-square')
-                    ->schema([
+                                        TextEntry::make('next_follow_up_date')
+                                            ->date(),
 
-                        TextEntry::make('is_converted')
-                            ->label('Status')
-                            ->badge()
-                            ->color(fn ($state) => $state ? 'success' : 'warning')
-                            ->formatStateUsing(fn ($state) => $state ? 'Converted' : 'Pending'),
+                                        TextEntry::make('remarks')
+                                            ->columnSpanFull(),
 
-                        TextEntry::make('convertedCustomer.application_no')
-                            ->label('Application No')
-                            ->icon('heroicon-o-document-text')
-                            ->badge()
-                            ->color('success')
-                            ->placeholder('N/A')
-                            ->copyable(),
 
-                    ])
-                    ->columns(2)
-                    ->collapsible(),
 
-                // 3. System Meta Section
-                Section::make('System Information')
-                    ->icon('heroicon-o-cog-6-tooth')
-                    ->schema([
 
-                        TextEntry::make('created_at')
-                            ->label('Created On')
-                            ->dateTime()
-                            ->icon('heroicon-o-calendar-days')
-                            ->extraAttributes(['class' => 'text-xs text-gray-500']),
+                            ]),
 
-                        TextEntry::make('updated_at')
-                            ->label('Last Updated')
-                            ->dateTime()
-                            ->icon('heroicon-o-arrow-path')
-                            ->extraAttributes(['class' => 'text-xs text-gray-500']),
+                        // Fieldset::make('Conversion Status')
+                        //     ->columnSpan(6)
+                        //     ->extraAttributes([
+                        //         'class' => 'bg-green-100 border-2 border-green-400 rounded-xl p-5 shadow',
+                        //     ])
+                        //     ->schema([
+
+                        //         TextEntry::make('is_converted')
+                        //             ->label('Status')
+                        //             ->badge()
+                        //             ->color(fn($state) => $state ? 'success' : 'warning')
+                        //             ->formatStateUsing(fn($state) => $state ? 'Converted' : 'Pending'),
+
+                        //         TextEntry::make('convertedCustomer.application_no')
+                        //             ->label('Application No')
+                        //             ->icon('heroicon-o-document-text')
+                        //             ->iconColor('success')
+                        //             ->badge()
+                        //             ->color('success')
+                        //             ->placeholder('N/A')
+                        //             ->copyable(),
+                        //     ]),
+
+                        // Fieldset::make('System Information')
+                        //     ->columnSpanFull()
+                        //     ->extraAttributes([
+                        //         'class' => 'bg-yellow-100 border-2 border-yellow-400 rounded-xl p-5 shadow',
+                        //     ])
+                        //     ->schema([
+                        //         TextEntry::make('created_at')
+                        //             ->label('Created On')
+                        //             ->dateTime()
+                        //             ->icon('heroicon-o-calendar-days')
+                        //             ->iconColor('amber')
+                        //             ->extraAttributes(['class' => 'text-xs text-amber-950 font-medium']),
+
+                        //         TextEntry::make('updated_at')
+                        //             ->label('Last Updated')
+                        //             ->dateTime()
+                        //             ->icon('heroicon-o-arrow-path')
+                        //             ->iconColor('amber')
+                        //             ->extraAttributes(['class' => 'text-xs text-amber-950 font-medium']),
+                        //     ]),
 
                     ])
-                    ->columns(2)
-                    ->collapsible(),
 
             ]);
     }

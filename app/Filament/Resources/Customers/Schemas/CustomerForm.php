@@ -47,6 +47,15 @@ class CustomerForm
             auth()->user()->employee?->designation !== Employee::DESIGNATION_ADMIN;
     }
 
+    protected static function lockAfterFilled(?Customer $record, string $field): bool
+    {
+        if (! $record) {
+            return false; // Creating
+        }
+
+        return filled($record->{$field});
+    }
+
     public static function configure(Schema $schema): Schema
     {
         $banks = [
@@ -152,11 +161,36 @@ class CustomerForm
                             ])
                             ->disabled(fn(?Customer $record) => self::lockCallerFields($record)),
 
+                        // TextInput::make('email')
+                        //     ->email()
+                        //     ->required()
+                        //     ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+                        //     ->maxLength(255),
+
                         TextInput::make('email')
+                            ->label('Email Address')
                             ->email()
                             ->required()
-                            ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
-                            ->maxLength(255),
+                            ->maxLength(255)
+                            ->unique(
+                                table: 'customers',
+                                column: 'email',
+                                ignoreRecord: true,
+                            )
+                            ->disabled(function (?Customer $record): bool {
+
+                                if (! $record) {
+                                    return false; // Creating a customer
+                                }
+
+                                // Lock email from Approval stage onwards
+                                return in_array($record->journey_status, [
+                                    'approved',
+                                    'sanctioned',
+                                    'disbursal',
+                                    'finalized',
+                                ]);
+                            }),
 
                         TextInput::make('pan_number')
                             ->label('PAN Number')
@@ -349,18 +383,62 @@ class CustomerForm
                                 auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
                             )
                             ->schema([
+                                // TextInput::make('company_category')
+                                //     ->label('Company Name')
+                                //     ->maxLength(255)
+                                //     ->live()
+                                //     //  ->required()
+                                //     ->required(fn(Get $get) => auth()->user()->hasAnyRole([
+                                //         'Admin',
+                                //         'Manager',
+                                //         'Team Leader',
+                                //         'Cluster Manager'
+                                //     ]) && $get('eligibility_status') === 'eligible')
+                                //     ->afterStateUpdated(fn($state, callable $set) => $set('company_category', Str::title($state))),
+
                                 TextInput::make('company_category')
                                     ->label('Company Name')
                                     ->maxLength(255)
                                     ->live()
-                                    //  ->required()
-                                    ->required(fn(Get $get) => auth()->user()->hasAnyRole([
-                                        'Admin',
-                                        'Manager',
-                                        'Team Leader',
-                                        'Cluster Manager'
-                                    ]) && $get('eligibility_status') === 'eligible')
-                                    ->afterStateUpdated(fn($state, callable $set) => $set('company_category', Str::title($state))),
+                                    ->required(
+                                        fn(Get $get) =>
+                                        auth()->user()->hasAnyRole([
+                                            'Admin',
+                                            'Manager',
+                                            'Team Leader',
+                                            'Cluster Manager',
+                                        ]) && $get('eligibility_status') === 'eligible'
+                                    )
+                                    ->afterStateUpdated(fn($state, callable $set) => $set('company_category', Str::title($state)))
+                                    ->disabled(fn(?Customer $record) => self::lockAfterFilled($record, 'company_category')),
+
+                                // Select::make('loan_applied')
+                                //     ->label('Loan Type')
+                                //     ->options([
+                                //         'personal_loan' => 'Personal Loan',
+                                //         'business_loan' => 'Business Loan',
+                                //         'home_loan' => 'Home Loan',
+                                //         'car_loan' => 'Car Loan',
+                                //         'education_loan' => 'Education Loan',
+                                //         'gold_loan' => 'Gold Loan',
+                                //         'lap' => 'Loan Against Property',
+                                //         'credit_card' => 'Credit Card',
+                                //         'overdraft' => 'Overdraft',
+                                //         'other' => 'Other',
+                                //     ])
+                                //     ->searchable()
+                                //     ->preload()
+                                //     ->required(
+                                //         fn(Get $get) =>
+                                //         auth()->user()->hasAnyRole([
+                                //             'Admin',
+                                //             'Manager',
+                                //             'Team Leader',
+                                //             'Cluster Manager',
+                                //         ]) && $get('eligibility_status') === 'eligible'
+                                //     )
+                                //     ->live(),
+
 
                                 Select::make('loan_applied')
                                     ->label('Loan Type')
@@ -387,7 +465,8 @@ class CustomerForm
                                             'Cluster Manager',
                                         ]) && $get('eligibility_status') === 'eligible'
                                     )
-                                    ->live(),
+                                    ->live()
+                                    ->disabled(fn(?Customer $record) => self::lockAfterFilled($record, 'loan_applied')),
 
                                 TextInput::make('other_loan_applied')
                                     ->label('Other Loan Type')
@@ -402,19 +481,36 @@ class CustomerForm
                                         && $get('loan_applied') === 'other')
                                     ->maxLength(255),
 
+                                // Select::make('bank_eligible_for')
+                                //     ->label('Bank Eligible For')
+                                //     ->options($banks)
+                                //     //  ->required()
+                                //     ->required(fn(Get $get) => auth()->user()->hasAnyRole([
+                                //         'Admin',
+                                //         'Manager',
+                                //         'Team Leader',
+                                //         'Cluster Manager'
+                                //     ])  && $get('eligibility_status') === 'eligible')
+                                //     ->searchable()
+                                //     ->preload()
+                                //     ->live(),
+
                                 Select::make('bank_eligible_for')
                                     ->label('Bank Eligible For')
                                     ->options($banks)
-                                    //  ->required()
-                                    ->required(fn(Get $get) => auth()->user()->hasAnyRole([
-                                        'Admin',
-                                        'Manager',
-                                        'Team Leader',
-                                        'Cluster Manager'
-                                    ])  && $get('eligibility_status') === 'eligible')
                                     ->searchable()
                                     ->preload()
-                                    ->live(),
+                                    ->required(
+                                        fn(Get $get) =>
+                                        auth()->user()->hasAnyRole([
+                                            'Admin',
+                                            'Manager',
+                                            'Team Leader',
+                                            'Cluster Manager',
+                                        ]) && $get('eligibility_status') === 'eligible'
+                                    )
+                                    ->live()
+                                    ->disabled(fn(?Customer $record) => self::lockAfterFilled($record, 'bank_eligible_for')),
 
                                 TextInput::make('other_bank_eligible_for')
                                     ->label('Other Bank Name')
@@ -806,6 +902,7 @@ class CustomerForm
                                         'disbursed' => 'Disbursed',
                                         'carry_forward' => 'Carry Forward',
                                         'dropped' => 'Dropped',
+                                        'on_hold' => 'On Hold',
                                     ])
                                     ->live()
                                     ->dehydrated(true)
@@ -1018,17 +1115,17 @@ class CustomerForm
                                         )
                                     )
                             ),
-                            // ->visible(
-                            //     fn(Get $get) => ($get('credit_approval_completed') ?? false)
-                            //         || in_array(strtolower((string) $get('journey_status')), [
-                            //             'sanctioned',
-                            //             'disbursal_documents',
-                            //             'carry_forward',
-                            //             'dropped',
-                            //             'approved',
-                            //             'disbursed'
-                            //         ])
-                            // ),
+                        // ->visible(
+                        //     fn(Get $get) => ($get('credit_approval_completed') ?? false)
+                        //         || in_array(strtolower((string) $get('journey_status')), [
+                        //             'sanctioned',
+                        //             'disbursal_documents',
+                        //             'carry_forward',
+                        //             'dropped',
+                        //             'approved',
+                        //             'disbursed'
+                        //         ])
+                        // ),
 
 
 
