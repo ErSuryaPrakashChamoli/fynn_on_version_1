@@ -21,12 +21,14 @@ use Illuminate\Support\Facades\Auth;
 
 use App\Filament\Imports\LeadImporter;
 use Filament\Actions\ImportAction;
+use App\Filament\Resources\Leads\Schemas\LeadInfolist;
 
 class LeadResource extends Resource
 {
     protected static ?string $model = Lead::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+    // protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUserPlus;
 
     protected static ?string $recordTitleAttribute = 'customer_name';
 
@@ -94,5 +96,10 @@ class LeadResource extends Resource
                 'employee_id',
                 HierarchyService::visibleEmployeeIds($user)
             );
+    }
+
+    public static function infolist(Schema $schema): Schema
+    {
+        return LeadInfolist::configure($schema);
     }
 }

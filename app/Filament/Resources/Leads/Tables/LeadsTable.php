@@ -16,6 +16,7 @@ use Filament\Actions\Action;
 use App\Filament\Imports\LeadImporter;
 use Filament\Actions\ImportAction;
 use Filament\Notifications\Notification;
+use Filament\Actions\ViewAction;
 
 class LeadsTable
 {
@@ -32,6 +33,10 @@ class LeadsTable
                 TextColumn::make('status')->badge(),
                 TextColumn::make('follow_up_date')->label('Follow up created')->badge(),
                 TextColumn::make('next_follow_up_date')->date()->label('Next Follow Up'),
+                TextColumn::make('created_at')
+                    ->label('Created On')
+                    ->dateTime('d M Y h:i A')
+                    ->sortable(),
             ])
             ->filters([
                 //
@@ -107,6 +112,8 @@ class LeadsTable
                             ->success()
                             ->send();
                     }),
+
+                ViewAction::make(),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
