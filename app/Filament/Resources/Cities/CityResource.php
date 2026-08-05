@@ -52,6 +52,6 @@ class CityResource extends Resource
     public static function canAccess(): bool
     {
         return auth()->check()
-            && auth()->user()->employee?->designation === Employee::DESIGNATION_ADMIN;
+            && auth()->user()->hasRole('Admin');
     }
 }
