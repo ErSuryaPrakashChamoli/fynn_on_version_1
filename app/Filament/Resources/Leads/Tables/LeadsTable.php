@@ -17,6 +17,9 @@ use App\Filament\Imports\LeadImporter;
 use Filament\Actions\ImportAction;
 use Filament\Notifications\Notification;
 use Filament\Actions\ViewAction;
+use Filament\Tables\Filters\SelectFilter;
+use App\Models\Employee;
+use Illuminate\Database\Eloquent\Builder;
 
 class LeadsTable
 {
@@ -129,6 +132,63 @@ class LeadsTable
                 BulkActionGroup::make([
                     // DeleteBulkAction::make(),
                 ]),
+            ])
+            ->filters([
+
+                SelectFilter::make('manager_id')
+                    ->label('Manager')
+                    ->multiple()
+                    ->options(
+                        Employee::where('designation', Employee::DESIGNATION_MANAGER)
+                            ->orderBy('emp_name')
+                            ->pluck('emp_name', 'id')
+                    )
+                    ->query(
+                        fn(Builder $query, array $data) =>
+                        $query->when(
+                            filled($data['values'] ?? null),
+                            fn(Builder $query) => $query->whereHas(
+                                'employee',
+                                fn(Builder $q) => $q->whereIn('manager_id', $data['values'])
+                            )
+                        )
+                    ),
+
+                SelectFilter::make('team_leader_id')
+                    ->label('Team Leader')
+                    ->multiple()
+                    ->options(
+                        Employee::where('designation', Employee::DESIGNATION_TEAM_LEADER)
+                            ->orderBy('emp_name')
+                            ->pluck('emp_name', 'id')
+                    )
+                    ->query(
+                        fn(Builder $query, array $data) =>
+                        $query->when(
+                            filled($data['values'] ?? null),
+                            fn(Builder $query) => $query->whereHas(
+                                'employee',
+                                fn(Builder $q) => $q->whereIn('superviser_id', $data['values'])
+                            )
+                        )
+                    ),
+
+                SelectFilter::make('caller_id')
+                    ->label('Caller')
+                    ->multiple()
+                    ->options(
+                        Employee::where('designation', Employee::DESIGNATION_CALLER)
+                            ->orderBy('emp_name')
+                            ->pluck('emp_name', 'id')
+                    )
+                    ->query(
+                        fn(Builder $query, array $data) =>
+                        $query->when(
+                            filled($data['values'] ?? null),
+                            fn(Builder $query) => $query->whereIn('employee_id', $data['values'])
+                        )
+                    ),
+
             ])
             ->headerActions([
 
