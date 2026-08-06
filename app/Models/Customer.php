@@ -14,6 +14,7 @@ use Spatie\Activitylog\Support\LogOptions;
 use Spatie\Activitylog\Models\Activity;
 use App\Models\ActivityLog;
 use App\Models\CustomerStageHistory;
+use App\Models\CustomerSettlement;
 
 /**
  * @property int $id
@@ -291,5 +292,10 @@ class Customer extends Model
     public function employee()
     {
         return $this->belongsTo(Employee::class, 'employee_id');
+    }
+
+    public function settlements()
+    {
+        return $this->hasMany(CustomerSettlement::class);
     }
 }
