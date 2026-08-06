@@ -13,7 +13,8 @@ return new class extends Migration
     {
         Schema::create('mis_batch_records', function (Blueprint $table) {
             $table->id();
-            // MIS Batch
+
+             // MIS Batch
             $table->foreignId('mis_batch_id')
                 ->constrained()
                 ->cascadeOnDelete();
@@ -25,10 +26,12 @@ return new class extends Migration
                 ->nullOnDelete();
 
             // Bank Details
-            $table->foreignId('bank_id')
-                ->nullable()
-                ->constrained()
-                ->nullOnDelete();
+            // $table->foreignId('bank_id')
+            //     ->nullable()
+            //     ->constrained()
+            //     ->nullOnDelete();
+
+            $table->string('bank_name')->nullable();
 
             // Identifiers from MIS
             $table->string('application_no')->nullable();
@@ -106,6 +109,8 @@ return new class extends Migration
             $table->index('mobile_no');
             $table->index('pan_number');
             $table->index(['mis_batch_id', 'customer_id']);
+
+
         });
     }
 

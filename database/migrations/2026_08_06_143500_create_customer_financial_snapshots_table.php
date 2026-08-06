@@ -68,6 +68,8 @@ return new class extends Migration
             $table->index(['customer_id', 'source']);
             $table->index(['customer_id', 'version']);
             $table->index('lan_no');
+
+
         });
     }
 

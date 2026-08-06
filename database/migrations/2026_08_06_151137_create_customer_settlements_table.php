@@ -82,31 +82,7 @@ return new class extends Migration
                 ->constrained('users')
                 ->nullOnDelete();
 
-            $table->foreignId('created_by')
-                ->nullable()
-                ->constrained('users')
-                ->nullOnDelete();
-
-            $table->foreignId('updated_by')
-                ->nullable()
-                ->constrained('users')
-                ->nullOnDelete();
-
-            // Verified By
-            $table->foreignId('verified_by')
-                ->nullable()
-                ->constrained('users')
-                ->nullOnDelete();
-
             $table->timestamp('verified_at')->nullable();
-
-
-            // Sales Snapshot
-            $table->decimal('sales_disbursal_amount', 15, 2)->nullable();
-            $table->decimal('sales_cashback', 15, 2)->nullable();
-            $table->decimal('sales_subvention', 15, 2)->nullable();
-            $table->decimal('sales_docking', 15, 2)->nullable();
-
             $table->timestamps();
 
             /*

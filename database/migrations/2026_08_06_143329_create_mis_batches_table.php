@@ -13,13 +13,7 @@ return new class extends Migration
     {
         Schema::create('mis_batches', function (Blueprint $table) {
             $table->id();
-            // Bank
-            $table->foreignId('bank_id')
-                ->nullable()
-                ->constrained()
-                ->nullOnDelete();
-
-            // Batch Details
+             // Batch Details
             $table->string('batch_name');                 // Example: Axis August Batch 1
             $table->string('batch_code')->nullable();     // AXIS-2026-08-01
 
@@ -76,9 +70,11 @@ return new class extends Migration
 
             $table->timestamps();
 
-            $table->index(['bank_id', 'month', 'year']);
+            // $table->index(['bank_id', 'month', 'year']);
+            $table->string('bank_name')->nullable();
             $table->index('status');
             $table->index('uploaded_by');
+
 
         });
     }
