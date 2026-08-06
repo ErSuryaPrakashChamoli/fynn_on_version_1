@@ -14,15 +14,25 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use App\Models\CustomerSettlement;
+use UnitEnum;
+
 
 class SettlementResource extends Resource
 {
     // protected static ?string $model = Settlement::class;
     protected static ?string $model = CustomerSettlement::class;
 
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
     protected static ?string $recordTitleAttribute = 'customer_id';
+
+    protected static string | UnitEnum | null $navigationGroup = 'Finance';
+
+    protected static ?string $navigationLabel = 'Settlement';
+
+
+
 
     public static function form(Schema $schema): Schema
     {

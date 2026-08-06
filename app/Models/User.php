@@ -11,6 +11,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 use Spatie\Permission\Traits\HasRoles;
 
@@ -60,14 +61,14 @@ use Spatie\Permission\Traits\HasRoles;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User withoutTeam($teams)
  * @mixin \Eloquent
  */
-#[Fillable(['name', 'email', 'password','is_active'])]
+#[Fillable(['name', 'email', 'password', 'is_active'])]
 #[Hidden(['password', 'remember_token'])]
 
 
 class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable ,HasRoles;
+    use HasFactory, Notifiable, HasRoles;
 
     /**
      * Get the attributes that should be cast.
@@ -80,12 +81,12 @@ class User extends Authenticatable implements FilamentUser
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean'
-            ];
+        ];
     }
 
     public function employee()
     {
-        return $this->belongsTo(Employee::class,'employee_id');
+        return $this->belongsTo(Employee::class, 'employee_id');
     }
 
     public function canAccessPanel(Panel $panel): bool
@@ -95,7 +96,20 @@ class User extends Authenticatable implements FilamentUser
         return true;
     }
 
+    // add for settlement verification
 
+    public function uploadedMisBatches(): HasMany
+    {
+        return $this->hasMany(MisBatch::class, 'uploaded_by');
+    }
 
+    public function verifiedMisBatches(): HasMany
+    {
+        return $this->hasMany(MisBatch::class, 'verified_by');
+    }
 
+    public function verifiedSettlements(): HasMany
+    {
+        return $this->hasMany(CustomerSettlement::class, 'verified_by');
+    }
 }

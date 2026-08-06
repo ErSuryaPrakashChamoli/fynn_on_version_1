@@ -15,6 +15,7 @@ use Spatie\Activitylog\Models\Activity;
 use App\Models\ActivityLog;
 use App\Models\CustomerStageHistory;
 use App\Models\CustomerSettlement;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property int $id
@@ -294,8 +295,21 @@ class Customer extends Model
         return $this->belongsTo(Employee::class, 'employee_id');
     }
 
+    // add for settlement verification
+
+
     public function settlements()
     {
         return $this->hasMany(CustomerSettlement::class);
+    }
+
+    public function latestSettlement()
+    {
+        return $this->hasOne(CustomerSettlement::class)->latestOfMany();
+    }
+
+    public function misRows(): HasMany
+    {
+        return $this->hasMany(MisBatchRow::class);
     }
 }
