@@ -39,5 +39,6 @@ class City extends Model
         'state_code',
         'city_code',
         'is_active',
+        'pincode'
     ];
 }
