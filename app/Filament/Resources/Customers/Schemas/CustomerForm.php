@@ -1142,16 +1142,20 @@ class CustomerForm
                                         $state ?: ($record?->documents_submitted ?? false)
                                     ),
 
-
-
-
                                 FileUpload::make('disbursal_pdf')
                                     ->disk('public')
                                     ->directory('disbursal-documents')
                                     ->multiple()
+                                    ->appendFiles()              // Keep old files and append new ones
                                     ->openable()
                                     ->downloadable()
-                                    ->appendFiles()
+
+                                    // Prevent removing uploaded files after document submission
+                                    ->deletable(fn(?Customer $record) => ! ($record?->documents_submitted ?? false))
+
+                                    // Optional: Prevent reordering after submission
+                                    ->reorderable(fn(?Customer $record) => ! ($record?->documents_submitted ?? false))
+
                                     ->rules([
                                         function ($attribute, $value, $fail) {
                                             if (is_array($value)) {
@@ -1165,6 +1169,28 @@ class CustomerForm
                                             }
                                         },
                                     ]),
+
+
+                                // FileUpload::make('disbursal_pdf')
+                                //     ->disk('public')
+                                //     ->directory('disbursal-documents')
+                                //     ->multiple()
+                                //     ->openable()
+                                //     ->downloadable()
+                                //     ->appendFiles()
+                                //     ->rules([
+                                //         function ($attribute, $value, $fail) {
+                                //             if (is_array($value)) {
+                                //                 foreach ($value as $file) {
+                                //                     if ($file instanceof \Livewire\Features\SupportFileUploads\TemporaryUploadedFile) {
+                                //                         if ($file->getMimeType() !== 'application/pdf') {
+                                //                             $fail('Only PDF files are allowed.');
+                                //                         }
+                                //                     }
+                                //                 }
+                                //             }
+                                //         },
+                                //     ]),
                                 Placeholder::make('document_submit_action')
                                     ->key('document_submit_action')
                                     ->label('')

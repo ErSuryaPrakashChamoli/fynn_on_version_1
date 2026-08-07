@@ -51,18 +51,57 @@ class CustomerInfolist
                                     ->label('Assigned To'),
 
 
+                                // TextEntry::make('journey_status')
+                                //     ->label('Current Stage')
+                                //     ->badge()
+                                //     ->color(fn($state) => match ($state) {
+                                //         'New Lead' => 'gray',
+                                //         'Eligibility Check' => 'info',
+                                //         'Underwriting' => 'warning',
+                                //         'Credit Approval' => 'success',
+                                //         'Disbursal' => 'primary',
+                                //         'Completed' => 'success',
+                                //         'Rejected' => 'danger',
+                                //         default => 'gray',
+                                //     }),
+
+
                                 TextEntry::make('journey_status')
                                     ->label('Current Stage')
                                     ->badge()
-                                    ->color(fn($state) => match ($state) {
-                                        'New Lead' => 'gray',
-                                        'Eligibility Check' => 'info',
-                                        'Underwriting' => 'warning',
-                                        'Credit Approval' => 'success',
-                                        'Disbursal' => 'primary',
-                                        'Completed' => 'success',
-                                        'Rejected' => 'danger',
-                                        default => 'gray',
+                                    ->formatStateUsing(function ($state, $record) {
+
+                                        if ($record->documents_submitted && $state === 'sanctioned') {
+                                            return 'Completed';
+                                        }
+
+                                        return match ($state) {
+                                            'sfl' => 'SFL',
+                                            'underwriting' => 'Underwriting',
+                                            'approved' => 'Approved',
+                                            'sanctioned' => 'Disbursed',
+                                            'carry_forward' => 'Carry Forward',
+                                            'dropped' => 'Dropped',
+                                            'not_approved' => 'Rejected',
+                                            default => ucfirst(str_replace('_', ' ', $state)),
+                                        };
+                                    })
+                                    ->color(function ($state, $record) {
+
+                                        if ($record->documents_submitted && $state === 'sanctioned') {
+                                            return 'success';
+                                        }
+
+                                        return match ($state) {
+                                            'sfl' => 'gray',
+                                            'underwriting' => 'warning',
+                                            'approved' => 'info',
+                                            'sanctioned' => 'primary',       // Disbursed
+                                            'carry_forward' => 'warning',
+                                            'dropped' => 'danger',
+                                            'not_approved' => 'danger',
+                                            default => 'gray',
+                                        };
                                     }),
 
                                 TextEntry::make('created_at')

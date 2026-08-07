@@ -91,9 +91,28 @@ class CustomersTable
                     })
                     ->searchable(),
 
+                // TextColumn::make('journey_status')
+                //     ->label('Journey')
+                //     ->badge(),
+
+
                 TextColumn::make('journey_status')
                     ->label('Journey')
-                    ->badge(),
+                    ->badge()
+                    ->formatStateUsing(fn(string $state): string => match ($state) {
+                        'sanctioned'   => 'Disbursed',
+                        'sfl'          => 'SFL',
+                        'underwriting' => 'Underwriting',
+                        'approved'     => 'Approved',
+                        default        => ucfirst(str_replace('_', ' ', $state)),
+                    })
+                    ->color(fn(string $state): string => match ($state) {
+                        'sfl'          => 'gray',
+                        'underwriting' => 'warning',
+                        'approved'     => 'info',
+                        'sanctioned'   => 'success', // Displays "Disbursed" with a green badge
+                        default        => 'gray',
+                    }),
 
                 TextColumn::make('sanctioned_bank')
                     ->label('Bank')
