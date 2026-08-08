@@ -418,7 +418,7 @@ class CustomerForm
                                 $set('pan_loading', true);
                                 $set('pan_status', 'checking');
 
-                                usleep(800000);
+                                // usleep(800000);
 
                                 $state = strtoupper($state);
 
