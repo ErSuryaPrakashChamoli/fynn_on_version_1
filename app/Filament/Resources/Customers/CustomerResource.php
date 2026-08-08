@@ -36,6 +36,7 @@ use Filament\Actions\ExportBulkAction;
 use App\Support\HierarchyHelper;
 use Illuminate\Database\Eloquent\Model;
 use Filament\Tables\Filters\SelectFilter;
+use App\Filament\Resources\Customers\Pages\ContinuePanRequest;
 
 
 
@@ -59,8 +60,7 @@ class CustomerResource extends Resource
     public static function table(Table $table): Table
     {
 
-      return CustomersTable::configure($table);
-
+        return CustomersTable::configure($table);
     }
 
     public static function getRelations(): array
@@ -77,6 +77,9 @@ class CustomerResource extends Resource
             'create' => CreateCustomer::route('/create'),
             'view' => ViewCustomer::route('/{record}'),
             'edit' => EditCustomer::route('/{record}/edit'),
+            'continue-pan-request' => Pages\ContinuePanRequest::route(
+                '/continue-pan-request/{request}'
+            ),
         ];
     }
 
@@ -114,7 +117,4 @@ class CustomerResource extends Resource
         return auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
             && ! $record->documents_submitted;
     }
-
-
-
 }

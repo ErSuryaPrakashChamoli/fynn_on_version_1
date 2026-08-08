@@ -14,35 +14,67 @@ return new class extends Migration
         Schema::create('customer_pan_requests', function (Blueprint $table) {
             $table->id();
 
-            // Existing customer
+            // Existing Customer
             $table->foreignId('customer_id')
                 ->constrained()
                 ->cascadeOnDelete();
 
-            // Caller who requested
+            // Request Number
+            $table->string('request_no')->unique()->nullable();
+
+            // Requested By
             $table->foreignId('requested_by')
                 ->constrained('employees')
                 ->cascadeOnDelete();
 
-            // Requested bank
+            $table->string('requested_by_emp_id');
+            $table->string('requested_by_name');
+
+            // Team Leader Snapshot
+            $table->foreignId('team_leader_id')
+                ->nullable()
+                ->constrained('employees')
+                ->nullOnDelete();
+
+            $table->string('team_leader_name')->nullable();
+
+            // Manager Snapshot
+            $table->foreignId('manager_id')
+                ->nullable()
+                ->constrained('employees')
+                ->nullOnDelete();
+
+            $table->string('manager_name')->nullable();
+
+            // Cluster Manager Snapshot
+            $table->foreignId('cluster_manager_id')
+                ->nullable()
+                ->constrained('employees')
+                ->nullOnDelete();
+
+            $table->string('cluster_manager_name')->nullable();
+
+            // Requested Bank
             $table->foreignId('requested_bank_id')
                 ->constrained('banks')
                 ->cascadeOnDelete();
 
-            // Loan details
+            $table->string('requested_bank_name');
+
+            // Loan Details
             $table->string('requested_loan_type');
 
-            // Reason for requesting duplicate PAN
+            // Reason
             $table->text('reason')->nullable();
 
-            // Approval Status
+            // Status
             $table->enum('status', [
                 'pending',
                 'approved',
                 'rejected',
             ])->default('pending');
 
-            // Admin who approved/rejected
+            // Admin Approval
             $table->foreignId('approved_by')
                 ->nullable()
                 ->constrained('employees')
@@ -50,22 +82,15 @@ return new class extends Migration
 
             $table->timestamp('approved_at')->nullable();
 
-            // Admin remarks
             $table->text('remarks')->nullable();
 
-            // Loan application created after approval
-            $table->foreignId('application_id')
-                ->nullable()
-                ->constrained('loan_applications')
-                ->nullOnDelete();
+            // Future Loan Application
+            $table->unsignedBigInteger('application_id')->nullable();
 
             $table->timestamps();
 
-            // Helpful indexes
             $table->index('status');
             $table->index(['customer_id', 'status']);
-            $table->index('requested_by');
-            $table->index('requested_bank_id');
         });
     }
 

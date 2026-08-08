@@ -13,7 +13,27 @@ return new class extends Migration
     {
         Schema::create('banks', function (Blueprint $table) {
             $table->id();
+            $table->string('bank_name');
+            $table->string('loan_type');
+
+            // Source (DSA / Connector / Branch / API Partner)
+            // $table->string('source')->nullable();
+            $table->string('payment_from')->nullable();
+
+            // Payout Percentage
+            $table->decimal('payout', 5, 2)->default(0.00);
+
+            $table->boolean('is_active')->default(true);
+
             $table->timestamps();
+
+            // Prevent duplicate product configuration
+            $table->unique([
+                'bank_name',
+                'loan_type',
+                'payment_from',
+            ], 'bank_product_unique');
+            // $table->timestamps();
         });
     }
 

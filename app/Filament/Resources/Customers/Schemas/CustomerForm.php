@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Customers\Schemas;
 
+
+
 use Filament\Schemas\Schema;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -30,11 +32,24 @@ use Filament\Forms\Components\Component;
 // use Filament\Forms\Components\TextInput;
 // use Filament\Forms\Get;
 // use Filament\Forms\Set;
+use App\Models\Bank;
+
+
+use Filament\Actions\Action; // or Filament\Forms\Components\Actions\Action
+
 
 
 
 use Filament\Schemas\Components\Utilities\Set;
 use App\Services\CustomerJourneyService;
+use App\Models\CustomerPanRequest;
+
+
+
+
+// use Filament\Notifications\Notification;
+// use Filament\Forms\Components\Select;
+// use Filament\Forms\Components\Textarea;
 
 
 
@@ -45,6 +60,20 @@ class CustomerForm
     {
         return $record &&
             auth()->user()->employee?->designation !== Employee::DESIGNATION_ADMIN;
+    }
+
+    // protected static function lockDuplicatePan(?Customer $record, $livewire): bool
+    // {
+    //     return self::lockCallerFields($record)
+    //         || ($livewire->approvalRequested ?? false);
+    // }
+
+    protected static function lockDuplicatePan(?Customer $record, $livewire): bool
+    {
+        // dd($livewire->existingCustomer);
+        // logger($livewire->existingCustomer);
+        return self::lockCallerFields($record)
+            || filled($livewire->existingCustomer);
     }
 
     protected static function lockAfterFilled(?Customer $record, string $field): bool
@@ -116,16 +145,277 @@ class CustomerForm
                         'style' => 'top: 5.5rem;',
                     ]),
 
+
+                Section::make('Existing Customer')
+                    // ->visible(fn($livewire) => filled($livewire->existingCustomer))
+                    // ->visible(fn (Get $get) => filled($get('existing_customer_id')))
+                    // ->visible(function (Get $get) {
+                    //     return filled($get('existing_customer_id'))
+                    //         && ! \App\Models\CustomerPanRequest::where('customer_id', $get('existing_customer_id'))
+                    //             ->where('status', 'pending')
+                    //             ->exists();
+                    // })
+                    ->visible(function (Get $get, $livewire) {
+
+                        if ($livewire->isApprovedPanRequest) {
+                            return false;
+                        }
+
+                        return filled($get('existing_customer_id'));
+                    })
+                    ->headerActions([
+
+                        Action::make('requestApproval')
+                            ->label('Request Approval')
+                            ->icon('heroicon-o-shield-check')
+                            ->color('warning')
+                            ->modalHeading('Duplicate PAN Approval Request')
+                            ->modalSubmitActionLabel('Submit Request')
+
+                            ->form([
+
+                                // Select::make('requested_bank_id')
+                                //     ->label('Requested Bank')
+                                //     ->relationship('requestedBank', 'bank_name') // or ->options(...)
+                                //     ->searchable(),
+
+                                Select::make('requested_bank_id')
+                                    ->label('Requested Bank')
+                                    ->options(Bank::pluck('bank_name', 'id'))
+                                    ->searchable()
+                                    ->required(),
+
+                                Select::make('requested_loan_type')
+                                    ->label('Loan Type')
+                                    ->options([
+                                        'personal_loan' => 'Personal Loan',
+                                        'business_loan' => 'Business Loan',
+                                        'home_loan' => 'Home Loan',
+                                        'lap' => 'Loan Against Property',
+                                        'car_loan' => 'Car Loan',
+                                        'education_loan' => 'Education Loan',
+                                    ])
+                                    ->required(),
+
+                                Textarea::make('reason')
+                                    ->rows(3)
+                                    ->required(),
+
+                            ])->action(function (array $data, $livewire, Get $get) {
+
+                                $employee = auth()->user()->employee;
+
+                                CustomerPanRequest::create([
+                                    // 'customer_id' => $livewire->existingCustomer->id,
+                                    'customer_id' => $get('existing_customer_id'),
+                                    'requested_by' => $employee->id,
+                                    'requested_by_emp_id' => $employee->emp_id,
+                                    'requested_by_name' => $employee->emp_name,
+
+                                    'team_leader_id' => $employee->superviser_id,
+                                    'team_leader_name' => optional($employee->superviser)->emp_name,
+
+                                    'manager_id' => $employee->manager_id,
+                                    'manager_name' => optional($employee->manager)->emp_name,
+
+                                    'cluster_manager_id' => $employee->cluster_id,
+                                    'cluster_manager_name' => optional($employee->cluster)->emp_name,
+
+                                    'requested_bank_id' => $data['requested_bank_id'],
+                                    'requested_bank_name' => \App\Models\Bank::find($data['requested_bank_id'])?->bank_name,
+
+                                    'requested_loan_type' => $data['requested_loan_type'],
+
+                                    'reason' => $data['reason'],
+
+                                    'status' => CustomerPanRequest::STATUS_PENDING,
+                                ]);
+
+                                $livewire->approvalRequested = true;
+
+                                Notification::make()
+                                    ->title('Approval Request Submitted')
+                                    ->body('Your request has been sent to Admin for approval.')
+                                    ->success()
+                                    ->send();
+                            })
+
+                        // ->action(function (array $data, $livewire) {
+
+                        //     CustomerPanRequest::create([
+
+                        //         'customer_id'           => $livewire->existingCustomer->id,
+
+                        //         'requested_by'          => auth()->user()->employee->id,
+
+                        //         'requested_bank_id'     => $data['requested_bank_id'],
+
+                        //         'requested_loan_type'   => $data['requested_loan_type'],
+
+                        //         'reason'                => $data['reason'],
+
+                        //         'status'                => 'pending',
+
+                        //     ]);
+
+                        //     $livewire->approvalRequested = true;
+
+                        //     Notification::make()
+                        //         ->title('Approval Request Submitted')
+                        //         ->body('Your request has been sent to Admin.')
+                        //         ->success()
+                        //         ->send();
+                        // })
+                    ])
+                    ->schema([
+                        Placeholder::make('customer_name')
+                            ->label('Customer Name')
+                            ->content(fn($livewire) => $livewire->existingCustomer?->customer_name),
+
+                        Placeholder::make('mobile')
+                            ->label('Mobile')
+                            ->content(fn($livewire) => $livewire->existingCustomer?->mobile_no),
+
+                        Placeholder::make('owner')
+                            ->label('Owner')
+                            ->content(fn($livewire) => $livewire->existingCustomer?->employee?->emp_name),
+
+                        Placeholder::make('status')
+                            ->label('Current Status')
+                            ->content(fn($livewire) => $livewire->existingCustomer?->journey_status),
+                    ])
+                    ->columns(2),
+
                 // STAGE 0: Core Profile Details
                 Section::make('Customer Basic Details')
+                    // ->visible(
+                    //     fn($livewire) =>
+                    //     $livewire->panVerified
+                    // )
                     ->schema([
+
+                        Hidden::make('existing_customer_id')
+                            ->dehydrated(false),
+
+                        Hidden::make('pan_status')
+                            ->default('')
+                            ->dehydrated(false),
+
+                        Hidden::make('pan_loading')
+                            ->default(false)
+                            ->dehydrated(false),
+
+                        TextInput::make('pan_number')
+                            ->label('PAN Number')
+                            ->required()
+                            // ->live()
+                            ->live(onBlur: true)
+                            ->maxLength(10)
+                            ->minLength(10)
+                            ->afterStateUpdated(function ($state, callable $set, $livewire) {
+                                $set('pan_loading', true);
+                                $set('pan_status', 'checking');
+
+                                usleep(800000);
+
+                                $state = strtoupper($state);
+                                $set('pan_number', $state);
+
+                                if (strlen($state) !== 10) {
+                                    return;
+                                }
+
+                                // Validate PAN format
+                                $livewire->validateOnly('data.pan_number');
+
+                                // Search existing customer
+                                $customer = Customer::where('pan_number', $state)->first();
+                                // $customer = Customer::with('applications.bank')->where('pan_number', $state)->first();
+
+                                if ($customer) {
+
+                                    // PAN exists
+                                    // $livewire->existingCustomer = $customer;
+
+                                    $set('existing_customer_id', $customer->id);
+                                    $set('pan_status', 'exists');
+
+                                    $set('customer_name', $customer->customer_name);
+                                    $set('mobile_no', $customer->mobile_no);
+                                    $set('email', $customer->email);
+
+                                    $livewire->panVerified = false;
+
+                                    $set('customer_name', $customer->customer_name);
+                                    $set('mobile_no', $customer->mobile_no);
+                                    $set('email', $customer->email);
+
+                                    $set('pan_loading', false);
+                                } else {
+
+                                    // PAN available
+                                    // $livewire->existingCustomer = null;
+                                    $set('existing_customer_id', null);
+                                    $set('pan_status', 'available');
+                                    $livewire->panVerified = true;
+
+                                    $set('pan_loading', false);
+                                }
+                            })
+                            ->dehydrateStateUsing(fn($state) => strtoupper($state))
+                            ->rules(['required', 'regex:/^[A-Z]{5}[0-9]{4}[A-Z]$/'])
+                            // ->unique(table: 'customers', column: 'pan_number', ignoreRecord: true)
+                            ->placeholder('ABCDE1234F')
+                            // ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+
+                            ->suffixIcon('heroicon-m-arrow-path')
+                            ->extraAttributes([
+                                'wire:loading.class' => 'animate-spin',
+                                'wire:target' => 'data.pan_number',
+                            ])
+                            ->disabled(
+                                fn(?Customer $record, $livewire) =>
+                                self::lockCallerFields($record)
+                                    || filled($livewire->existingCustomer)
+                            )
+                            ->helperText(function (Get $get) {
+                                return match ($get('pan_status')) {
+
+                                    'checking' => new HtmlString(
+                                        '<span class="font-bold text-primary-600 text-sm">⏳ Checking PAN...</span>'
+                                    ),
+
+                                    'available' => new HtmlString(
+                                        '<span class="font-bold text-success-600 text-sm">✅ PAN Available</span>'
+                                    ),
+
+                                    'exists' => new HtmlString(
+                                        '<span class="font-bold text-danger-600 text-sm">⚠️ Existing Customer Found</span>'
+                                    ),
+
+                                    default => null,
+                                };
+                            })
+                            ->validationMessages(['regex' => 'Please enter a valid PAN number like ABCDE1234F.']),
 
                         TextInput::make('customer_name')
                             ->label('Customer Name')
+
                             ->required()
                             ->maxLength(255)
                             ->live()
-                            ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+                            ->disabled(
+                                fn(Get $get, ?Customer $record) =>
+                                self::lockCallerFields($record)
+                                    || filled($get('existing_customer_id'))
+                            )
+                            // ->disabled(fn(?Customer $record, $livewire) => self::lockDuplicatePan($record, $livewire))
+                            // ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+                            // ->disabled(
+                            //     fn(?Customer $record, $livewire) =>
+                            //     self::lockCallerFields($record)
+                            //         || filled($livewire->existingCustomer)
+                            // )
                             ->afterStateUpdated(fn($state, callable $set) => $set('customer_name', Str::title($state))),
 
 
@@ -159,7 +449,18 @@ class CustomerForm
                                 'digits' => 'Mobile number must be exactly 10 digits.',
                                 'regex' => 'Please enter a valid Indian mobile number starting with 6, 7, 8, or 9.',
                             ])
-                            ->disabled(fn(?Customer $record) => self::lockCallerFields($record)),
+                            // ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+                            // ->disabled(
+                            //     fn(?Customer $record, $livewire) =>
+                            //     self::lockCallerFields($record)
+                            //         || filled($livewire->existingCustomer)
+                            // )
+                            // ->disabled(fn(?Customer $record, $livewire) => self::lockDuplicatePan($record, $livewire))
+                            ->disabled(
+                                fn(Get $get, ?Customer $record) =>
+                                self::lockCallerFields($record)
+                                    || filled($get('existing_customer_id'))
+                            ),
 
                         // TextInput::make('email')
                         //     ->email()
@@ -172,12 +473,17 @@ class CustomerForm
                             ->email()
                             ->required()
                             ->maxLength(255)
-                            ->unique(
-                                table: 'customers',
-                                column: 'email',
-                                ignoreRecord: true,
-                            )
-                            ->disabled(function (?Customer $record): bool {
+                            // ->unique(
+                            //     table: 'customers',
+                            //     column: 'email',
+                            //     ignoreRecord: true,
+                            // )
+
+                            ->disabled(function (?Customer $record, Get $get): bool {
+
+                                if (filled($get('existing_customer_id'))) {
+                                    return true;
+                                }
 
                                 if (! $record) {
                                     return false; // Creating a customer
@@ -192,32 +498,36 @@ class CustomerForm
                                 ]);
                             }),
 
-                        TextInput::make('pan_number')
-                            ->label('PAN Number')
-                            ->required()
-                            ->live()
-                            ->maxLength(10)
-                            ->minLength(10)
-                            ->afterStateUpdated(function ($state, callable $set, $livewire) {
-                                $state = strtoupper($state);
-                                $set('pan_number', $state);
-                                if (strlen($state) === 10) {
-                                    $livewire->validateOnly('data.pan_number');
-                                }
-                            })
-                            ->dehydrateStateUsing(fn($state) => strtoupper($state))
-                            ->rules(['required', 'regex:/^[A-Z]{5}[0-9]{4}[A-Z]$/'])
-                            ->unique(table: 'customers', column: 'pan_number', ignoreRecord: true)
-                            ->placeholder('ABCDE1234F')
-                            ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
-                            ->validationMessages(['regex' => 'Please enter a valid PAN number like ABCDE1234F.']),
+
+
+
+
 
                         Select::make('job_location')
                             ->label('Job Location')
                             // ->required()
                             ->searchable()
                             ->preload()
-                            ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+                            ->disabled(
+                                fn(Get $get, ?Customer $record, $livewire) =>
+                                self::lockCallerFields($record)
+                                    || (
+                                        filled($get('existing_customer_id'))
+                                        && ! $livewire->isApprovedPanRequest
+                                    )
+                            )
+                            // ->disabled(
+                            //     fn(Get $get, ?Customer $record) =>
+                            //     self::lockCallerFields($record)
+                            //         || filled($get('existing_customer_id'))
+                            // )
+                            // ->disabled(fn(?Customer $record, $livewire) => self::lockDuplicatePan($record, $livewire))
+                            // ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+                            // ->disabled(
+                            //     fn(?Customer $record, $livewire) =>
+                            //     self::lockCallerFields($record)
+                            //         || filled($livewire->existingCustomer)
+                            // )
                             ->options(fn() => City::query()->where('is_active', 1)->orderBy('city')->get()->pluck('city', 'city')),
 
                         Select::make('residence_location')
@@ -225,7 +535,21 @@ class CustomerForm
                             ->required()
                             ->searchable()
                             ->preload()
-                            ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+                            ->disabled(
+                                fn(Get $get, ?Customer $record, $livewire) =>
+                                self::lockCallerFields($record)
+                                    || (
+                                        filled($get('existing_customer_id'))
+                                        && ! $livewire->isApprovedPanRequest
+                                    )
+                            )
+                            // ->disabled(fn(?Customer $record, $livewire) => self::lockDuplicatePan($record, $livewire))
+                            // ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+                            // ->disabled(
+                            //     fn(?Customer $record, $livewire) =>
+                            //     self::lockCallerFields($record)
+                            //         || filled($livewire->existingCustomer)
+                            // )
                             ->options(fn() => City::query()->where('is_active', 1)->orderBy('city')->get()->mapWithKeys(fn($item) => [$item->city => "{$item->city}, {$item->state}"])),
 
                         TextInput::make('salary')
@@ -238,7 +562,20 @@ class CustomerForm
                                 $get('eligibility_status') === 'eligible'
                             )
                             ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null)
-                            ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+                            ->disabled(
+                                fn(Get $get, ?Customer $record, $livewire) =>
+                                self::lockCallerFields($record)
+                                    || (
+                                        filled($get('existing_customer_id'))
+                                        && ! $livewire->isApprovedPanRequest
+                                    )
+                            )
+                            // ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+                            // ->disabled(
+                            //     fn(?Customer $record, $livewire) =>
+                            //     self::lockCallerFields($record)
+                            //         || filled($livewire->existingCustomer)
+                            // )
                             ->afterStateUpdated(function ($state, callable $set) {
                                 $value = preg_replace('/[^0-9]/', '', (string) $state);
                                 if ($value !== '') {
@@ -252,7 +589,20 @@ class CustomerForm
                             ->required()
                             ->searchable()
                             ->preload()
-                            ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+                            ->disabled(
+                                fn(Get $get, ?Customer $record, $livewire) =>
+                                self::lockCallerFields($record)
+                                    || (
+                                        filled($get('existing_customer_id'))
+                                        && ! $livewire->isApprovedPanRequest
+                                    )
+                            )
+                            // ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+                            // ->disabled(
+                            //     fn(?Customer $record, $livewire) =>
+                            //     self::lockCallerFields($record)
+                            //         || filled($livewire->existingCustomer)
+                            // )
                             ->options(fn() => City::query()->where('is_active', 1)->orderBy('city')->get()->mapWithKeys(fn($item) => [$item->city => "{$item->city}, {$item->state}"])),
 
                         Select::make('eligibility_status')
@@ -278,18 +628,53 @@ class CustomerForm
                                         break;
                                 }
                             })
-                            ->disabled(function (?Customer $record, string $operation): bool {
-                                if (
-                                    $operation === 'edit'
-                                    && in_array($record?->eligibility_status, [
-                                        'not_eligible',
-                                        'consent_pending',
-                                    ])
-                                ) {
-                                    return false;
-                                }
+                            // ->disabled(function (?Customer $record, string $operation): bool {
+                            //     if (
+                            //         $operation === 'edit'
+                            //         && in_array($record?->eligibility_status, [
+                            //             'not_eligible',
+                            //             'consent_pending',
+                            //         ])
+                            //     ) {
+                            //         return false;
+                            //     }
 
-                                return self::lockCallerFields($record)
+                            //     return self::lockCallerFields($record)
+                            //         || (
+                            //             $operation === 'edit'
+                            //             && ! auth()->user()->hasAnyRole(['Admin', 'Manager'])
+                            //         );
+                            // })
+                            // ->disabled(function (Get $get, ?Customer $record, string $operation): bool {
+
+                            //     return filled($get('existing_customer_id'))
+                            //         || (
+                            //             $operation === 'edit'
+                            //             && in_array($record?->eligibility_status, [
+                            //                 'not_eligible',
+                            //                 'consent_pending',
+                            //             ])
+                            //         )
+                            //         || self::lockCallerFields($record)
+                            //         || (
+                            //             $operation === 'edit'
+                            //             && ! auth()->user()->hasAnyRole(['Admin', 'Manager'])
+                            //         );
+                            // })
+                            ->disabled(function (Get $get, ?Customer $record, string $operation, $livewire): bool {
+
+                                return (
+                                    filled($get('existing_customer_id'))
+                                    && ! $livewire->isApprovedPanRequest
+                                )
+                                    || (
+                                        $operation === 'edit'
+                                        && in_array($record?->eligibility_status, [
+                                            'not_eligible',
+                                            'consent_pending',
+                                        ])
+                                    )
+                                    || self::lockCallerFields($record)
                                     || (
                                         $operation === 'edit'
                                         && ! auth()->user()->hasAnyRole(['Admin', 'Manager'])
@@ -302,7 +687,27 @@ class CustomerForm
                             ->relationship('assignedTo', 'emp_name')
                             ->searchable()
                             ->required()
-                            ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+                            ->disabled(
+                                fn(Get $get, ?Customer $record, $livewire) =>
+                                self::lockCallerFields($record)
+                                    || (
+                                        filled($get('existing_customer_id'))
+                                        && ! $livewire->isApprovedPanRequest
+                                    )
+                            )
+                            // ->disabled(
+                            //     fn(Get $get, ?Customer $record) =>
+                            //     self::lockCallerFields($record)
+                            //         || filled($get('existing_customer_id'))
+                            // )
+                            // ->disabled(fn(?Customer $record, $livewire) => self::lockDuplicatePan($record, $livewire))
+
+                            // ->disabled(fn(?Customer $record) => self::lockCallerFields($record))
+                            // ->disabled(
+                            //     fn(?Customer $record, $livewire) =>
+                            //     self::lockCallerFields($record)
+                            //         || filled($livewire->existingCustomer)
+                            // )
                             ->default(fn() => auth()->user()->employee?->id)
                             ->preload()
                             ->nullable(),
@@ -317,6 +722,16 @@ class CustomerForm
                                 'low_salary' => 'Low Salary',
                                 'location_issue' => 'Location',
                             ])
+                            ->disabled(
+                                fn(Get $get, ?Customer $record) =>
+                                self::lockCallerFields($record)
+                                    || filled($get('existing_customer_id'))
+                            )
+                            // ->disabled(
+                            //     fn(?Customer $record, $livewire) =>
+                            //     self::lockCallerFields($record)
+                            //         || filled($livewire->existingCustomer)
+                            // )
                             ->visible(fn(Get $get): bool => $get('eligibility_status') === 'not_eligible')
                             ->required(fn(Get $get): bool => $get('eligibility_status') === 'not_eligible'),
                     ])

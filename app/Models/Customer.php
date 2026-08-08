@@ -14,6 +14,7 @@ use Spatie\Activitylog\Support\LogOptions;
 use Spatie\Activitylog\Models\Activity;
 use App\Models\ActivityLog;
 use App\Models\CustomerStageHistory;
+use App\Models\CustomerPanRequest;
 
 /**
  * @property int $id
@@ -199,6 +200,11 @@ class Customer extends Model
         'documents_submitted' => 'boolean',
     ];
 
+    public function requestedBank()
+    {
+        return $this->belongsTo(Bank::class, 'requested_bank_id');
+    }
+
 
     protected static function booted(): void
     {
@@ -291,5 +297,10 @@ class Customer extends Model
     public function employee()
     {
         return $this->belongsTo(Employee::class, 'employee_id');
+    }
+
+    public function panRequests()
+    {
+        return $this->hasMany(CustomerPanRequest::class);
     }
 }
