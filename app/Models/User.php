@@ -60,14 +60,14 @@ use Spatie\Permission\Traits\HasRoles;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User withoutTeam($teams)
  * @mixin \Eloquent
  */
-#[Fillable(['name', 'email', 'password','is_active'])]
+#[Fillable(['name', 'email', 'password', 'is_active'])]
 #[Hidden(['password', 'remember_token'])]
 
 
 class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable ,HasRoles;
+    use HasFactory, Notifiable, HasRoles;
 
     /**
      * Get the attributes that should be cast.
@@ -80,12 +80,12 @@ class User extends Authenticatable implements FilamentUser
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean'
-            ];
+        ];
     }
 
     public function employee()
     {
-        return $this->belongsTo(Employee::class,'employee_id');
+        return $this->belongsTo(Employee::class, 'employee_id');
     }
 
     public function canAccessPanel(Panel $panel): bool
@@ -95,7 +95,8 @@ class User extends Authenticatable implements FilamentUser
         return true;
     }
 
-
-
-
+    public function approvedBy()
+    {
+        return $this->belongsTo(User::class, 'approved_by');
+    }
 }

@@ -10,6 +10,8 @@ use Filament\Actions\Action;
 use App\Models\CustomerPanRequest;
 use Filament\Forms\Components\TextInput;
 
+
+
 class CreateCustomer extends CreateRecord
 {
     protected static string $resource = CustomerResource::class;
@@ -24,6 +26,10 @@ class CreateCustomer extends CreateRecord
     public bool $isApprovedPanRequest = false;
 
     public bool $showPanRequests = false;
+
+    public ?CustomerPanRequest $panRequest = null;
+
+
 
 
     public function mount(): void
@@ -44,10 +50,38 @@ class CreateCustomer extends CreateRecord
             403
         );
 
+
         abort_unless(
             $this->panRequest->requested_by === auth()->user()->employee->id,
             403
         );
+
+        // if (filled($this->panRequest?->application_id)) {
+
+        //     $this->redirect(
+        //         CustomerResource::getUrl('view', [
+        //             'record' => $this->panRequest->application_id,
+        //         ])
+
+        //     );
+
+        //     return;
+        // }
+
+        if (filled($this->panRequest?->application_id)) {
+            Notification::make()
+                ->title('PAN Request Already Used')
+                ->body('This PAN approval request has already been used to create a customer.')
+                ->warning()
+                ->send();
+
+            $this->redirect(
+                CustomerResource::getUrl('index')
+            );
+
+            return;
+        }
+
 
         $customer = $this->panRequest->customer;
 
@@ -140,6 +174,30 @@ class CreateCustomer extends CreateRecord
 
         return $data;
     }
+
+    // protected function afterCreate(): void
+    // {
+    //     if (! $this->isApprovedPanRequest || ! isset($this->panRequest)) {
+    //         return;
+    //     }
+
+    //     $this->panRequest->update([
+    //         'application_id' => $this->record->id,
+    //     ]);
+    // }
+
+    protected function afterCreate(): void
+    {
+        if (! $this->isApprovedPanRequest || ! $this->panRequest) {
+            return;
+        }
+
+        $this->panRequest->updateOrFail([
+            'application_id' => $this->record->id,
+        ]);
+    }
+
+
 
     protected function getRedirectUrl(): string
     {

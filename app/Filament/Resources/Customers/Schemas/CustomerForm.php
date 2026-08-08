@@ -583,17 +583,11 @@ class CustomerForm
                             // Important: submit even when disabled
                             ->dehydrated(true),
 
-
                         TextInput::make('email')
                             ->label('Email Address')
                             ->email()
                             ->required()
                             ->maxLength(255)
-                            // ->unique(
-                            //     table: 'customers',
-                            //     column: 'email',
-                            //     ignoreRecord: true,
-                            // )
 
                             ->disabled(function (?Customer $record, Get $get): bool {
 
@@ -602,17 +596,49 @@ class CustomerForm
                                 }
 
                                 if (! $record) {
-                                    return false; // Creating a customer
+                                    return false;
                                 }
 
-                                // Lock email from Approval stage onwards
                                 return in_array($record->journey_status, [
                                     'approved',
                                     'sanctioned',
                                     'disbursal',
                                     'finalized',
                                 ]);
-                            }),
+                            })
+
+                            ->dehydrated(true),
+
+
+                        // TextInput::make('email')
+                        //     ->label('Email Address')
+                        //     ->email()
+                        //     ->required()
+                        //     ->maxLength(255)
+                        //     // ->unique(
+                        //     //     table: 'customers',
+                        //     //     column: 'email',
+                        //     //     ignoreRecord: true,
+                        //     // )
+
+                        //     ->disabled(function (?Customer $record, Get $get): bool {
+
+                        //         if (filled($get('existing_customer_id'))) {
+                        //             return true;
+                        //         }
+
+                        //         if (! $record) {
+                        //             return false; // Creating a customer
+                        //         }
+
+                        //         // Lock email from Approval stage onwards
+                        //         return in_array($record->journey_status, [
+                        //             'approved',
+                        //             'sanctioned',
+                        //             'disbursal',
+                        //             'finalized',
+                        //         ]);
+                        //     }),
 
 
 

@@ -151,7 +151,7 @@
 
 
                 {{-- Continue --}}
-                @if ($request->status === 'approved')
+                @if ($request->status === 'approved' && blank($request->application_id))
                     <div class="mt-4 border-t border-gray-100 pt-3 dark:border-gray-800">
 
                         <a href="{{ \App\Filament\Resources\Customers\CustomerResource::getUrl('create', [

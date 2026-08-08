@@ -99,10 +99,19 @@ class CustomerPanRequestsTable
                     ])
                     ->action(function (CustomerPanRequest $record, array $data) {
 
+                        $employee = auth()->user()->employee;
+                        $approvedBy = $employee?->id;
+
+                        // Admin may not have an employee record.
+                        // Use a fixed/special employee ID only if your system has one.
+                        if (auth()->user()->hasRole('Admin') && ! $approvedBy) {
+                            $approvedBy = null;
+                        }
+
                         $record->update([
                             'status'      => $data['status'],
                             'remarks'     => $data['remarks'],
-                            'approved_by' => auth()->user()->employee->id,
+                            'approved_by' => $approvedBy,
                             'approved_at' => now(),
                         ]);
 
