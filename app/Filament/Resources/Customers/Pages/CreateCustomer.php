@@ -67,7 +67,8 @@ class CreateCustomer extends CreateRecord
 
             // Approved request data
             'requested_bank_id' => $this->panRequest->requested_bank_id,
-            'loan_type' => $this->panRequest->requested_loan_type,
+            // 'loan_type' => $this->panRequest->requested_loan_type,
+            'loan_applied' => $this->panRequest->requested_loan_type,
         ]);
     }
 

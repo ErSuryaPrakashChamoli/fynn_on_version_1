@@ -158,14 +158,14 @@
                             'pan_request' => $request->id,
                         ]) }}"
                             class="!flex !w-full !items-center !justify-center !gap-2 !rounded-lg
-               !bg-primary-600 !px-4 !py-2.5 !text-sm !font-semibold
-               !leading-5 !text-white
-               !shadow-sm
-               !transition-all !duration-200 !ease-in-out
-               hover:!bg-primary-700
-               hover:!shadow-md
-               hover:!scale-[1.01]
-               active:!scale-[0.99]"
+                            !bg-primary-600 !px-4 !py-2.5 !text-sm !font-semibold
+                            !leading-5 !text-white
+                            !shadow-sm
+                            !transition-all !duration-200 !ease-in-out
+                            hover:!bg-primary-700
+                            hover:!shadow-md
+                            hover:!scale-[1.01]
+                            active:!scale-[0.99]"
                             style="height: 42px; min-height: 42px; max-height: 42px;">
 
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
