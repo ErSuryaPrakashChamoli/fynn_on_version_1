@@ -68,6 +68,10 @@ class CustomersTable
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
+                TextColumn::make('pan_number')
+                    ->label('PAN Number')
+                    ->searchable(),
+
                 TextColumn::make('loan_applied')
                     ->label('Loan Applied')
                     ->searchable(),

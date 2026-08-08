@@ -14,18 +14,16 @@ class CreateCustomer extends CreateRecord
 {
     protected static string $resource = CustomerResource::class;
 
+
     public ?Customer $existingCustomer = null;
-
     public bool $panExists = false;
-
     public bool $panVerified = false;
     public bool $approvalRequested = false;
 
-
-
-
     public bool $isDuplicatePanFlow = false;
     public bool $isApprovedPanRequest = false;
+
+    public bool $showPanRequests = false;
 
 
     public function mount(): void
@@ -58,6 +56,8 @@ class CreateCustomer extends CreateRecord
         $this->isApprovedPanRequest = true;
 
         $this->form->fill([
+
+            // Existing customer
             'existing_customer_id' => $customer->id,
 
             'pan_number' => $customer->pan_number,
@@ -65,16 +65,9 @@ class CreateCustomer extends CreateRecord
             'mobile_no' => $customer->mobile_no,
             'email' => $customer->email,
 
-            // 'job_location' => $customer->job_location,
-            // 'residence_location' => $customer->residence_location,
-            // 'current_location' => $customer->current_location,
-
-            // 'salary' => $customer->salary,
-            // 'eligibility_status' => $customer->eligibility_status,
-            // 'assign_to' => $customer->assign_to,
-
-            // // Start fresh application
-            // 'journey_status' => 'sfl',
+            // Approved request data
+            'requested_bank_id' => $this->panRequest->requested_bank_id,
+            'loan_type' => $this->panRequest->requested_loan_type,
         ]);
     }
 
