@@ -100,7 +100,7 @@ class CustomerForm
             'Canara Bank' => 'Canara Bank',
             'IDFC First Bank' => 'IDFC First Bank',
             'AU Small Finance Bank' => 'AU Small Finance Bank',
-            'LNT' => 'LNT'
+            'L&T Finance' => 'L&T Finance'
             // 'Other' => 'Other',
         ];
 
