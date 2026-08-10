@@ -584,7 +584,7 @@ class TargetStats extends StatsOverviewWidget
 
         return is_numeric($employee->category)
             ? (float) $employee->category
-            : 2500000;
+        : 2500000;
     }
 
 
