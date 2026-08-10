@@ -10,52 +10,6 @@ use App\Support\HierarchyHelper;
 
 class AchievementCalculatorService
 {
-    // public function getCountAchievement(Employee $employee): float
-    // {
-    //     $teamLeaderIds = Employee::where('manager_id', $employee->id)
-    //         ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-    //         ->pluck('id')
-    //         ->toArray();
-
-    //     $callerIds = Employee::whereIn('superviser_id', $teamLeaderIds)
-    //         ->where('designation', Employee::DESIGNATION_CALLER)
-    //         ->pluck('id')
-    //         ->toArray();
-
-    //     $directCallers = Employee::where('manager_id', $employee->id)
-    //         ->where('designation', Employee::DESIGNATION_CALLER)
-    //         ->pluck('id')
-    //         ->toArray();
-
-    //     $allSubordinateIds = array_unique(array_merge(
-    //         $teamLeaderIds,
-    //         $callerIds,
-    //         $directCallers
-    //     ));
-
-    //     $achievement = Customer::whereIn('employee_id', $allSubordinateIds)
-    //         ->whereMonth('created_at', now()->month)
-    //         ->whereYear('created_at', now()->year)
-    //         ->sum('sanctioned_loan_amount');
-
-    //     $cashback = Customer::whereIn('employee_id', $allSubordinateIds)
-    //         ->whereMonth('created_at', now()->month)
-    //         ->whereYear('created_at', now()->year)
-    //         ->sum('cashback');
-
-    //     $subvention = Customer::whereIn('employee_id', $allSubordinateIds)
-    //         ->whereMonth('created_at', now()->month)
-    //         ->whereYear('created_at', now()->year)
-    //         ->sum('subvention');
-
-    //     $docking = Customer::where('employee_id', $employee->id)
-    //         ->whereMonth('created_at', now()->month)
-    //         ->whereYear('created_at', now()->year)
-    //         ->sum('docking');
-
-    //     return $achievement - ((($cashback + $subvention + $docking) / 2) * 100);
-    // }
-
 
     public function getCountAchievement(Employee $employee): float
     {
@@ -74,12 +28,7 @@ class AchievementCalculatorService
         return $achievement - ((($cashback + $subvention + $docking) / 2) * 100);
     }
 
-    // public function getTarget(Employee $employee): float
-    // {
-    //     return is_numeric($employee->category)
-    //         ? (float) $employee->category
-    //         : 2500000;
-    // }
+
 
 
     public function getTarget(Employee $employee): float
@@ -319,10 +268,6 @@ class AchievementCalculatorService
             ->whereMonth('created_at', now()->month)
             ->whereYear('created_at', now()->year);
 
-        // $actual = (float) $customers->sum('sanctioned_loan_amount');
-        // $cashback = (float) $customers->sum('cashback');
-        // $subvention = (float) $customers->sum('subvention');
-        // $docking = (float) $customers->sum('docking');
 
 
         $totals = $customers
@@ -352,23 +297,6 @@ class AchievementCalculatorService
 
 
 
-        // $countAchievement = $actual - ((($cashback + $subvention + $docking) / 2) * 100);
-
-        // $target = $this->getTarget($employee);
-
-        // return [
-        //     'target_category' => 'Monthly',
-        //     'target' => $target,
-        //     'actual' => $actual,
-        //     'cashback' => $cashback,
-        //     'subvention' => $subvention,
-        //     'docking' => $docking,
-        //     'count_achievement' => $countAchievement,
-        //     'percentage' => $target > 0
-        //         ? round(($countAchievement / $target) * 100, 2)
-        //         : 0,
-        //     'incentive' => $this->getIncentive($countAchievement),
-        // ];
     }
 
 
@@ -402,98 +330,7 @@ class AchievementCalculatorService
     }
 
 
-    // private function getCallerTarget(Employee $employee): float
-    // {
-    //     $today = Carbon::now();
 
-    //     $currentMonth = $today->month;
-    //     $currentYear  = $today->year;
-    //     $monthEnd     = $today->copy()->endOfMonth();
-
-    //     /*
-    // |--------------------------------------------------------------------------
-    // | Employee must have DOJ
-    // |--------------------------------------------------------------------------
-    // */
-
-    //     if (empty($employee->doj)) {
-    //         return 0;
-    //     }
-
-    //     /*
-    // |--------------------------------------------------------------------------
-    // | Effective Date
-    // |--------------------------------------------------------------------------
-    // | Reporting Date takes priority.
-    // | Otherwise use DOJ.
-    // |--------------------------------------------------------------------------
-    // */
-
-    //     $joiningDate = Carbon::parse($employee->doj);
-
-    //     $effectiveDate = !empty($employee->reporting_date)
-    //         ? Carbon::parse($employee->reporting_date)
-    //         : $joiningDate;
-
-    //     /*
-    // |--------------------------------------------------------------------------
-    // | EXIT EMPLOYEE (Exited in Current Month)
-    // |--------------------------------------------------------------------------
-    // */
-
-    //     if (
-    //         $employee->exit_status === 'yes' &&
-    //         !empty($employee->exit_date)
-    //     ) {
-
-    //         $exitDate = Carbon::parse($employee->exit_date);
-
-    //         if (
-    //             $exitDate->month == $currentMonth &&
-    //             $exitDate->year == $currentYear
-    //         ) {
-
-    //             // Invalid case
-    //             if ($exitDate->lt($effectiveDate)) {
-    //                 return 0;
-    //             }
-
-    //             $workedDays = $effectiveDate->diffInDays($exitDate) + 1;
-
-    //             return $workedDays >= 10
-    //                 ? 1500000
-    //                 : 0;
-    //         }
-    //     }
-
-    //     /*
-    // |--------------------------------------------------------------------------
-    // | New Joiner / Reporting Changed This Month
-    // |--------------------------------------------------------------------------
-    // */
-
-    //     if (
-    //         $effectiveDate->month == $currentMonth &&
-    //         $effectiveDate->year == $currentYear
-    //     ) {
-
-    //         $remainingDays = $effectiveDate->diffInDays($monthEnd) + 1;
-
-    //         return $remainingDays >= 10
-    //             ? 1500000
-    //             : 0;
-    //     }
-
-    //     /*
-    // |--------------------------------------------------------------------------
-    // | Existing Employee
-    // |--------------------------------------------------------------------------
-    // */
-
-    //     return is_numeric($employee->category)
-    //         ? (float) $employee->category
-    //         : 2500000;
-    // }
 
 
     private function getCallerTarget(Employee $employee): float
@@ -517,38 +354,15 @@ class AchievementCalculatorService
         $joiningDate = Carbon::parse($employee->doj);
 
         /*
-    |--------------------------------------------------------------------------
-    | EXIT EMPLOYEE
-    |--------------------------------------------------------------------------
-    |
-    | If employee exited in current month,
-    | calculate target based on actual working days.
-    |
-    */
+        |--------------------------------------------------------------------------
+        | EXIT EMPLOYEE
+        |--------------------------------------------------------------------------
+        |
+        | If employee exited in current month,
+        | calculate target based on actual working days.
+        |
+        */
 
-        // if (
-        //     $employee->exit_status === 'yes' &&
-        //     !empty($employee->exit_date)
-        // ) {
-
-        //     $exitDate = Carbon::parse($employee->exit_date);
-
-        //     if (
-        //         $exitDate->month == $currentMonth &&
-        //         $exitDate->year == $currentYear
-        //     ) {
-
-        //         if ($exitDate->lt($joiningDate)) {
-        //             return 0;
-        //         }
-
-        //         $workedDays = $joiningDate->diffInDays($exitDate) + 1;
-
-        //         return $workedDays >= 10
-        //             ? 1500000
-        //             : 0;
-        //     }
-        // }
 
         if (
             $employee->exit_status === 'yes' &&
@@ -557,20 +371,20 @@ class AchievementCalculatorService
             $exitDate = Carbon::parse($employee->exit_date);
 
             /*
-     |-------------------------------------------------------------
-     | Employee exited before current month
-     |-------------------------------------------------------------
-     */
+            |-------------------------------------------------------------
+            | Employee exited before current month
+            |-------------------------------------------------------------
+            */
 
             if ($exitDate->lt($today->copy()->startOfMonth())) {
                 return 0;
             }
 
             /*
-     |-------------------------------------------------------------
-     | Employee exits during current month
-     |-------------------------------------------------------------
-     */
+            |-------------------------------------------------------------
+            | Employee exits during current month
+            |-------------------------------------------------------------
+            */
 
             if (
                 $exitDate->month == $currentMonth &&
@@ -586,14 +400,14 @@ class AchievementCalculatorService
         }
 
         /*
-    |--------------------------------------------------------------------------
-    | NEW JOINER
-    |--------------------------------------------------------------------------
-    |
-    | Only DOJ determines whether employee is a new joiner.
-    | Reporting date is ignored.
-    |
-    */
+        |--------------------------------------------------------------------------
+        | NEW JOINER
+        |--------------------------------------------------------------------------
+        |
+        | Only DOJ determines whether employee is a new joiner.
+        | Reporting date is ignored.
+        |
+        */
 
         if (
             $joiningDate->month == $currentMonth &&
@@ -608,14 +422,14 @@ class AchievementCalculatorService
         }
 
         /*
-    |--------------------------------------------------------------------------
-    | EXISTING EMPLOYEE
-    |--------------------------------------------------------------------------
-    |
-    | Existing employees always carry full target,
-    | even if reporting manager/TL changes.
-    |
-    */
+        |--------------------------------------------------------------------------
+        | EXISTING EMPLOYEE
+        |--------------------------------------------------------------------------
+        |
+        | Existing employees always carry full target,
+        | even if reporting manager/TL changes.
+        |
+        */
 
         return is_numeric($employee->category)
             ? (float) $employee->category
