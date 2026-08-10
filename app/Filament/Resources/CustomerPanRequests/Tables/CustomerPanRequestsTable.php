@@ -100,65 +100,6 @@ class CustomerPanRequestsTable
             ->recordActions([
                 // EditAction::make(),
                 ViewAction::make(),
-                // EditAction::make(),
-                // Action::make('approve')
-                //     ->label('Approve / Reject')
-                //     ->icon('heroicon-o-check-circle')
-                //     ->color('warning')
-                //     ->visible(fn(CustomerPanRequest $record) => $record->status === CustomerPanRequest::STATUS_PENDING)
-                //     ->form([
-                //         Select::make('status')
-                //             ->label('Decision')
-                //             ->options([
-                //                 CustomerPanRequest::STATUS_APPROVED => 'Approve',
-                //                 CustomerPanRequest::STATUS_REJECTED => 'Reject',
-                //             ])
-                //             ->required(),
-
-                //         Textarea::make('remarks')
-                //             ->label('Remarks')
-                //             ->rows(3),
-                //     ])
-                //     ->action(function (CustomerPanRequest $record, array $data) {
-
-                //         $employee = auth()->user()->employee;
-                //         $approvedBy = $employee?->id;
-
-                //         // Admin may not have an employee record.
-                //         // Use a fixed/special employee ID only if your system has one.
-                //         if (auth()->user()->hasRole('Admin') && ! $approvedBy) {
-                //             $approvedBy = null;
-                //         }
-
-                //         $record->update([
-                //             'status'      => $data['status'],
-                //             'remarks'     => $data['remarks'],
-                //             'approved_by' => $approvedBy,
-                //             'approved_at' => now(),
-                //         ]);
-
-
-                //         if ($data['status'] === CustomerPanRequest::STATUS_APPROVED) {
-
-                //             Notification::make()
-                //                 ->title('Duplicate PAN Request Approved')
-                //                 ->body('Click Continue to create the application.')
-                //                 ->success()
-                //                 ->actions([
-                //                     Action::make('continue')
-                //                         ->label('Continue')
-                //                         ->url(
-                //                             CustomerResource::getUrl(
-                //                                 'continue-pan-request',
-                //                                 [
-                //                                     'request' => $record->id,
-                //                                 ]
-                //                             )
-                //                         ),
-                //                 ])
-                //                 ->sendToDatabase($record->requestedBy->user);
-                //         }
-                //     }),
 
                 Action::make('approve')
                     ->label('Approve / Reject')
@@ -206,16 +147,40 @@ class CustomerPanRequestsTable
                                 ->body('Your request has been approved. Click Continue to create the application.')
                                 ->success()
                                 ->actions([
+
+                                    // Action::make('continue')
+                                    //     ->label('Continue')
+                                    //     ->url(
+                                    //         CustomerResource::getUrl(
+                                    //             'continue-pan-request',
+                                    //             [
+                                    //                 'request' => $record->id,
+                                    //             ]
+                                    //         )
+                                    //     ),
+
+                                    // Action::make('continue')
+                                    //     ->label('Continue')
+                                    //     ->icon('heroicon-o-arrow-right')
+                                    //     ->color('success')
+                                    //     ->visible(
+                                    //         fn(CustomerPanRequest $record): bool =>
+                                    //         $record->status === CustomerPanRequest::STATUS_APPROVED
+                                    //             && blank($record->application_id)
+                                    //             && ! auth()->user()->hasRole('Admin')
+                                    //             && auth()->user()->employee?->id === $record->requested_by
+                                    //     )
+                                    //     ->url(
+                                    //         fn(CustomerPanRequest $record) =>
+                                    //         CustomerResource::getUrl('create', [
+                                    //             'pan_request' => $record->id,
+                                    //         ])
+                                    //     ),
+
                                     Action::make('continue')
                                         ->label('Continue')
-                                        ->url(
-                                            CustomerResource::getUrl(
-                                                'continue-pan-request',
-                                                [
-                                                    'request' => $record->id,
-                                                ]
-                                            )
-                                        ),
+                                        ->icon('heroicon-o-arrow-right')
+                                        ->color('success'),
                                 ])
                                 ->sendToDatabase(
                                     $record->requestedBy?->user
@@ -262,10 +227,16 @@ class CustomerPanRequestsTable
                     ->label('Continue')
                     ->icon('heroicon-o-arrow-right')
                     ->color('success')
+                    // ->visible(
+                    //     fn(CustomerPanRequest $record): bool =>
+                    //     $record->status === CustomerPanRequest::STATUS_APPROVED
+                    //         && blank($record->application_id)
+                    // )
                     ->visible(
                         fn(CustomerPanRequest $record): bool =>
                         $record->status === CustomerPanRequest::STATUS_APPROVED
                             && blank($record->application_id)
+                            && ! auth()->user()->hasRole('Admin')
                     )
                     ->url(
                         fn(CustomerPanRequest $record) =>
