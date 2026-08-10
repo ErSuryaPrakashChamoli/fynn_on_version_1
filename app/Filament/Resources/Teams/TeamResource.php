@@ -59,23 +59,7 @@ class TeamResource extends Resource
         ];
     }
 
-    // public static function getPages(): array
-    // {
-    //     return [
-    //         'index' => ListTeams::route('/'),
-    //         'create' => CreateTeam::route('/create'),
-    //         'edit' => EditTeam::route('/{record}/edit'),
-    //     ];
-    // }
 
-
-    // public static function getEloquentQuery(): Builder{
-    //     return parent::getEloquentQuery()
-    //         ->whereIn(
-    //             'id',
-    //             HierarchyHelper::visibleEmployeeIds(auth()->user())
-    //         );
-    // }
 
     public static function getEloquentQuery(): Builder
     {
