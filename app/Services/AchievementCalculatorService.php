@@ -297,23 +297,6 @@ class AchievementCalculatorService
 
 
 
-        // $countAchievement = $actual - ((($cashback + $subvention + $docking) / 2) * 100);
-
-        // $target = $this->getTarget($employee);
-
-        // return [
-        //     'target_category' => 'Monthly',
-        //     'target' => $target,
-        //     'actual' => $actual,
-        //     'cashback' => $cashback,
-        //     'subvention' => $subvention,
-        //     'docking' => $docking,
-        //     'count_achievement' => $countAchievement,
-        //     'percentage' => $target > 0
-        //         ? round(($countAchievement / $target) * 100, 2)
-        //         : 0,
-        //     'incentive' => $this->getIncentive($countAchievement),
-        // ];
     }
 
 
@@ -371,14 +354,14 @@ class AchievementCalculatorService
         $joiningDate = Carbon::parse($employee->doj);
 
         /*
-    |--------------------------------------------------------------------------
-    | EXIT EMPLOYEE
-    |--------------------------------------------------------------------------
-    |
-    | If employee exited in current month,
-    | calculate target based on actual working days.
-    |
-    */
+        |--------------------------------------------------------------------------
+        | EXIT EMPLOYEE
+        |--------------------------------------------------------------------------
+        |
+        | If employee exited in current month,
+        | calculate target based on actual working days.
+        |
+        */
 
 
         if (
@@ -388,20 +371,20 @@ class AchievementCalculatorService
             $exitDate = Carbon::parse($employee->exit_date);
 
             /*
-     |-------------------------------------------------------------
-     | Employee exited before current month
-     |-------------------------------------------------------------
-     */
+            |-------------------------------------------------------------
+            | Employee exited before current month
+            |-------------------------------------------------------------
+            */
 
             if ($exitDate->lt($today->copy()->startOfMonth())) {
                 return 0;
             }
 
             /*
-     |-------------------------------------------------------------
-     | Employee exits during current month
-     |-------------------------------------------------------------
-     */
+            |-------------------------------------------------------------
+            | Employee exits during current month
+            |-------------------------------------------------------------
+            */
 
             if (
                 $exitDate->month == $currentMonth &&
@@ -417,14 +400,14 @@ class AchievementCalculatorService
         }
 
         /*
-    |--------------------------------------------------------------------------
-    | NEW JOINER
-    |--------------------------------------------------------------------------
-    |
-    | Only DOJ determines whether employee is a new joiner.
-    | Reporting date is ignored.
-    |
-    */
+        |--------------------------------------------------------------------------
+        | NEW JOINER
+        |--------------------------------------------------------------------------
+        |
+        | Only DOJ determines whether employee is a new joiner.
+        | Reporting date is ignored.
+        |
+        */
 
         if (
             $joiningDate->month == $currentMonth &&
@@ -439,14 +422,14 @@ class AchievementCalculatorService
         }
 
         /*
-    |--------------------------------------------------------------------------
-    | EXISTING EMPLOYEE
-    |--------------------------------------------------------------------------
-    |
-    | Existing employees always carry full target,
-    | even if reporting manager/TL changes.
-    |
-    */
+        |--------------------------------------------------------------------------
+        | EXISTING EMPLOYEE
+        |--------------------------------------------------------------------------
+        |
+        | Existing employees always carry full target,
+        | even if reporting manager/TL changes.
+        |
+        */
 
         return is_numeric($employee->category)
             ? (float) $employee->category
