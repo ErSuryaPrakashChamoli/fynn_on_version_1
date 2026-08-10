@@ -194,8 +194,14 @@ class CustomerForm
 
                                 $bank = Bank::find($data['requested_bank_id']);
 
+                                $customer = Customer::findOrFail(
+                                    $get('existing_customer_id')
+                                );
+
                                 CustomerPanRequest::create([
-                                    'customer_id' => $get('existing_customer_id'),
+                                    // 'customer_id' => $get('existing_customer_id'),
+                                    'customer_id' => $customer->id,
+                                    'pan_number' => $customer->pan_number,
 
                                     'requested_by' => $employee->id,
                                     'requested_by_emp_id' => $employee->emp_id,

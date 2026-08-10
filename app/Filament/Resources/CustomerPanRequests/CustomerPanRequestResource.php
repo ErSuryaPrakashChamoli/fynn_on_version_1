@@ -14,6 +14,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 // use continuation\ContinuePanRequest;
+use UnitEnum;
 
 class CustomerPanRequestResource extends Resource
 {
@@ -22,6 +23,12 @@ class CustomerPanRequestResource extends Resource
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
     protected static ?string $recordTitleAttribute = 'customer_id';
+
+    protected static string | UnitEnum | null $navigationGroup = 'Request';
+
+    protected static ?string $navigationLabel = 'Duplicate PAN Request';
+
+    protected static ?string $modelLabel = 'PAN Request';
 
     public static function form(Schema $schema): Schema
     {

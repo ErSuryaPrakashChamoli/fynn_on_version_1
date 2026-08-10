@@ -107,28 +107,6 @@ class CreateCustomer extends CreateRecord
     }
 
 
-
-
-
-    // protected function getFormActions(): array
-    // {
-    //     return array_filter([
-    //         filled($this->data['existing_customer_id'] ?? null)
-    //             ? null
-    //             : $this->getCreateFormAction(),
-
-    //         $this->getCreateAnotherFormAction(),
-    //         $this->getCancelFormAction(),
-    //     ]);
-    // }
-
-
-    // protected function getCreateFormAction(): Action
-    // {
-    //     return parent::getCreateFormAction()
-    //         ->hidden(fn() => filled($this->data['existing_customer_id'] ?? null));
-    // }
-
     protected function getCreateFormAction(): Action
     {
         return parent::getCreateFormAction()
@@ -174,17 +152,6 @@ class CreateCustomer extends CreateRecord
 
         return $data;
     }
-
-    // protected function afterCreate(): void
-    // {
-    //     if (! $this->isApprovedPanRequest || ! isset($this->panRequest)) {
-    //         return;
-    //     }
-
-    //     $this->panRequest->update([
-    //         'application_id' => $this->record->id,
-    //     ]);
-    // }
 
     protected function afterCreate(): void
     {

@@ -10,6 +10,7 @@ class CustomerPanRequest extends Model
     protected $fillable = [
         'request_no',
 
+
         'customer_id',
 
         'requested_by',
@@ -39,6 +40,8 @@ class CustomerPanRequest extends Model
         'remarks',
 
         'application_id',
+
+        'pan_number',
     ];
 
     protected $casts = [

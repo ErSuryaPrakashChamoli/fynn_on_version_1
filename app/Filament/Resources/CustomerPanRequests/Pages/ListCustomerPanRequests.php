@@ -10,10 +10,19 @@ class ListCustomerPanRequests extends ListRecords
 {
     protected static string $resource = CustomerPanRequestResource::class;
 
+    protected static ?string $title = 'Duplicate PAN Request';
+
     protected function getHeaderActions(): array
     {
         return [
-            CreateAction::make(),
+            // CreateAction::make(),
         ];
     }
+
+
+
+    // public function getBreadcrumb(): string
+    // {
+    //     return 'Duplicate PAN Request';
+    // }
 }
