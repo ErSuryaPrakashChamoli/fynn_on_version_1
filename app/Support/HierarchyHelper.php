@@ -13,11 +13,7 @@ class HierarchyHelper
     /**
      * Get all visible employee IDs for the logged-in user.
      */
-    // public static function visibleEmployeeIds(User $user): Collection
-    // {
-    //     // We will implement this in the next step.
-    //     return collect();
-    // }
+
 
     public static function visibleEmployeeIds(User $user): Collection
     {
@@ -45,9 +41,6 @@ class HierarchyHelper
 
         if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
 
-            // return Employee::where('cluster_id', $employee->id)
-            //     ->orWhere('id', $employee->id)
-            //     ->pluck('id');
 
             return self::ids('cluster_id', $employee->id);
         }
@@ -60,9 +53,7 @@ class HierarchyHelper
 
         if ($employee->designation === Employee::DESIGNATION_MANAGER) {
 
-            // return Employee::where('manager_id', $employee->id)
-            //     ->orWhere('id', $employee->id)
-            //     ->pluck('id');
+
             return self::ids('manager_id', $employee->id);
         }
 
@@ -74,9 +65,7 @@ class HierarchyHelper
 
         if ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
 
-            // return Employee::where('superviser_id', $employee->id)
-            //     ->orWhere('id', $employee->id)
-            //     ->pluck('id');
+
             return self::ids('superviser_id', $employee->id);
         }
 

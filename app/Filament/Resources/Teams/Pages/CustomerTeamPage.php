@@ -49,11 +49,6 @@ class CustomerTeamPage extends Page implements HasTable
             ->query(
 
 
-                // Customer::query()
-                //     ->whereIn(
-                //         'employee_id',
-                //         HierarchyHelper::callerIds($this->record)
-                //     )
 
                 Customer::query()
                     ->with('employee')
