@@ -11,12 +11,37 @@ use App\Support\HierarchyHelper;
 class AchievementCalculatorService
 {
 
+    // public function getCountAchievement(Employee $employee): float
+    // {
+    //     // $employeeIds = HierarchyService::subordinateEmployeeIds($employee);
+    //     $employeeIds = HierarchyHelper::subordinateIds($employee);
+
+    //     $customers = Customer::whereIn('employee_id', $employeeIds)
+    //         ->whereMonth('created_at', now()->month)
+    //         ->whereYear('created_at', now()->year);
+
+    //     $achievement = (float) $customers->sum('sanctioned_loan_amount');
+    //     $cashback = (float) $customers->sum('cashback');
+    //     $subvention = (float) $customers->sum('subvention');
+    //     $docking = (float) $customers->sum('docking');
+
+    //     return $achievement - ((($cashback + $subvention + $docking) / 2) * 100);
+    // }
+
     public function getCountAchievement(Employee $employee): float
     {
-        // $employeeIds = HierarchyService::subordinateEmployeeIds($employee);
-        $employeeIds = HierarchyHelper::subordinateIds($employee);
+        if ($employee->designation === Employee::DESIGNATION_ADMIN) {
 
-        $customers = Customer::whereIn('employee_id', $employeeIds)
+            $customers = Customer::query();
+        } else {
+
+            $employeeIds = HierarchyHelper::subordinateIds($employee);
+
+            $customers = Customer::query()
+                ->whereIn('employee_id', $employeeIds);
+        }
+
+        $customers
             ->whereMonth('created_at', now()->month)
             ->whereYear('created_at', now()->year);
 
@@ -25,7 +50,8 @@ class AchievementCalculatorService
         $subvention = (float) $customers->sum('subvention');
         $docking = (float) $customers->sum('docking');
 
-        return $achievement - ((($cashback + $subvention + $docking) / 2) * 100);
+        return $achievement
+            - ((($cashback + $subvention + $docking) / 2) * 100);
     }
 
 
@@ -164,137 +190,400 @@ class AchievementCalculatorService
         );
     }
 
+    // public function getEligibleCallerCount(Employee $manager): int
+    // {
+    //     $today = now();
+
+    //     $monthStart = $today->copy()->startOfMonth();
+    //     $monthEnd = $today->copy()->endOfMonth();
+
+    //     /*
+    // |--------------------------------------------------------------------------
+    // | Team Leaders under Manager
+    // |--------------------------------------------------------------------------
+    // */
+
+    //     $teamLeaderIds = Employee::where('manager_id', $manager->id)
+    //         ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+    //         ->pluck('id');
+
+    //     /*
+    // |--------------------------------------------------------------------------
+    // | Callers under Team Leaders
+    // |--------------------------------------------------------------------------
+    // */
+
+    //     $callers = Employee::whereIn('superviser_id', $teamLeaderIds)
+    //         ->where('designation', Employee::DESIGNATION_CALLER)
+    //         ->where('exit_status', 'no')
+    //         ->get();
+
+    //     $eligible = 0;
+
+    //     foreach ($callers as $caller) {
+
+    //         /*
+    //     |--------------------------------------------------------------------------
+    //     | Existing Caller
+    //     |--------------------------------------------------------------------------
+    //     */
+
+    //         if (!empty($caller->doj)) {
+
+    //             $joiningDate = Carbon::parse($caller->doj);
+
+    //             if ($joiningDate->lt($monthStart)) {
+    //                 $eligible++;
+    //                 continue;
+    //             }
+    //         }
+
+    //         /*
+    //     |--------------------------------------------------------------------------
+    //     | New Joiner
+    //     |--------------------------------------------------------------------------
+    //     */
+
+    //         if (!empty($caller->reporting_date)) {
+
+    //             $reportingDate = Carbon::parse($caller->reporting_date);
+
+    //             if (
+    //                 $reportingDate->month == $today->month &&
+    //                 $reportingDate->year == $today->year
+    //             ) {
+
+    //                 $workedDays = $reportingDate->diffInDays($monthEnd) + 1;
+
+    //                 if ($workedDays >= 10) {
+    //                     $eligible++;
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     return $eligible;
+    // }
+
+
     public function getEligibleCallerCount(Employee $manager): int
     {
-        $today = now();
-
-        $monthStart = $today->copy()->startOfMonth();
-        $monthEnd = $today->copy()->endOfMonth();
-
         /*
     |--------------------------------------------------------------------------
-    | Team Leaders under Manager
+    | Get all callers under this Manager
     |--------------------------------------------------------------------------
     */
 
-        $teamLeaderIds = Employee::where('manager_id', $manager->id)
-            ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-            ->pluck('id');
+        $callerIds = HierarchyHelper::callerIds($manager);
 
-        /*
-    |--------------------------------------------------------------------------
-    | Callers under Team Leaders
-    |--------------------------------------------------------------------------
-    */
-
-        $callers = Employee::whereIn('superviser_id', $teamLeaderIds)
-            ->where('designation', Employee::DESIGNATION_CALLER)
-            ->where('exit_status', 'no')
-            ->get();
-
-        $eligible = 0;
-
-        foreach ($callers as $caller) {
-
-            /*
-        |--------------------------------------------------------------------------
-        | Existing Caller
-        |--------------------------------------------------------------------------
-        */
-
-            if (!empty($caller->doj)) {
-
-                $joiningDate = Carbon::parse($caller->doj);
-
-                if ($joiningDate->lt($monthStart)) {
-                    $eligible++;
-                    continue;
-                }
-            }
-
-            /*
-        |--------------------------------------------------------------------------
-        | New Joiner
-        |--------------------------------------------------------------------------
-        */
-
-            if (!empty($caller->reporting_date)) {
-
-                $reportingDate = Carbon::parse($caller->reporting_date);
-
-                if (
-                    $reportingDate->month == $today->month &&
-                    $reportingDate->year == $today->year
-                ) {
-
-                    $workedDays = $reportingDate->diffInDays($monthEnd) + 1;
-
-                    if ($workedDays >= 10) {
-                        $eligible++;
-                    }
-                }
-            }
+        if ($callerIds->isEmpty()) {
+            return 0;
         }
 
-        return $eligible;
+        $callers = Employee::whereIn('id', $callerIds)->get();
+
+        /*
+    |--------------------------------------------------------------------------
+    | Eligible Caller
+    |--------------------------------------------------------------------------
+    |
+    | A caller is eligible if his/her target for the
+    | current month is greater than zero.
+    |
+    */
+
+        return $callers
+            ->filter(fn(Employee $caller) => $this->getCallerTarget($caller) > 0)
+            ->count();
     }
 
     public function getPPPMultiplier(float $ppp): float
     {
         return match (true) {
 
-            $ppp >= 31 => 0.00075,
+            $ppp >= 3100000 => 0.00075,
 
-            $ppp >= 29 => 0.00060,
+            $ppp >= 2900000 => 0.00060,
 
-            $ppp >= 27 => 0.00050,
+            $ppp >= 2700000 => 0.00050,
 
-            $ppp >= 25 => 0.00040,
+            $ppp >= 2500000 => 0.00040,
 
-            $ppp >= 23 => 0.00030,
+            $ppp >= 2300000 => 0.00030,
 
             default => 0,
         };
     }
 
-
-    public function getPerformance(Employee $employee): array
+    public function getPerformance(?Employee $employee): array
     {
-        // $employeeIds = HierarchyService::subordinateEmployeeIds($employee);
-        $employeeIds = HierarchyHelper::subordinateIds($employee);
+        $isAdmin = auth()->user()?->hasRole('Admin');
 
-        $customers = Customer::whereIn('employee_id', $employeeIds)
-            // ->where('employee_id', $employee->id)
+        /*
+    |--------------------------------------------------------------------------
+    | Customer Scope
+    |--------------------------------------------------------------------------
+    */
+
+        if ($isAdmin) {
+
+            // Admin sees ALL customers, including employee_id = NULL.
+            $customers = Customer::query();
+        } else {
+
+            if (! $employee) {
+                return [
+                    'target_category'   => null,
+                    'target'            => 0,
+                    'actual'            => 0,
+                    'cashback'          => 0,
+                    'subvention'        => 0,
+                    'docking'           => 0,
+                    'count_achievement' => 0,
+                    'percentage'        => 0,
+                    'incentive'         => 0,
+                ];
+            }
+
+            $employeeIds = HierarchyHelper::subordinateIds($employee);
+
+            $customers = Customer::query()
+                ->whereIn('employee_id', $employeeIds);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Current Month
+        |--------------------------------------------------------------------------
+        */
+
+        $customers
             ->whereMonth('created_at', now()->month)
             ->whereYear('created_at', now()->year);
 
-
+        /*
+        |--------------------------------------------------------------------------
+        | Actual / Deductions
+        |--------------------------------------------------------------------------
+        */
 
         $totals = $customers
             ->selectRaw("
-        SUM(sanctioned_loan_amount) as actual,
-        SUM(cashback) as cashback,
-        SUM(subvention) as subvention,
-        SUM(docking) as docking
-    ")
+            SUM(sanctioned_loan_amount) as actual,
+            SUM(cashback) as cashback,
+            SUM(subvention) as subvention,
+            SUM(docking) as docking
+        ")
             ->first();
 
+        $actual = (float) ($totals->actual ?? 0);
+        $cashback = (float) ($totals->cashback ?? 0);
+        $subvention = (float) ($totals->subvention ?? 0);
+        $docking = (float) ($totals->docking ?? 0);
 
-        $countAchievement = $this->getCountAchievement($employee);
+        /*
+        |--------------------------------------------------------------------------
+        | Count Achievement
+        |--------------------------------------------------------------------------
+        */
 
+        $countAchievement = $actual
+            - ((($cashback + $subvention + $docking) / 2) * 100);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Target
+        |--------------------------------------------------------------------------
+        */
+
+        if ($isAdmin) {
+
+            $target = Employee::where(
+                'designation',
+                Employee::DESIGNATION_CALLER
+            )
+                ->get()
+                ->sum(
+                    fn(Employee $caller) =>
+                    $this->getCallerTarget($caller)
+                );
+        } else {
+
+            $target = $this->getTarget($employee);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Percentage
+        |--------------------------------------------------------------------------
+        */
+
+        $percentage = $target > 0
+            ? round(($countAchievement / $target) * 100, 2)
+            : 0;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Result
+        |--------------------------------------------------------------------------
+        */
 
         return [
-            'target_category'   => $employee->category,
-            'target'            => $this->getTarget($employee),
-            'actual'            => (float) $totals->actual,
-            'cashback'          => (float) $totals->cashback,
-            'subvention'        => (float) $totals->subvention,
-            'docking'           => (float) $totals->docking,
+            'target_category'   => $employee?->category,
+            'target'            => (float) $target,
+            'actual'             => $actual,
+            'cashback'           => $cashback,
+            'subvention'         => $subvention,
+            'docking'            => $docking,
             'count_achievement' => $countAchievement,
-            'percentage'        => $this->getPercentage($employee),
+            'percentage'        => $percentage,
             'incentive'         => $this->getIncentive($countAchievement),
         ];
     }
+
+    // public function getPerformance(?Employee $employee): array
+    // {
+    //     $isAdmin = auth()->user()?->hasRole('Admin');
+
+    //     if ($isAdmin) {
+    //         $customers = Customer::query();
+    //     } else {
+
+    //         if (! $employee) {
+    //             return [
+    //                 'target_category'   => null,
+    //                 'target'            => 0,
+    //                 'actual'            => 0,
+    //                 'cashback'          => 0,
+    //                 'subvention'        => 0,
+    //                 'docking'           => 0,
+    //                 'count_achievement' => 0,
+    //                 'percentage'        => 0,
+    //                 'incentive'         => 0,
+    //             ];
+    //         }
+
+    //         $employeeIds = HierarchyHelper::subordinateIds($employee);
+
+    //         $customers = Customer::query()
+    //             ->whereIn('employee_id', $employeeIds);
+    //     }
+
+    //     $customers
+    //         ->whereMonth('created_at', now()->month)
+    //         ->whereYear('created_at', now()->year);
+
+    //     $totals = $customers
+    //         ->selectRaw("
+    //         SUM(sanctioned_loan_amount) as actual,
+    //         SUM(cashback) as cashback,
+    //         SUM(subvention) as subvention,
+    //         SUM(docking) as docking
+    //     ")
+    //         ->first();
+
+    //     $countAchievement = $isAdmin
+    //         ? $this->getAdminCountAchievement()
+    //         : $this->getCountAchievement($employee);
+
+    //     $target = $isAdmin
+    //         ? $this->getAdminTarget()
+    //         : $this->getTarget($employee);
+
+    //     return [
+    //         'target_category'   => $employee?->category,
+    //         'target'            => $target,
+    //         'actual'            => (float) ($totals->actual ?? 0),
+    //         'cashback'          => (float) ($totals->cashback ?? 0),
+    //         'subvention'        => (float) ($totals->subvention ?? 0),
+    //         'docking'           => (float) ($totals->docking ?? 0),
+    //         'count_achievement' => $countAchievement,
+    //         'percentage'        => $target > 0
+    //             ? round(($countAchievement / $target) * 100, 2)
+    //             : 0,
+    //         'incentive'         => $this->getIncentive($countAchievement),
+    //     ];
+    // }
+
+    // public function getPerformance(Employee $employee): array
+    // {
+    //     if ($employee->designation === Employee::DESIGNATION_ADMIN) {
+
+    //         $customers = Customer::query();
+    //     } else {
+
+    //         $employeeIds = HierarchyHelper::subordinateIds($employee);
+
+    //         $customers = Customer::query()
+    //             ->whereIn('employee_id', $employeeIds);
+    //     }
+
+    //     $customers
+    //         ->whereMonth('created_at', now()->month)
+    //         ->whereYear('created_at', now()->year);
+
+    //     $totals = $customers
+    //         ->selectRaw("
+    //         SUM(sanctioned_loan_amount) as actual,
+    //         SUM(cashback) as cashback,
+    //         SUM(subvention) as subvention,
+    //         SUM(docking) as docking
+    //     ")
+    //         ->first();
+
+    //     $countAchievement = $this->getCountAchievement($employee);
+
+    //     return [
+    //         'target_category'   => $employee->category,
+    //         'target'            => $this->getTarget($employee),
+    //         'actual'            => (float) ($totals->actual ?? 0),
+    //         'cashback'          => (float) ($totals->cashback ?? 0),
+    //         'subvention'        => (float) ($totals->subvention ?? 0),
+    //         'docking'           => (float) ($totals->docking ?? 0),
+    //         'count_achievement' => $countAchievement,
+    //         'percentage'        => $this->getPercentage($employee),
+    //         'incentive'         => $this->getIncentive($countAchievement),
+    //     ];
+    // }
+
+
+    // public function getPerformance(Employee $employee): array
+    // {
+    //     // $employeeIds = HierarchyService::subordinateEmployeeIds($employee);
+    //     $employeeIds = HierarchyHelper::subordinateIds($employee);
+
+    //     $customers = Customer::whereIn('employee_id', $employeeIds)
+    //         // ->where('employee_id', $employee->id)
+    //         ->whereMonth('created_at', now()->month)
+    //         ->whereYear('created_at', now()->year);
+
+
+
+    //     $totals = $customers
+    //         ->selectRaw("
+    //     SUM(sanctioned_loan_amount) as actual,
+    //     SUM(cashback) as cashback,
+    //     SUM(subvention) as subvention,
+    //     SUM(docking) as docking
+    // ")
+    //         ->first();
+
+
+    //     $countAchievement = $this->getCountAchievement($employee);
+
+
+    //     return [
+    //         'target_category'   => $employee->category,
+    //         'target'            => $this->getTarget($employee),
+    //         'actual'            => (float) $totals->actual,
+    //         'cashback'          => (float) $totals->cashback,
+    //         'subvention'        => (float) $totals->subvention,
+    //         'docking'           => (float) $totals->docking,
+    //         'count_achievement' => $countAchievement,
+    //         'percentage'        => $this->getPercentage($employee),
+    //         'incentive'         => $this->getIncentive($countAchievement),
+    //     ];
+    // }
 
 
     // public function getIncentive(float $countAchievement): float

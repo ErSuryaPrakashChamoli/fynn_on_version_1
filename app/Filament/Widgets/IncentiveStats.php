@@ -3,87 +3,217 @@
 namespace App\Filament\Widgets;
 
 use App\Models\Employee;
-use App\Services\AchievementCalculatorService;
-use Filament\Widgets\StatsOverviewWidget as BaseWidget;
+use App\Services\IncentiveCalculator;
+use Filament\Facades\Filament;
+use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use NumberFormatter;
 
-class IncentiveStats extends BaseWidget
+class IncentiveStats extends StatsOverviewWidget
 {
     protected static ?int $sort = 3;
 
+    protected ?string $pollingInterval = '60s';
+
+    protected function getHeading(): ?string
+    {
+        return 'Net Achievement & Incentive';
+    }
+
+    protected function getDescription(): ?string
+    {
+        return 'Track net achievement, deductions, and incentive earnings against your monthly target.';
+    }
+
     protected function getStats(): array
     {
-        $user = auth()->user();
-
-        /*
-        |--------------------------------------------------------------------------
-        | Employee
-        |--------------------------------------------------------------------------
-        */
+        $user = Filament::auth()->user();
 
         $employee = $user?->employee;
 
-        if (! $employee) {
-            return [
-                Stat::make('Incentive', 'Employee Not Found')
-                    ->description('Employee profile is not linked with this user')
-                    ->color('danger')
-                    ->icon('heroicon-o-exclamation-triangle'),
-            ];
-        }
+        $isAdmin = $user->hasRole('Admin');
 
         /*
         |--------------------------------------------------------------------------
-        | Achievement Calculator
+        | Calculate Incentive
         |--------------------------------------------------------------------------
         */
 
-        $calculator = app(AchievementCalculatorService::class);
-
-        /*
-        |--------------------------------------------------------------------------
-        | Performance
-        |--------------------------------------------------------------------------
-        */
-
-        $performance = $calculator->getPerformance($employee);
-
-        $cashback = (float) ($performance['cashback'] ?? 0);
-
-        $subvention = (float) ($performance['subvention'] ?? 0);
-
-        $docking = (float) ($performance['docking'] ?? 0);
-
-        $countAchievement = (float) (
-            $performance['count_achievement'] ?? 0
+        $data = IncentiveCalculator::calculate(
+            $employee
         );
 
         /*
         |--------------------------------------------------------------------------
-        | Current Incentive
+        | Currency Formatter
         |--------------------------------------------------------------------------
         */
 
-        $currentIncentive = $calculator->getIncentive(
-            $countAchievement
-        );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Indian Currency Formatter
-        |--------------------------------------------------------------------------
-        */
-
-        $indianCurrencyFormatter = new NumberFormatter(
+        $formatter = new NumberFormatter(
             'en_IN',
             NumberFormatter::CURRENCY
         );
 
-        $indianCurrencyFormatter->setAttribute(
+        $formatter->setAttribute(
             NumberFormatter::MAX_FRACTION_DIGITS,
             0
         );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Values
+        |--------------------------------------------------------------------------
+        */
+
+        $cashback = (float) (
+            $data['cashback'] ?? 0
+        );
+
+        $subvention = (float) (
+            $data['subvention'] ?? 0
+        );
+
+        $docking = (float) (
+            $data['docking'] ?? 0
+        );
+
+        $currentIncentive = (float) (
+            $data['incentive'] ?? 0
+        );
+
+        $actual = (float) (
+            $data['actual'] ?? 0
+        );
+
+        $countAchievement = (float) (
+            $data['count_achievement'] ?? 0
+        );
+
+        $target = (float) (
+            $data['target'] ?? 0
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Total Deductions
+        |--------------------------------------------------------------------------
+        */
+
+        $totalDeductions =
+            $cashback
+            + $subvention
+            + $docking;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Achievement %
+        |--------------------------------------------------------------------------
+        */
+
+        $achievementPercentage = $target > 0
+            ? round(
+                ($countAchievement / $target) * 100,
+                1
+            )
+            : 0;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Incentive Status
+        |--------------------------------------------------------------------------
+        */
+
+        if ($currentIncentive > 0) {
+
+            $incentiveBadge = '🏆 EARNING';
+
+            $incentiveColor = 'success';
+
+            $incentiveDescription =
+                $isAdmin
+                ? 'Company incentive generated'
+                : 'Current incentive earned';
+        } elseif ($countAchievement > 0) {
+
+            $incentiveBadge = '📈 IN PROGRESS';
+
+            $incentiveColor = 'warning';
+
+            $incentiveDescription =
+                "{$achievementPercentage}% achievement";
+        } else {
+
+            $incentiveBadge = '⚠️ NOT STARTED';
+
+            $incentiveColor = 'danger';
+
+            $incentiveDescription =
+                'No incentive generated yet';
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Cashback Status
+        |--------------------------------------------------------------------------
+        */
+
+        if ($cashback > 0) {
+
+            $cashbackBadge = '💸 DEDUCTION';
+
+            $cashbackColor = 'success';
+        } else {
+
+            $cashbackBadge = '✅ NONE';
+
+            $cashbackColor = 'success';
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Subvention Status
+        |--------------------------------------------------------------------------
+        */
+
+        if ($subvention > 0) {
+
+            $subventionBadge = '🏦 APPLIED';
+
+            $subventionColor = 'warning';
+        } else {
+
+            $subventionBadge = '✅ NONE';
+
+            $subventionColor = 'success';
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Docking Status
+        |--------------------------------------------------------------------------
+        */
+
+        if ($docking > 0) {
+
+            $dockingBadge = '⚓ APPLIED';
+
+            $dockingColor = 'danger';
+        } else {
+
+            $dockingBadge = '✅ NONE';
+
+            $dockingColor = 'success';
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Scope
+        |--------------------------------------------------------------------------
+        */
+
+        $scopeBadge = $isAdmin
+            ? '🏢 COMPANY-WIDE'
+            : '👤 YOUR INCENTIVE';
 
         /*
         |--------------------------------------------------------------------------
@@ -91,184 +221,267 @@ class IncentiveStats extends BaseWidget
         |--------------------------------------------------------------------------
         */
 
-        $stats = [];
+        return [
 
-        /*
-        |--------------------------------------------------------------------------
-        | Cashback
-        |--------------------------------------------------------------------------
-        */
+            /*
+            |--------------------------------------------------------------------------
+            | CASHBACK
+            |--------------------------------------------------------------------------
+            */
 
-        $stats[] = Stat::make(
-            '💰 Cashback',
-            $indianCurrencyFormatter->formatCurrency(
-                $cashback,
-                'INR'
+            Stat::make(
+                $isAdmin
+                    ? '💰 Company Cashback'
+                    : '💰 Cashback',
+                $formatter->formatCurrency(
+                    $cashback,
+                    'INR'
+                )
             )
-        )
-            ->color('success')
-            ->description('Total Cashback Deduction')
-            ->descriptionIcon('heroicon-m-banknotes')
-            ->icon('heroicon-o-currency-rupee');
+                ->description(
+                    "{$cashbackBadge} • {$scopeBadge}"
+                )
+                ->descriptionIcon(
+                    'heroicon-m-banknotes'
+                )
+                ->color(
+                    $cashbackColor
+                )
+                ->icon(
+                    'heroicon-o-currency-rupee'
+                )
+                ->extraAttributes([
+                    'class' =>
+                    'performance-card incentive-card-cashback',
+                ])
+                ->chart([
+                    5,
+                    8,
+                    12,
+                    10,
+                    15,
+                    18,
+                    max($cashback, 0),
+                ]),
 
-        /*
-        |--------------------------------------------------------------------------
-        | Subvention
-        |--------------------------------------------------------------------------
-        */
+            /*
+            |--------------------------------------------------------------------------
+            | SUBVENTION
+            |--------------------------------------------------------------------------
+            */
 
-        $stats[] = Stat::make(
-            '🏦 Subvention',
-            $indianCurrencyFormatter->formatCurrency(
-                $subvention,
-                'INR'
+            Stat::make(
+                $isAdmin
+                    ? '🏦 Company Subvention'
+                    : '🏦 Subvention',
+                $formatter->formatCurrency(
+                    $subvention,
+                    'INR'
+                )
             )
-        )
-            ->color('warning')
-            ->description('Total Subvention')
-            ->descriptionIcon('heroicon-m-building-library')
-            ->icon('heroicon-o-building-library');
+                ->description(
+                    "{$subventionBadge} • Total subvention impact"
+                )
+                ->descriptionIcon(
+                    'heroicon-m-building-library'
+                )
+                ->color(
+                    $subventionColor
+                )
+                ->icon(
+                    'heroicon-o-building-library'
+                )
+                ->extraAttributes([
+                    'class' =>
+                    'performance-card incentive-card-subvention',
+                ])
+                ->chart([
+                    5,
+                    9,
+                    14,
+                    12,
+                    18,
+                    20,
+                    max($subvention, 0),
+                ]),
 
-        /*
-        |--------------------------------------------------------------------------
-        | Docking
-        |--------------------------------------------------------------------------
-        */
+            /*
+            |--------------------------------------------------------------------------
+            | DOCKING
+            |--------------------------------------------------------------------------
+            */
 
-        $stats[] = Stat::make(
-            '⚓ Docking',
-            $indianCurrencyFormatter->formatCurrency(
-                $docking,
-                'INR'
+            Stat::make(
+                $isAdmin
+                    ? '⚓ Company Docking'
+                    : '⚓ Docking',
+                $formatter->formatCurrency(
+                    $docking,
+                    'INR'
+                )
             )
-        )
-            ->color('danger')
-            ->description('Docking Charges')
-            ->descriptionIcon('heroicon-m-arrow-down-circle')
-            ->icon('heroicon-o-arrow-down-circle');
+                ->description(
+                    "{$dockingBadge} • Docking charges"
+                )
+                ->descriptionIcon(
+                    'heroicon-m-arrow-down-circle'
+                )
+                ->color(
+                    $dockingColor
+                )
+                ->icon(
+                    'heroicon-o-arrow-down-circle'
+                )
+                ->extraAttributes([
+                    'class' =>
+                    'performance-card incentive-card-docking',
+                ])
+                ->chart([
+                    3,
+                    6,
+                    5,
+                    8,
+                    7,
+                    10,
+                    max($docking, 0),
+                ]),
 
-        /*
-        |--------------------------------------------------------------------------
-        | Earned Incentive
-        |--------------------------------------------------------------------------
-        */
+            /*
+            |--------------------------------------------------------------------------
+            | EARNED INCENTIVE
+            |--------------------------------------------------------------------------
+            */
 
-        if (! $user->hasRole('Manager')) {
-
-            $stats[] = Stat::make(
-                '🏆 Earned Incentive',
-                $indianCurrencyFormatter->formatCurrency(
+            Stat::make(
+                $isAdmin
+                    ? '🏆 Company Incentive'
+                    : '🏆 Earned Incentive',
+                $formatter->formatCurrency(
                     $currentIncentive,
                     'INR'
                 )
             )
-                ->color('success')
-                ->description('Current Incentive Earned')
-                ->descriptionIcon('heroicon-m-trophy')
-                ->icon('heroicon-o-trophy');
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | Caller Only - Next Slab
-        |--------------------------------------------------------------------------
-        */
-
-        if (
-            $employee->designation === Employee::DESIGNATION_CALLER
-        ) {
-
-            $nextSlab = $calculator->getNextIncentiveSlab(
-                $countAchievement
-            );
-
-            if ($nextSlab) {
-
-                $remaining = $nextSlab['remaining'];
-
-                $nextSlabTarget = $nextSlab['target'];
-
-                $nextSlabIncentive = $nextSlab['incentive'];
-
-                /*
-                |--------------------------------------------------------------------------
-                | Next Slab
-                |--------------------------------------------------------------------------
-                */
-
-                $stats[] = Stat::make(
-                    '🚀 Next Slab',
-                    $indianCurrencyFormatter->formatCurrency(
-                        $nextSlabTarget,
-                        'INR'
-                    )
+                ->description(
+                    "{$incentiveBadge} • {$incentiveDescription}"
                 )
-                    ->color('primary')
-                    ->description(
-                        'Incentive: ' .
-                        $indianCurrencyFormatter->formatCurrency(
-                            $nextSlabIncentive,
-                            'INR'
-                        )
-                    )
-                    ->descriptionIcon(
-                        'heroicon-m-arrow-trending-up'
-                    )
-                    ->icon(
-                        'heroicon-o-chart-bar-square'
-                    );
-
-                /*
-                |--------------------------------------------------------------------------
-                | Unlock Next Slab
-                |--------------------------------------------------------------------------
-                */
-
-                $stats[] = Stat::make(
-                    '🔓 Unlock Next Slab',
-                    $indianCurrencyFormatter->formatCurrency(
-                        $remaining,
-                        'INR'
-                    )
+                ->descriptionIcon(
+                    $currentIncentive > 0
+                        ? 'heroicon-m-trophy'
+                        : 'heroicon-m-chart-bar'
                 )
-                    ->color(
-                        $remaining <= 500000
-                            ? 'warning'
-                            : 'info'
-                    )
-                    ->description(
-                        'Additional achievement required'
-                    )
-                    ->descriptionIcon(
-                        'heroicon-m-lock-open'
-                    )
-                    ->icon(
-                        'heroicon-o-lock-open');
-            } else {
-
-                /*
-                |--------------------------------------------------------------------------
-                | Maximum Slab Achieved
-                |--------------------------------------------------------------------------
-                */
-
-                $stats[] = Stat::make(
-                    '👑 Incentive Level',
-                    'Maximum Slab'
+                ->color(
+                    $incentiveColor
                 )
-                    ->color('success')
-                    ->description(
-                        'You have reached the highest incentive slab'
-                    )
-                    ->descriptionIcon(
-                        'heroicon-m-trophy'
-                    )
-                    ->icon(
-                        'heroicon-o-trophy'
-                    );
-            }
-        }
+                ->icon(
+                    'heroicon-o-trophy'
+                )
+                ->extraAttributes([
+                    'class' =>
+                    'performance-card incentive-card-earned',
+                ])
+                ->chart([
+                    5,
+                    12,
+                    20,
+                    28,
+                    38,
+                    50,
+                    max($currentIncentive, 0),
+                ]),
 
-        return $stats;
+            /*
+            |--------------------------------------------------------------------------
+            | TOTAL DEDUCTIONS
+            |--------------------------------------------------------------------------
+            */
+
+            Stat::make(
+                '📉 Total Deductions',
+                $formatter->formatCurrency(
+                    $totalDeductions,
+                    'INR'
+                )
+            )
+                ->description(
+                    'Cashback + Subvention + Docking'
+                )
+                ->descriptionIcon(
+                    'heroicon-m-arrow-trending-down'
+                )
+                ->color(
+                    $totalDeductions > 0
+                        ? 'warning'
+                        : 'success'
+                )
+                ->icon(
+                    'heroicon-o-calculator'
+                )
+                ->extraAttributes([
+                    'class' =>
+                    'performance-card incentive-card-deductions',
+                ]),
+
+            /*
+            |--------------------------------------------------------------------------
+            | COUNT ACHIEVEMENT
+            |--------------------------------------------------------------------------
+            */
+
+            Stat::make(
+                '📊 Net Achievement',
+                $formatter->formatCurrency(
+                    $countAchievement,
+                    'INR'
+                )
+            )
+                ->description(
+                    $target > 0
+                        ? "{$achievementPercentage}% of target"
+                        : 'No target assigned'
+                )
+                ->descriptionIcon(
+                    $achievementPercentage >= 100
+                        ? 'heroicon-m-check-circle'
+                        : 'heroicon-m-chart-bar'
+                )
+                ->color(
+                    $achievementPercentage >= 100
+                        ? 'success'
+                        : 'primary'
+                )
+                ->icon(
+                    'heroicon-o-chart-bar'
+                )
+                ->extraAttributes([
+                    'class' =>
+                    'performance-card incentive-card-achievement',
+                ])
+                ->chart([
+                    10,
+                    20,
+                    30,
+                    40,
+                    55,
+                    70,
+                    min(
+                        max(
+                            $achievementPercentage,
+                            0
+                        ),
+                        100
+                    ),
+                ]),
+        ];
+    }
+
+    public static function canView(): bool
+    {
+        $user = Filament::auth()->user();
+
+        return $user && (
+            $user->hasRole('Admin')
+            || $user->employee?->designation
+            === Employee::DESIGNATION_CALLER
+        );
     }
 }
