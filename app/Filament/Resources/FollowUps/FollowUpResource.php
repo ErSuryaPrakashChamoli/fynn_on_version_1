@@ -23,16 +23,17 @@ class FollowUpResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'name';
 
+    protected static ?int $navigationSort = 3;
+
     public static function form(Schema $schema): Schema
     {
         // return FollowUpForm::configure($schema);
-    //     if (request()->query('mode') === 'prospect') {
-    //     return FollowUpForm::prospect($schema);
-    // }
+        //     if (request()->query('mode') === 'prospect') {
+        //     return FollowUpForm::prospect($schema);
+        // }
 
-    // // Default configuration (Existing Customer view)
+        // // Default configuration (Existing Customer view)
         return FollowUpForm::configure($schema);
-        
     }
 
     public static function table(Table $table): Table

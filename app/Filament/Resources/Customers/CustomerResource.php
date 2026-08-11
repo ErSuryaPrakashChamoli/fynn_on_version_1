@@ -47,6 +47,7 @@ class CustomerResource extends Resource
     // protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedIdentification;
     protected static ?string $recordTitleAttribute = 'customer_name';
+    protected static ?int $navigationSort = 2;
     public static function form(Schema $schema): Schema
     {
         return CustomerForm::configure($schema);
@@ -83,24 +84,46 @@ class CustomerResource extends Resource
         ];
     }
 
+    // public static function getEloquentQuery(): Builder
+    // {
+    //     $query = parent::getEloquentQuery();
+
+
+    //     $employee = auth()->user()->employee;
+
+    //     if (! $employee) {
+    //         return $query;
+    //     }
+
+    //     if (auth()->user()->hasRole('Admin')) {
+    //         return $query;
+    //     }
+
+    //     return $query->whereIn(
+    //         'assign_to',
+    //         HierarchyHelper::callerIds($employee)
+    //     );
+    // }
+
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery();
 
-
-        $employee = auth()->user()->employee;
+        $user = auth()->user();
+        $employee = $user->employee;
 
         if (! $employee) {
-            return $query;
+            return $query->whereRaw('1 = 0');
         }
 
-        if (auth()->user()->hasRole('Admin')) {
+        // Admin sees everything
+        if ($user->hasRole('Admin')) {
             return $query;
         }
 
         return $query->whereIn(
             'assign_to',
-            HierarchyHelper::callerIds($employee)
+            HierarchyHelper::subordinateIds($employee)
         );
     }
 
