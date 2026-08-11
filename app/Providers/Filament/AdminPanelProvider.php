@@ -23,6 +23,7 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 use App\Filament\Widgets\DailyCommitmentStats;
 use App\Filament\Widgets\TargetStats;
 use App\Filament\Widgets\IncentiveStats;
+use App\Filament\Widgets\PerformanceStats;
 
 use Filament\View\PanelsRenderHook;
 use Illuminate\Support\Facades\Blade;
@@ -63,10 +64,12 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
-                TargetStats::class,
+                // TargetStats::class,
                 DailyCommitmentStats::class,
                 IncentiveStats::class,
+                PerformanceStats::class,
                 ManagerPPPStats::class,
+
 
 
             ])
