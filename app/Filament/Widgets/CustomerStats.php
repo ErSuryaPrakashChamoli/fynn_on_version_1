@@ -71,7 +71,7 @@ class CustomerStats extends StatsOverviewWidget
             // including unassigned customers.
             $query = Customer::query();
 
-            $scopeBadge = '🏢 COMPANY-WIDE';
+            $scopeBadge = '🏢 Overall Portfolio';
 
         } else {
 
@@ -85,7 +85,7 @@ class CustomerStats extends StatsOverviewWidget
                     $employeeIds
                 );
 
-            $scopeBadge = '👥 YOUR HIERARCHY';
+            $scopeBadge = '👥 Your Portfolio';
         }
 
         /*

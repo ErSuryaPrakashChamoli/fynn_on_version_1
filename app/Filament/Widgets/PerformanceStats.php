@@ -303,8 +303,8 @@ class PerformanceStats extends BaseWidget
         */
 
         $scopeBadge = $isAdmin
-            ? '🏢 COMPANY-WIDE'
-            : '👥 YOUR HIERARCHY';
+            ? '🏢 Overall Portfolio'
+            : '👥  Your Portfolio';
 
         /*
         |--------------------------------------------------------------------------

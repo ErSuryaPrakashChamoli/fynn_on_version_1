@@ -46,7 +46,7 @@ class DailyCommitmentStats extends StatsOverviewWidget
             // including customers where employee_id is NULL.
             $customersQuery = Customer::query();
 
-            $scope = '🏢 COMPANY-WIDE';
+            $scope = '🏢 Overall Portfolio';
         } else {
 
             if (! $employee) {
@@ -78,7 +78,7 @@ class DailyCommitmentStats extends StatsOverviewWidget
                     $employeeIds
                 );
 
-            $scope = '👥 YOUR HIERARCHY';
+            $scope = '👥 Your Portfolio';
         }
 
         /*
