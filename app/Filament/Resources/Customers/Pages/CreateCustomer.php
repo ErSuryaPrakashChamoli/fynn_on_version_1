@@ -90,17 +90,7 @@ class CreateCustomer extends CreateRecord
             403
         );
 
-        // if (filled($this->panRequest?->application_id)) {
 
-        //     $this->redirect(
-        //         CustomerResource::getUrl('view', [
-        //             'record' => $this->panRequest->application_id,
-        //         ])
-
-        //     );
-
-        //     return;
-        // }
 
         if (filled($this->panRequest?->application_id)) {
             Notification::make()
@@ -161,6 +151,8 @@ class CreateCustomer extends CreateRecord
         // who is creating it.
         $data['employee_id'] = $employee?->id;
         $data['assign_to'] = $employee?->id;
+
+        $data['direct'] = $this->isDirectCustomer;
 
         if (! $employee) {
             abort(403, 'Employee profile not found.');

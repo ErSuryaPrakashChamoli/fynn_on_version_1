@@ -190,7 +190,9 @@ class Customer extends Model
         'documents_submitted',
         'disbursal_finalized',
         'approval_date',
-        'other_sanctioned_bank'
+        'other_sanctioned_bank',
+        'direct'
+
     ];
 
 
@@ -198,6 +200,7 @@ class Customer extends Model
         'pending_document' => 'array',
         'disbursal_pdf' => 'array',
         'documents_submitted' => 'boolean',
+         'direct' => 'boolean',
     ];
 
     public function requestedBank()
