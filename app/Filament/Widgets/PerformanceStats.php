@@ -16,6 +16,16 @@ class PerformanceStats extends BaseWidget
 
     protected ?string $pollingInterval = '60s';
 
+    protected function getHeading(): ?string
+    {
+        return 'Target & Achievement Overview';
+    }
+
+    protected function getDescription(): ?string
+    {
+        return 'Track monthly targets, loan achievement, pending targets, daily requirements, and approved loan volume.';
+    }
+
     protected function getStats(): array
     {
         $user = Filament::auth()->user();

@@ -11,9 +11,19 @@ use NumberFormatter;
 
 class IncentiveStats extends StatsOverviewWidget
 {
-    protected static ?int $sort = 2;
+    protected static ?int $sort = 3;
 
     protected ?string $pollingInterval = '60s';
+
+    protected function getHeading(): ?string
+    {
+        return 'Net Achievement & Incentive';
+    }
+
+    protected function getDescription(): ?string
+    {
+        return 'Track net achievement, deductions, and incentive earnings against your monthly target.';
+    }
 
     protected function getStats(): array
     {
@@ -121,9 +131,8 @@ class IncentiveStats extends StatsOverviewWidget
 
             $incentiveDescription =
                 $isAdmin
-                    ? 'Company incentive generated'
-                    : 'Current incentive earned';
-
+                ? 'Company incentive generated'
+                : 'Current incentive earned';
         } elseif ($countAchievement > 0) {
 
             $incentiveBadge = '📈 IN PROGRESS';
@@ -132,7 +141,6 @@ class IncentiveStats extends StatsOverviewWidget
 
             $incentiveDescription =
                 "{$achievementPercentage}% achievement";
-
         } else {
 
             $incentiveBadge = '⚠️ NOT STARTED';
@@ -154,7 +162,6 @@ class IncentiveStats extends StatsOverviewWidget
             $cashbackBadge = '💸 DEDUCTION';
 
             $cashbackColor = 'success';
-
         } else {
 
             $cashbackBadge = '✅ NONE';
@@ -173,7 +180,6 @@ class IncentiveStats extends StatsOverviewWidget
             $subventionBadge = '🏦 APPLIED';
 
             $subventionColor = 'warning';
-
         } else {
 
             $subventionBadge = '✅ NONE';
@@ -192,7 +198,6 @@ class IncentiveStats extends StatsOverviewWidget
             $dockingBadge = '⚓ APPLIED';
 
             $dockingColor = 'danger';
-
         } else {
 
             $dockingBadge = '✅ NONE';
@@ -247,7 +252,7 @@ class IncentiveStats extends StatsOverviewWidget
                 )
                 ->extraAttributes([
                     'class' =>
-                        'performance-card incentive-card-cashback',
+                    'performance-card incentive-card-cashback',
                 ])
                 ->chart([
                     5,
@@ -288,7 +293,7 @@ class IncentiveStats extends StatsOverviewWidget
                 )
                 ->extraAttributes([
                     'class' =>
-                        'performance-card incentive-card-subvention',
+                    'performance-card incentive-card-subvention',
                 ])
                 ->chart([
                     5,
@@ -329,7 +334,7 @@ class IncentiveStats extends StatsOverviewWidget
                 )
                 ->extraAttributes([
                     'class' =>
-                        'performance-card incentive-card-docking',
+                    'performance-card incentive-card-docking',
                 ])
                 ->chart([
                     3,
@@ -372,7 +377,7 @@ class IncentiveStats extends StatsOverviewWidget
                 )
                 ->extraAttributes([
                     'class' =>
-                        'performance-card incentive-card-earned',
+                    'performance-card incentive-card-earned',
                 ])
                 ->chart([
                     5,
@@ -413,7 +418,7 @@ class IncentiveStats extends StatsOverviewWidget
                 )
                 ->extraAttributes([
                     'class' =>
-                        'performance-card incentive-card-deductions',
+                    'performance-card incentive-card-deductions',
                 ]),
 
             /*
@@ -449,7 +454,7 @@ class IncentiveStats extends StatsOverviewWidget
                 )
                 ->extraAttributes([
                     'class' =>
-                        'performance-card incentive-card-achievement',
+                    'performance-card incentive-card-achievement',
                 ])
                 ->chart([
                     10,
@@ -476,7 +481,7 @@ class IncentiveStats extends StatsOverviewWidget
         return $user && (
             $user->hasRole('Admin')
             || $user->employee?->designation
-                === Employee::DESIGNATION_CALLER
+            === Employee::DESIGNATION_CALLER
         );
     }
 }

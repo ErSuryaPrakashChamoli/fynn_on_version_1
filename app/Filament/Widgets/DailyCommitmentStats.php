@@ -15,6 +15,17 @@ class DailyCommitmentStats extends StatsOverviewWidget
 
     protected ?string $pollingInterval = '60s';
 
+    protected function getHeading(): ?string
+    {
+        return 'Lead Quality & Conversion Overview';
+    }
+
+    protected function getDescription(): ?string
+    {
+        return 'Monitor eligible leads, rejected cases, logins, and documentation status.';
+    }
+
+
     protected function getStats(): array
     {
         $user = Filament::auth()->user();
@@ -36,7 +47,6 @@ class DailyCommitmentStats extends StatsOverviewWidget
             $customersQuery = Customer::query();
 
             $scope = '🏢 COMPANY-WIDE';
-
         } else {
 
             if (! $employee) {
@@ -218,19 +228,16 @@ class DailyCommitmentStats extends StatsOverviewWidget
             $eligibleBadge = '🏆 EXCELLENT';
             $eligibleColor = 'success';
             $eligibleDescription = "{$eligibilityRate}% eligibility rate";
-
         } elseif ($eligibilityRate >= 70) {
 
             $eligibleBadge = '🔥 HEALTHY';
             $eligibleColor = 'success';
             $eligibleDescription = "{$eligibilityRate}% eligibility rate";
-
         } elseif ($eligibilityRate >= 50) {
 
             $eligibleBadge = '⚡ MODERATE';
             $eligibleColor = 'warning';
             $eligibleDescription = "{$eligibilityRate}% eligibility rate";
-
         } else {
 
             $eligibleBadge = '⚠️ NEEDS ATTENTION';
@@ -248,17 +255,14 @@ class DailyCommitmentStats extends StatsOverviewWidget
 
             $notEligibleBadge = '✅ ZERO REJECTION';
             $notEligibleColor = 'success';
-
         } elseif ($notEligible <= 5) {
 
             $notEligibleBadge = '🟢 LOW';
             $notEligibleColor = 'success';
-
         } elseif ($notEligible <= 10) {
 
             $notEligibleBadge = '🟡 MODERATE';
             $notEligibleColor = 'warning';
-
         } else {
 
             $notEligibleBadge = '🔴 HIGH';
@@ -275,17 +279,14 @@ class DailyCommitmentStats extends StatsOverviewWidget
 
             $loginBadge = '🏆 EXCELLENT';
             $loginColor = 'success';
-
         } elseif ($loginRate >= 30) {
 
             $loginBadge = '⚡ HEALTHY';
             $loginColor = 'warning';
-
         } elseif ($loginRate > 0) {
 
             $loginBadge = '📈 IN PROGRESS';
             $loginColor = 'primary';
-
         } else {
 
             $loginBadge = '⚠️ NO LOGIN';
@@ -303,19 +304,16 @@ class DailyCommitmentStats extends StatsOverviewWidget
             $documentationBadge = '✅ ALL CLEAR';
             $documentationColor = 'success';
             $documentationIcon = 'heroicon-m-check-circle';
-
         } elseif ($documentationRate <= 20) {
 
             $documentationBadge = '🟢 LOW PENDING';
             $documentationColor = 'success';
             $documentationIcon = 'heroicon-m-clock';
-
         } elseif ($documentationRate <= 40) {
 
             $documentationBadge = '🟡 NEEDS ATTENTION';
             $documentationColor = 'warning';
             $documentationIcon = 'heroicon-m-clock';
-
         } else {
 
             $documentationBadge = '🔴 HIGH PENDING';
@@ -357,7 +355,7 @@ class DailyCommitmentStats extends StatsOverviewWidget
                 )
                 ->extraAttributes([
                     'class' =>
-                        'performance-card commitment-card-total',
+                    'performance-card commitment-card-total',
                 ])
                 ->chart(
                     $otpTrend
@@ -391,7 +389,7 @@ class DailyCommitmentStats extends StatsOverviewWidget
                 )
                 ->extraAttributes([
                     'class' =>
-                        'performance-card commitment-card-eligible',
+                    'performance-card commitment-card-eligible',
                 ])
                 ->chart(
                     $eligibleTrend
@@ -427,7 +425,7 @@ class DailyCommitmentStats extends StatsOverviewWidget
                 )
                 ->extraAttributes([
                     'class' =>
-                        'performance-card commitment-card-not-eligible',
+                    'performance-card commitment-card-not-eligible',
                 ]),
 
             /*
@@ -458,7 +456,7 @@ class DailyCommitmentStats extends StatsOverviewWidget
                 )
                 ->extraAttributes([
                     'class' =>
-                        'performance-card commitment-card-login',
+                    'performance-card commitment-card-login',
                 ]),
 
             /*
@@ -487,7 +485,7 @@ class DailyCommitmentStats extends StatsOverviewWidget
                 )
                 ->extraAttributes([
                     'class' =>
-                        'performance-card commitment-card-documentation',
+                    'performance-card commitment-card-documentation',
                 ]),
         ];
     }

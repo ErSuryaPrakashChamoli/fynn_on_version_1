@@ -11,9 +11,20 @@ use Illuminate\Support\Carbon;
 
 class CustomerStats extends StatsOverviewWidget
 {
-    protected static ?int $sort = 1;
+    protected static ?int $sort = 4;
 
     protected ?string $pollingInterval = '60s';
+
+
+    protected function getHeading(): ?string
+    {
+        return 'Customer Acquisition & Journey';
+    }
+
+    protected function getDescription(): ?string
+    {
+         return 'Monitor customer acquisition, journey progress, and completion across your hierarchy.';
+    }
 
     protected function getStats(): array
     {
