@@ -23,6 +23,8 @@ class CityResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'city';
 
+    protected static ?int $navigationSort = 4;
+
     public static function form(Schema $schema): Schema
     {
         return CityForm::configure($schema);
@@ -49,9 +51,9 @@ class CityResource extends Resource
         ];
     }
 
-    public static function canAccess(): bool
-    {
-        return auth()->check()
-            && auth()->user()->hasRole('Admin');
-    }
+    // public static function canAccess(): bool
+    // {
+    //     return auth()->check()
+    //         && auth()->user()->hasRole('Admin');
+    // }
 }

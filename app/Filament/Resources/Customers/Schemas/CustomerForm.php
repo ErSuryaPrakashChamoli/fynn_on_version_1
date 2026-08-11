@@ -770,6 +770,41 @@ class CustomerForm
                             }),
 
 
+                        // Select::make('assign_to')
+                        //     ->label('Assign To')
+                        //     ->relationship('assignedTo', 'emp_name')
+                        //     ->searchable()
+                        //     ->required()
+                        //     ->disabled(
+                        //         fn(Get $get, ?Customer $record, $livewire): bool =>
+                        //         self::lockCallerFields($record)
+                        //             || (
+                        //                 filled($get('existing_customer_id'))
+                        //                 && ! $livewire->isApprovedPanRequest
+                        //             )
+                        //     )
+                        //     ->default(fn() => auth()->user()->employee?->id)
+                        //     ->preload()
+                        //     ->nullable(),
+
+                        // Select::make('assign_to')
+                        //     ->label('Assign To')
+                        //     ->relationship('assignedTo', 'emp_name')
+                        //     ->searchable()
+                        //     ->required()
+                        //     ->default(fn() => auth()->user()->employee?->id)
+                        //     ->disabled(function (): bool {
+                        //         $designation = auth()->user()->employee?->designation;
+
+                        //         return in_array($designation, [
+                        //             Employee::DESIGNATION_MANAGER,
+                        //             Employee::DESIGNATION_TEAM_LEADER,
+                        //         ], true);
+                        //     })
+                        //     ->dehydrated(true)
+                        //     ->preload()
+                        //     ->nullable(),
+
                         Select::make('assign_to')
                             ->label('Assign To')
                             ->relationship('assignedTo', 'emp_name')
@@ -782,8 +817,13 @@ class CustomerForm
                                         filled($get('existing_customer_id'))
                                         && ! $livewire->isApprovedPanRequest
                                     )
+                                    || (
+                                        $livewire instanceof \App\Filament\Resources\Customers\Pages\CreateCustomer
+                                        && $livewire->isDirectCustomer
+                                    )
                             )
                             ->default(fn() => auth()->user()->employee?->id)
+                            ->dehydrated(true)
                             ->preload()
                             ->nullable(),
 

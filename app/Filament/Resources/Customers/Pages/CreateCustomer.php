@@ -10,6 +10,8 @@ use Filament\Actions\Action;
 use App\Models\CustomerPanRequest;
 use Filament\Forms\Components\TextInput;
 
+use App\Models\Employee;
+
 
 
 class CreateCustomer extends CreateRecord
@@ -26,6 +28,7 @@ class CreateCustomer extends CreateRecord
     public bool $isApprovedPanRequest = false;
 
     public bool $showPanRequests = false;
+    public bool $isDirectCustomer = false;
 
     public ?CustomerPanRequest $panRequest = null;
 
@@ -35,6 +38,37 @@ class CreateCustomer extends CreateRecord
     public function mount(): void
     {
         parent::mount();
+
+        /*
+    |--------------------------------------------------------------------------
+    | Direct Customer Mode
+    |--------------------------------------------------------------------------
+    */
+
+        $this->isDirectCustomer = request()->boolean('direct');
+
+        if ($this->isDirectCustomer) {
+
+            $employee = auth()->user()->employee;
+
+            abort_unless(
+                $employee &&
+                    in_array(
+                        $employee->designation,
+                        [
+                            Employee::DESIGNATION_TEAM_LEADER,
+                            Employee::DESIGNATION_MANAGER,
+                        ],
+                        true
+                    ),
+                403
+            );
+
+            // Direct customer always belongs to creator.
+            $this->form->fill([
+                'assign_to' => $employee->id,
+            ]);
+        }
 
         $panRequestId = request()->integer('pan_request');
 
@@ -56,17 +90,7 @@ class CreateCustomer extends CreateRecord
             403
         );
 
-        // if (filled($this->panRequest?->application_id)) {
 
-        //     $this->redirect(
-        //         CustomerResource::getUrl('view', [
-        //             'record' => $this->panRequest->application_id,
-        //         ])
-
-        //     );
-
-        //     return;
-        // }
 
         if (filled($this->panRequest?->application_id)) {
             Notification::make()
@@ -115,12 +139,68 @@ class CreateCustomer extends CreateRecord
                     && ! $this->isApprovedPanRequest;
             });
     }
+
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-
-
         $user = auth()->user();
-        $data['employee_id'] = $user->employee_id;
+        $employee = $user->employee;
+
+        abort_unless($employee, 403, 'Employee profile not found.');
+
+        // Customer always belongs to the employee
+        // who is creating it.
+        $data['employee_id'] = $employee?->id;
+        $data['assign_to'] = $employee?->id;
+
+        $data['direct'] = $this->isDirectCustomer;
+
+        if (! $employee) {
+            abort(403, 'Employee profile not found.');
+        }
+
+        // if ($this->panExists) {
+        //     Notification::make()
+        //         ->title('Customer already exists.')
+        //         ->danger()
+        //         ->send();
+
+        //     $this->halt();
+        // }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Direct Customer
+        |--------------------------------------------------------------------------
+        */
+
+        if ($this->isDirectCustomer) {
+
+            abort_unless(
+                in_array(
+                    $employee->designation,
+                    [
+                        Employee::DESIGNATION_TEAM_LEADER,
+                        Employee::DESIGNATION_MANAGER,
+                    ],
+                    true
+                ),
+                403
+            );
+
+            // Direct customer belongs to the person creating it.
+            $data['employee_id'] = $employee->id;
+            $data['assign_to'] = $employee->id;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Normal Customer
+        |--------------------------------------------------------------------------
+        */ else {
+
+            // Existing behaviour.
+            $data['employee_id'] = $employee->id;
+        }
 
         if ($this->panExists) {
             Notification::make()
@@ -139,19 +219,50 @@ class CreateCustomer extends CreateRecord
                 break;
 
             case 'consent_pending':
-                $data['journey_status'] = 'not_started';
-                break;
-
             case 'not_eligible':
                 $data['journey_status'] = 'not_started';
                 break;
         }
 
-        // $data['journey_status'] = 'sfl';
-
-
         return $data;
     }
+    // protected function mutateFormDataBeforeCreate(array $data): array
+    // {
+
+
+    //     $user = auth()->user();
+    //     $data['employee_id'] = $user->employee_id;
+
+    //     if ($this->panExists) {
+    //         Notification::make()
+    //             ->title('Customer already exists.')
+    //             ->danger()
+    //             ->send();
+
+    //         $this->halt();
+    //     }
+
+
+    //     switch ($data['eligibility_status']) {
+
+    //         case 'eligible':
+    //             $data['journey_status'] = 'sfl';
+    //             break;
+
+    //         case 'consent_pending':
+    //             $data['journey_status'] = 'not_started';
+    //             break;
+
+    //         case 'not_eligible':
+    //             $data['journey_status'] = 'not_started';
+    //             break;
+    //     }
+
+    //     // $data['journey_status'] = 'sfl';
+
+
+    //     return $data;
+    // }
 
     protected function afterCreate(): void
     {

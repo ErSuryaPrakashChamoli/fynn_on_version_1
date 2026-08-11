@@ -118,6 +118,18 @@ class CustomersTable
                         default        => 'gray',
                     }),
 
+                TextColumn::make('direct')
+                    ->label('Type')
+                    ->badge()
+                    ->formatStateUsing(
+                        fn($state): string =>
+                        $state ? 'Direct' : 'Regular'
+                    )
+                    ->color(
+                        fn($state): string =>
+                        $state ? 'success' : 'gray'
+                    ),
+
                 TextColumn::make('sanctioned_bank')
                     ->label('Bank')
                     ->searchable(),
@@ -126,6 +138,8 @@ class CustomersTable
                     ->label('Channel')
                     ->searchable()
                     ->toggleable(),
+
+
 
                 TextColumn::make('created_at')
                     ->dateTime()
@@ -311,6 +325,13 @@ class CustomersTable
                             fn($query) => $query->whereIn('employee_id', $data['values'])
                         )
                     ),
+
+                SelectFilter::make('direct')
+                    ->label('Customer Type')
+                    ->options([
+                        1 => 'Direct Customer',
+                        0 => 'Regular Customer',
+                    ]),
 
 
 

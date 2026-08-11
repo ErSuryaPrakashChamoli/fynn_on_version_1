@@ -23,6 +23,7 @@ class ChangePassword extends Page
     protected static ?string $title = 'Change Password';
 
     protected string $view = 'filament.pages.change-password';
+
     protected static ?int $navigationSort = PHP_INT_MAX;
 
     public ?array $data = [];

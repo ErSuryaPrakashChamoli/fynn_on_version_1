@@ -2,15 +2,15 @@
 
 namespace App\Filament\Resources\FollowUps\Schemas;
 
+use App\Models\Bank;
 use App\Models\Customer;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
-// use Filament\Forms\Components\Section;
-use Filament\Schemas\Components\Section;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
-use Filament\Schemas\Schema;
 use Filament\Forms\Components\Hidden;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Schema;
 
 class FollowUpForm
 {
@@ -18,9 +18,6 @@ class FollowUpForm
     {
         $customer = Customer::find(request('customer'));
 
-
-
-        // Changed ->components() to ->schema() at the root level
         return $schema
             ->schema([
 
@@ -63,7 +60,6 @@ class FollowUpForm
                             ->disabled()
                             ->dehydrated(false),
 
-
                         TextInput::make('salary')
                             ->label('Salary')
                             ->default(
@@ -73,9 +69,6 @@ class FollowUpForm
                             )
                             ->disabled()
                             ->dehydrated(false),
-
-
-
 
                     ])
                     ->columns(2),
@@ -97,17 +90,43 @@ class FollowUpForm
                             ->required(),
 
                         Select::make('status')
+                            ->label('Status')
                             ->options([
                                 'Pending' => 'Pending',
                                 'Interested' => 'Interested',
                                 'Not Interested' => 'Not Interested',
                                 'Busy' => 'Busy',
                                 'No Response' => 'No Response',
+                                'Not Eligible' => 'Not Eligible',
+                                'Eligible for Other Bank' => 'Eligible for Other Bank',
                             ])
                             ->default('Pending')
+                            ->live()
                             ->required(),
 
-                        // DatePicker::make('next_follow_up_date'),
+                        Select::make('bank_id')
+                            ->label('Bank Name')
+                            ->options(
+                                fn () => Bank::query()
+                                    ->where('is_active', 1)
+                                    ->orderBy('bank_name')
+                                    ->pluck('bank_name', 'id')
+                                    ->toArray()
+                            )
+                            ->searchable()
+                            ->preload()
+                            ->required(fn ($get) =>
+                                $get('status') === 'Eligible for Other Bank'
+                            )
+                            ->visible(fn ($get) =>
+                                $get('status') === 'Eligible for Other Bank'
+                            )
+                            ->live()
+                            ->afterStateUpdated(function ($state, $set, $get) {
+                                if ($get('status') !== 'Eligible for Other Bank') {
+                                    $set('bank_id', null);
+                                }
+                            }),
 
                         DatePicker::make('next_follow_up_date')
                             ->label('Next Follow Up Date')
@@ -120,12 +139,17 @@ class FollowUpForm
                         Textarea::make('remarks')
                             ->rows(5)
                             ->required()
-                            ->columnSpanFull(), // Makes the textarea span across both columns cleanly
+                            ->columnSpanFull(),
 
                         Hidden::make('customer_id')
-                            ->default(fn() => request()->query('customer'))
+                            ->default(fn () => request()->query('customer'))
                             ->dehydrated(true)
-                            ->required()
+                            ->required(),
+
+                        Hidden::make('employee_id')
+                            ->default(fn () => auth()->user()?->employee?->id)
+                            ->dehydrated(true)
+                            ->required(),
 
                     ])
                     ->columns(2),

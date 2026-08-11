@@ -36,7 +36,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 class FollowUp extends Model
 {
     //
-     use HasFactory;
+    use HasFactory;
 
     protected $fillable = [
         'customer_id',
@@ -47,9 +47,10 @@ class FollowUp extends Model
         'next_follow_up_date',
         'status',
         'email',
+        'bank_id'
     ];
 
-      protected $casts = [
+    protected $casts = [
         'follow_up_date' => 'date',
         'next_follow_up_date' => 'date',
     ];
@@ -64,4 +65,8 @@ class FollowUp extends Model
         return $this->belongsTo(Employee::class);
     }
 
+    public function bank()
+    {
+        return $this->belongsTo(Bank::class);
+    }
 }

@@ -32,6 +32,11 @@ class LeadResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'customer_name';
 
+    protected static ?int $navigationSort = 1;
+
+
+
+
     public static function form(Schema $schema): Schema
     {
         return LeadForm::configure($schema);

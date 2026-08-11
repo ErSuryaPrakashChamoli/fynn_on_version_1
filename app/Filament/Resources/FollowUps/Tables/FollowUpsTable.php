@@ -24,7 +24,7 @@ class FollowUpsTable
             ->columns([
 
 
-             TextColumn::make('customer.customer_name')
+                TextColumn::make('customer.customer_name')
                     ->label('Customer')
                     ->searchable(),
 
@@ -59,19 +59,27 @@ class FollowUpsTable
                 // ]))
 
             ])
-             ->defaultPaginationPageOption(5)
-            ->paginated([5,10, 25, 50, 100, 'all'])
+            ->defaultPaginationPageOption(5)
+            ->paginated([5, 10, 25, 50, 100, 'all'])
             ->filters([
                 //
             ])
             ->recordActions([
                 EditAction::make(),
-                  Action::make('followup')
+                //   Action::make('followup')
+                //     ->label('Follow Up')
+                //     ->icon('heroicon-o-phone')
+                //     ->color('warning')
+                //     ->url(fn ($record) => FollowUpResource::getUrl('create', [
+                //         'customer' => $record->id,
+                //     ])),
+
+                Action::make('followup')
                     ->label('Follow Up')
                     ->icon('heroicon-o-phone')
                     ->color('warning')
-                    ->url(fn ($record) => FollowUpResource::getUrl('create', [
-                        'customer' => $record->id,
+                    ->url(fn($record) => FollowUpResource::getUrl('create', [
+                        'customer' => $record->customer_id,
                     ])),
             ])
             ->toolbarActions([
@@ -80,7 +88,4 @@ class FollowUpsTable
                 ]),
             ]);
     }
-
-
-
 }
