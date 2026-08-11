@@ -13,6 +13,16 @@ class ManagerPPPStats extends StatsOverviewWidget
 {
     protected static ?int $sort = 4;
 
+    protected function getHeading(): ?string
+    {
+        return '📊 Manager Performance Stats';
+    }
+
+    protected function getDescription(): ?string
+    {
+        return 'Monitor caller eligibility, PPP performance, multiplier, and manager incentive.';
+    }
+
     protected function getStats(): array
     {
         $user = Filament::auth()->user();
@@ -128,8 +138,10 @@ class ManagerPPPStats extends StatsOverviewWidget
                 ->description('Callers eligible for PPP')
                 ->descriptionIcon('heroicon-m-users')
                 ->icon('heroicon-o-user-group')
-                ->color('primary'),
-
+                ->color('primary')
+                ->extraAttributes([
+                    'class' => 'performance-card manager-ppp-callers',
+                ]),
             Stat::make(
                 '📊 PPP',
                 $formatter->formatCurrency($ppp, 'INR')
@@ -137,8 +149,10 @@ class ManagerPPPStats extends StatsOverviewWidget
                 ->description('Average Count Achievement per Caller')
                 ->descriptionIcon('heroicon-m-chart-bar')
                 ->icon('heroicon-o-chart-bar')
-                ->color('info'),
-
+                ->color('info')
+                ->extraAttributes([
+                    'class' => 'performance-card manager-ppp-value',
+                ]),
             Stat::make(
                 '⚡ Multiplier',
                 $multiplierPercentage
@@ -154,7 +168,10 @@ class ManagerPPPStats extends StatsOverviewWidget
                     $multiplier > 0
                         ? 'warning'
                         : 'danger'
-                ),
+                )
+                ->extraAttributes([
+                    'class' => 'performance-card manager-ppp-multiplier',
+                ]),
 
             Stat::make(
                 '🏆 Manager Incentive',
@@ -170,7 +187,10 @@ class ManagerPPPStats extends StatsOverviewWidget
                     $managerIncentive > 0
                         ? 'success'
                         : 'gray'
-                ),
+                )
+                ->extraAttributes([
+                    'class' => 'performance-card manager-ppp-incentive',
+                ]),
         ];
     }
 
