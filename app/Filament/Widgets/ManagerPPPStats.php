@@ -140,8 +140,9 @@ class ManagerPPPStats extends StatsOverviewWidget
                 ->icon('heroicon-o-user-group')
                 ->color('primary')
                 ->extraAttributes([
-                    'class' => 'performance-card manager-ppp-callers',
+                    'class' => 'performance-card performance-card-target',
                 ]),
+
             Stat::make(
                 '📊 PPP',
                 $formatter->formatCurrency($ppp, 'INR')
@@ -149,10 +150,11 @@ class ManagerPPPStats extends StatsOverviewWidget
                 ->description('Average Count Achievement per Caller')
                 ->descriptionIcon('heroicon-m-chart-bar')
                 ->icon('heroicon-o-chart-bar')
-                ->color('info')
+                ->color('success')
                 ->extraAttributes([
-                    'class' => 'performance-card manager-ppp-value',
+                    'class' => 'performance-card performance-card-actual',
                 ]),
+
             Stat::make(
                 '⚡ Multiplier',
                 $multiplierPercentage
@@ -164,13 +166,9 @@ class ManagerPPPStats extends StatsOverviewWidget
                 )
                 ->descriptionIcon('heroicon-m-bolt')
                 ->icon('heroicon-o-adjustments-horizontal')
-                ->color(
-                    $multiplier > 0
-                        ? 'warning'
-                        : 'danger'
-                )
+                ->color('warning')
                 ->extraAttributes([
-                    'class' => 'performance-card manager-ppp-multiplier',
+                    'class' => 'performance-card performance-card-count',
                 ]),
 
             Stat::make(
@@ -183,13 +181,9 @@ class ManagerPPPStats extends StatsOverviewWidget
                 ->description('Estimated Manager Incentive')
                 ->descriptionIcon('heroicon-m-trophy')
                 ->icon('heroicon-o-trophy')
-                ->color(
-                    $managerIncentive > 0
-                        ? 'success'
-                        : 'gray'
-                )
+                ->color('success')
                 ->extraAttributes([
-                    'class' => 'performance-card manager-ppp-incentive',
+                    'class' => 'performance-card performance-card-approved',
                 ]),
         ];
     }
