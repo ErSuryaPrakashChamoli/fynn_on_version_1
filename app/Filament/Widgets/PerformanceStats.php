@@ -12,7 +12,8 @@ use NumberFormatter;
 
 class PerformanceStats extends BaseWidget
 {
-    protected static ?int $sort = 2;
+    // protected static ?int $sort = 2;
+      protected static ?int $sort = 1;
 
     protected function getStats(): array
     {
@@ -142,7 +143,7 @@ class PerformanceStats extends BaseWidget
         return [
 
             Stat::make(
-                '🎯 Target',
+                '🎯 Target second',
                 $formatter->formatCurrency($target, 'INR')
             )
                 ->description($targetLevel)
