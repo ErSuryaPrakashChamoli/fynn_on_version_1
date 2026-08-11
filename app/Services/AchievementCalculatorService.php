@@ -294,38 +294,49 @@ class AchievementCalculatorService
             'percentage'        => $this->getPercentage($employee),
             'incentive'         => $this->getIncentive($countAchievement),
         ];
-
-
-
     }
 
 
+    // public function getIncentive(float $countAchievement): float
+    // {
+    //     $slabs = [
+    //         2500000 => 4000,
+    //         3000000 => 5500,
+    //         3500000 => 7000,
+    //         4000000 => 9000,
+    //         4500000 => 12000,
+    //         5000000 => 15000,
+    //         5500000 => 18000,
+    //         6000000 => 22000,
+    //         6500000 => 26000,
+    //         7000000 => 30000,
+    //         7500000 => 35000,
+    //         8000000 => 40000,
+    //         8500000 => 45000,
+    //         9000000 => 50000,
+    //         9500000 => 55000,
+    //         10000000 => 60000,
+    //         10500000 => 65000,
+    //         11000000 => 70000,
+    //     ];
+
+    //     $incentive = 0;
+
+    //     foreach ($slabs as $target => $amount) {
+    //         if ($countAchievement >= $target) {
+    //             $incentive = $amount;
+    //         }
+    //     }
+
+    //     return $incentive;
+    // }
+
     public function getIncentive(float $countAchievement): float
     {
-        $slabs = [
-            2500000 => 4000,
-            3000000 => 5500,
-            3500000 => 7000,
-            4000000 => 9000,
-            4500000 => 12000,
-            5000000 => 15000,
-            5500000 => 18000,
-            6000000 => 22000,
-            6500000 => 26000,
-            7000000 => 30000,
-            7500000 => 35000,
-            8000000 => 40000,
-            8500000 => 45000,
-            9000000 => 50000,
-            9500000 => 55000,
-            10000000 => 60000,
-            10500000 => 65000,
-            11000000 => 70000,
-        ];
-
         $incentive = 0;
 
-        foreach ($slabs as $target => $amount) {
+        foreach ($this->getIncentiveSlabs() as $target => $amount) {
+
             if ($countAchievement >= $target) {
                 $incentive = $amount;
             }
@@ -334,6 +345,46 @@ class AchievementCalculatorService
         return $incentive;
     }
 
+
+    public function getIncentiveSlabs(): array
+    {
+        return [
+            2500000  => 4000,
+            3000000  => 5500,
+            3500000  => 7000,
+            4000000  => 9000,
+            4500000  => 12000,
+            5000000  => 15000,
+            5500000  => 18000,
+            6000000  => 22000,
+            6500000  => 26000,
+            7000000  => 30000,
+            7500000  => 35000,
+            8000000  => 40000,
+            8500000  => 45000,
+            9000000  => 50000,
+            9500000  => 55000,
+            10000000 => 60000,
+            10500000 => 65000,
+            11000000 => 70000,
+        ];
+    }
+
+    public function getNextIncentiveSlab(float $countAchievement): ?array
+    {
+        foreach ($this->getIncentiveSlabs() as $target => $incentive) {
+
+            if ($countAchievement < $target) {
+                return [
+                    'target'    => (float) $target,
+                    'incentive' => (float) $incentive,
+                    'remaining' => max($target - $countAchievement, 0),
+                ];
+            }
+        }
+
+        return null;
+    }
 
 
 
