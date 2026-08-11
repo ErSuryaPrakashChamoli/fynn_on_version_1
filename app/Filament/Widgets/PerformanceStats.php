@@ -143,7 +143,7 @@ class PerformanceStats extends BaseWidget
         return [
 
             Stat::make(
-                '🎯 Target second',
+                '🎯 Target',
                 $formatter->formatCurrency($target, 'INR')
             )
                 ->description($targetLevel)
