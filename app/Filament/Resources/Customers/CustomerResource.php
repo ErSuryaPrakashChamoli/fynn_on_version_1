@@ -112,14 +112,16 @@ class CustomerResource extends Resource
         $user = auth()->user();
         $employee = $user->employee;
 
-        if (! $employee) {
-            return $query->whereRaw('1 = 0');
-        }
-
         // Admin sees everything
         if ($user->hasRole('Admin')) {
             return $query;
         }
+
+        if (! $employee) {
+            return $query->whereRaw('1 = 0');
+        }
+
+
 
         return $query->whereIn(
             'assign_to',
