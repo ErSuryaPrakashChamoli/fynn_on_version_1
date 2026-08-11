@@ -4,10 +4,10 @@ namespace App\Filament\Widgets;
 
 use App\Models\Employee;
 use App\Services\AchievementCalculatorService;
+use Filament\Facades\Filament;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use NumberFormatter;
-use Filament\Facades\Filament;
 
 class ManagerPPPStats extends StatsOverviewWidget
 {
@@ -15,76 +15,170 @@ class ManagerPPPStats extends StatsOverviewWidget
 
     protected function getStats(): array
     {
-        // $user = auth()->user();
         $user = Filament::auth()->user();
 
+        $employee = $user?->employee;
 
-        $employee = Employee::find($user->employee_id);
+        /*
+        |--------------------------------------------------------------------------
+        | Manager Only
+        |--------------------------------------------------------------------------
+        */
 
-        if (!$employee || $employee->designation !== Employee::DESIGNATION_MANAGER) {
+        if (
+            ! $employee ||
+            $employee->designation !== Employee::DESIGNATION_MANAGER
+        ) {
             return [];
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | Calculator
+        |--------------------------------------------------------------------------
+        */
+
         $calculator = app(AchievementCalculatorService::class);
 
-        $countAchievement = $calculator->getCountAchievement($employee);
+        /*
+        |--------------------------------------------------------------------------
+        | Count Achievement
+        |--------------------------------------------------------------------------
+        */
 
-        $eligibleCallers = $calculator->getEligibleCallerCount($employee);
+        $countAchievement = $calculator->getCountAchievement(
+            $employee
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Eligible Callers
+        |--------------------------------------------------------------------------
+        */
+
+        $eligibleCallers = $calculator->getEligibleCallerCount(
+            $employee
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | PPP
+        |--------------------------------------------------------------------------
+        */
 
         $ppp = $eligibleCallers > 0
             ? $countAchievement / $eligibleCallers
             : 0;
 
+        /*
+        |--------------------------------------------------------------------------
+        | PPP Multiplier
+        |--------------------------------------------------------------------------
+        */
+
         $multiplier = $calculator->getPPPMultiplier($ppp);
 
-        // $incentive = $countAchievement * $multiplier;
+        /*
+        |--------------------------------------------------------------------------
+        | Manager Incentive
+        |--------------------------------------------------------------------------
+        */
 
         $managerIncentive = $countAchievement * $multiplier;
 
-        $formatter = new NumberFormatter('en_IN', NumberFormatter::CURRENCY);
-        $formatter->setAttribute(NumberFormatter::MAX_FRACTION_DIGITS, 0);
+        /*
+        |--------------------------------------------------------------------------
+        | Formatter
+        |--------------------------------------------------------------------------
+        */
 
+        $formatter = new NumberFormatter(
+            'en_IN',
+            NumberFormatter::CURRENCY
+        );
 
+        $formatter->setAttribute(
+            NumberFormatter::MAX_FRACTION_DIGITS,
+            0
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Multiplier %
+        |--------------------------------------------------------------------------
+        */
+
+        $multiplierPercentage = number_format(
+            $multiplier * 100,
+            3
+        ) . '%';
+
+        /*
+        |--------------------------------------------------------------------------
+        | Stats
+        |--------------------------------------------------------------------------
+        */
 
         return [
 
             Stat::make(
-                'Eligible Callers',
+                '👥 Eligible Callers',
                 $eligibleCallers
-            ),
-
-            Stat::make(
-                'PPP',
-                $formatter->formatCurrency($ppp, 'INR')
-            ),
-
-            Stat::make(
-                'Multiplier',
-                number_format($multiplier * 100, 3) . '%'
-            ),
-
-            Stat::make(
-                'Manager Incentive',
-                $formatter->formatCurrency($managerIncentive, 'INR')
             )
-                ->color('success'),
+                ->description('Callers eligible for PPP')
+                ->descriptionIcon('heroicon-m-users')
+                ->icon('heroicon-o-user-group')
+                ->color('primary'),
 
+            Stat::make(
+                '📊 PPP',
+                $formatter->formatCurrency($ppp, 'INR')
+            )
+                ->description('Average Count Achievement per Caller')
+                ->descriptionIcon('heroicon-m-chart-bar')
+                ->icon('heroicon-o-chart-bar')
+                ->color('info'),
+
+            Stat::make(
+                '⚡ Multiplier',
+                $multiplierPercentage
+            )
+                ->description(
+                    $ppp > 0
+                        ? 'Applicable PPP multiplier'
+                        : 'No multiplier applicable'
+                )
+                ->descriptionIcon('heroicon-m-bolt')
+                ->icon('heroicon-o-adjustments-horizontal')
+                ->color(
+                    $multiplier > 0
+                        ? 'warning'
+                        : 'danger'
+                ),
+
+            Stat::make(
+                '🏆 Manager Incentive',
+                $formatter->formatCurrency(
+                    $managerIncentive,
+                    'INR'
+                )
+            )
+                ->description('Estimated Manager Incentive')
+                ->descriptionIcon('heroicon-m-trophy')
+                ->icon('heroicon-o-trophy')
+                ->color(
+                    $managerIncentive > 0
+                        ? 'success'
+                        : 'gray'
+                ),
         ];
     }
 
     public static function canView(): bool
     {
-        // $employee = auth()->user()->employee;
         $employee = Filament::auth()->user()?->employee;
 
         return $employee
             && $employee->designation === Employee::DESIGNATION_MANAGER;
     }
 }
-
-
-
-
-
-
-

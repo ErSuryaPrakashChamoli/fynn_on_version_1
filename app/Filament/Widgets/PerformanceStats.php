@@ -13,7 +13,7 @@ use NumberFormatter;
 class PerformanceStats extends BaseWidget
 {
     // protected static ?int $sort = 2;
-      protected static ?int $sort = 1;
+    protected static ?int $sort = 1;
 
     protected function getStats(): array
     {
@@ -25,9 +25,21 @@ class PerformanceStats extends BaseWidget
         |--------------------------------------------------------------------------
         */
 
+        // $employee = $user?->employee;
+
+        // if (! $employee) {
+        //     return [
+        //         Stat::make('Performance', 'Employee Not Found')
+        //             ->description('Employee profile is not linked with this user')
+        //             ->color('danger'),
+        //     ];
+        // }
+
         $employee = $user?->employee;
 
-        if (! $employee) {
+        $isAdmin = $user->hasRole('Admin');
+
+        if (! $isAdmin && ! $employee) {
             return [
                 Stat::make('Performance', 'Employee Not Found')
                     ->description('Employee profile is not linked with this user')
@@ -85,13 +97,34 @@ class PerformanceStats extends BaseWidget
         |--------------------------------------------------------------------------
         */
 
-        $employeeIds = HierarchyHelper::subordinateIds($employee);
+        // $employeeIds = HierarchyHelper::subordinateIds($employee);
+        // $employeeIds = $user->hasRole('Admin')
+        //     ? Employee::pluck('id')
+        //     : HierarchyHelper::subordinateIds($employee);
 
-        $approvedAmount = (float) Customer::query()
-            ->whereIn('employee_id', $employeeIds)
-            ->whereMonth('created_at', now()->month)
-            ->whereYear('created_at', now()->year)
-            ->sum('approved_loan_amount');
+        // $approvedAmount = (float) Customer::query()
+        //     ->whereIn('employee_id', $employeeIds)
+        //     ->whereMonth('created_at', now()->month)
+        //     ->whereYear('created_at', now()->year)
+        //     ->sum('approved_loan_amount');
+
+        if ($isAdmin) {
+
+            // Admin = ALL customers, including unassigned customers.
+            $approvedAmount = (float) Customer::query()
+                ->whereMonth('created_at', now()->month)
+                ->whereYear('created_at', now()->year)
+                ->sum('approved_loan_amount');
+        } else {
+
+            $employeeIds = HierarchyHelper::subordinateIds($employee);
+
+            $approvedAmount = (float) Customer::query()
+                ->whereIn('employee_id', $employeeIds)
+                ->whereMonth('created_at', now()->month)
+                ->whereYear('created_at', now()->year)
+                ->sum('approved_loan_amount');
+        }
 
         /*
         |--------------------------------------------------------------------------
