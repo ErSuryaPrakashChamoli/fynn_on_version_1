@@ -348,6 +348,7 @@ class HierarchyHelper
 
         $currentMonth = $today->month;
         $currentYear  = $today->year;
+        $monthEnd     = $today->copy()->endOfMonth();
 
         /*
     |--------------------------------------------------------------------------
@@ -366,9 +367,8 @@ class HierarchyHelper
     | EXIT EMPLOYEE
     |--------------------------------------------------------------------------
     |
-    | Current month exit:
-    | 10+ days worked  => 15 Lakh
-    | Less than 10     => 0
+    | If employee exited in current month,
+    | calculate target based on actual working days.
     |
     */
 
@@ -401,10 +401,8 @@ class HierarchyHelper
     | NEW JOINER
     |--------------------------------------------------------------------------
     |
-    | Joined in current month:
-    |
-    | Less than 10 days => category target (normally 25 Lakh)
-    | 10+ days           => 15 Lakh
+    | Only DOJ determines whether employee is a new joiner.
+    | Reporting date is ignored.
     |
     */
 
@@ -413,15 +411,11 @@ class HierarchyHelper
             $joiningDate->year == $currentYear
         ) {
 
-            $workedDays = $joiningDate->diffInDays($today) + 1;
+            $remainingDays = $joiningDate->diffInDays($monthEnd) + 1;
 
-            return $workedDays >= 10
+            return $remainingDays >= 10
                 ? 1500000
-                : (
-                    is_numeric($employee->category)
-                    ? (float) $employee->category
-                    : 2500000
-                );
+                : 0;
         }
 
         /*
@@ -429,7 +423,8 @@ class HierarchyHelper
     | EXISTING EMPLOYEE
     |--------------------------------------------------------------------------
     |
-    | Existing employees always use category.
+    | Existing employees always carry full target,
+    | even if reporting manager/TL changes.
     |
     */
 
