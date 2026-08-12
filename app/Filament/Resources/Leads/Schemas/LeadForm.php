@@ -12,6 +12,8 @@ use Filament\Schemas\Components\Section;
 use Filament\Forms\Components\Hidden;
 use App\Models\City;
 use Illuminate\Support\Str;
+use App\Models\Bank;
+use Filament\Forms\Components\DateTimePicker;
 
 class LeadForm
 {
@@ -169,16 +171,9 @@ class LeadForm
                             ->label('Salary')
                             ->prefix('₹')
                             ->live()
-
-
-
-
                             ->formatStateUsing(fn($state) => filled($state)
                                 ? indianCurrencyFormat($state)
                                 : null)
-
-
-
                             ->afterStateUpdated(function ($state, callable $set) {
                                 $value = preg_replace('/[^0-9]/', '', (string) $state);
 
@@ -193,9 +188,7 @@ class LeadForm
 
                                 return preg_replace('/[^0-9.]/', '', $state);
                             }),
-                        //  ->dehydrateStateUsing(fn($state) => blank($state) ? null : $state),
 
-                        // ->dehydrateStateUsing(fn($state) => preg_replace('/[^0-9]/', '', (string) $state)),
                     ])->columns(2),
 
 
@@ -225,19 +218,111 @@ class LeadForm
                                 'Not Interested' => 'Not Interested',
                                 'Busy' => 'Busy',
                                 'No Response' => 'No Response',
-                            ])->default('Pending')->required(),
+                                'Not Eligible' => 'Not Eligible',
+                                'Eligible for Other Bank' => 'Eligible for Other Bank',
+                            ])
+                            ->default('Pending')
+                            ->required()
+                            ->live()
+                            ->afterStateUpdated(function ($state, $set) {
 
-                        // DatePicker::make('next_follow_up_date'),
+                                // Clear bank if status is not eligible for other bank
+                                if ($state !== 'Eligible for Other Bank') {
+                                    $set('bank_id', null);
+                                }
 
-                        DatePicker::make('next_follow_up_date')
-                            ->label('Next Follow Up Date')
-                            ->displayFormat('d F Y')
+                                // Clear next follow-up date for closed statuses
+                                if (in_array($state, ['Not Interested', 'Not Eligible'])) {
+                                    $set('next_follow_up_date', null);
+                                }
+                            }),
+
+                        Select::make('bank_id')
+                            ->label('Bank Name')
+                            ->options(
+                                fn() => Bank::query()
+                                    ->where('is_active', 1)
+                                    ->orderBy('bank_name')
+                                    ->pluck('bank_name', 'id')
+                                    ->toArray()
+                            )
+                            ->searchable()
+                            ->preload()
+                            ->required(
+                                fn($get) => $get('status') === 'Eligible for Other Bank'
+                            )
+                            ->visible(
+                                fn($get) => $get('status') === 'Eligible for Other Bank'
+                            )
+                            ->live(),
+
+
+
+                        // DatePicker::make('next_follow_up_date')
+                        //     ->label('Next Follow Up Date')
+                        //     ->displayFormat('d F Y')
+                        //     ->native(false)
+                        //     ->suffixIcon('heroicon-m-calendar')
+                        //     ->minDate(now()->addDay())
+                        //     ->required(),
+
+                        // DatePicker::make('next_follow_up_date')
+                        //     ->label('Next Follow Up Date')
+                        //     ->displayFormat('d F Y')
+                        //     ->native(false)
+                        //     ->suffixIcon('heroicon-m-calendar')
+                        //     ->minDate(now()->addDay())
+                        //     ->required(
+                        //         fn($get) => !in_array($get('status'), [
+                        //             'Not Interested',
+                        //             'Not Eligible',
+                        //         ])
+                        //     )
+                        //     ->visible(
+                        //         fn($get) => !in_array($get('status'), [
+                        //             'Not Interested',
+                        //             'Not Eligible',
+                        //         ])
+                        //     ),
+
+                        // DateTimePicker::make('next_follow_up_date')
+                        //     ->label('Next Follow Up Date & Time')
+                        //     ->displayFormat('d F Y h:i A')
+                        //     ->native(false)
+                        //     ->seconds(false)
+                        //     ->minDate(today())
+                        //     ->required(
+                        //         fn($get) => !in_array($get('status'), [
+                        //             'Not Interested',
+                        //             'Not Eligible',
+                        //         ])
+                        //     )
+                        //     ->visible(
+                        //         fn($get) => !in_array($get('status'), [
+                        //             'Not Interested',
+                        //             'Not Eligible',
+                        //         ])
+                        //     ),
+                        DateTimePicker::make('next_follow_up_date')
+                            ->label('Next Follow Up Date & Time')
+                            ->displayFormat('d F Y h:i A')
                             ->native(false)
-                            ->suffixIcon('heroicon-m-calendar')
-                            ->minDate(now()->addDay())
-                            ->required(),
-
-
+                            ->seconds(false)
+                            ->minDate(today())
+                            ->required(
+                                fn($get) => !in_array($get('status'), [
+                                    'Not Interested',
+                                    'Not Eligible',
+                                ])
+                            )
+                            ->visible(
+                                fn($get) => !in_array($get('status'), [
+                                    'Not Interested',
+                                    'Not Eligible',
+                                ])
+                            )
+                            ->placeholder('Select date & time')
+                            ->helperText('⚠️ Please select both date and time for the next follow-up.'),
 
 
                         Textarea::make('remarks')
