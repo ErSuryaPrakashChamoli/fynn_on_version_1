@@ -53,7 +53,7 @@ class FollowUp extends Model
 
     protected $casts = [
         'follow_up_date' => 'date',
-        'next_follow_up_date' => 'date',
+        'next_follow_up_date' => 'datetime',
     ];
 
     public function customer()
