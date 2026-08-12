@@ -12,6 +12,7 @@ use Filament\Forms\Components\Hidden;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Forms\Components\DateTimePicker;
+use Coolsam\Flatpickr\Forms\Components\Flatpickr;
 
 class FollowUpForm
 {
@@ -154,26 +155,55 @@ class FollowUpForm
                                     $set('bank_id', null);
                                 }
                             }),
-                        DateTimePicker::make('next_follow_up_date')
+
+                        // DateTimePicker::make('next_follow_up_date')
+                        //     ->label('Next Follow Up Date & Time')
+                        //     ->displayFormat('d F Y h:i A')
+                        //     ->native(false)
+                        //     ->seconds(false)
+                        //     ->minDate(today())
+                        //     ->required(
+                        //         fn($get) => !in_array($get('status'), [
+                        //             'Not Interested',
+                        //             'Not Eligible',
+                        //         ])
+                        //     )
+                        //     ->visible(
+                        //         fn($get) => !in_array($get('status'), [
+                        //             'Not Interested',
+                        //             'Not Eligible',
+                        //         ])
+                        //     )
+                        //     ->placeholder('Select date & time')
+                        //     ->helperText('Select both date and time for the next follow-up.'),
+
+                        Flatpickr::make('next_follow_up_date')
                             ->label('Next Follow Up Date & Time')
-                            ->displayFormat('d F Y h:i A')
-                            ->native(false)
+                            ->time(true)
+                            ->time24hr(false)
                             ->seconds(false)
+                            ->minuteIncrement(15)
+                            ->format('Y-m-d H:i')
+                            ->displayFormat('d M Y h:i K')
                             ->minDate(today())
                             ->required(
-                                fn($get) => !in_array($get('status'), [
+                                fn($get) => ! in_array($get('status'), [
                                     'Not Interested',
                                     'Not Eligible',
                                 ])
                             )
                             ->visible(
-                                fn($get) => !in_array($get('status'), [
+                                fn($get) => ! in_array($get('status'), [
                                     'Not Interested',
                                     'Not Eligible',
                                 ])
                             )
                             ->placeholder('Select date & time')
-                            ->helperText('Select both date and time for the next follow-up.'),
+                            ->suffixIcon('heroicon-m-calendar')
+                            ->helperText('Select date and time for the next follow-up.'),
+
+
+
 
                         Textarea::make('remarks')
                             ->rows(5)

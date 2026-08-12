@@ -14,9 +14,7 @@ use App\Models\City;
 use Illuminate\Support\Str;
 use App\Models\Bank;
 use Filament\Forms\Components\DateTimePicker;
-// use Coolsam\Flatpickr\Forms\Components\Flatpickr;
 use Coolsam\Flatpickr\Forms\Components\Flatpickr;
-
 
 class LeadForm
 {
@@ -373,59 +371,6 @@ class LeadForm
                         //     ->helperText('⚠️ Please select both date and time for the next follow-up'),
 
 
-                        // Flatpickr::make('next_follow_up_date')
-                        //     ->label('Next Follow Up Date & Time')
-                        //     ->time(true)
-                        //     ->time24hr(false)
-                        //     ->seconds(false)
-                        //     ->minuteIncrement(15)
-                        //     ->format('Y-m-d H:i')
-                        //     ->displayFormat('d M Y h:i K')
-                        //     ->minDate(today())
-                        //     ->required(
-                        //         fn($get) => ! in_array($get('status'), [
-                        //             'Not Interested',
-                        //             'Not Eligible',
-                        //         ])
-                        //     )
-                        //     ->visible(
-                        //         fn($get) => ! in_array($get('status'), [
-                        //             'Not Interested',
-                        //             'Not Eligible',
-                        //         ])
-                        //     )
-                        //     ->placeholder('Select date & time')
-                        //     ->suffixIcon('heroicon-m-calendar')
-                        //     ->helperText('Select date and time for the next follow-up.'),
-
-                        // use Coolsam\Flatpickr\Forms\Components\Flatpickr;
-
-                        // Flatpickr::make('next_follow_up_date')
-                        //     ->label('Next Follow Up Date & Time')
-                        //     ->time(true)
-                        //     ->time24hr(false)
-                        //     ->seconds(false)
-                        //     ->minuteIncrement(15)
-                        //     ->closeOnSelect(false)
-                        //     ->format('Y-m-d H:i')
-                        //     ->displayFormat('d M Y h:i A')
-                        //     ->minDate(today())
-                        //     ->required(
-                        //         fn($get) => ! in_array($get('status'), [
-                        //             'Not Interested',
-                        //             'Not Eligible',
-                        //         ])
-                        //     )
-                        //     ->visible(
-                        //         fn($get) => ! in_array($get('status'), [
-                        //             'Not Interested',
-                        //             'Not Eligible',
-                        //         ])
-                        //     )
-                        //     ->placeholder('Select date & time')
-                        //     ->suffixIcon('heroicon-m-calendar')
-                        //     ->helperText('Select date and time for the next follow-up.'),
-
                         Flatpickr::make('next_follow_up_date')
                             ->label('Next Follow Up Date & Time')
                             ->time(true)
@@ -433,9 +378,8 @@ class LeadForm
                             ->seconds(false)
                             ->minuteIncrement(15)
                             ->format('Y-m-d H:i')
-                            ->displayFormat('d M Y h:i A')
+                            ->displayFormat('d M Y h:i K')
                             ->minDate(today())
-                            // ->native(false)
                             ->required(
                                 fn($get) => ! in_array($get('status'), [
                                     'Not Interested',
@@ -450,51 +394,7 @@ class LeadForm
                             )
                             ->placeholder('Select date & time')
                             ->suffixIcon('heroicon-m-calendar')
-                            ->helperText('Select date and time for the next follow-up.')
-                            ->extraAlpineAttributes([
-                                'x-init' => <<<'JS'
-            $nextTick(() => {
-                setTimeout(() => {
-                    const fp = $data.fp;
-
-                    if (! fp) {
-                        return;
-                    }
-
-                    const closeAfterTimeSelection = () => {
-                        if (! fp.selectedDates.length) {
-                            return;
-                        }
-
-                        setTimeout(() => {
-                            fp.close();
-                        }, 100);
-                    };
-
-                    if (fp.hourElement) {
-                        fp.hourElement.addEventListener(
-                            'change',
-                            closeAfterTimeSelection
-                        );
-                    }
-
-                    if (fp.minuteElement) {
-                        fp.minuteElement.addEventListener(
-                            'change',
-                            closeAfterTimeSelection
-                        );
-                    }
-
-                    if (fp.amPM) {
-                        fp.amPM.addEventListener(
-                            'change',
-                            closeAfterTimeSelection
-                        );
-                    }
-                }, 150);
-            });
-        JS,
-                            ]),
+                            ->helperText('Select date and time for the next follow-up.'),
 
                         Textarea::make('remarks')
                             ->rows(4)

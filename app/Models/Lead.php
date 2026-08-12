@@ -76,7 +76,8 @@ class Lead extends Model
 
     protected $casts = [
         'follow_up_date' => 'date',
-        'next_follow_up_date' => 'date',
+        // 'next_follow_up_date' => 'date',
+        'next_follow_up_date' => 'datetime',
         'is_converted' => 'boolean',
     ];
 
