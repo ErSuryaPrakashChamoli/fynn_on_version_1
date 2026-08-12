@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\UserLoginSession;
 
 /**
  * @property int $id
@@ -213,5 +214,10 @@ class Employee extends Model
             self::DESIGNATION_CLUSTER => 'Cluster Manager',
             self::DESIGNATION_CALLER => 'Caller',
         ];
+    }
+
+    public function loginSessions()
+    {
+        return $this->hasMany(UserLoginSession::class);
     }
 }
