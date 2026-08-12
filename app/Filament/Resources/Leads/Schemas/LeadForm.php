@@ -303,10 +303,55 @@ class LeadForm
                         //             'Not Eligible',
                         //         ])
                         //     ),
+                        // DateTimePicker::make('next_follow_up_date')
+                        //     ->label('Next Follow Up Date & Time')
+                        //     ->displayFormat('d F Y h:i A')
+                        //     ->native(false)
+                        //     ->seconds(false)
+                        //     ->minDate(today())
+                        //     ->required(
+                        //         fn($get) => !in_array($get('status'), [
+                        //             'Not Interested',
+                        //             'Not Eligible',
+                        //         ])
+                        //     )
+                        //     ->visible(
+                        //         fn($get) => !in_array($get('status'), [
+                        //             'Not Interested',
+                        //             'Not Eligible',
+                        //         ])
+                        //     )
+                        //     ->placeholder('Select date & time')
+                        //     ->helperText('⚠️ Please select both date and time for the next follow-up.'),
+
+                        // DateTimePicker::make('next_follow_up_date')
+                        //     ->label('Next Follow Up Date & Time')
+                        //     ->displayFormat('d F Y h:i A')
+                        //     ->native(false)
+                        //     ->seconds(false)
+                        //     ->minDate(today())
+                        //     ->required(
+                        //         fn($get) => !in_array($get('status'), [
+                        //             'Not Interested',
+                        //             'Not Eligible',
+                        //         ])
+                        //     )
+                        //     ->visible(
+                        //         fn($get) => !in_array($get('status'), [
+                        //             'Not Interested',
+                        //             'Not Eligible',
+                        //         ])
+                        //     )
+                        //     ->live()
+                        //     ->placeholder('Select date & time')
+                        //     ->helperText('⚠️ Please select both date and time for the next follow-up')
+                        //     ->dehydrateStateUsing(fn($state) => $state),
+
                         DateTimePicker::make('next_follow_up_date')
                             ->label('Next Follow Up Date & Time')
                             ->displayFormat('d F Y h:i A')
                             ->native(false)
+                            ->closeOnDateSelection()
                             ->seconds(false)
                             ->minDate(today())
                             ->required(
@@ -322,8 +367,7 @@ class LeadForm
                                 ])
                             )
                             ->placeholder('Select date & time')
-                            ->helperText('⚠️ Please select both date and time for the next follow-up.'),
-
+                            ->helperText('⚠️ Please select both date and time for the next follow-up'),
 
                         Textarea::make('remarks')
                             ->rows(4)
