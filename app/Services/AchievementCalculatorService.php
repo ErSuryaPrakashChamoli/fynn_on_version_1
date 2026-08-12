@@ -675,22 +675,18 @@ class AchievementCalculatorService
         return null;
     }
 
-
-
-
     private function getCallerTarget(Employee $employee): float
     {
         $today = Carbon::today();
 
         $currentMonth = $today->month;
         $currentYear  = $today->year;
-        $monthEnd     = $today->copy()->endOfMonth();
 
         /*
-    |--------------------------------------------------------------------------
-    | Employee must have DOJ
-    |--------------------------------------------------------------------------
-    */
+        |--------------------------------------------------------------------------
+        | Employee must have DOJ
+        |--------------------------------------------------------------------------
+        */
 
         if (empty($employee->doj)) {
             return 0;
@@ -702,12 +698,7 @@ class AchievementCalculatorService
         |--------------------------------------------------------------------------
         | EXIT EMPLOYEE
         |--------------------------------------------------------------------------
-        |
-        | If employee exited in current month,
-        | calculate target based on actual working days.
-        |
         */
-
 
         if (
             $employee->exit_status === 'yes' &&
@@ -715,28 +706,15 @@ class AchievementCalculatorService
         ) {
             $exitDate = Carbon::parse($employee->exit_date);
 
-            /*
-            |-------------------------------------------------------------
-            | Employee exited before current month
-            |-------------------------------------------------------------
-            */
-
-            if ($exitDate->lt($today->copy()->startOfMonth())) {
-                return 0;
-            }
-
-            /*
-            |-------------------------------------------------------------
-            | Employee exits during current month
-            |-------------------------------------------------------------
-            */
-
             if (
                 $exitDate->month == $currentMonth &&
                 $exitDate->year == $currentYear
             ) {
+                if ($exitDate->lt($joiningDate)) {
+                    return 0;
+                }
 
-                $workedDays = $today->copy()->startOfMonth()->diffInDays($exitDate) + 1;
+                $workedDays = $joiningDate->diffInDays($exitDate) + 1;
 
                 return $workedDays >= 10
                     ? 1500000
@@ -748,36 +726,137 @@ class AchievementCalculatorService
         |--------------------------------------------------------------------------
         | NEW JOINER
         |--------------------------------------------------------------------------
-        |
-        | Only DOJ determines whether employee is a new joiner.
-        | Reporting date is ignored.
-        |
         */
 
         if (
             $joiningDate->month == $currentMonth &&
             $joiningDate->year == $currentYear
         ) {
+            $workedDays = $joiningDate->diffInDays($today) + 1;
 
-            $remainingDays = $joiningDate->diffInDays($monthEnd) + 1;
+            // 10 or more days = 15 Lakh
+            if ($workedDays >= 10) {
+                return 1500000;
+            }
 
-            return $remainingDays >= 10
-                ? 1500000
-                : 0;
+            // Less than 10 days = employee category
+            return is_numeric($employee->category)
+                ? (float) $employee->category
+                : 2500000;
         }
 
         /*
         |--------------------------------------------------------------------------
         | EXISTING EMPLOYEE
         |--------------------------------------------------------------------------
-        |
-        | Existing employees always carry full target,
-        | even if reporting manager/TL changes.
-        |
         */
 
         return is_numeric($employee->category)
             ? (float) $employee->category
             : 2500000;
     }
+
+
+    // private function getCallerTarget(Employee $employee): float
+    // {
+    //     $today = Carbon::today();
+
+    //     $currentMonth = $today->month;
+    //     $currentYear  = $today->year;
+    //     $monthEnd     = $today->copy()->endOfMonth();
+
+    //     /*
+    // |--------------------------------------------------------------------------
+    // | Employee must have DOJ
+    // |--------------------------------------------------------------------------
+    // */
+
+    //     if (empty($employee->doj)) {
+    //         return 0;
+    //     }
+
+    //     $joiningDate = Carbon::parse($employee->doj);
+
+    //     /*
+    //     |--------------------------------------------------------------------------
+    //     | EXIT EMPLOYEE
+    //     |--------------------------------------------------------------------------
+    //     |
+    //     | If employee exited in current month,
+    //     | calculate target based on actual working days.
+    //     |
+    //     */
+
+
+    //     if (
+    //         $employee->exit_status === 'yes' &&
+    //         !empty($employee->exit_date)
+    //     ) {
+    //         $exitDate = Carbon::parse($employee->exit_date);
+
+    //         /*
+    //         |-------------------------------------------------------------
+    //         | Employee exited before current month
+    //         |-------------------------------------------------------------
+    //         */
+
+    //         if ($exitDate->lt($today->copy()->startOfMonth())) {
+    //             return 0;
+    //         }
+
+    //         /*
+    //         |-------------------------------------------------------------
+    //         | Employee exits during current month
+    //         |-------------------------------------------------------------
+    //         */
+
+    //         if (
+    //             $exitDate->month == $currentMonth &&
+    //             $exitDate->year == $currentYear
+    //         ) {
+
+    //             $workedDays = $today->copy()->startOfMonth()->diffInDays($exitDate) + 1;
+
+    //             return $workedDays >= 10
+    //                 ? 1500000
+    //                 : 0;
+    //         }
+    //     }
+
+    //     /*
+    //     |--------------------------------------------------------------------------
+    //     | NEW JOINER
+    //     |--------------------------------------------------------------------------
+    //     |
+    //     | Only DOJ determines whether employee is a new joiner.
+    //     | Reporting date is ignored.
+    //     |
+    //     */
+
+    //     if (
+    //         $joiningDate->month == $currentMonth &&
+    //         $joiningDate->year == $currentYear
+    //     ) {
+
+    //         $remainingDays = $joiningDate->diffInDays($monthEnd) + 1;
+
+    //         return $remainingDays >= 10
+    //             ? 1500000
+    //             : 0;
+    //     }
+
+    //     /*
+    //     |--------------------------------------------------------------------------
+    //     | EXISTING EMPLOYEE
+    //     |--------------------------------------------------------------------------
+    //     |
+    //     | Existing employees always carry full target,
+    //     | even if reporting manager/TL changes.
+    //     |
+    //     */
+
+    //     return is_numeric($employee->category)
+    //         ? (float) $employee->category
+    //         : 2500000;
+    // }
 }
