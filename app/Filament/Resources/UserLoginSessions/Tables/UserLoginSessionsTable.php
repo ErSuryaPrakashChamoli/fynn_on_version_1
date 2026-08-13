@@ -34,7 +34,7 @@ class UserLoginSessionsTable
                  */
                 TextColumn::make('login_at')
                     ->label('Date')
-                    ->date('d M Y h:i: A')
+                    ->date('d M Y h:i A')
                     ->sortable(),
 
                 /*
@@ -53,7 +53,7 @@ class UserLoginSessionsTable
                  */
                 TextColumn::make('logout_at')
                     ->label('Logout')
-                      ->date('d M Y h:i: A')
+                    ->date('d M Y h:i A')
                     ->placeholder('Still Logged In')
                     ->sortable(),
 
@@ -99,24 +99,98 @@ class UserLoginSessionsTable
                             )
                     ),
 
-                /*
-                 * Current status.
-                 */
-                TextColumn::make('logout_reason')
-                    ->label('Status')
+                TextColumn::make('inactive_time')
+                    ->label('Inactive Time')
+                    ->state(function ($record): string {
+                        if (! $record->login_at) {
+                            return '-';
+                        }
+
+                        $end = $record->logout_at ?? now();
+
+                        $sessionSeconds = max(
+                            0,
+                            $record->login_at->diffInSeconds($end)
+                        );
+
+                        $screenSeconds = max(
+                            0,
+                            (int) $record->screen_time_seconds
+                        );
+
+                        $inactiveSeconds = max(
+                            0,
+                            $sessionSeconds - $screenSeconds
+                        );
+
+                        return self::formatDuration($inactiveSeconds);
+                    }),
+
+                TextColumn::make('last_activity_at')
+                    ->label('Last Activity')
+                    ->date('d M Y h:i: A')
+                    ->sortable()
+                    ->placeholder('-')
+                    ->toggleable(),
+
+                TextColumn::make('browser')
+                    ->label('Browser')
+                    ->state(function ($record): string {
+                        $agent = strtolower($record->user_agent ?? '');
+
+                        return match (true) {
+                            str_contains($agent, 'edg') => 'Edge',
+                            str_contains($agent, 'chrome') => 'Chrome',
+                            str_contains($agent, 'firefox') => 'Firefox',
+                            str_contains($agent, 'safari') => 'Safari',
+                            default => 'Other',
+                        };
+                    })
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                TextColumn::make('activity_status')
+                    ->label('Activity')
+                    ->state(function ($record): string {
+                        if ($record->logout_at) {
+                            return 'Logged Out';
+                        }
+
+                        return $record->is_active
+                            ? 'Active'
+                            : 'Inactive';
+                    })
                     ->badge()
-                    ->formatStateUsing(
-                        fn(?string $state, $record): string =>
-                        $record->logout_at
-                            ? ucfirst(str_replace('_', ' ', $state ?? 'logout'))
-                            : 'Active'
-                    )
-                    ->color(
-                        fn(?string $state, $record): string =>
-                        ! $record->logout_at
+                    ->color(function ($record): string {
+                        if ($record->logout_at) {
+                            return 'gray';
+                        }
+
+                        return $record->is_active
                             ? 'success'
-                            : 'gray'
-                    ),
+                            : 'warning';
+                    }),
+
+
+                // /*
+                //  * Current status.
+                //  */
+                // TextColumn::make('logout_reason')
+                //     ->label('Status')
+                //     ->badge()
+                //     ->formatStateUsing(
+                //         fn(?string $state, $record): string =>
+                //         $record->logout_at
+                //             ? ucfirst(str_replace('_', ' ', $state ?? 'logout'))
+                //             : 'Active'
+                //     )
+                //     ->color(
+                //         fn(?string $state, $record): string =>
+                //         ! $record->logout_at
+                //             ? 'success'
+                //             : 'gray'
+                //     ),
+
+
 
                 /*
                  * IP
