@@ -1,0 +1,265 @@
+<?php
+
+namespace App\Filament\Resources\UserLoginSessions\Tables;
+
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\ViewAction;
+use Filament\Forms\Components\DatePicker;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
+
+class UserLoginSessionsTable
+{
+    public static function configure(Table $table): Table
+    {
+        return $table
+            ->defaultSort('login_at', 'desc')
+
+            ->columns([
+
+                /*
+                 * Date
+                 */
+                TextColumn::make('login_at')
+                    ->label('Date')
+                    ->date('d M Y')
+                    ->sortable(),
+
+                /*
+                 * Employee
+                 */
+                TextColumn::make('employee.emp_name')
+                    ->label('Employee')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('N/A'),
+
+                /*
+                 * Login
+                 */
+                TextColumn::make('login_at')
+                    ->label('Login')
+                    ->dateTime('h:i:s A')
+                    ->sortable(),
+
+                /*
+                 * Logout
+                 */
+                TextColumn::make('logout_at')
+                    ->label('Logout')
+                    ->dateTime('h:i:s A')
+                    ->placeholder('Still Logged In')
+                    ->sortable(),
+
+                /*
+                 * Total session duration.
+                 */
+                TextColumn::make('session_duration')
+                    ->label('Session Duration')
+                    ->state(function ($record): string {
+                        if (! $record->login_at) {
+                            return '-';
+                        }
+
+                        $end = $record->logout_at ?? now();
+
+                        $seconds = max(
+                            0,
+                            $record->login_at->diffInSeconds($end)
+                        );
+
+                        return self::formatDuration($seconds);
+                    }),
+
+                /*
+                 * Actual screen time.
+                 */
+                TextColumn::make('screen_time_seconds')
+                    ->label('Screen Time')
+                    ->numeric()
+                    ->formatStateUsing(
+                        fn ($state): string => self::formatDuration(
+                            (int) $state
+                        )
+                    )
+                    ->sortable()
+                    ->summarize(
+                        \Filament\Tables\Columns\Summarizers\Sum::make()
+                            ->label('Total Screen Time')
+                            ->formatStateUsing(
+                                fn ($state): string => self::formatDuration(
+                                    (int) $state
+                                )
+                            )
+                    ),
+
+                /*
+                 * Current status.
+                 */
+                TextColumn::make('logout_reason')
+                    ->label('Status')
+                    ->badge()
+                    ->formatStateUsing(
+                        fn (?string $state, $record): string =>
+                            $record->logout_at
+                                ? ucfirst(str_replace('_', ' ', $state ?? 'logout'))
+                                : 'Active'
+                    )
+                    ->color(fn (?string $state, $record): string =>
+                        ! $record->logout_at
+                            ? 'success'
+                            : 'gray'
+                    ),
+
+                /*
+                 * IP
+                 */
+                TextColumn::make('ip_address')
+                    ->label('IP Address')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+            ])
+
+            ->filters([
+
+                /*
+                 * Employee filter
+                 */
+                SelectFilter::make('employee_id')
+                    ->label('Employee')
+                    ->relationship(
+                        'employee',
+                        'emp_name'
+                    )
+                    ->searchable()
+                    ->preload(),
+
+                /*
+                 * Date range filter
+                 */
+                Filter::make('date_range')
+                    ->form([
+                        DatePicker::make('from')
+                            ->label('From Date'),
+
+                        DatePicker::make('until')
+                            ->label('To Date'),
+                    ])
+
+                    ->query(
+                        function (
+                            Builder $query,
+                            array $data
+                        ): Builder {
+
+                            return $query
+                                ->when(
+                                    $data['from'] ?? null,
+                                    fn (Builder $query, $date) =>
+                                        $query->whereDate(
+                                            'login_at',
+                                            '>=',
+                                            $date
+                                        )
+                                )
+                                ->when(
+                                    $data['until'] ?? null,
+                                    fn (Builder $query, $date) =>
+                                        $query->whereDate(
+                                            'login_at',
+                                            '<=',
+                                            $date
+                                        )
+                                );
+                        }
+                    )
+
+                    ->indicateUsing(
+                        function (array $data): array {
+
+                            $indicators = [];
+
+                            if (! empty($data['from'])) {
+                                $indicators[] =
+                                    'From: ' . Carbon::parse(
+                                        $data['from']
+                                    )->format('d M Y');
+                            }
+
+                            if (! empty($data['until'])) {
+                                $indicators[] =
+                                    'Until: ' . Carbon::parse(
+                                        $data['until']
+                                    )->format('d M Y');
+                            }
+
+                            return $indicators;
+                        }
+                    ),
+            ])
+
+            ->recordActions([
+                ViewAction::make(),
+            ])
+
+            ->toolbarActions([
+                BulkActionGroup::make([]),
+            ])
+
+            ->modifyQueryUsing(
+                fn (Builder $query): Builder =>
+                    $query->where(
+                        'login_at',
+                        '>=',
+                        now()->subDays(90)->startOfDay()
+                    )
+            );
+    }
+
+    /**
+     * Convert seconds to readable format.
+     *
+     * Examples:
+     *
+     * 45 seconds   => 00m 45s
+     * 12 minutes   => 12m
+     * 2 hours      => 02h 15m
+     */
+    protected static function formatDuration(int $seconds): string
+    {
+        $seconds = max(0, $seconds);
+
+        $hours = intdiv($seconds, 3600);
+
+        $minutes = intdiv(
+            $seconds % 3600,
+            60
+        );
+
+        $remainingSeconds = $seconds % 60;
+
+        if ($hours > 0) {
+            return sprintf(
+                '%02dh %02dm',
+                $hours,
+                $minutes
+            );
+        }
+
+        if ($minutes > 0) {
+            return sprintf(
+                '%02dm',
+                $minutes
+            );
+        }
+
+        return sprintf(
+            '%02ds',
+            $remainingSeconds
+        );
+    }
+}
