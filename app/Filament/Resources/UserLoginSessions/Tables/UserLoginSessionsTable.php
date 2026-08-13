@@ -11,6 +11,14 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use App\Models\Employee;
+use App\Support\HierarchyHelper;
+use Illuminate\Support\Facades\Auth;
+
+use Filament\Actions\ExportAction;
+
+use App\Filament\Exports\UserLoginSessionExporter;
+use Filament\Actions\Exports\Enums\ExportFormat;
 
 class UserLoginSessionsTable
 {
@@ -82,7 +90,7 @@ class UserLoginSessionsTable
                     ->label('Screen Time')
                     ->numeric()
                     ->formatStateUsing(
-                        fn ($state): string => self::formatDuration(
+                        fn($state): string => self::formatDuration(
                             (int) $state
                         )
                     )
@@ -91,7 +99,7 @@ class UserLoginSessionsTable
                         \Filament\Tables\Columns\Summarizers\Sum::make()
                             ->label('Total Screen Time')
                             ->formatStateUsing(
-                                fn ($state): string => self::formatDuration(
+                                fn($state): string => self::formatDuration(
                                     (int) $state
                                 )
                             )
@@ -104,12 +112,13 @@ class UserLoginSessionsTable
                     ->label('Status')
                     ->badge()
                     ->formatStateUsing(
-                        fn (?string $state, $record): string =>
-                            $record->logout_at
-                                ? ucfirst(str_replace('_', ' ', $state ?? 'logout'))
-                                : 'Active'
+                        fn(?string $state, $record): string =>
+                        $record->logout_at
+                            ? ucfirst(str_replace('_', ' ', $state ?? 'logout'))
+                            : 'Active'
                     )
-                    ->color(fn (?string $state, $record): string =>
+                    ->color(
+                        fn(?string $state, $record): string =>
                         ! $record->logout_at
                             ? 'success'
                             : 'gray'
@@ -123,6 +132,27 @@ class UserLoginSessionsTable
                     ->toggleable(isToggledHiddenByDefault: true),
 
             ])
+            ->headerActions([
+
+                ExportAction::make('export')
+                    ->label('Export Excel')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->visible(
+                        fn(): bool =>
+                        auth()->user()?->hasRole('Admin') === true
+                    )
+                    ->exporter(
+                        UserLoginSessionExporter::class
+                    )
+                    ->formats([
+                        ExportFormat::Xlsx,
+                    ])
+                    ->columnMapping(false)
+                    ->chunkSize(500),
+
+            ])
+
 
             ->filters([
 
@@ -159,21 +189,21 @@ class UserLoginSessionsTable
                             return $query
                                 ->when(
                                     $data['from'] ?? null,
-                                    fn (Builder $query, $date) =>
-                                        $query->whereDate(
-                                            'login_at',
-                                            '>=',
-                                            $date
-                                        )
+                                    fn(Builder $query, $date) =>
+                                    $query->whereDate(
+                                        'login_at',
+                                        '>=',
+                                        $date
+                                    )
                                 )
                                 ->when(
                                     $data['until'] ?? null,
-                                    fn (Builder $query, $date) =>
-                                        $query->whereDate(
-                                            'login_at',
-                                            '<=',
-                                            $date
-                                        )
+                                    fn(Builder $query, $date) =>
+                                    $query->whereDate(
+                                        'login_at',
+                                        '<=',
+                                        $date
+                                    )
                                 );
                         }
                     )
@@ -210,13 +240,70 @@ class UserLoginSessionsTable
                 BulkActionGroup::make([]),
             ])
 
+            // ->modifyQueryUsing(
+            //     fn (Builder $query): Builder =>
+            //         $query->where(
+            //             'login_at',
+            //             '>=',
+            //             now()->subDays(90)->startOfDay()
+            //         )
+            // )
+
+
+
             ->modifyQueryUsing(
-                fn (Builder $query): Builder =>
-                    $query->where(
-                        'login_at',
-                        '>=',
-                        now()->subDays(90)->startOfDay()
-                    )
+                function (Builder $query): Builder {
+
+                    $user = Auth::user();
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | NO USER
+                    |--------------------------------------------------------------------------
+                    */
+
+                    if (! $user) {
+                        return $query->whereRaw('1 = 0');
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | ADMIN
+                    |--------------------------------------------------------------------------
+                    |
+                    | Admin sees ALL login sessions.
+                    */
+
+                    if ($user->hasRole('Admin')) {
+
+                        return $query->where(
+                            'login_at',
+                            '>=',
+                            now()->subDays(90)->startOfDay()
+                        );
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | OTHER ROLES
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $employeeIds = HierarchyHelper::loginVisibleEmployeeIds(
+                        $user
+                    );
+
+                    return $query
+                        ->whereIn(
+                            'employee_id',
+                            $employeeIds
+                        )
+                        ->where(
+                            'login_at',
+                            '>=',
+                            now()->subDays(90)->startOfDay()
+                        );
+                }
             );
     }
 
