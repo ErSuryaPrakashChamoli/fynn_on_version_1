@@ -15,6 +15,11 @@ use App\Models\Employee;
 use App\Support\HierarchyHelper;
 use Illuminate\Support\Facades\Auth;
 
+use Filament\Actions\ExportAction;
+
+use App\Filament\Exports\UserLoginSessionExporter;
+use Filament\Actions\Exports\Enums\ExportFormat;
+
 class UserLoginSessionsTable
 {
     public static function configure(Table $table): Table
@@ -127,6 +132,27 @@ class UserLoginSessionsTable
                     ->toggleable(isToggledHiddenByDefault: true),
 
             ])
+            ->headerActions([
+
+                ExportAction::make('export')
+                    ->label('Export Excel')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->visible(
+                        fn(): bool =>
+                        auth()->user()?->hasRole('Admin') === true
+                    )
+                    ->exporter(
+                        UserLoginSessionExporter::class
+                    )
+                    ->formats([
+                        ExportFormat::Xlsx,
+                    ])
+                    ->columnMapping(false)
+                    ->chunkSize(500),
+
+            ])
+
 
             ->filters([
 
@@ -223,6 +249,8 @@ class UserLoginSessionsTable
             //         )
             // )
 
+
+
             ->modifyQueryUsing(
                 function (Builder $query): Builder {
 
@@ -276,8 +304,7 @@ class UserLoginSessionsTable
                             now()->subDays(90)->startOfDay()
                         );
                 }
-            )
-        ;
+            );
     }
 
     /**
