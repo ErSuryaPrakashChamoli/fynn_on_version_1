@@ -34,7 +34,7 @@ class UserLoginSessionsTable
                  */
                 TextColumn::make('login_at')
                     ->label('Date')
-                    ->date('d M Y')
+                    ->date('d M Y h:i: A')
                     ->sortable(),
 
                 /*
@@ -46,20 +46,14 @@ class UserLoginSessionsTable
                     ->sortable()
                     ->placeholder('N/A'),
 
-                /*
-                 * Login
-                 */
-                TextColumn::make('login_at')
-                    ->label('Login')
-                    ->dateTime('h:i:s A')
-                    ->sortable(),
+
 
                 /*
                  * Logout
                  */
                 TextColumn::make('logout_at')
                     ->label('Logout')
-                    ->dateTime('h:i:s A')
+                      ->date('d M Y h:i: A')
                     ->placeholder('Still Logged In')
                     ->sortable(),
 
