@@ -170,25 +170,34 @@ class UserLoginSessionsTable
                             : 'warning';
                     }),
 
-
                 // /*
                 //  * Current status.
                 //  */
-                // TextColumn::make('logout_reason')
-                //     ->label('Status')
-                //     ->badge()
-                //     ->formatStateUsing(
-                //         fn(?string $state, $record): string =>
-                //         $record->logout_at
-                //             ? ucfirst(str_replace('_', ' ', $state ?? 'logout'))
-                //             : 'Active'
-                //     )
-                //     ->color(
-                //         fn(?string $state, $record): string =>
-                //         ! $record->logout_at
-                //             ? 'success'
-                //             : 'gray'
-                //     ),
+                TextColumn::make('logout_reason')
+                    ->label('Logout Reason')
+                    ->badge()
+                    ->formatStateUsing(
+                        fn(?string $state, $record): string =>
+                        $record->logout_at
+                            ? ucfirst(
+                                str_replace(
+                                    '_',
+                                    ' ',
+                                    $state ?? 'logout'
+                                )
+                            )
+                            : '-'
+                    )
+                    ->color(
+                        fn(?string $state): string => match ($state) {
+                            'logout' => 'gray',
+                            'session_timeout' => 'warning',
+                            'new_login' => 'info',
+                            default => 'gray',
+                        }
+                    )
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
 
 
