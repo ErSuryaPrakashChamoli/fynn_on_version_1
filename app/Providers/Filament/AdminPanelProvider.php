@@ -29,6 +29,10 @@ use Filament\View\PanelsRenderHook;
 use Illuminate\Support\Facades\Blade;
 use App\Filament\Widgets\ManagerPPPStats;
 use App\Filament\Pages\ChangePassword;
+use Filament\Support\Assets\Js;
+use Filament\Support\Facades\FilamentAsset;
+use Filament\Support\Facades\FilamentView;
+
 
 
 class AdminPanelProvider extends PanelProvider
@@ -87,5 +91,22 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ]);
+    }
+
+    public function boot(): void
+    {
+        FilamentAsset::register([
+            Js::make(
+                'login-session-heartbeat',
+                resource_path('js/login-session-heartbeat.js')
+            ),
+        ]);
+
+        FilamentView::registerRenderHook(
+            'panels::head.end',
+            fn(): string => Blade::render(
+                '<meta name="csrf-token" content="{{ csrf_token() }}">'
+            ),
+        );
     }
 }
