@@ -432,4 +432,175 @@ class HierarchyHelper
             ? (float) $employee->category
             : 2500000;
     }
+
+    /**
+     * Get employee IDs visible in Login & Screen Time module.
+     *
+     * Rules:
+     *
+     * Admin
+     *     → All employees
+     *
+     * Cluster Manager
+     *     → Managers + Team Leaders + Callers
+     *
+     * Manager
+     *     → Team Leaders + Callers
+     *
+     * Team Leader
+     *     → Callers
+     *
+     * Caller
+     *     → Self
+     */
+    public static function loginVisibleEmployeeIds(User $user): Collection
+    {
+        /*
+        |--------------------------------------------------------------------------
+        | ADMIN
+        |--------------------------------------------------------------------------
+        */
+
+        if ($user->hasRole('Admin')) {
+            return Employee::query()
+                ->pluck('id')
+                ->unique()
+                ->values();
+        }
+
+        $employee = $user->employee;
+
+        if (! $employee) {
+            return collect();
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | CLUSTER MANAGER
+        |--------------------------------------------------------------------------
+        |
+        | Cluster Manager sees:
+        | Managers
+        | Team Leaders
+        | Callers
+        |
+        | Does NOT include the Cluster Manager itself.
+        */
+
+        if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
+
+            $managerIds = Employee::query()
+                ->where('cluster_id', $employee->id)
+                ->where(
+                    'designation',
+                    Employee::DESIGNATION_MANAGER
+                )
+                ->pluck('id');
+
+            $teamLeaderIds = Employee::query()
+                ->whereIn('manager_id', $managerIds)
+                ->where(
+                    'designation',
+                    Employee::DESIGNATION_TEAM_LEADER
+                )
+                ->pluck('id');
+
+            $callerIds = Employee::query()
+                ->whereIn('superviser_id', $teamLeaderIds)
+                ->where(
+                    'designation',
+                    Employee::DESIGNATION_CALLER
+                )
+                ->pluck('id');
+
+            return $managerIds
+                ->merge($teamLeaderIds)
+                ->merge($callerIds)
+                ->unique()
+                ->values();
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | MANAGER
+        |--------------------------------------------------------------------------
+        |
+        | Manager sees:
+        | Team Leaders
+        | Callers
+        |
+        | Does NOT include Manager itself.
+        */
+
+        if ($employee->designation === Employee::DESIGNATION_MANAGER) {
+
+            $teamLeaderIds = Employee::query()
+                ->where('manager_id', $employee->id)
+                ->where(
+                    'designation',
+                    Employee::DESIGNATION_TEAM_LEADER
+                )
+                ->pluck('id');
+
+            $callerIds = Employee::query()
+                ->whereIn('superviser_id', $teamLeaderIds)
+                ->where(
+                    'designation',
+                    Employee::DESIGNATION_CALLER
+                )
+                ->pluck('id');
+
+            return $teamLeaderIds
+                ->merge($callerIds)
+                ->unique()
+                ->values();
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | TEAM LEADER
+        |--------------------------------------------------------------------------
+        |
+        | Team Leader sees:
+        | Callers only.
+        */
+
+        if ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
+
+            return Employee::query()
+                ->where(
+                    'superviser_id',
+                    $employee->id
+                )
+                ->where(
+                    'designation',
+                    Employee::DESIGNATION_CALLER
+                )
+                ->pluck('id')
+                ->unique()
+                ->values();
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | CALLER
+        |--------------------------------------------------------------------------
+        |
+        | Caller sees only himself.
+        */
+
+        if ($employee->designation === Employee::DESIGNATION_CALLER) {
+            return collect([
+                $employee->id,
+            ]);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | FALLBACK
+        |--------------------------------------------------------------------------
+        */
+
+        return collect();
+    }
 }

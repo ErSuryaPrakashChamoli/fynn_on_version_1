@@ -11,6 +11,8 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Hidden;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Forms\Components\DateTimePicker;
+use Coolsam\Flatpickr\Forms\Components\Flatpickr;
 
 class FollowUpForm
 {
@@ -89,6 +91,21 @@ class FollowUpForm
                             ])
                             ->required(),
 
+                        // Select::make('status')
+                        //     ->label('Status')
+                        //     ->options([
+                        //         'Pending' => 'Pending',
+                        //         'Interested' => 'Interested',
+                        //         'Not Interested' => 'Not Interested',
+                        //         'Busy' => 'Busy',
+                        //         'No Response' => 'No Response',
+                        //         'Not Eligible' => 'Not Eligible',
+                        //         'Eligible for Other Bank' => 'Eligible for Other Bank',
+                        //     ])
+                        //     ->default('Pending')
+                        //     ->live()
+                        //     ->required(),
+
                         Select::make('status')
                             ->label('Status')
                             ->options([
@@ -102,12 +119,21 @@ class FollowUpForm
                             ])
                             ->default('Pending')
                             ->live()
-                            ->required(),
+                            ->required()
+                            ->afterStateUpdated(function ($state, $set) {
+                                if (in_array($state, ['Not Interested', 'Not Eligible'])) {
+                                    $set('next_follow_up_date', null);
+                                }
+
+                                if ($state !== 'Eligible for Other Bank') {
+                                    $set('bank_id', null);
+                                }
+                            }),
 
                         Select::make('bank_id')
                             ->label('Bank Name')
                             ->options(
-                                fn () => Bank::query()
+                                fn() => Bank::query()
                                     ->where('is_active', 1)
                                     ->orderBy('bank_name')
                                     ->pluck('bank_name', 'id')
@@ -115,10 +141,12 @@ class FollowUpForm
                             )
                             ->searchable()
                             ->preload()
-                            ->required(fn ($get) =>
+                            ->required(
+                                fn($get) =>
                                 $get('status') === 'Eligible for Other Bank'
                             )
-                            ->visible(fn ($get) =>
+                            ->visible(
+                                fn($get) =>
                                 $get('status') === 'Eligible for Other Bank'
                             )
                             ->live()
@@ -128,13 +156,54 @@ class FollowUpForm
                                 }
                             }),
 
-                        DatePicker::make('next_follow_up_date')
-                            ->label('Next Follow Up Date')
-                            ->displayFormat('d F Y')
-                            ->native(false)
+                        // DateTimePicker::make('next_follow_up_date')
+                        //     ->label('Next Follow Up Date & Time')
+                        //     ->displayFormat('d F Y h:i A')
+                        //     ->native(false)
+                        //     ->seconds(false)
+                        //     ->minDate(today())
+                        //     ->required(
+                        //         fn($get) => !in_array($get('status'), [
+                        //             'Not Interested',
+                        //             'Not Eligible',
+                        //         ])
+                        //     )
+                        //     ->visible(
+                        //         fn($get) => !in_array($get('status'), [
+                        //             'Not Interested',
+                        //             'Not Eligible',
+                        //         ])
+                        //     )
+                        //     ->placeholder('Select date & time')
+                        //     ->helperText('Select both date and time for the next follow-up.'),
+
+                        Flatpickr::make('next_follow_up_date')
+                            ->label('Next Follow Up Date & Time')
+                            ->time(true)
+                            ->time24hr(false)
+                            ->seconds(false)
+                            ->minuteIncrement(15)
+                            ->format('Y-m-d H:i')
+                            ->displayFormat('d M Y h:i K')
+                            ->minDate(today())
+                            ->required(
+                                fn($get) => ! in_array($get('status'), [
+                                    'Not Interested',
+                                    'Not Eligible',
+                                ])
+                            )
+                            ->visible(
+                                fn($get) => ! in_array($get('status'), [
+                                    'Not Interested',
+                                    'Not Eligible',
+                                ])
+                            )
+                            ->placeholder('Select date & time')
                             ->suffixIcon('heroicon-m-calendar')
-                            ->minDate(now()->addDay())
-                            ->required(),
+                            ->helperText('Select date and time for the next follow-up.'),
+
+
+
 
                         Textarea::make('remarks')
                             ->rows(5)
@@ -142,12 +211,12 @@ class FollowUpForm
                             ->columnSpanFull(),
 
                         Hidden::make('customer_id')
-                            ->default(fn () => request()->query('customer'))
+                            ->default(fn() => request()->query('customer'))
                             ->dehydrated(true)
                             ->required(),
 
                         Hidden::make('employee_id')
-                            ->default(fn () => auth()->user()?->employee?->id)
+                            ->default(fn() => auth()->user()?->employee?->id)
                             ->dehydrated(true)
                             ->required(),
 

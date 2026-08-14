@@ -34,8 +34,23 @@ class LeadsTable
                 TextColumn::make('mobile_no')->label('Phone'),
                 TextColumn::make('current_location')->label('Location'),
                 TextColumn::make('status')->badge(),
-                TextColumn::make('follow_up_date')->label('Follow up created')->badge(),
-                TextColumn::make('next_follow_up_date')->date()->label('Next Follow Up'),
+
+                TextColumn::make('bank.bank_name')
+                    ->label('Bank')
+                    ->searchable()
+                    ->sortable(),
+                // TextColumn::make('follow_up_date')->label('Follow up created')->badge(),
+
+                TextColumn::make('follow_up_date')
+                    ->label('Follow Up Created')
+                    ->dateTime('d M Y h:i A')
+                    ->badge()
+                    ->sortable(),
+                // TextColumn::make('next_follow_up_date')->date()->label('Next Follow Up'),
+                TextColumn::make('next_follow_up_date')
+                    ->label('Next Follow Up')
+                    ->dateTime('d M Y h:i A')
+                    ->sortable(),
                 TextColumn::make('created_at')
                     ->label('Created On')
                     ->dateTime('d M Y h:i A')

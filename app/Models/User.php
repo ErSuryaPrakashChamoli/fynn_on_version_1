@@ -99,4 +99,9 @@ class User extends Authenticatable implements FilamentUser
     {
         return $this->belongsTo(User::class, 'approved_by');
     }
+
+    public function loginSessions()
+    {
+        return $this->hasMany(UserLoginSession::class);
+    }
 }

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\Bank;
 
 /**
  * @property int $id
@@ -52,7 +53,7 @@ class FollowUp extends Model
 
     protected $casts = [
         'follow_up_date' => 'date',
-        'next_follow_up_date' => 'date',
+        'next_follow_up_date' => 'datetime',
     ];
 
     public function customer()
@@ -65,8 +66,13 @@ class FollowUp extends Model
         return $this->belongsTo(Employee::class);
     }
 
+    // public function bank()
+    // {
+    //     return $this->belongsTo(Bank::class);
+    // }
+
     public function bank()
     {
-        return $this->belongsTo(Bank::class);
+        return $this->belongsTo(Bank::class, 'bank_id');
     }
 }

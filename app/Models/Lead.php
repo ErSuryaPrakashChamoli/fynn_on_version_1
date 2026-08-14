@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
+use App\Models\Bank;
 
 
 /**
@@ -69,12 +70,14 @@ class Lead extends Model
         'converted_customer_id',
         'email',
         'application_no',
-        'residence_location'
+        'residence_location',
+        'bank_id'
     ];
 
     protected $casts = [
         'follow_up_date' => 'date',
-        'next_follow_up_date' => 'date',
+        // 'next_follow_up_date' => 'date',
+        'next_follow_up_date' => 'datetime',
         'is_converted' => 'boolean',
     ];
 
@@ -90,11 +93,18 @@ class Lead extends Model
     }
 
     protected static function booted()
-        {
-            static::creating(function ($lead) {
-                if (Auth::check() && blank($lead->employee_id)) {
-                    $lead->employee_id = Auth::user()->employee?->id;
-                }
-            });
-        }
+    {
+        static::creating(function ($lead) {
+            if (Auth::check() && blank($lead->employee_id)) {
+                $lead->employee_id = Auth::user()->employee?->id;
+            }
+        });
+    }
+
+
+
+    public function bank()
+    {
+        return $this->belongsTo(Bank::class, 'bank_id');
+    }
 }
