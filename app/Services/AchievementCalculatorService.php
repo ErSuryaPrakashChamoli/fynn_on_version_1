@@ -12,63 +12,13 @@ class AchievementCalculatorService
 {
 
 
-    // public function getCountAchievement(Employee $employee): float
-    // {
-    //     if ($employee->designation === Employee::DESIGNATION_ADMIN) {
-
-    //         $customers = Customer::query();
-    //     } else {
-
-    //         $employeeIds = HierarchyHelper::subordinateIds($employee);
-
-    //         $customers = Customer::query()
-    //             ->whereIn('employee_id', $employeeIds);
-    //     }
-
-    //     $customers
-    //         ->whereMonth('created_at', now()->month)
-    //         ->whereYear('created_at', now()->year);
-
-    //     $achievement = (float) $customers->sum('sanctioned_loan_amount');
-    //     $cashback = (float) $customers->sum('cashback');
-    //     $subvention = (float) $customers->sum('subvention');
-    //     $docking = (float) $customers->sum('docking');
-
-    //     return $achievement
-    //         - ((($cashback + $subvention + $docking) / 2) * 100);
-    // }
-
-
     public function getCountAchievement(Employee $employee): float
     {
-        /*
-    |--------------------------------------------------------------------------
-    | Customer Scope
-    |--------------------------------------------------------------------------
-    |
-    | Always calculate based on the employee being evaluated.
-    |
-    | Caller
-    |     -> Caller customers
-    |
-    | Team Leader
-    |     -> Team Leader + Caller customers
-    |
-    | Manager
-    |     -> Manager + TL + Caller customers
-    |
-    | Cluster Manager
-    |     -> Cluster + Manager + TL + Caller customers
-    |
-    | Admin
-    |     -> Company-wide only when an Admin employee record
-    |        itself is being evaluated.
-    |
-    */
-
         if ($employee->designation === Employee::DESIGNATION_ADMIN) {
+
             $customers = Customer::query();
         } else {
+
             $employeeIds = HierarchyHelper::subordinateIds($employee);
 
             $customers = Customer::query()
@@ -87,6 +37,7 @@ class AchievementCalculatorService
         return $achievement
             - ((($cashback + $subvention + $docking) / 2) * 100);
     }
+
 
 
 
@@ -114,7 +65,11 @@ class AchievementCalculatorService
 
             $target = Employee::whereIn('id', $callerIds)
                 ->get()
-                ->sum(fn(Employee $caller) => $this->getCallerTarget($caller));
+                ->sum(
+                    fn(Employee $caller) =>
+                    $this->getHierarchyCallerTarget($caller)
+                );
+            // ->sum(fn(Employee $caller) => $this->getCallerTarget($caller));
 
             if ($callerIds->count() < 3) {
                 $target += 3000000;
@@ -136,7 +91,8 @@ class AchievementCalculatorService
                 HierarchyHelper::callerIds($employee)
             )
                 ->get()
-                ->sum(fn(Employee $caller) => $this->getCallerTarget($caller));
+                ->sum(fn(Employee $caller) => $this->getHierarchyCallerTarget($caller));
+            // ->sum(fn(Employee $caller) => $this->getCallerTarget($caller));
 
             $teamLeaderIds = Employee::where('manager_id', $employee->id)
                 ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
@@ -169,7 +125,11 @@ class AchievementCalculatorService
                 HierarchyHelper::callerIds($employee)
             )
                 ->get()
-                ->sum(fn(Employee $caller) => $this->getCallerTarget($caller));
+                ->sum(
+                    fn(Employee $caller) =>
+                    $this->getHierarchyCallerTarget($caller)
+                );
+            // ->sum(fn(Employee $caller) => $this->getCallerTarget($caller));
 
             $managerIds = Employee::where('cluster_id', $employee->id)
                 ->where('designation', Employee::DESIGNATION_MANAGER)
@@ -273,188 +233,35 @@ class AchievementCalculatorService
         };
     }
 
-    // public function getPerformance(?Employee $employee): array
-    // {
-    //     $isAdmin = auth()->user()?->hasRole('Admin');
-
-    //     /*
-    // |--------------------------------------------------------------------------
-    // | Customer Scope
-    // |--------------------------------------------------------------------------
-    // */
-
-    //     if ($isAdmin) {
-
-    //         // Admin sees ALL customers, including employee_id = NULL.
-    //         $customers = Customer::query();
-    //     } else {
-
-    //         if (! $employee) {
-    //             return [
-    //                 'target_category'   => null,
-    //                 'target'            => 0,
-    //                 'actual'            => 0,
-    //                 'cashback'          => 0,
-    //                 'subvention'        => 0,
-    //                 'docking'           => 0,
-    //                 'count_achievement' => 0,
-    //                 'percentage'        => 0,
-    //                 'incentive'         => 0,
-    //             ];
-    //         }
-
-    //         $employeeIds = HierarchyHelper::subordinateIds($employee);
-
-    //         $customers = Customer::query()
-    //             ->whereIn('employee_id', $employeeIds);
-    //     }
-
-    //     /*
-    //     |--------------------------------------------------------------------------
-    //     | Current Month
-    //     |--------------------------------------------------------------------------
-    //     */
-
-    //     $customers
-    //         ->whereMonth('created_at', now()->month)
-    //         ->whereYear('created_at', now()->year);
-
-    //     /*
-    //     |--------------------------------------------------------------------------
-    //     | Actual / Deductions
-    //     |--------------------------------------------------------------------------
-    //     */
-
-    //     $totals = $customers
-    //         ->selectRaw("
-    //         SUM(sanctioned_loan_amount) as actual,
-    //         SUM(cashback) as cashback,
-    //         SUM(subvention) as subvention,
-    //         SUM(docking) as docking
-    //     ")
-    //         ->first();
-
-    //     $actual = (float) ($totals->actual ?? 0);
-    //     $cashback = (float) ($totals->cashback ?? 0);
-    //     $subvention = (float) ($totals->subvention ?? 0);
-    //     $docking = (float) ($totals->docking ?? 0);
-
-    //     /*
-    //     |--------------------------------------------------------------------------
-    //     | Count Achievement
-    //     |--------------------------------------------------------------------------
-    //     */
-
-    //     $countAchievement = $actual
-    //         - ((($cashback + $subvention + $docking) / 2) * 100);
-
-    //     /*
-    //     |--------------------------------------------------------------------------
-    //     | Target
-    //     |--------------------------------------------------------------------------
-    //     */
-
-    //     if ($isAdmin) {
-
-    //         $target = Employee::where(
-    //             'designation',
-    //             Employee::DESIGNATION_CALLER
-    //         )
-    //             ->get()
-    //             ->sum(
-    //                 fn(Employee $caller) =>
-    //                 $this->getCallerTarget($caller)
-    //             );
-    //     } else {
-
-    //         $target = $this->getTarget($employee);
-    //     }
-
-    //     /*
-    //     |--------------------------------------------------------------------------
-    //     | Percentage
-    //     |--------------------------------------------------------------------------
-    //     */
-
-    //     $percentage = $target > 0
-    //         ? round(($countAchievement / $target) * 100, 2)
-    //         : 0;
-
-    //     /*
-    //     |--------------------------------------------------------------------------
-    //     | Result
-    //     |--------------------------------------------------------------------------
-    //     */
-
-    //     return [
-    //         'target_category'   => $employee?->category,
-    //         'target'            => (float) $target,
-    //         'actual'             => $actual,
-    //         'cashback'           => $cashback,
-    //         'subvention'         => $subvention,
-    //         'docking'            => $docking,
-    //         'count_achievement' => $countAchievement,
-    //         'percentage'        => $percentage,
-    //         'incentive'         => $this->getIncentive($countAchievement),
-    //     ];
-    // }
-
     public function getPerformance(?Employee $employee): array
     {
         /*
     |--------------------------------------------------------------------------
-    | No employee
+    | COMPANY VIEW
     |--------------------------------------------------------------------------
     |
-    | There is no employee-specific context.
-    | Return empty performance instead of guessing.
+    | $employee === null means this is the Admin dashboard/company view.
+    |
+    | When an Employee is passed, ALWAYS calculate for that employee,
+    | even when the logged-in user is Admin.
     |
     */
 
-        if (! $employee) {
-            return [
-                'target_category'   => null,
-                'target'            => 0,
-                'actual'            => 0,
-                'cashback'          => 0,
-                'subvention'        => 0,
-                'docking'           => 0,
-                'count_achievement' => 0,
-                'percentage'        => 0,
-                'incentive'         => 0,
-            ];
-        }
+        $isCompanyView = $employee === null;
 
         /*
     |--------------------------------------------------------------------------
     | Customer Scope
     |--------------------------------------------------------------------------
-    |
-    | IMPORTANT:
-    |
-    | Do NOT use auth()->user()->hasRole('Admin') here.
-    |
-    | The calculation must be based on the Employee record
-    | passed into this method.
-    |
-    | Example:
-    |
-    | Admin logged in
-    |     -> getPerformance(Caller A)
-    |     -> Caller A data
-    |
-    | Admin logged in
-    |     -> getPerformance(Manager A)
-    |     -> Manager A hierarchy data
-    |
     */
 
-        if ($employee->designation === Employee::DESIGNATION_ADMIN) {
+        if ($isCompanyView) {
 
-            // Only an actual Admin employee record gets company-wide data.
+            // Admin dashboard: all company customers
             $customers = Customer::query();
         } else {
 
+            // Employee/Team table: only this employee's hierarchy
             $employeeIds = HierarchyHelper::subordinateIds($employee);
 
             $customers = Customer::query()
@@ -473,7 +280,7 @@ class AchievementCalculatorService
 
         /*
     |--------------------------------------------------------------------------
-    | Actual / Cashback / Subvention / Docking
+    | Actual / Deductions
     |--------------------------------------------------------------------------
     */
 
@@ -507,15 +314,27 @@ class AchievementCalculatorService
     |--------------------------------------------------------------------------
     | Target
     |--------------------------------------------------------------------------
-    |
-    | Target belongs to the employee being displayed.
-    |
-    | Do NOT calculate Admin target simply because the
-    | logged-in user is Admin.
-    |
     */
 
-        $target = $this->getTarget($employee);
+        if ($isCompanyView) {
+
+            // Admin dashboard: sum of all caller category targets
+            $target = Employee::query()
+                ->where(
+                    'designation',
+                    Employee::DESIGNATION_CALLER
+                )
+                ->get()
+                ->sum(
+                    fn(Employee $caller) =>
+                    $this->getCallerTarget($caller)
+                );
+        } else {
+
+            // Teams table / employee dashboard:
+            // target belongs to the employee being evaluated
+            $target = $this->getTarget($employee);
+        }
 
         /*
     |--------------------------------------------------------------------------
@@ -537,7 +356,7 @@ class AchievementCalculatorService
     */
 
         return [
-            'target_category'   => $employee->category,
+            'target_category'   => $employee?->category,
             'target'            => (float) $target,
             'actual'            => $actual,
             'cashback'          => $cashback,
@@ -608,81 +427,20 @@ class AchievementCalculatorService
         return null;
     }
 
+
     private function getCallerTarget(Employee $employee): float
     {
-        $today = Carbon::today();
-
-        $currentMonth = $today->month;
-        $currentYear  = $today->year;
-
         /*
-        |--------------------------------------------------------------------------
-        | Employee must have DOJ
-        |--------------------------------------------------------------------------
-        */
-
-        if (empty($employee->doj)) {
-            return 0;
-        }
-
-        $joiningDate = Carbon::parse($employee->doj);
-
-        /*
-        |--------------------------------------------------------------------------
-        | EXIT EMPLOYEE
-        |--------------------------------------------------------------------------
-        */
-
-        if (
-            $employee->exit_status === 'yes' &&
-            !empty($employee->exit_date)
-        ) {
-            $exitDate = Carbon::parse($employee->exit_date);
-
-            if (
-                $exitDate->month == $currentMonth &&
-                $exitDate->year == $currentYear
-            ) {
-                if ($exitDate->lt($joiningDate)) {
-                    return 0;
-                }
-
-                $workedDays = $joiningDate->diffInDays($exitDate) + 1;
-
-                return $workedDays >= 10
-                    ? 1500000
-                    : 0;
-            }
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | NEW JOINER
-        |--------------------------------------------------------------------------
-        */
-
-        if (
-            $joiningDate->month == $currentMonth &&
-            $joiningDate->year == $currentYear
-        ) {
-            $workedDays = $joiningDate->diffInDays($today) + 1;
-
-            // 10 or more days = 15 Lakh
-            if ($workedDays >= 10) {
-                return 1500000;
-            }
-
-            // Less than 10 days = employee category
-            return is_numeric($employee->category)
-                ? (float) $employee->category
-                : 2500000;
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | EXISTING EMPLOYEE
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | CALLER OWN TARGET
+    |--------------------------------------------------------------------------
+    |
+    | Caller target is ALWAYS based on assigned category.
+    |
+    | DOJ, reporting_date, joining date and exit date do NOT affect
+    | the caller's own target.
+    |
+    */
 
         return is_numeric($employee->category)
             ? (float) $employee->category
@@ -690,106 +448,68 @@ class AchievementCalculatorService
     }
 
 
-    // private function getCallerTarget(Employee $employee): float
-    // {
-    //     $today = Carbon::today();
+    public function getHierarchyCallerTarget(Employee $employee): float
+    {
+        $today = Carbon::today();
 
-    //     $currentMonth = $today->month;
-    //     $currentYear  = $today->year;
-    //     $monthEnd     = $today->copy()->endOfMonth();
+        /*
+    |--------------------------------------------------------------------------
+    | CATEGORY TARGET
+    |--------------------------------------------------------------------------
+    */
 
-    //     /*
-    // |--------------------------------------------------------------------------
-    // | Employee must have DOJ
-    // |--------------------------------------------------------------------------
-    // */
+        $categoryTarget = is_numeric($employee->category)
+            ? (float) $employee->category
+            : 2500000;
 
-    //     if (empty($employee->doj)) {
-    //         return 0;
-    //     }
+        /*
+    |--------------------------------------------------------------------------
+    | NO REPORTING DATE
+    |--------------------------------------------------------------------------
+    |
+    | If reporting_date is not available, use category target.
+    |
+    */
 
-    //     $joiningDate = Carbon::parse($employee->doj);
+        if (empty($employee->reporting_date)) {
+            return $categoryTarget;
+        }
 
-    //     /*
-    //     |--------------------------------------------------------------------------
-    //     | EXIT EMPLOYEE
-    //     |--------------------------------------------------------------------------
-    //     |
-    //     | If employee exited in current month,
-    //     | calculate target based on actual working days.
-    //     |
-    //     */
+        $reportingDate = Carbon::parse($employee->reporting_date);
 
+        /*
+    |--------------------------------------------------------------------------
+    | REPORTING STARTED IN CURRENT MONTH
+    |--------------------------------------------------------------------------
+    |
+    | For TL / Manager / Cluster target calculation:
+    |
+    | Less than 10 days  = 0
+    | 10 or more days    = 15 Lakh
+    |
+    */
 
-    //     if (
-    //         $employee->exit_status === 'yes' &&
-    //         !empty($employee->exit_date)
-    //     ) {
-    //         $exitDate = Carbon::parse($employee->exit_date);
+        if (
+            $reportingDate->month === $today->month &&
+            $reportingDate->year === $today->year
+        ) {
 
-    //         /*
-    //         |-------------------------------------------------------------
-    //         | Employee exited before current month
-    //         |-------------------------------------------------------------
-    //         */
+            $workedDays = $reportingDate->diffInDays($today) + 1;
 
-    //         if ($exitDate->lt($today->copy()->startOfMonth())) {
-    //             return 0;
-    //         }
+            return $workedDays >= 10
+                ? 1500000
+                : 0;
+        }
 
-    //         /*
-    //         |-------------------------------------------------------------
-    //         | Employee exits during current month
-    //         |-------------------------------------------------------------
-    //         */
+        /*
+    |--------------------------------------------------------------------------
+    | REPORTING STARTED BEFORE CURRENT MONTH
+    |--------------------------------------------------------------------------
+    |
+    | Existing reporting relationship uses caller category.
+    |
+    */
 
-    //         if (
-    //             $exitDate->month == $currentMonth &&
-    //             $exitDate->year == $currentYear
-    //         ) {
-
-    //             $workedDays = $today->copy()->startOfMonth()->diffInDays($exitDate) + 1;
-
-    //             return $workedDays >= 10
-    //                 ? 1500000
-    //                 : 0;
-    //         }
-    //     }
-
-    //     /*
-    //     |--------------------------------------------------------------------------
-    //     | NEW JOINER
-    //     |--------------------------------------------------------------------------
-    //     |
-    //     | Only DOJ determines whether employee is a new joiner.
-    //     | Reporting date is ignored.
-    //     |
-    //     */
-
-    //     if (
-    //         $joiningDate->month == $currentMonth &&
-    //         $joiningDate->year == $currentYear
-    //     ) {
-
-    //         $remainingDays = $joiningDate->diffInDays($monthEnd) + 1;
-
-    //         return $remainingDays >= 10
-    //             ? 1500000
-    //             : 0;
-    //     }
-
-    //     /*
-    //     |--------------------------------------------------------------------------
-    //     | EXISTING EMPLOYEE
-    //     |--------------------------------------------------------------------------
-    //     |
-    //     | Existing employees always carry full target,
-    //     | even if reporting manager/TL changes.
-    //     |
-    //     */
-
-    //     return is_numeric($employee->category)
-    //         ? (float) $employee->category
-    //         : 2500000;
-    // }
+        return $categoryTarget;
+    }
 }

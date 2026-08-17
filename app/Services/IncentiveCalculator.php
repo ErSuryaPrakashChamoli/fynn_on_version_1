@@ -3,92 +3,81 @@
 namespace App\Services;
 
 use App\Models\Employee;
-use App\Models\Customer;
 
 class IncentiveCalculator
 {
+    /**
+     * Calculate incentive/performance for an employee.
+     *
+     * IMPORTANT:
+     * The calculation is based on the employee passed to this method,
+     * NOT on the role of the currently logged-in user.
+     *
+     * Therefore:
+     *
+     * Admin viewing Caller A
+     *     -> Caller A performance
+     *
+     * Admin viewing Manager A
+     *     -> Manager A hierarchy performance
+     *
+     * Admin employee record
+     *     -> Company-wide performance
+     */
     public static function calculate(?Employee $employee): array
     {
-        $isAdmin = auth()->check() && auth()->user()->hasRole('Admin');
+        /*
+        |--------------------------------------------------------------------------
+        | No employee
+        |--------------------------------------------------------------------------
+        */
 
-        if ($isAdmin) {
-
-            $customers = Customer::query();
-
-        } else {
-
-            if (! $employee) {
-                return [
-                    'target_category'   => 'Monthly',
-                    'target'            => 0,
-                    'actual'            => 0,
-                    'cashback'          => 0,
-                    'subvention'        => 0,
-                    'docking'           => 0,
-                    'count_achievement' => 0,
-                    'incentive'         => 0,
-                ];
-            }
-
-            $customers = Customer::query()
-                ->where('employee_id', $employee->id);
+        if (! $employee) {
+            return self::emptyResult();
         }
 
-        $customers
-            ->whereMonth('created_at', now()->month)
-            ->whereYear('created_at', now()->year);
+        /*
+        |--------------------------------------------------------------------------
+        | Use the central calculation engine
+        |--------------------------------------------------------------------------
+        */
 
-        $actual = (float) $customers->sum('sanctioned_loan_amount');
+        $calculator = app(AchievementCalculatorService::class);
 
-        $cashback = (float) $customers->sum('cashback');
+        $performance = $calculator->getPerformance($employee);
 
-        $subvention = (float) $customers->sum('subvention');
-
-        $docking = (float) $customers->sum('docking');
-
-        $countAchievement = $actual - (
-            (($cashback + $subvention + $docking) / 2) * 100
-        );
-
-        if ($isAdmin) {
-
-            $target = Employee::query()
-                ->where(
-                    'designation',
-                    Employee::DESIGNATION_CALLER
-                )
-                ->get()
-                ->sum(
-                    fn (Employee $caller) => self::target($caller)
-                );
-
-        } else {
-
-            $target = self::target($employee);
-        }
+        /*
+        |--------------------------------------------------------------------------
+        | Return normalized result
+        |--------------------------------------------------------------------------
+        */
 
         return [
-            'target_category'   => 'Monthly',
-            'target'            => $target,
-            'actual'            => $actual,
-            'cashback'          => $cashback,
-            'subvention'        => $subvention,
-            'docking'           => $docking,
-            'count_achievement' => $countAchievement,
-            'incentive'         => self::calculateIncentive(
-                $countAchievement
-            ),
+            'target_category'   => $performance['target_category'] ?? null,
+            'target'            => (float) ($performance['target'] ?? 0),
+            'actual'            => (float) ($performance['actual'] ?? 0),
+            'cashback'          => (float) ($performance['cashback'] ?? 0),
+            'subvention'        => (float) ($performance['subvention'] ?? 0),
+            'docking'           => (float) ($performance['docking'] ?? 0),
+            'count_achievement' => (float) ($performance['count_achievement'] ?? 0),
+            'incentive'         => (float) ($performance['incentive'] ?? 0),
         ];
     }
 
-    protected static function target(Employee $employee): float
+    /**
+     * Empty performance result.
+     */
+    protected static function emptyResult(): array
     {
-        return 1500000;
-    }
-
-    protected static function calculateIncentive(float $achievement): float
-    {
-        // Your slab logic
-        return 0;
+        return [
+            'target_category'   => null,
+            'target'            => 0,
+            'actual'            => 0,
+            'cashback'          => 0,
+            'subvention'        => 0,
+            'docking'           => 0,
+            'count_achievement' => 0,
+            'incentive'         => 0,
+        ];
     }
 }

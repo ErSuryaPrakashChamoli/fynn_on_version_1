@@ -85,42 +85,42 @@
             <div>
                 <div class="text-xs text-gray-500">Target</div>
                 <div class="text-lg font-bold">
-                    ₹{{ number_format($this->performance['target'] ?? 0) }}
+                    {{ indianCurrencyFormat($this->performance['target'] ?? 0) }}
                 </div>
             </div>
 
             <div>
                 <div class="text-xs text-gray-500">Actual</div>
                 <div class="text-lg font-bold text-success-600">
-                    ₹{{ number_format($this->performance['actual'] ?? 0) }}
+                    {{ indianCurrencyFormat($this->performance['actual'] ?? 0) }}
                 </div>
             </div>
 
             <div>
                 <div class="text-xs text-gray-500">Cashback</div>
                 <div>
-                    ₹{{ number_format($this->performance['cashback'] ?? 0) }}
+                    {{ indianCurrencyFormat($this->performance['cashback'] ?? 0) }}
                 </div>
             </div>
 
             <div>
                 <div class="text-xs text-gray-500">Subvention</div>
                 <div>
-                    ₹{{ number_format($this->performance['subvention'] ?? 0) }}
+                    {{ indianCurrencyFormat($this->performance['subvention'] ?? 0) }}
                 </div>
             </div>
 
             <div>
                 <div class="text-xs text-gray-500">Docking</div>
                 <div>
-                    ₹{{ number_format($this->performance['docking'] ?? 0) }}
+                    {{ indianCurrencyFormat($this->performance['docking'] ?? 0) }}
                 </div>
             </div>
 
             <div>
                 <div class="text-xs text-gray-500">Count Achievement</div>
                 <div>
-                    ₹{{ number_format($this->performance['count_achievement'] ?? 0) }}
+                    {{ indianCurrencyFormat($this->performance['count_achievement'] ?? 0) }}
                 </div>
             </div>
 
@@ -134,7 +134,7 @@
             <div>
                 <div class="text-xs text-gray-500">Incentive</div>
                 <div class="text-primary-600 font-bold">
-                    ₹{{ number_format($this->performance['incentive'] ?? 0) }}
+                    {{ indianCurrencyFormat($this->performance['incentive'] ?? 0) }}
                 </div>
             </div>
 

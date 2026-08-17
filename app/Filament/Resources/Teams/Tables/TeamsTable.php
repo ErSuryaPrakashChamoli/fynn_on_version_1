@@ -28,6 +28,7 @@ class TeamsTable
     {
 
         $calculator = app(AchievementCalculatorService::class);
+        $performanceCache = [];
         return $table
             ->columns([
 
@@ -70,6 +71,19 @@ class TeamsTable
 
                         return $performanceCache[$record->id]['target_category'];
                     }),
+
+                // TextColumn::make('target_category')
+                //     ->label('Category')
+                //     ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+
+                //         if ($record->designation !== Employee::DESIGNATION_CALLER) {
+                //             return null;
+                //         }
+
+                //         $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+
+                //         return $performanceCache[$record->id]['target_category'];
+                //     }),
 
                 TextColumn::make('target')
                     ->label('Target')
