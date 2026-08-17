@@ -24,7 +24,19 @@ class HierarchyHelper
         */
 
         if ($user->hasRole('Admin')) {
-            return Employee::pluck('id');
+            return Employee::query()
+                ->where(function ($query) {
+                    $query->where('designation', Employee::DESIGNATION_CALLER)
+                        ->orWhere(function ($query) {
+                            $query->whereIn('designation', [
+                                Employee::DESIGNATION_CLUSTER,
+                                Employee::DESIGNATION_MANAGER,
+                                Employee::DESIGNATION_TEAM_LEADER,
+                            ])
+                            ->where('exit_status', '!=', 'yes');
+                        });
+                })
+                ->pluck('id');
         }
 
         $employee = $user->employee;
@@ -152,7 +164,8 @@ class HierarchyHelper
         // Admin sees Cluster Managers
         if ($user->hasRole('Admin')) {
             return Employee::query()
-                ->where('designation', Employee::DESIGNATION_CLUSTER);
+                ->where('designation', Employee::DESIGNATION_CLUSTER)
+                ->where('exit_status', '!=', 'yes');
         }
 
         $employee = $user->employee;
@@ -168,14 +181,16 @@ class HierarchyHelper
         if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
             return Employee::query()
                 ->where('cluster_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_MANAGER);
+                ->where('designation', Employee::DESIGNATION_MANAGER)
+                ->where('exit_status', '!=', 'yes');
         }
 
         // Manager sees Team Leaders
         if ($employee->designation === Employee::DESIGNATION_MANAGER) {
             return Employee::query()
                 ->where('manager_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_TEAM_LEADER);
+                ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+                ->where('exit_status', '!=', 'yes');
         }
 
         // Team Leader sees Callers
@@ -200,14 +215,16 @@ class HierarchyHelper
 
             return Employee::query()
                 ->where('cluster_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_MANAGER);
+                ->where('designation', Employee::DESIGNATION_MANAGER)
+                ->where('exit_status', '!=', 'yes');
         }
 
         if ($employee->designation === Employee::DESIGNATION_MANAGER) {
 
             return Employee::query()
                 ->where('manager_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_TEAM_LEADER);
+                ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+                ->where('exit_status', '!=', 'yes');
         }
 
         if ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
@@ -238,6 +255,7 @@ class HierarchyHelper
 
             $teamLeaderIds = Employee::where('manager_id', $employee->id)
                 ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+                ->where('exit_status', '!=', 'yes')
                 ->pluck('id');
 
             return Employee::whereIn('superviser_id', $teamLeaderIds)
@@ -249,10 +267,12 @@ class HierarchyHelper
 
             $managerIds = Employee::where('cluster_id', $employee->id)
                 ->where('designation', Employee::DESIGNATION_MANAGER)
+                ->where('exit_status', '!=', 'yes')
                 ->pluck('id');
 
             $teamLeaderIds = Employee::whereIn('manager_id', $managerIds)
                 ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+                ->where('exit_status', '!=', 'yes')
                 ->pluck('id');
 
             return Employee::whereIn('superviser_id', $teamLeaderIds)
@@ -317,6 +337,7 @@ class HierarchyHelper
                 ->merge(
                     Employee::where('manager_id', $employee->id)
                         ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+                        ->where('exit_status', '!=', 'yes')
                         ->pluck('id')
                 )
                 ->push($employee->id),
@@ -325,15 +346,19 @@ class HierarchyHelper
                 ->merge(
                     Employee::where('cluster_id', $employee->id)
                         ->where('designation', Employee::DESIGNATION_MANAGER)
+                        ->where('exit_status', '!=', 'yes')
                         ->pluck('id')
                 )
                 ->merge(
                     Employee::whereIn(
                         'manager_id',
                         Employee::where('cluster_id', $employee->id)
+                            ->where('designation', Employee::DESIGNATION_MANAGER)
+                            ->where('exit_status', '!=', 'yes')
                             ->pluck('id')
                     )
                         ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+                        ->where('exit_status', '!=', 'yes')
                         ->pluck('id')
                 )
                 ->push($employee->id),
@@ -463,6 +488,17 @@ class HierarchyHelper
 
         if ($user->hasRole('Admin')) {
             return Employee::query()
+                ->where(function ($query) {
+                    $query->where('designation', Employee::DESIGNATION_CALLER)
+                        ->orWhere(function ($query) {
+                            $query->whereIn('designation', [
+                                Employee::DESIGNATION_CLUSTER,
+                                Employee::DESIGNATION_MANAGER,
+                                Employee::DESIGNATION_TEAM_LEADER,
+                            ])
+                            ->where('exit_status', '!=', 'yes');
+                        });
+                })
                 ->pluck('id')
                 ->unique()
                 ->values();
@@ -495,6 +531,7 @@ class HierarchyHelper
                     'designation',
                     Employee::DESIGNATION_MANAGER
                 )
+                ->where('exit_status', '!=', 'yes')
                 ->pluck('id');
 
             $teamLeaderIds = Employee::query()
@@ -503,6 +540,7 @@ class HierarchyHelper
                     'designation',
                     Employee::DESIGNATION_TEAM_LEADER
                 )
+                ->where('exit_status', '!=', 'yes')
                 ->pluck('id');
 
             $callerIds = Employee::query()
@@ -540,6 +578,7 @@ class HierarchyHelper
                     'designation',
                     Employee::DESIGNATION_TEAM_LEADER
                 )
+                ->where('exit_status', '!=', 'yes')
                 ->pluck('id');
 
             $callerIds = Employee::query()
