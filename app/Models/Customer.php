@@ -200,7 +200,7 @@ class Customer extends Model
         'pending_document' => 'array',
         'disbursal_pdf' => 'array',
         'documents_submitted' => 'boolean',
-         'direct' => 'boolean',
+        'direct' => 'boolean',
     ];
 
     public function requestedBank()
@@ -305,5 +305,16 @@ class Customer extends Model
     public function panRequests()
     {
         return $this->hasMany(CustomerPanRequest::class);
+    }
+
+    public function settlements()
+    {
+        return $this->hasMany(CustomerSettlement::class);
+    }
+
+    public function latestSettlement()
+    {
+        return $this->hasOne(CustomerSettlement::class)
+            ->latestOfMany('version');
     }
 }

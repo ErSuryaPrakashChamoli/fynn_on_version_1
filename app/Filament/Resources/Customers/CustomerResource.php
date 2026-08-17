@@ -129,12 +129,37 @@ class CustomerResource extends Resource
         );
     }
 
+    // public static function canEdit(Model $record): bool
+    // {
+    //     // return auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
+    //     //     && ! $record->documents_submitted;
+
+    //     return auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER;
+    // }
+
     public static function canEdit(Model $record): bool
     {
-        // return auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
-        //     && ! $record->documents_submitted;
+        $employee = auth()->user()->employee;
 
-        return auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER;
+        if (
+            $employee?->designation === Employee::DESIGNATION_CALLER
+        ) {
+            return false;
+        }
+
+        /*
+     * Once documents are submitted / application finalized,
+     * Customer data becomes immutable.
+     */
+        if ($record->documents_submitted) {
+            return false;
+        }
+
+        if ($record->disbursal_finalized) {
+            return false;
+        }
+
+        return true;
     }
 
     public static function canDelete(Model $record): bool

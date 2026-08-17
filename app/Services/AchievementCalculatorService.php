@@ -12,13 +12,63 @@ class AchievementCalculatorService
 {
 
 
+    // public function getCountAchievement(Employee $employee): float
+    // {
+    //     if ($employee->designation === Employee::DESIGNATION_ADMIN) {
+
+    //         $customers = Customer::query();
+    //     } else {
+
+    //         $employeeIds = HierarchyHelper::subordinateIds($employee);
+
+    //         $customers = Customer::query()
+    //             ->whereIn('employee_id', $employeeIds);
+    //     }
+
+    //     $customers
+    //         ->whereMonth('created_at', now()->month)
+    //         ->whereYear('created_at', now()->year);
+
+    //     $achievement = (float) $customers->sum('sanctioned_loan_amount');
+    //     $cashback = (float) $customers->sum('cashback');
+    //     $subvention = (float) $customers->sum('subvention');
+    //     $docking = (float) $customers->sum('docking');
+
+    //     return $achievement
+    //         - ((($cashback + $subvention + $docking) / 2) * 100);
+    // }
+
+
     public function getCountAchievement(Employee $employee): float
     {
-        if ($employee->designation === Employee::DESIGNATION_ADMIN) {
+        /*
+    |--------------------------------------------------------------------------
+    | Customer Scope
+    |--------------------------------------------------------------------------
+    |
+    | Always calculate based on the employee being evaluated.
+    |
+    | Caller
+    |     -> Caller customers
+    |
+    | Team Leader
+    |     -> Team Leader + Caller customers
+    |
+    | Manager
+    |     -> Manager + TL + Caller customers
+    |
+    | Cluster Manager
+    |     -> Cluster + Manager + TL + Caller customers
+    |
+    | Admin
+    |     -> Company-wide only when an Admin employee record
+    |        itself is being evaluated.
+    |
+    */
 
+        if ($employee->designation === Employee::DESIGNATION_ADMIN) {
             $customers = Customer::query();
         } else {
-
             $employeeIds = HierarchyHelper::subordinateIds($employee);
 
             $customers = Customer::query()
@@ -37,7 +87,6 @@ class AchievementCalculatorService
         return $achievement
             - ((($cashback + $subvention + $docking) / 2) * 100);
     }
-
 
 
 
@@ -224,35 +273,187 @@ class AchievementCalculatorService
         };
     }
 
+    // public function getPerformance(?Employee $employee): array
+    // {
+    //     $isAdmin = auth()->user()?->hasRole('Admin');
+
+    //     /*
+    // |--------------------------------------------------------------------------
+    // | Customer Scope
+    // |--------------------------------------------------------------------------
+    // */
+
+    //     if ($isAdmin) {
+
+    //         // Admin sees ALL customers, including employee_id = NULL.
+    //         $customers = Customer::query();
+    //     } else {
+
+    //         if (! $employee) {
+    //             return [
+    //                 'target_category'   => null,
+    //                 'target'            => 0,
+    //                 'actual'            => 0,
+    //                 'cashback'          => 0,
+    //                 'subvention'        => 0,
+    //                 'docking'           => 0,
+    //                 'count_achievement' => 0,
+    //                 'percentage'        => 0,
+    //                 'incentive'         => 0,
+    //             ];
+    //         }
+
+    //         $employeeIds = HierarchyHelper::subordinateIds($employee);
+
+    //         $customers = Customer::query()
+    //             ->whereIn('employee_id', $employeeIds);
+    //     }
+
+    //     /*
+    //     |--------------------------------------------------------------------------
+    //     | Current Month
+    //     |--------------------------------------------------------------------------
+    //     */
+
+    //     $customers
+    //         ->whereMonth('created_at', now()->month)
+    //         ->whereYear('created_at', now()->year);
+
+    //     /*
+    //     |--------------------------------------------------------------------------
+    //     | Actual / Deductions
+    //     |--------------------------------------------------------------------------
+    //     */
+
+    //     $totals = $customers
+    //         ->selectRaw("
+    //         SUM(sanctioned_loan_amount) as actual,
+    //         SUM(cashback) as cashback,
+    //         SUM(subvention) as subvention,
+    //         SUM(docking) as docking
+    //     ")
+    //         ->first();
+
+    //     $actual = (float) ($totals->actual ?? 0);
+    //     $cashback = (float) ($totals->cashback ?? 0);
+    //     $subvention = (float) ($totals->subvention ?? 0);
+    //     $docking = (float) ($totals->docking ?? 0);
+
+    //     /*
+    //     |--------------------------------------------------------------------------
+    //     | Count Achievement
+    //     |--------------------------------------------------------------------------
+    //     */
+
+    //     $countAchievement = $actual
+    //         - ((($cashback + $subvention + $docking) / 2) * 100);
+
+    //     /*
+    //     |--------------------------------------------------------------------------
+    //     | Target
+    //     |--------------------------------------------------------------------------
+    //     */
+
+    //     if ($isAdmin) {
+
+    //         $target = Employee::where(
+    //             'designation',
+    //             Employee::DESIGNATION_CALLER
+    //         )
+    //             ->get()
+    //             ->sum(
+    //                 fn(Employee $caller) =>
+    //                 $this->getCallerTarget($caller)
+    //             );
+    //     } else {
+
+    //         $target = $this->getTarget($employee);
+    //     }
+
+    //     /*
+    //     |--------------------------------------------------------------------------
+    //     | Percentage
+    //     |--------------------------------------------------------------------------
+    //     */
+
+    //     $percentage = $target > 0
+    //         ? round(($countAchievement / $target) * 100, 2)
+    //         : 0;
+
+    //     /*
+    //     |--------------------------------------------------------------------------
+    //     | Result
+    //     |--------------------------------------------------------------------------
+    //     */
+
+    //     return [
+    //         'target_category'   => $employee?->category,
+    //         'target'            => (float) $target,
+    //         'actual'             => $actual,
+    //         'cashback'           => $cashback,
+    //         'subvention'         => $subvention,
+    //         'docking'            => $docking,
+    //         'count_achievement' => $countAchievement,
+    //         'percentage'        => $percentage,
+    //         'incentive'         => $this->getIncentive($countAchievement),
+    //     ];
+    // }
+
     public function getPerformance(?Employee $employee): array
     {
-        $isAdmin = auth()->user()?->hasRole('Admin');
+        /*
+    |--------------------------------------------------------------------------
+    | No employee
+    |--------------------------------------------------------------------------
+    |
+    | There is no employee-specific context.
+    | Return empty performance instead of guessing.
+    |
+    */
+
+        if (! $employee) {
+            return [
+                'target_category'   => null,
+                'target'            => 0,
+                'actual'            => 0,
+                'cashback'          => 0,
+                'subvention'        => 0,
+                'docking'           => 0,
+                'count_achievement' => 0,
+                'percentage'        => 0,
+                'incentive'         => 0,
+            ];
+        }
 
         /*
     |--------------------------------------------------------------------------
     | Customer Scope
     |--------------------------------------------------------------------------
+    |
+    | IMPORTANT:
+    |
+    | Do NOT use auth()->user()->hasRole('Admin') here.
+    |
+    | The calculation must be based on the Employee record
+    | passed into this method.
+    |
+    | Example:
+    |
+    | Admin logged in
+    |     -> getPerformance(Caller A)
+    |     -> Caller A data
+    |
+    | Admin logged in
+    |     -> getPerformance(Manager A)
+    |     -> Manager A hierarchy data
+    |
     */
 
-        if ($isAdmin) {
+        if ($employee->designation === Employee::DESIGNATION_ADMIN) {
 
-            // Admin sees ALL customers, including employee_id = NULL.
+            // Only an actual Admin employee record gets company-wide data.
             $customers = Customer::query();
         } else {
-
-            if (! $employee) {
-                return [
-                    'target_category'   => null,
-                    'target'            => 0,
-                    'actual'            => 0,
-                    'cashback'          => 0,
-                    'subvention'        => 0,
-                    'docking'           => 0,
-                    'count_achievement' => 0,
-                    'percentage'        => 0,
-                    'incentive'         => 0,
-                ];
-            }
 
             $employeeIds = HierarchyHelper::subordinateIds($employee);
 
@@ -261,20 +462,20 @@ class AchievementCalculatorService
         }
 
         /*
-        |--------------------------------------------------------------------------
-        | Current Month
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | Current Month
+    |--------------------------------------------------------------------------
+    */
 
         $customers
             ->whereMonth('created_at', now()->month)
             ->whereYear('created_at', now()->year);
 
         /*
-        |--------------------------------------------------------------------------
-        | Actual / Deductions
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | Actual / Cashback / Subvention / Docking
+    |--------------------------------------------------------------------------
+    */
 
         $totals = $customers
             ->selectRaw("
@@ -286,67 +487,67 @@ class AchievementCalculatorService
             ->first();
 
         $actual = (float) ($totals->actual ?? 0);
+
         $cashback = (float) ($totals->cashback ?? 0);
+
         $subvention = (float) ($totals->subvention ?? 0);
+
         $docking = (float) ($totals->docking ?? 0);
 
         /*
-        |--------------------------------------------------------------------------
-        | Count Achievement
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | Count Achievement
+    |--------------------------------------------------------------------------
+    */
 
         $countAchievement = $actual
             - ((($cashback + $subvention + $docking) / 2) * 100);
 
         /*
-        |--------------------------------------------------------------------------
-        | Target
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | Target
+    |--------------------------------------------------------------------------
+    |
+    | Target belongs to the employee being displayed.
+    |
+    | Do NOT calculate Admin target simply because the
+    | logged-in user is Admin.
+    |
+    */
 
-        if ($isAdmin) {
-
-            $target = Employee::where(
-                'designation',
-                Employee::DESIGNATION_CALLER
-            )
-                ->get()
-                ->sum(
-                    fn(Employee $caller) =>
-                    $this->getCallerTarget($caller)
-                );
-        } else {
-
-            $target = $this->getTarget($employee);
-        }
+        $target = $this->getTarget($employee);
 
         /*
-        |--------------------------------------------------------------------------
-        | Percentage
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | Percentage
+    |--------------------------------------------------------------------------
+    */
 
         $percentage = $target > 0
-            ? round(($countAchievement / $target) * 100, 2)
+            ? round(
+                ($countAchievement / $target) * 100,
+                2
+            )
             : 0;
 
         /*
-        |--------------------------------------------------------------------------
-        | Result
-        |--------------------------------------------------------------------------
-        */
+    |--------------------------------------------------------------------------
+    | Result
+    |--------------------------------------------------------------------------
+    */
 
         return [
-            'target_category'   => $employee?->category,
+            'target_category'   => $employee->category,
             'target'            => (float) $target,
-            'actual'             => $actual,
-            'cashback'           => $cashback,
-            'subvention'         => $subvention,
-            'docking'            => $docking,
+            'actual'            => $actual,
+            'cashback'          => $cashback,
+            'subvention'        => $subvention,
+            'docking'           => $docking,
             'count_achievement' => $countAchievement,
             'percentage'        => $percentage,
-            'incentive'         => $this->getIncentive($countAchievement),
+            'incentive'         => $this->getIncentive(
+                $countAchievement
+            ),
         ];
     }
 
