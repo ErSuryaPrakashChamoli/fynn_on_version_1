@@ -73,6 +73,7 @@ class PerformanceStats extends BaseWidget
             $employee
         );
 
+
         /*
         |--------------------------------------------------------------------------
         | Performance Values

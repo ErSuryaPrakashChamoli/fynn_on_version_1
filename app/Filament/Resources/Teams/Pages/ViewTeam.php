@@ -79,7 +79,54 @@ class ViewTeam extends Page implements HasTable
                     ->label('Target')
                     ->alignEnd()
                     ->sortable()
+                    // ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+
+                    //     $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+
+                    //     return $performanceCache[$record->id]['target'];
+                    // })
                     ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Caller
+                        |--------------------------------------------------------------------------
+                        |
+                        | If the logged-in viewer is the Caller himself,
+                        | he sees his category target.
+                        |
+                        */
+
+                        if (
+                            auth()->user()?->employee?->id === $record->id
+                            && $record->designation === Employee::DESIGNATION_CALLER
+                        ) {
+                            return $calculator->getTarget($record);
+                        }
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Team Leader / Manager / Cluster viewing Caller
+                        |--------------------------------------------------------------------------
+                        |
+                        | Above hierarchy must see the caller's hierarchy target,
+                        | based on reporting_date conditions.
+                        |
+                        */
+
+                        if ($record->designation === Employee::DESIGNATION_CALLER) {
+
+                            return $calculator->getHierarchyCallerTarget($record);
+                        }
+
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Team Leader / Manager / Cluster rows
+                        |--------------------------------------------------------------------------
+                        |
+                        | Their own target is already calculated correctly.
+                        |
+                        */
 
                         $performanceCache[$record->id] ??= $calculator->getPerformance($record);
 
@@ -186,13 +233,6 @@ class ViewTeam extends Page implements HasTable
                 Tables\Columns\TextColumn::make('email'),
             ])
             ->recordActions([
-                // Action::make('viewTeam')
-                //     ->label('View Team')
-                //     ->icon('heroicon-o-users')
-                //     ->url(fn (Employee $record) => TeamResource::getUrl('view-team', [
-                //         'record' => $record,
-                //     ])),
-
 
                 Action::make('viewTeam')
                     ->label('View Team')
