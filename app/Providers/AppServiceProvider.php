@@ -8,6 +8,8 @@ use App\Listeners\StartLoginSession;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Support\Facades\Event;
+use App\Models\Customer;
+use App\Observers\CustomerObserver;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -35,5 +37,7 @@ class AppServiceProvider extends ServiceProvider
             Logout::class,
             EndLoginSession::class
         );
+
+        Customer::observe(CustomerObserver::class);
     }
 }

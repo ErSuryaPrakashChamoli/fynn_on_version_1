@@ -17,6 +17,9 @@ use Filament\Actions\Action;
 // use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon;
 
+use App\Models\CustomerSettlement;
+
+
 
 
 class CustomerInfolist
@@ -458,7 +461,59 @@ class CustomerInfolist
                             ])
                             ->columns(3),
 
+                    ]),
+
+
+                Section::make('Customer Settlement')
+                    ->schema([
+                        TextEntry::make('latestSettlement.settlement_no')
+                            ->label('Settlement No.')
+                            ->placeholder('Not created'),
+
+                        TextEntry::make('latestSettlement.status')
+                            ->label('Settlement Status')
+                            ->badge(),
+
+                        TextEntry::make('latestSettlement.sales_disbursal_amount')
+                            ->label('Sales Disbursal')
+                            ->money('INR'),
+
+                        TextEntry::make('latestSettlement.mis_disbursal_amount')
+                            ->label('Bank MIS Disbursal')
+                            ->money('INR'),
+
+                        TextEntry::make('latestSettlement.variance_amount')
+                            ->label('Variance')
+                            ->money('INR'),
+
+                        TextEntry::make('latestSettlement.sales_cashback')
+                            ->label('Sales Cashback')
+                            ->money('INR'),
+
+                        TextEntry::make('latestSettlement.mis_cashback')
+                            ->label('MIS Cashback')
+                            ->money('INR'),
+
+                        TextEntry::make('latestSettlement.sales_subvention')
+                            ->label('Sales Subvention')
+                            ->money('INR'),
+
+                        TextEntry::make('latestSettlement.mis_subvention')
+                            ->label('MIS Subvention')
+                            ->money('INR'),
+
+                        TextEntry::make('latestSettlement.sales_docking')
+                            ->label('Sales Docking')
+                            ->money('INR'),
+
+                        TextEntry::make('latestSettlement.mis_docking')
+                            ->label('MIS Docking')
+                            ->money('INR'),
                     ])
+                    ->columns(2),
+
+
+
 
             ]);
     }
