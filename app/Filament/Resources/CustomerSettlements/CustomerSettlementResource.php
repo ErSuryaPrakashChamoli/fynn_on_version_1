@@ -5,21 +5,18 @@ namespace App\Filament\Resources\CustomerSettlements;
 use App\Filament\Resources\CustomerSettlements\Pages\CreateCustomerSettlement;
 use App\Filament\Resources\CustomerSettlements\Pages\EditCustomerSettlement;
 use App\Filament\Resources\CustomerSettlements\Pages\ListCustomerSettlements;
+use App\Filament\Resources\CustomerSettlements\RelationManagers\TransactionsRelationManager;
 use App\Filament\Resources\CustomerSettlements\Schemas\CustomerSettlementForm;
 use App\Filament\Resources\CustomerSettlements\Tables\CustomerSettlementsTable;
 use App\Models\CustomerSettlement;
-use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
-use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 
 class CustomerSettlementResource extends Resource
 {
     protected static ?string $model = CustomerSettlement::class;
-
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
-
+    protected static ?string $navigationLabel = 'Customer Settlement';
     protected static ?string $recordTitleAttribute = 'settlement_no';
 
     public static function form(Schema $schema): Schema
@@ -34,9 +31,7 @@ class CustomerSettlementResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [TransactionsRelationManager::class];
     }
 
     public static function getPages(): array
@@ -47,8 +42,19 @@ class CustomerSettlementResource extends Resource
             'edit' => EditCustomerSettlement::route('/{record}/edit'),
         ];
     }
+
     public static function canAccess(): bool
     {
-        return auth()->user()?->employee?->designation === \App\Models\Employee::DESIGNATION_ADMIN;
+        return auth()->user()?->hasAnyRole(['Admin', 'Accounts']) ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return false;
     }
 }

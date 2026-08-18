@@ -7,6 +7,7 @@ use App\Models\Employee;
 use Carbon\Carbon;
 use App\Services\HierarchyService;
 use App\Support\HierarchyHelper;
+use Illuminate\Support\Facades\DB;
 
 class AchievementCalculatorService
 {
@@ -29,10 +30,23 @@ class AchievementCalculatorService
             ->whereMonth('created_at', now()->month)
             ->whereYear('created_at', now()->year);
 
-        $achievement = (float) $customers->sum('sanctioned_loan_amount');
-        $cashback = (float) $customers->sum('cashback');
-        $subvention = (float) $customers->sum('subvention');
-        $docking = (float) $customers->sum('docking');
+        $totals = $customers
+            ->leftJoin('customer_settlements as cs', function ($join) {
+                $join->on('cs.customer_id', '=', 'customers.id')
+                    ->where('cs.version', 1);
+            })
+            ->selectRaw("
+                SUM(CASE WHEN cs.mis_disbursal_amount IS NOT NULL THEN cs.mis_disbursal_amount ELSE customers.sanctioned_loan_amount END) as actual,
+                SUM(CASE WHEN cs.mis_cashback IS NOT NULL THEN cs.mis_cashback ELSE customers.cashback END) as cashback,
+                SUM(CASE WHEN cs.mis_subvention IS NOT NULL THEN cs.mis_subvention ELSE customers.subvention END) as subvention,
+                SUM(CASE WHEN cs.mis_docking IS NOT NULL THEN cs.mis_docking ELSE customers.docking END) as docking
+            ")
+            ->first();
+
+        $achievement = (float) ($totals->actual ?? 0);
+        $cashback = (float) ($totals->cashback ?? 0);
+        $subvention = (float) ($totals->subvention ?? 0);
+        $docking = (float) ($totals->docking ?? 0);
 
         return $achievement
             - ((($cashback + $subvention + $docking) / 2) * 100);
@@ -285,11 +299,15 @@ class AchievementCalculatorService
     */
 
         $totals = $customers
+            ->leftJoin('customer_settlements as cs', function ($join) {
+                $join->on('cs.customer_id', '=', 'customers.id')
+                    ->where('cs.version', 1);
+            })
             ->selectRaw("
-            SUM(sanctioned_loan_amount) as actual,
-            SUM(cashback) as cashback,
-            SUM(subvention) as subvention,
-            SUM(docking) as docking
+            SUM(CASE WHEN cs.mis_disbursal_amount IS NOT NULL THEN cs.mis_disbursal_amount ELSE customers.sanctioned_loan_amount END) as actual,
+            SUM(CASE WHEN cs.mis_cashback IS NOT NULL THEN cs.mis_cashback ELSE customers.cashback END) as cashback,
+            SUM(CASE WHEN cs.mis_subvention IS NOT NULL THEN cs.mis_subvention ELSE customers.subvention END) as subvention,
+            SUM(CASE WHEN cs.mis_docking IS NOT NULL THEN cs.mis_docking ELSE customers.docking END) as docking
         ")
             ->first();
 

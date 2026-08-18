@@ -2,13 +2,11 @@
 
 namespace App\Filament\Resources\AccountVerifications\Tables;
 
-use Filament\Actions\BulkActionGroup;
-use Filament\Actions\DeleteBulkAction;
+use App\Filament\Imports\MisSettlementImporter;
 use Filament\Actions\EditAction;
-use Filament\Tables\Table;
+use Filament\Actions\ImportAction;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Actions\Action;
-use App\Models\Customer;
+use Filament\Tables\Table;
 
 class AccountVerificationsTable
 {
@@ -16,58 +14,24 @@ class AccountVerificationsTable
     {
         return $table
             ->columns([
-                //
-                TextColumn::make('customer_name')
-                    ->searchable(),
-
-                TextColumn::make('mobile_no'),
-
-                TextColumn::make('sanctioned_bank'),
-
-                TextColumn::make('sanctioned_loan_amount')
-                    ->money('INR'),
-
-                TextColumn::make('cashback')
-                    ->money('INR'),
-
-                TextColumn::make('subvention')
-                    ->money('INR'),
-
-                TextColumn::make('docking')
-                    ->money('INR'),
-
-                TextColumn::make('created_at')
-                    ->date(),
-            ])
-            ->filters([
-                //
+                TextColumn::make('application_no')->label('Application No')->searchable(),
+                TextColumn::make('lan_no')->label('LAN')->searchable(),
+                TextColumn::make('customer_name')->searchable(),
+                TextColumn::make('sanctioned_bank')->label('Bank'),
+                TextColumn::make('settlement.sales_disbursal_amount')->label('Sales Loan')->money('INR'),
+                TextColumn::make('settlement.mis_disbursal_amount')->label('Bank Loan')->money('INR'),
+                TextColumn::make('settlement.variance_amount')->label('Loan Difference')->money('INR'),
+                TextColumn::make('settlement.status')->badge(),
+                TextColumn::make('updated_at')->dateTime(),
             ])
             ->recordActions([
                 EditAction::make(),
-
-                Action::make('verify')
-                    ->label('Verify')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->requiresConfirmation()
-                    ->action(function (Customer $record) {
-
-                        $record->update([
-                            'account_verified' => true,
-                            'account_verified_by' => auth()->id(),
-                            'account_verified_at' => now(),
-                            'incentive_calculated' => false,
-                        ]);
-                    }),
-
-
-
-
             ])
-            ->toolbarActions([
-                BulkActionGroup::make([
-                    DeleteBulkAction::make(),
-                ]),
+            ->headerActions([
+                ImportAction::make()
+                    ->label('Import Bank MIS')
+                    ->importer(MisSettlementImporter::class)
+                    ->visible(fn () => auth()->user()?->hasAnyRole(['Admin', 'MIS'])),
             ]);
     }
 }

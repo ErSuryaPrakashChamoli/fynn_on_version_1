@@ -189,6 +189,11 @@ class Customer extends Model
         'other_loan_applied',
         'documents_submitted',
         'disbursal_finalized',
+        'account_verified',
+        'account_verified_by',
+        'account_verified_at',
+        'account_remark',
+        'incentive_calculated',
         'approval_date',
         'other_sanctioned_bank',
         'direct'
@@ -201,6 +206,9 @@ class Customer extends Model
         'disbursal_pdf' => 'array',
         'documents_submitted' => 'boolean',
         'direct' => 'boolean',
+        'account_verified' => 'boolean',
+        'account_verified_at' => 'datetime',
+        'incentive_calculated' => 'boolean',
     ];
 
     public function requestedBank()
@@ -300,6 +308,11 @@ class Customer extends Model
     public function employee()
     {
         return $this->belongsTo(Employee::class, 'employee_id');
+    }
+
+    public function settlement()
+    {
+        return $this->hasOne(CustomerSettlement::class)->where('version', 1);
     }
 
     public function panRequests()

@@ -2,35 +2,24 @@
 
 namespace App\Filament\Resources\AccountVerifications;
 
+use App\Filament\Imports\MisSettlementImporter;
 use App\Filament\Resources\AccountVerifications\Pages\CreateAccountVerification;
 use App\Filament\Resources\AccountVerifications\Pages\EditAccountVerification;
 use App\Filament\Resources\AccountVerifications\Pages\ListAccountVerifications;
 use App\Filament\Resources\AccountVerifications\Schemas\AccountVerificationForm;
 use App\Filament\Resources\AccountVerifications\Tables\AccountVerificationsTable;
-use App\Models\AccountVerification;
-use BackedEnum;
+use App\Models\Customer;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
-use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
 class AccountVerificationResource extends Resource
 {
-    protected static ?string $model = AccountVerification::class;
-
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
-
-    // protected static ?string $recordTitleAttribute = 'customer_name';
-
-    protected static ?string $navigationLabel = 'Account Verification';
-
-    // protected static ?string $navigationGroup = 'Accounts';
-
-    // protected static ?string $navigationIcon = 'heroicon-o-banknotes';
-
+    protected static ?string $model = Customer::class;
+    protected static ?string $navigationLabel = 'MIS Verification';
+    protected static ?string $recordTitleAttribute = 'customer_name';
     protected static ?int $navigationSort = 1;
-
 
     public static function form(Schema $schema): Schema
     {
@@ -44,9 +33,7 @@ class AccountVerificationResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 
     public static function getPages(): array
@@ -62,7 +49,8 @@ class AccountVerificationResource extends Resource
     {
         return parent::getEloquentQuery()
             ->where('journey_status', 'disbursed')
-            ->where('account_verified', false);
+            ->where('account_verified', false)
+            ->with(['employee', 'settlement']);
     }
 
     public static function canCreate(): bool
@@ -72,6 +60,6 @@ class AccountVerificationResource extends Resource
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->employee?->designation === \App\Models\Employee::DESIGNATION_ADMIN;
+        return auth()->user()?->hasAnyRole(['Admin', 'MIS']) ?? false;
     }
 }

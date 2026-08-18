@@ -21,7 +21,9 @@ class RolesSeeder extends Seeder
             'Employee',
             'Cluster Manager',
             'IT',
-            'Caller'
+            'Caller',
+            'MIS',
+            'Accounts'
         ];
 
          foreach ($roles as $role) {
