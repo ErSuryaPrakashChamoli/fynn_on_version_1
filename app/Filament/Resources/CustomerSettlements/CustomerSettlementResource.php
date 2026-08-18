@@ -47,4 +47,8 @@ class CustomerSettlementResource extends Resource
             'edit' => EditCustomerSettlement::route('/{record}/edit'),
         ];
     }
+    public static function canAccess(): bool
+    {
+        return auth()->user()?->employee?->designation === \App\Models\Employee::DESIGNATION_ADMIN;
+    }
 }

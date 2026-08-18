@@ -69,4 +69,9 @@ class AccountVerificationResource extends Resource
     {
         return false;
     }
+
+    public static function canAccess(): bool
+    {
+        return auth()->user()?->employee?->designation === \App\Models\Employee::DESIGNATION_ADMIN;
+    }
 }
