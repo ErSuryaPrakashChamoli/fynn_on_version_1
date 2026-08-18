@@ -56,6 +56,7 @@ class EmployeeReportingHistory extends Model
         'change_type',
         'updated_by',
         'remarks',
+        'effective_to'
     ];
 
     protected $casts = [
