@@ -129,6 +129,7 @@ class HierarchyReassignmentService
                 // and team-leader relationships remain intact.
                 $employee->forceFill([
                     'cluster_id' => $targetId,
+                    'reporting_date' => $effectiveDate->toDateString(),
                     'updated_at' => $now,
                 ])->save();
 
@@ -164,6 +165,207 @@ class HierarchyReassignmentService
 
             return $log->load(['sourceClusterManager', 'targetClusterManager', 'performedBy']);
         }, 3);
+    }
+
+    /**
+     * Flexible reassignment: move individual Callers to any active Team Leader
+     * or individual Team Leaders to any active Manager. Each row may have a
+     * different destination, so one manager's team can be split across several
+     * managers without changing the overall hierarchy architecture.
+     *
+     * @param array<int, array{employee_id:int|string,target_id:int|string}> $assignments
+     */
+    public function reassign(array $assignments, int $performedBy, ?string $effectiveDate = null, ?string $remarks = null): HierarchyTransferLog
+    {
+        return DB::transaction(function () use ($assignments, $performedBy, $effectiveDate, $remarks): HierarchyTransferLog {
+            $effective = Carbon::parse($effectiveDate ?? now()->toDateString())->startOfDay();
+
+            if ($effective->isFuture()) {
+                $this->validationError('effective_date', 'Effective date cannot be in the future.');
+            }
+
+            $rows = collect($assignments)
+                ->map(fn ($row): array => [
+                    'employee_id' => (int) ($row['employee_id'] ?? 0),
+                    'target_id' => (int) ($row['target_id'] ?? 0),
+                ])
+                ->filter(fn (array $row): bool => $row['employee_id'] > 0 && $row['target_id'] > 0)
+                ->unique('employee_id')
+                ->values();
+
+            if ($rows->isEmpty()) {
+                $this->validationError('assignments', 'Add at least one employee and destination.');
+            }
+
+            $employeeIds = $rows->pluck('employee_id');
+            $targetIds = $rows->pluck('target_id')->unique()->values();
+
+            $employees = Employee::query()
+                ->whereIn('id', $employeeIds)
+                ->where('exit_status', '!=', 'yes')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
+            if ($employees->count() !== $employeeIds->count()) {
+                $this->validationError('assignments', 'One or more selected employees are inactive or no longer exist. Reopen the transfer form and try again.');
+            }
+
+            $targets = Employee::query()
+                ->whereIn('id', $targetIds)
+                ->where('exit_status', '!=', 'yes')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
+            if ($targets->count() !== $targetIds->count()) {
+                $this->validationError('assignments', 'One or more selected destinations are inactive or no longer exist.');
+            }
+
+            foreach ($rows as $row) {
+                $employee = $employees->get($row['employee_id']);
+                $target = $targets->get($row['target_id']);
+
+                if ($employee->id === $target->id) {
+                    $this->validationError('assignments', "{$employee->emp_name} cannot be moved to itself.");
+                }
+
+                if ($employee->designation === Employee::DESIGNATION_CALLER) {
+                    if ($target->designation !== Employee::DESIGNATION_TEAM_LEADER) {
+                        $this->validationError('assignments', "Caller {$employee->emp_name} can only be assigned to a Team Leader.");
+                    }
+
+                    if ((int) $employee->superviser_id === (int) $target->id) {
+                        $this->validationError('assignments', "Caller {$employee->emp_name} is already under {$target->emp_name}.");
+                    }
+
+                    if (! $this->isActiveManager($target->manager_id)) {
+                        $this->validationError('assignments', "The destination Team Leader {$target->emp_name} does not have an active Manager.");
+                    }
+                } elseif ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
+                    if ($target->designation !== Employee::DESIGNATION_MANAGER) {
+                        $this->validationError('assignments', "Team Leader {$employee->emp_name} can only be assigned to a Manager.");
+                    }
+
+                    if ((int) $employee->manager_id === (int) $target->id) {
+                        $this->validationError('assignments', "Team Leader {$employee->emp_name} is already under {$target->emp_name}.");
+                    }
+                } else {
+                    $this->validationError('assignments', "{$employee->emp_name} cannot be moved through this flexible transfer. Only Callers and Team Leaders are supported.");
+                }
+
+                if ($target->designation === Employee::DESIGNATION_TEAM_LEADER && ! $this->isActiveManager($target->manager_id)) {
+                    $this->validationError('assignments', "Destination Team Leader {$target->emp_name} has no active Manager.");
+                }
+
+                $targetCluster = $target->designation === Employee::DESIGNATION_MANAGER
+                    ? $target->cluster_id
+                    : $target->cluster_id;
+
+                if (! $this->isActiveClusterManager($targetCluster)) {
+                    $this->validationError('assignments', "Destination {$target->emp_name} belongs to an inactive or invalid Cluster Manager.");
+                }
+            }
+
+            $affectedIds = $employeeIds->values();
+            $this->closeOpenReportingHistory($affectedIds, $effective);
+
+            $now = now();
+
+            foreach ($rows as $row) {
+                $employee = $employees->get($row['employee_id']);
+                $target = $targets->get($row['target_id']);
+
+                $oldSupervisorId = $employee->superviser_id;
+                $oldManagerId = $employee->manager_id;
+                $oldClusterId = $employee->cluster_id;
+
+                if ($employee->designation === Employee::DESIGNATION_CALLER) {
+                    $newSupervisorId = $target->id;
+                    $newManagerId = $target->manager_id;
+                } else {
+                    $newSupervisorId = null;
+                    $newManagerId = $target->id;
+                }
+
+                $employee->forceFill([
+                    'superviser_id' => $newSupervisorId,
+                    'manager_id' => $newManagerId,
+                    'cluster_id' => $target->cluster_id,
+                    'reporting_date' => $effective->toDateString(),
+                    'updated_at' => $now,
+                ])->save();
+
+                EmployeeReportingHistory::query()->create([
+                    'employee_id' => $employee->id,
+                    'old_superviser_id' => $oldSupervisorId,
+                    'old_manager_id' => $oldManagerId,
+                    'old_cluster_id' => $oldClusterId,
+                    'new_superviser_id' => $newSupervisorId,
+                    'new_manager_id' => $newManagerId,
+                    'new_cluster_id' => $target->cluster_id,
+                    'effective_date' => $effective->toDateString(),
+                    'change_type' => 'transfer',
+                    'updated_by' => $performedBy,
+                    'remarks' => $remarks ?: "Flexible hierarchy reassignment to {$target->emp_name}.",
+                ]);
+            }
+
+            $sourceClusters = $employees->pluck('cluster_id')->filter()->unique()->values();
+            $targetClusters = $targets->pluck('cluster_id')->filter()->unique()->values();
+
+            $sourceClusterId = $sourceClusters->count() === 1 ? (int) $sourceClusters->first() : null;
+            $targetClusterId = $targetClusters->count() === 1 ? (int) $targetClusters->first() : null;
+
+            /** @var HierarchyTransferLog $log */
+            $log = HierarchyTransferLog::query()->create([
+                'source_cluster_manager_id' => $sourceClusterId,
+                'target_cluster_manager_id' => $targetClusterId,
+                'transfer_type' => 'flexible_reassignment',
+                'selected_employee_ids' => $rows->all(),
+                'affected_employee_ids' => $affectedIds->all(),
+                'affected_count' => $affectedIds->count(),
+                'effective_date' => $effective->toDateString(),
+                'performed_by' => $performedBy,
+                'remarks' => $remarks,
+            ]);
+
+            if (function_exists('activity')) {
+                try {
+                    activity('hierarchy')
+                        ->causedBy(auth()->user())
+                        ->performedOn($log)
+                        ->withProperties([
+                            'assignments' => $rows->all(),
+                            'affected_count' => $affectedIds->count(),
+                            'remarks' => $remarks,
+                        ])
+                        ->log('Flexible hierarchy reassignment completed');
+                } catch (Throwable) {
+                    // Dedicated transfer log remains authoritative.
+                }
+            }
+
+            return $log;
+        }, 3);
+    }
+
+    private function isActiveManager(?int $managerId): bool
+    {
+        return $managerId !== null && Employee::query()
+            ->whereKey($managerId)
+            ->where('designation', Employee::DESIGNATION_MANAGER)
+            ->where('exit_status', '!=', 'yes')
+            ->exists();
+    }
+
+    private function isActiveClusterManager(?int $clusterId): bool
+    {
+        return $clusterId !== null && Employee::query()
+            ->whereKey($clusterId)
+            ->where('designation', Employee::DESIGNATION_CLUSTER)
+            ->where('exit_status', '!=', 'yes')
+            ->exists();
     }
 
     /**

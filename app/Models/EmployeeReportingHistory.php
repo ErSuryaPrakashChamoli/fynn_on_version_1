@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property int $id
@@ -53,13 +54,55 @@ class EmployeeReportingHistory extends Model
         'new_manager_id',
         'new_cluster_id',
         'effective_date',
+        'effective_to',
         'change_type',
         'updated_by',
         'remarks',
-        'effective_to'
     ];
+
+
+    public function employee(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class);
+    }
+
+    public function oldSupervisor(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'old_superviser_id');
+    }
+
+    public function oldManager(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'old_manager_id');
+    }
+
+    public function oldCluster(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'old_cluster_id');
+    }
+
+    public function newSupervisor(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'new_superviser_id');
+    }
+
+    public function newManager(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'new_manager_id');
+    }
+
+    public function newCluster(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'new_cluster_id');
+    }
+
+    public function updatedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'updated_by');
+    }
 
     protected $casts = [
         'effective_date' => 'date',
+        'effective_to' => 'date',
     ];
 }

@@ -36,6 +36,7 @@ use Filament\Forms\Components\FileUpload;
 
 use Filament\Schemas\Components\Text;
 use Illuminate\Support\HtmlString;
+use Illuminate\Database\Eloquent\Builder;
 
 use Filament\Forms\Components\DatePicker;
 
@@ -129,31 +130,143 @@ class EmployeeResource extends Resource
 
                     Select::make('superviser_id')
                         ->label('Superviser')
-                        ->relationship('superviser', 'emp_name')
+                        ->relationship(
+                            'superviser',
+                            'emp_name',
+                            modifyQueryUsing: fn (Builder $query): Builder => $query
+                                ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+                                ->where('exit_status', '!=', 'yes')
+                        )
                         ->searchable()
-                        ->getOptionLabelFromRecordUsing(fn($record) => "{$record->emp_name} - ({$record->emp_id})")
-                        ->visible(fn(Get $get) => in_array($get('designation'), ['7']))
-                        ->required(fn(Get $get) => $get('designation') === '7')
+                        ->getOptionLabelFromRecordUsing(fn ($record) => "{$record->emp_name} - ({$record->emp_id})")
+                        ->visible(fn (Get $get) => $get('designation') === Employee::DESIGNATION_CALLER)
+                        ->required(fn (Get $get) => $get('designation') === Employee::DESIGNATION_CALLER)
+                        ->live()
+                        ->afterStateUpdated(function (Set $set, $state): void {
+                            if (! $state) {
+                                $set('manager_id', null);
+                                $set('cluster_id', null);
+                                return;
+                            }
+
+                            $supervisor = Employee::query()
+                                ->with('manager')
+                                ->whereKey($state)
+                                ->first();
+
+                            $set('manager_id', $supervisor?->manager_id);
+                            $set('cluster_id', $supervisor?->manager?->cluster_id);
+                        })
                         ->preload(),
 
                     Select::make('manager_id')
                         ->label('Manager')
-                        ->relationship('manager', 'emp_name')
+                        ->relationship(
+                            'manager',
+                            'emp_name',
+                            modifyQueryUsing: function (Builder $query, Get $get): Builder {
+                                $query
+                                    ->where('designation', Employee::DESIGNATION_MANAGER)
+                                    ->where('exit_status', '!=', 'yes');
+
+                                // Caller: only the Manager to whom the selected Team Leader reports.
+                                if ($get('designation') === Employee::DESIGNATION_CALLER) {
+                                    $superviserId = $get('superviser_id');
+
+                                    if (! $superviserId) {
+                                        return $query->whereRaw('1 = 0');
+                                    }
+
+                                    $managerId = Employee::query()
+                                        ->whereKey($superviserId)
+                                        ->value('manager_id');
+
+                                    return $managerId
+                                        ? $query->whereKey($managerId)
+                                        : $query->whereRaw('1 = 0');
+                                }
+
+                                // Team Leader: Manager is selected directly.
+                                return $query;
+                            }
+                        )
                         ->searchable()
-                        ->getOptionLabelFromRecordUsing(fn($record) => "{$record->emp_name} - ({$record->emp_id})")
-                        ->visible(fn(Get $get) => in_array($get('designation'), ['7', '3']))
-                        ->required(fn(Get $get) => in_array($get('designation'), ['3', '7']))
+                        ->getOptionLabelFromRecordUsing(fn ($record) => "{$record->emp_name} - ({$record->emp_id})")
+                        ->visible(fn (Get $get) => in_array($get('designation'), [
+                            Employee::DESIGNATION_CALLER,
+                            Employee::DESIGNATION_TEAM_LEADER,
+                        ]))
+                        ->required(fn (Get $get) => in_array($get('designation'), [
+                            Employee::DESIGNATION_CALLER,
+                            Employee::DESIGNATION_TEAM_LEADER,
+                        ]))
+                        ->live()
+                        ->afterStateUpdated(function (Set $set, $state): void {
+                            if (! $state) {
+                                $set('cluster_id', null);
+                                return;
+                            }
+
+                            $set('cluster_id', Employee::query()
+                                ->whereKey($state)
+                                ->value('cluster_id'));
+                        })
+                        ->disabled(fn (Get $get) =>
+                            $get('designation') === Employee::DESIGNATION_CALLER && ! $get('superviser_id')
+                        )
                         ->preload(),
 
                     Select::make('cluster_id')
                         ->label('Cluster Manager')
-                        ->relationship('clusterManager', 'emp_name')
-                        ->searchable()
-                        ->getOptionLabelFromRecordUsing(fn($record) => "{$record->emp_name} - ({$record->emp_id})")
-                        ->visible(fn(Get $get) => in_array($get('designation'), ['7', '2', '3']))
-                        ->required(fn(Get $get) => in_array($get('designation'), ['3', '2', '7']))
-                        ->preload(),
+                        ->relationship(
+                            'clusterManager',
+                            'emp_name',
+                            modifyQueryUsing: function (Builder $query, Get $get): Builder {
+                                $query
+                                    ->where('designation', Employee::DESIGNATION_CLUSTER)
+                                    ->where('exit_status', '!=', 'yes');
 
+                                // Caller / Team Leader: only the Cluster Manager of the selected Manager.
+                                if (in_array($get('designation'), [
+                                    Employee::DESIGNATION_CALLER,
+                                    Employee::DESIGNATION_TEAM_LEADER,
+                                ])) {
+                                    $managerId = $get('manager_id');
+
+                                    if (! $managerId) {
+                                        return $query->whereRaw('1 = 0');
+                                    }
+
+                                    $clusterId = Employee::query()
+                                        ->whereKey($managerId)
+                                        ->value('cluster_id');
+
+                                    return $clusterId
+                                        ? $query->whereKey($clusterId)
+                                        : $query->whereRaw('1 = 0');
+                                }
+
+                                // Manager: Cluster Manager is selected directly.
+                                return $query;
+                            }
+                        )
+                        ->searchable()
+                        ->getOptionLabelFromRecordUsing(fn ($record) => "{$record->emp_name} - ({$record->emp_id})")
+                        ->visible(fn (Get $get) => in_array($get('designation'), [
+                            Employee::DESIGNATION_CALLER,
+                            Employee::DESIGNATION_MANAGER,
+                            Employee::DESIGNATION_TEAM_LEADER,
+                        ]))
+                        ->required(fn (Get $get) => in_array($get('designation'), [
+                            Employee::DESIGNATION_CALLER,
+                            Employee::DESIGNATION_MANAGER,
+                            Employee::DESIGNATION_TEAM_LEADER,
+                        ]))
+                        ->disabled(fn (Get $get) => in_array($get('designation'), [
+                            Employee::DESIGNATION_CALLER,
+                            Employee::DESIGNATION_TEAM_LEADER,
+                        ]) && ! $get('manager_id'))
+                        ->preload(),
 
                     DatePicker::make('doj')
                         ->displayFormat('d F Y')

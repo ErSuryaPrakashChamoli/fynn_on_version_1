@@ -73,6 +73,31 @@ class Employee extends Model
 {
     use HasFactory;
 
+    protected static function booted(): void
+    {
+        static::created(function (Employee $employee): void {
+            if ($employee->reportingHistories()->exists()) {
+                return;
+            }
+
+            EmployeeReportingHistory::query()->create([
+                'employee_id' => $employee->id,
+                'old_superviser_id' => null,
+                'old_manager_id' => null,
+                'old_cluster_id' => null,
+                'new_superviser_id' => $employee->superviser_id,
+                'new_manager_id' => $employee->manager_id,
+                'new_cluster_id' => $employee->cluster_id,
+                'effective_date' => $employee->reporting_date
+                    ?? $employee->doj
+                    ?? now()->toDateString(),
+                'change_type' => 'joining',
+                'updated_by' => auth()->id(),
+                'remarks' => 'Employee joining / initial reporting hierarchy.',
+            ]);
+        });
+    }
+
 
 
     public const DESIGNATION_ADMIN = 1;
