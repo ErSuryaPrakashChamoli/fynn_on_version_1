@@ -6,6 +6,7 @@ use App\Models\CustomerSettlement;
 use App\Models\CustomerSettlementHistory;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
+use App\Services\Settlement\SalesImpactService;
 
 class MisSettlementService
 {
@@ -18,6 +19,10 @@ class MisSettlementService
         ?string $reason = null,
     ): CustomerSettlement {
         return DB::transaction(function () use ($settlement, $data, $misBatchId, $userId, $source, $reason) {
+            $settlement->loadMissing('customer.employee');
+            $salesImpact = app(SalesImpactService::class);
+            $salesImpact->captureBefore($settlement);
+
             $fields = [
                 'mis_lan_no', 'mis_loan_type', 'mis_disbursal_amount', 'mis_cashback',
                 'mis_subvention', 'mis_docking', 'mis_processing_fee', 'mis_roi',
@@ -84,6 +89,9 @@ class MisSettlementService
             app(SettlementReconciliationService::class)->calculate($settlement);
 
             $settlement->refresh();
+            $salesImpact->captureAfter($settlement);
+            $settlement->save();
+            $settlement->refresh();
 
             $this->notifySales($settlement, $changed);
 
@@ -107,9 +115,12 @@ class MisSettlementService
             ->map(fn ($field) => str($field)->replace('_', ' ')->title())
             ->implode(', ');
 
+        $achievementDifference = number_format((float) ($settlement->achievement_difference ?? 0), 2);
+        $incentiveDifference = number_format((float) ($settlement->incentive_difference ?? 0), 2);
+
         Notification::make()
             ->title('Bank MIS Updated')
-            ->body("LAN {$settlement->mis_lan_no}: {$labels}. Achievement/incentive will use the latest MIS values.")
+            ->body("LAN {$settlement->mis_lan_no}: {$labels}. Achievement impact: {$achievementDifference}; Incentive impact: ₹{$incentiveDifference}.")
             ->warning()
             ->sendToDatabase($user);
     }

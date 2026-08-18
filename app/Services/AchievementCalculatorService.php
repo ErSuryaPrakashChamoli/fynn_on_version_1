@@ -29,8 +29,6 @@ class AchievementCalculatorService
         $customers
             ->whereMonth('customers.created_at', now()->month)
             ->whereYear('customers.created_at', now()->year);
-        // ->whereMonth('created_at', now()->month)
-        // ->whereYear('created_at', now()->year);
 
         $totals = $customers
             ->leftJoin('customer_settlements as cs', function ($join) {
@@ -293,8 +291,6 @@ class AchievementCalculatorService
         $customers
             ->whereMonth('customers.created_at', now()->month)
             ->whereYear('customers.created_at', now()->year);
-        // ->whereMonth('created_at', now()->month)
-        // ->whereYear('created_at', now()->year);
 
         /*
     |--------------------------------------------------------------------------

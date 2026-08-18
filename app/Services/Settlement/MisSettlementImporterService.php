@@ -7,13 +7,13 @@ use Illuminate\Validation\ValidationException;
 
 class MisSettlementImporterService
 {
-    public function resolveByLan(string $lan): CustomerSettlement
+    public function resolveByLan(string $lan): ?CustomerSettlement
     {
         $lan = trim($lan);
 
         $settlement = CustomerSettlement::query()
             ->where('mis_lan_no', $lan)
-            ->orWhereHas('customer', fn ($query) => $query->where('lan_no', $lan))
+            ->orWhereHas('customer', fn($query) => $query->where('lan_no', $lan))
             ->first();
 
         if (! $settlement) {
@@ -23,5 +23,26 @@ class MisSettlementImporterService
         }
 
         return $settlement;
+    }
+
+
+    public function resolveRecord(): ?CustomerSettlement
+    {
+        $lan = trim((string) ($this->data['mis_lan_no'] ?? ''));
+
+        if ($lan === '') {
+            throw new \RuntimeException('LAN is required.');
+        }
+
+        $record = app(MisSettlementImporterService::class)
+            ->resolveByLan($lan);
+
+        if (! $record) {
+            throw new \RuntimeException(
+                "LAN {$lan} was not found in Customer Settlement."
+            );
+        }
+
+        return $record;
     }
 }

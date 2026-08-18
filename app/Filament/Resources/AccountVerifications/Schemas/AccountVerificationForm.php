@@ -36,6 +36,7 @@ class AccountVerificationForm
                     TextInput::make('mis_cashback')->label('Cashback As Per Bank')->numeric(),
                     TextInput::make('mis_subvention')->label('Subvention As Per Bank')->numeric(),
                     TextInput::make('mis_docking')->label('Docking As Per Bank')->numeric(),
+                    TextInput::make('mis_processing_fee')->label('Processing Fee As Per Bank')->numeric(),
                     DatePicker::make('mis_disbursal_date')->label('Bank Disbursal Date'),
                     Select::make('cancellation_status')->options([
                         'not_cancelled' => 'Not Cancelled',
@@ -50,6 +51,21 @@ class AccountVerificationForm
                     TextInput::make('mis_tds')->numeric(),
                     TextInput::make('mis_gst')->numeric(),
                     TextInput::make('actual_payable_amount')->numeric(),
+                ]),
+
+            Section::make('Sales vs Bank Reconciliation')
+                ->columns(3)
+                ->schema([
+                    TextInput::make('variance_amount')->label('Loan Amount Difference')->numeric()->disabled()->dehydrated(false),
+                    TextInput::make('variance_cashback')->label('Cashback Difference')->numeric()->disabled()->dehydrated(false),
+                    TextInput::make('variance_subvention')->label('Subvention Difference')->numeric()->disabled()->dehydrated(false),
+                    TextInput::make('variance_docking')->label('Docking Difference')->numeric()->disabled()->dehydrated(false),
+                    TextInput::make('variance_gst')->label('GST Difference')->numeric()->disabled()->dehydrated(false),
+                    TextInput::make('variance_tds')->label('TDS Difference')->numeric()->disabled()->dehydrated(false),
+                    TextInput::make('variance_payable_amount')->label('Payable Difference')->numeric()->disabled()->dehydrated(false),
+                    TextInput::make('payment_difference')->label('Payment Difference')->numeric()->disabled()->dehydrated(false),
+                    TextInput::make('achievement_difference')->label('Achievement Impact')->numeric()->disabled()->dehydrated(false),
+                    TextInput::make('incentive_difference')->label('Incentive Impact')->numeric()->disabled()->dehydrated(false),
                 ]),
 
             Section::make('MIS Verification')

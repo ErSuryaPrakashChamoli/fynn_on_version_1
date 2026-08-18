@@ -18,9 +18,8 @@ class EditCustomerSettlement extends EditRecord
         abort_unless(auth()->user()?->hasAnyRole(['Admin', 'Accounts']), 403);
 
         $trackedFields = [
-            'recovery_received', 'advance_received', 'advance_adjusted',
-            'gross_payable_amount', 'gst_rate', 'tds_rate', 'payment_received_amount',
-            'payment_received_date', 'utr_number', 'invoice_number', 'payment_status', 'remarks',
+            'advance_adjusted',
+            'gross_payable_amount', 'gst_rate', 'tds_rate', 'payment_status', 'remarks',
         ];
 
         foreach ($trackedFields as $field) {
@@ -50,6 +49,24 @@ class EditCustomerSettlement extends EditRecord
         }
 
         $record->update(Arr::only($data, $trackedFields));
+
+        if ($record->status === 'mis_verified') {
+            $record->status = 'accounts_review';
+            $record->save();
+
+            CustomerSettlementHistory::create([
+                'customer_settlement_id' => $record->id,
+                'customer_id' => $record->customer_id,
+                'action' => 'accounts_review_started',
+                'field_name' => 'status',
+                'old_value' => 'mis_verified',
+                'new_value' => 'accounts_review',
+                'source' => 'accounts',
+                'reason' => 'MIS verified case opened by Accounts for settlement.',
+                'performed_by' => auth()->id(),
+                'mis_batch_id' => $record->mis_batch_id,
+            ]);
+        }
 
         app(SettlementReconciliationService::class)->calculate($record);
 

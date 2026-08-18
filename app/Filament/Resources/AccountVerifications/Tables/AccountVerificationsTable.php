@@ -6,6 +6,7 @@ use App\Filament\Imports\MisSettlementImporter;
 use Filament\Actions\EditAction;
 use Filament\Actions\ImportAction;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
 class AccountVerificationsTable
@@ -22,7 +23,27 @@ class AccountVerificationsTable
                 TextColumn::make('settlement.mis_disbursal_amount')->label('Bank Loan')->money('INR'),
                 TextColumn::make('settlement.variance_amount')->label('Loan Difference')->money('INR'),
                 TextColumn::make('settlement.status')->badge(),
+                TextColumn::make('settlement.achievement_difference')->label('Achievement Impact')->numeric(),
+                TextColumn::make('settlement.incentive_difference')->label('Incentive Impact')->money('INR'),
                 TextColumn::make('updated_at')->dateTime(),
+            ])
+            ->filters([
+                SelectFilter::make('settlement_status')
+                    ->label('MIS Status')
+                    ->options([
+                        'pending' => 'Pending',
+                        'mis_review' => 'MIS Review',
+                        'mis_verified' => 'MIS Verified',
+                    ])
+                    ->query(function ($query, array $data) {
+                        if (blank($data['value'] ?? null)) {
+                            return $query;
+                        }
+
+                        return $query->whereHas('settlement', fn ($settlement) =>
+                            $settlement->where('status', $data['value'])
+                        );
+                    }),
             ])
             ->recordActions([
                 EditAction::make(),

@@ -36,6 +36,7 @@ class EditAccountVerification extends EditRecord
             'mis_cashback' => $settlement->mis_cashback,
             'mis_subvention' => $settlement->mis_subvention,
             'mis_docking' => $settlement->mis_docking,
+            'mis_processing_fee' => $settlement->mis_processing_fee,
             'mis_disbursal_date' => $settlement->mis_disbursal_date,
             'cancellation_status' => $settlement->cancellation_status,
             'cancellation_date' => $settlement->cancellation_date,
@@ -46,6 +47,16 @@ class EditAccountVerification extends EditRecord
             'mis_tds' => $settlement->mis_tds,
             'mis_gst' => $settlement->mis_gst,
             'actual_payable_amount' => $settlement->actual_payable_amount,
+            'variance_amount' => $settlement->variance_amount,
+            'variance_cashback' => $settlement->variance_cashback,
+            'variance_subvention' => $settlement->variance_subvention,
+            'variance_docking' => $settlement->variance_docking,
+            'variance_gst' => $settlement->variance_gst,
+            'variance_tds' => $settlement->variance_tds,
+            'variance_payable_amount' => $settlement->variance_payable_amount,
+            'payment_difference' => $settlement->payment_difference,
+            'achievement_difference' => $settlement->achievement_difference,
+            'incentive_difference' => $settlement->incentive_difference,
             'account_remark' => $this->getRecord()->account_remark,
             'mis_verified' => $settlement->status === 'mis_verified',
         ]);
@@ -59,7 +70,7 @@ class EditAccountVerification extends EditRecord
 
         $misData = collect($data)->only([
             'mis_lan_no', 'mis_loan_type', 'mis_disbursal_amount', 'mis_roi', 'mis_cashback',
-            'mis_subvention', 'mis_docking', 'mis_disbursal_date', 'cancellation_status',
+            'mis_subvention', 'mis_docking', 'mis_processing_fee', 'mis_disbursal_date', 'cancellation_status',
             'cancellation_date', 'cancellation_recovery', 'mis_payment',
             'bank_commission_percentage', 'bank_commission_amount', 'mis_tds', 'mis_gst',
             'actual_payable_amount',
@@ -102,6 +113,19 @@ class EditAccountVerification extends EditRecord
                 'account_verified' => true,
                 'account_verified_by' => auth()->id(),
                 'account_verified_at' => now(),
+                'incentive_calculated' => false,
+            ]);
+        } else {
+            $settlement->update([
+                'status' => 'mis_review',
+                'verified_by' => null,
+                'verified_at' => null,
+            ]);
+
+            $record->update([
+                'account_verified' => false,
+                'account_verified_by' => null,
+                'account_verified_at' => null,
                 'incentive_calculated' => false,
             ]);
         }

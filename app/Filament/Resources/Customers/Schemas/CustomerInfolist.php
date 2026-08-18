@@ -509,6 +509,18 @@ class CustomerInfolist
                         TextEntry::make('latestSettlement.mis_docking')
                             ->label('MIS Docking')
                             ->money('INR'),
+
+                        TextEntry::make('latestSettlement.achievement_difference')
+                            ->label('Achievement Impact')
+                            ->numeric(),
+
+                        TextEntry::make('latestSettlement.incentive_difference')
+                            ->label('Incentive Impact')
+                            ->money('INR'),
+
+                        TextEntry::make('latestSettlement.impact_calculated_at')
+                            ->label('Impact Calculated At')
+                            ->dateTime(),
                     ])
                     ->columns(2),
 

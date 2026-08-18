@@ -49,7 +49,6 @@ class AccountVerificationResource extends Resource
     {
         return parent::getEloquentQuery()
             ->where('journey_status', 'disbursed')
-            ->where('account_verified', false)
             ->with(['employee', 'settlement']);
     }
 

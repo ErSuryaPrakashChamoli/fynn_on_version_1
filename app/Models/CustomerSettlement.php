@@ -42,6 +42,13 @@ class CustomerSettlement extends Model
         'sales_subvention',
         'sales_docking',
         'sales_incentive',
+        'achievement_before',
+        'achievement_after',
+        'achievement_difference',
+        'incentive_before',
+        'incentive_after',
+        'incentive_difference',
+        'impact_calculated_at',
 
         // Commission
         'expected_commission_percentage',
@@ -133,6 +140,13 @@ class CustomerSettlement extends Model
             'sales_subvention' => 'decimal:2',
             'sales_docking' => 'decimal:2',
             'sales_incentive' => 'decimal:2',
+            'achievement_before' => 'decimal:2',
+            'achievement_after' => 'decimal:2',
+            'achievement_difference' => 'decimal:2',
+            'incentive_before' => 'decimal:2',
+            'incentive_after' => 'decimal:2',
+            'incentive_difference' => 'decimal:2',
+            'impact_calculated_at' => 'datetime',
 
             'expected_commission_percentage' => 'decimal:2',
             'bank_commission_percentage' => 'decimal:2',

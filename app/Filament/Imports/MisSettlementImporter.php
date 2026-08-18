@@ -46,8 +46,22 @@ class MisSettlementImporter extends Importer
 
     public function resolveRecord(): ?CustomerSettlement
     {
-        return app(MisSettlementImporterService::class)
-            ->resolveByLan($this->data['mis_lan_no']);
+        $lan = trim((string) ($this->data['mis_lan_no'] ?? ''));
+
+        if ($lan === '') {
+            throw new \RuntimeException('LAN is required.');
+        }
+
+        $record = app(MisSettlementImporterService::class)
+            ->resolveByLan($lan);
+
+        if (! $record) {
+            throw new \RuntimeException(
+                "LAN {$lan} was not found in Customer Settlement."
+            );
+        }
+
+        return $record;
     }
 
     public function saveRecord(): void
@@ -75,20 +89,29 @@ class MisSettlementImporter extends Importer
 
     public static function getCompletedNotificationBody(Import $import): string
     {
-        $batch = MisBatch::where('batch_no', 'MIS-IMPORT-' . $import->id)->first();
+        $batch = MisBatch::where(
+            'batch_no',
+            'MIS-IMPORT-' . $import->id
+        )->first();
+
+        $successful = (int) $import->successful_rows;
+        $failed = (int) $import->failed_rows;
 
         if ($batch) {
             $batch->update([
                 'status' => 'completed',
                 'total_rows' => $import->total_rows,
                 'processed_rows' => $import->processed_rows,
-                'successful_rows' => $import->successful_rows,
-                'failed_rows' => $import->failed_rows,
-                'unmatched_rows' => $import->failed_rows,
+                'successful_rows' => $successful,
+                'failed_rows' => $failed,
                 'completed_at' => now(),
             ]);
         }
 
-        return "{$import->successful_rows} bank MIS rows updated successfully and {$import->failed_rows} rows failed/unmatched.";
+        return sprintf(
+            'MIS import completed. %d rows updated successfully and %d rows failed. Please review the failed rows for details.',
+            $successful,
+            $failed
+        );
     }
 }
