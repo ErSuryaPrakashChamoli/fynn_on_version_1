@@ -17,6 +17,7 @@ class CustomerSettlement extends Model
 
         // MIS
         'mis_disbursal_amount',
+        'mis_loan_type',
         'mis_cashback',
         'mis_subvention',
         'mis_docking',
@@ -24,13 +25,30 @@ class CustomerSettlement extends Model
         'mis_roi',
         'mis_lan_no',
         'mis_disbursal_date',
+        'cancellation_status',
+        'cancellation_date',
+        'cancellation_recovery',
+        'recovery_received',
+        'recovery_pending',
+        'advance_received',
+        'advance_adjusted',
+        'advance_outstanding',
 
         // Sales snapshot
         'sales_disbursal_amount',
+        'sales_loan_type',
+        'sales_rate',
         'sales_cashback',
         'sales_subvention',
         'sales_docking',
         'sales_incentive',
+        'achievement_before',
+        'achievement_after',
+        'achievement_difference',
+        'incentive_before',
+        'incentive_after',
+        'incentive_difference',
+        'impact_calculated_at',
 
         // Commission
         'expected_commission_percentage',
@@ -81,6 +99,17 @@ class CustomerSettlement extends Model
 
         // Payment
         'payment_received_date',
+        'payment_received_amount',
+        'mis_payment',
+        'payment_difference',
+        'gross_payable_amount',
+        'gst_rate',
+        'tds_rate',
+        'gst_amount',
+        'tds_amount',
+        'net_payable_amount',
+        'surplus_amount',
+        'outstanding_amount',
         'utr_number',
         'invoice_number',
         'payment_status',
@@ -92,17 +121,32 @@ class CustomerSettlement extends Model
             'version' => 'integer',
 
             'mis_disbursal_amount' => 'decimal:2',
+            'sales_rate' => 'decimal:2',
             'mis_cashback' => 'decimal:2',
             'mis_subvention' => 'decimal:2',
             'mis_docking' => 'decimal:2',
             'mis_processing_fee' => 'decimal:2',
             'mis_roi' => 'decimal:2',
+            'cancellation_date' => 'date',
+            'cancellation_recovery' => 'decimal:2',
+            'recovery_received' => 'decimal:2',
+            'recovery_pending' => 'decimal:2',
+            'advance_received' => 'decimal:2',
+            'advance_adjusted' => 'decimal:2',
+            'advance_outstanding' => 'decimal:2',
 
             'sales_disbursal_amount' => 'decimal:2',
             'sales_cashback' => 'decimal:2',
             'sales_subvention' => 'decimal:2',
             'sales_docking' => 'decimal:2',
             'sales_incentive' => 'decimal:2',
+            'achievement_before' => 'decimal:2',
+            'achievement_after' => 'decimal:2',
+            'achievement_difference' => 'decimal:2',
+            'incentive_before' => 'decimal:2',
+            'incentive_after' => 'decimal:2',
+            'incentive_difference' => 'decimal:2',
+            'impact_calculated_at' => 'datetime',
 
             'expected_commission_percentage' => 'decimal:2',
             'bank_commission_percentage' => 'decimal:2',
@@ -136,6 +180,17 @@ class CustomerSettlement extends Model
 
             'verified_at' => 'datetime',
             'payment_received_date' => 'date',
+            'payment_received_amount' => 'decimal:2',
+            'mis_payment' => 'decimal:2',
+            'payment_difference' => 'decimal:2',
+            'gross_payable_amount' => 'decimal:2',
+            'gst_rate' => 'decimal:2',
+            'tds_rate' => 'decimal:2',
+            'gst_amount' => 'decimal:2',
+            'tds_amount' => 'decimal:2',
+            'net_payable_amount' => 'decimal:2',
+            'surplus_amount' => 'decimal:2',
+            'outstanding_amount' => 'decimal:2',
         ];
     }
 
@@ -167,5 +222,10 @@ class CustomerSettlement extends Model
     public function histories()
     {
         return $this->hasMany(CustomerSettlementHistory::class);
+    }
+
+    public function transactions()
+    {
+        return $this->hasMany(CustomerSettlementTransaction::class);
     }
 }

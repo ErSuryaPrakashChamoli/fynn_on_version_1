@@ -24,6 +24,10 @@ class MisBatch extends Model
         'error_summary',
         'created_by',
         'completed_at',
+        'successful_rows',
+        'lan_not_found_rows',
+        'validation_failed_rows',
+        'processing_failed_rows',
     ];
 
     protected function casts(): array

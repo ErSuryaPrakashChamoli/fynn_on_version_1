@@ -8,4 +8,9 @@ use Filament\Resources\Pages\CreateRecord;
 class CreateCustomerSettlement extends CreateRecord
 {
     protected static string $resource = CustomerSettlementResource::class;
+
+    public static function canCreate(): bool
+    {
+        return false;
+    }
 }

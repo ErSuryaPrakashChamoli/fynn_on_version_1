@@ -1552,6 +1552,9 @@ class CustomerForm
 
                                                 //    $set('disbursal_finalized', true);
 
+                                                return redirect()->to(
+                                                    \App\Filament\Resources\Customers\CustomerResource::getUrl('index')
+                                                );
                                             })
                                     ),
                             ])

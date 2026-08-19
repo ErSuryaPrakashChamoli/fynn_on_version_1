@@ -5,22 +5,34 @@ namespace App\Filament\Resources\CustomerSettlements;
 use App\Filament\Resources\CustomerSettlements\Pages\CreateCustomerSettlement;
 use App\Filament\Resources\CustomerSettlements\Pages\EditCustomerSettlement;
 use App\Filament\Resources\CustomerSettlements\Pages\ListCustomerSettlements;
+use App\Filament\Resources\CustomerSettlements\RelationManagers\SettlementHistoryRelationManager;
+use App\Filament\Resources\CustomerSettlements\RelationManagers\TransactionsRelationManager;
 use App\Filament\Resources\CustomerSettlements\Schemas\CustomerSettlementForm;
 use App\Filament\Resources\CustomerSettlements\Tables\CustomerSettlementsTable;
 use App\Models\CustomerSettlement;
-use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
-use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class CustomerSettlementResource extends Resource
 {
     protected static ?string $model = CustomerSettlement::class;
-
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
-
+    protected static ?string $navigationLabel = 'Customer Settlement';
     protected static ?string $recordTitleAttribute = 'settlement_no';
+
+    private const ACCOUNTS_STATUSES = [
+        'mis_verified',
+        'accounts_review',
+        'variance',
+        'payment_pending',
+        'partially_paid',
+        'paid',
+        'recovery_pending',
+        'settled',
+        'hold',
+    ];
 
     public static function form(Schema $schema): Schema
     {
@@ -35,7 +47,8 @@ class CustomerSettlementResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            TransactionsRelationManager::class,
+            SettlementHistoryRelationManager::class,
         ];
     }
 
@@ -47,8 +60,59 @@ class CustomerSettlementResource extends Resource
             'edit' => EditCustomerSettlement::route('/{record}/edit'),
         ];
     }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        if (auth()->user()?->hasRole('Admin')) {
+            return $query;
+        }
+
+        if (auth()->user()?->hasRole('Accounts')) {
+            return $query->whereIn('status', self::ACCOUNTS_STATUSES);
+        }
+
+        return $query->whereRaw('1 = 0');
+    }
+
     public static function canAccess(): bool
     {
-        return auth()->user()?->employee?->designation === \App\Models\Employee::DESIGNATION_ADMIN;
+        return auth()->user()?->hasAnyRole(['Admin', 'Accounts']) ?? false;
+    }
+
+    public static function canViewAny(): bool
+    {
+        return static::canAccess();
+    }
+
+    public static function canView(Model $record): bool
+    {
+        if (auth()->user()?->hasRole('Admin')) {
+            return true;
+        }
+
+        return auth()->user()?->hasRole('Accounts')
+            && in_array($record->status, self::ACCOUNTS_STATUSES, true);
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        if (auth()->user()?->hasRole('Admin')) {
+            return true;
+        }
+
+        return auth()->user()?->hasRole('Accounts')
+            && in_array($record->status, self::ACCOUNTS_STATUSES, true);
+    }
+
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
+    public static function canDelete(Model $record): bool
+    {
+        return false;
     }
 }

@@ -46,6 +46,9 @@ class SettlementService
                  * SALES SNAPSHOT
                  */
                 'sales_disbursal_amount' => $customer->sanctioned_loan_amount ?? 0,
+                'sales_loan_type' => $customer->loan_applied,
+                'sales_rate' => $customer->payout_rate,
+                'mis_lan_no' => $customer->lan_no,
                 'sales_cashback' => $customer->cashback ?? 0,
                 'sales_subvention' => $customer->subvention ?? 0,
                 'sales_docking' => $customer->docking ?? 0,
