@@ -115,7 +115,35 @@ class ViewTeam extends Page implements HasTable
                         |
                         */
 
+                        // if ($record->designation === Employee::DESIGNATION_CALLER) {
+
+                        //     return $calculator->getHierarchyCallerTarget($record);
+                        // }
+
                         if ($record->designation === Employee::DESIGNATION_CALLER) {
+
+                            // Inactive caller who exited in current month
+                            if (
+                                strtolower((string) $record->exit_status) === 'yes'
+                                && filled($record->exit_date)
+                            ) {
+                                $exitDate = \Carbon\Carbon::parse($record->exit_date);
+                                $today = \Carbon\Carbon::today();
+
+                                if (
+                                    $exitDate->year === $today->year
+                                    && $exitDate->month === $today->month
+                                ) {
+                                    return $exitDate->day >= 10
+                                        ? 1500000
+                                        : 0;
+                                }
+
+                                // Employee exited before current month
+                                if ($exitDate->lt($today->copy()->startOfMonth())) {
+                                    return 0;
+                                }
+                            }
 
                             return $calculator->getHierarchyCallerTarget($record);
                         }

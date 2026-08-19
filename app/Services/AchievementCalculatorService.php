@@ -478,7 +478,7 @@ class AchievementCalculatorService
     */
 
         if (
-            strtolower((string) $employee->exit_status) === 'inactive'
+            strtolower((string) $employee->exit_status) === 'yes'
             && !empty($employee->exit_date)
         ) {
             $exitDate = Carbon::parse($employee->exit_date);
