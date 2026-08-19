@@ -13,6 +13,11 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use BackedEnum;
+use UnitEnum;
+use Filament\Support\Icons\Heroicon;
+use Filament\Navigation\NavigationGroup;
+
 
 class AccountVerificationResource extends Resource
 {
@@ -20,6 +25,9 @@ class AccountVerificationResource extends Resource
     protected static ?string $navigationLabel = 'MIS Verification';
     protected static ?string $recordTitleAttribute = 'customer_name';
     protected static ?int $navigationSort = 1;
+
+    protected static string | UnitEnum | null $navigationGroup = 'Accounts';
+    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedBanknotes;
 
     public static function form(Schema $schema): Schema
     {
