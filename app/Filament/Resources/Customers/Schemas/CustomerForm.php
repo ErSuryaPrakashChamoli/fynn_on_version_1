@@ -35,15 +35,42 @@ use Filament\Schemas\Components\Utilities\Set;
 use App\Services\CustomerJourneyService;
 use App\Models\CustomerPanRequest;
 use Filament\Infolists\Components\ViewEntry;
+use Illuminate\Support\Facades\Auth;
+use Filament\Facades\Filament;
 
 
 class CustomerForm
 {
 
+    // protected static function lockCallerFields(?Customer $record): bool
+    // {
+
+    //     return $record &&
+    //         auth()->user()->employee?->designation !== Employee::DESIGNATION_ADMIN;
+    // }
+
+    // protected static function lockCallerFields(?Customer $record): bool
+    // {
+    //     if (! $record) {
+    //         return false;
+    //     }
+
+    //     // Admins bypass lock (handles both role & designation)
+    //     $isAuthorizedAdmin = Auth::user()?->hasRole('Admin')
+    //         || Auth::user()?->employee?->designation === Employee::DESIGNATION_ADMIN;
+
+    //     return ! $isAuthorizedAdmin;
+    // }
+
     protected static function lockCallerFields(?Customer $record): bool
     {
-        return $record &&
-            auth()->user()->employee?->designation !== Employee::DESIGNATION_ADMIN;
+        if (! $record) {
+            return false;
+        }
+
+        $employee = Filament::auth()->user()?->employee;
+
+        return $employee?->designation !== Employee::DESIGNATION_ADMIN;
     }
 
     protected static function lockDuplicatePan(?Customer $record, $livewire): bool
