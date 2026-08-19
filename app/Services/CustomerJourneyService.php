@@ -121,32 +121,7 @@ class CustomerJourneyService
         return $customer->fresh();
     }
 
-    /**
-     * Credit Approved -> Sanctioned
-     */
-    // public static function sanction(Customer $customer): Customer
-    // {
-    //     if ($customer->journey_status !== 'approved') {
-    //         throw ValidationException::withMessages([
-    //             'journey_status' => 'Customer is not in Approval stage.',
-    //         ]);
-    //     }
 
-    //     DB::transaction(function () use ($customer) {
-
-    //         $customer->update([
-    //             'journey_status' => 'sanctioned',
-    //         ]);
-
-    //         self::log(
-    //             $customer,
-    //             'Approval',
-    //             'Moved to Disbursal'
-    //         );
-    //     });
-
-    //     return $customer->fresh();
-    // }
 
 
     public static function sanction(Customer $customer, array $data): Customer

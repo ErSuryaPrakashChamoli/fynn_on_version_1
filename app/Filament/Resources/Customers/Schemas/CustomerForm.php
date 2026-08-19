@@ -42,26 +42,6 @@ use Filament\Facades\Filament;
 class CustomerForm
 {
 
-    // protected static function lockCallerFields(?Customer $record): bool
-    // {
-
-    //     return $record &&
-    //         auth()->user()->employee?->designation !== Employee::DESIGNATION_ADMIN;
-    // }
-
-    // protected static function lockCallerFields(?Customer $record): bool
-    // {
-    //     if (! $record) {
-    //         return false;
-    //     }
-
-    //     // Admins bypass lock (handles both role & designation)
-    //     $isAuthorizedAdmin = Auth::user()?->hasRole('Admin')
-    //         || Auth::user()?->employee?->designation === Employee::DESIGNATION_ADMIN;
-
-    //     return ! $isAuthorizedAdmin;
-    // }
-
     protected static function lockCallerFields(?Customer $record): bool
     {
         if (! $record) {
@@ -217,7 +197,8 @@ class CustomerForm
                             ])
                             ->action(function (array $data, $livewire, Get $get) {
 
-                                $employee = auth()->user()->employee;
+                                // $employee = auth()->user()->employee;
+                                $employee = Filament::auth()->user()?->employee;
 
                                 $bank = Bank::find($data['requested_bank_id']);
 
@@ -325,7 +306,9 @@ class CustomerForm
                                     ];
                                 }
 
-                                $user = auth()->user();
+                                // $user = auth()->user();
+                                // $employee = $user?->employee;
+                                $user = Filament::auth()->user();
                                 $employee = $user?->employee;
 
                                 if (! $employee) {
@@ -1568,8 +1551,9 @@ class CustomerForm
 
                                                 $record = CustomerJourneyService::sanction($record, $data);
                                                 // $record = CustomerJourneyService::finalize($record,$data);
+
                                                 $set('journey_status', $record->journey_status);
-                                                $set('disbursal_finalized', true);
+                                                // $set('disbursal_finalized', true);
 
 
                                                 Notification::make()
@@ -1579,9 +1563,9 @@ class CustomerForm
 
                                                 //    $set('disbursal_finalized', true);
 
-                                                return redirect()->to(
-                                                    \App\Filament\Resources\Customers\CustomerResource::getUrl('index')
-                                                );
+                                                // return redirect()->to(
+                                                //     \App\Filament\Resources\Customers\CustomerResource::getUrl('index')
+                                                // );
                                             })
                                     ),
                             ])
@@ -1687,8 +1671,7 @@ class CustomerForm
 
                                                 $alreadySubmitted = (bool) $record->documents_submitted;
 
-                                                // $record = CustomerJourneyService::finalize($record);
-                                                // $set('documents_submitted', true);
+
 
                                                 $filesArray = is_array($uploadedFiles) ? $uploadedFiles : [$uploadedFiles];
 
@@ -1722,19 +1705,17 @@ class CustomerForm
 
 
                                                 $record = CustomerJourneyService::finalize($record);
-
-                                                // $alreadySubmitted = (bool) $record->documents_submitted;
-                                                // $record->update(['documents_submitted' => true]);
-
                                                 $set('documents_submitted', true);
                                                 $set('disbursal_pdf', $filesArray);
 
-                                                // session()->put("customer_{$record->id}_docs_submitted", true);
-                                                // $record = CustomerJourneyService::finalize($record);
                                                 Notification::make()
                                                     ->title($alreadySubmitted ? 'Documents updated successfully.' : 'Documents submitted successfully.')
                                                     ->success()
                                                     ->send();
+
+                                                // return redirect()->to(
+                                                //     CustomerResource::getUrl('index')
+                                                // );
                                             })
                                     ),
                             ])

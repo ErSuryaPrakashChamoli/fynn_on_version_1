@@ -60,7 +60,7 @@ class CustomersTable
                             return $state ?? '-';
                         }
 
-                        return substr($state, 0, 4) . 'XXXXXX';
+                        return 'XXXXXX' . substr($state, -4);
                     })
                     ->searchable(),
 

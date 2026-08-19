@@ -151,13 +151,13 @@ class CustomerResource extends Resource
      * Once documents are submitted / application finalized,
      * Customer data becomes immutable.
      */
-        if ($record->documents_submitted) {
-            return false;
-        }
+        // if ($record->documents_submitted) {
+        //     return false;
+        // }
 
-        if ($record->disbursal_finalized) {
-            return false;
-        }
+        // if ($record->disbursal_finalized) {
+        //     return false;
+        // }
 
         return true;
     }

@@ -20,6 +20,7 @@ use Filament\Actions\ViewAction;
 use Filament\Tables\Filters\SelectFilter;
 use App\Models\Employee;
 use Illuminate\Database\Eloquent\Builder;
+use Filament\Facades\Filament;
 
 class LeadsTable
 {
@@ -27,11 +28,19 @@ class LeadsTable
     {
         return $table
             ->defaultSort('id', 'desc')
-            // ->query(Lead::query()->where('is_converted', false))
             ->columns([
                 //
                 TextColumn::make('customer_name')->label('Prospect Name')->searchable(),
-                TextColumn::make('mobile_no')->label('Phone'),
+                TextColumn::make('mobile_no')
+                    ->label('Mobile No')
+                    ->formatStateUsing(function (?string $state): string {
+                        if (blank($state) || strlen($state) < 4) {
+                            return $state ?? '-';
+                        }
+
+                        return 'XXXXXX' . substr($state, -4);
+                    })
+                    ->searchable(),
                 TextColumn::make('current_location')->label('Location'),
                 TextColumn::make('status')->badge(),
 
@@ -39,7 +48,7 @@ class LeadsTable
                     ->label('Bank')
                     ->searchable()
                     ->sortable(),
-                // TextColumn::make('follow_up_date')->label('Follow up created')->badge(),
+
 
                 TextColumn::make('follow_up_date')
                     ->label('Follow Up Created')
