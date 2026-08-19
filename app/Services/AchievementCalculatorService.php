@@ -448,6 +448,7 @@ class AchievementCalculatorService
 
     private function getCallerTarget(Employee $employee): float
     {
+
         /*
     |--------------------------------------------------------------------------
     | CALLER OWN TARGET
@@ -472,6 +473,34 @@ class AchievementCalculatorService
 
         /*
     |--------------------------------------------------------------------------
+    | INACTIVE / EXITED EMPLOYEE
+    |--------------------------------------------------------------------------
+    */
+
+        if (
+            strtolower((string) $employee->exit_status) === 'yes'
+            && !empty($employee->exit_date)
+        ) {
+            $exitDate = Carbon::parse($employee->exit_date);
+
+            // Exited during current month
+            if (
+                $exitDate->year === $today->year &&
+                $exitDate->month === $today->month
+            ) {
+                return $exitDate->day >= 10
+                    ? 1500000
+                    : 0;
+            }
+
+            // Exited before current month
+            if ($exitDate->lt($today->copy()->startOfMonth())) {
+                return 0;
+            }
+        }
+
+        /*
+    |--------------------------------------------------------------------------
     | CATEGORY TARGET
     |--------------------------------------------------------------------------
     */
@@ -484,9 +513,6 @@ class AchievementCalculatorService
     |--------------------------------------------------------------------------
     | NO REPORTING DATE
     |--------------------------------------------------------------------------
-    |
-    | If reporting_date is not available, use category target.
-    |
     */
 
         if (empty($employee->reporting_date)) {
@@ -499,19 +525,12 @@ class AchievementCalculatorService
     |--------------------------------------------------------------------------
     | REPORTING STARTED IN CURRENT MONTH
     |--------------------------------------------------------------------------
-    |
-    | For TL / Manager / Cluster target calculation:
-    |
-    | Less than 10 days  = 0
-    | 10 or more days    = 15 Lakh
-    |
     */
 
         if (
             $reportingDate->month === $today->month &&
             $reportingDate->year === $today->year
         ) {
-
             $workedDays = $reportingDate->diffInDays($today) + 1;
 
             return $workedDays >= 10
@@ -521,11 +540,8 @@ class AchievementCalculatorService
 
         /*
     |--------------------------------------------------------------------------
-    | REPORTING STARTED BEFORE CURRENT MONTH
+    | EXISTING ACTIVE EMPLOYEE
     |--------------------------------------------------------------------------
-    |
-    | Existing reporting relationship uses caller category.
-    |
     */
 
         return $categoryTarget;
