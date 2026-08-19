@@ -87,6 +87,7 @@ class ViewTeam extends Page implements HasTable
                     // })
                     ->state(function (Employee $record) use ($calculator, &$performanceCache) {
 
+
                         /*
                         |--------------------------------------------------------------------------
                         | Caller
