@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::table('mis_batches', function (Blueprint $table) {
             //
-            $table->unsignedInteger('successful_rows')->default(0);
+            // $table->unsignedInteger('successful_rows')->default(0);
             $table->unsignedInteger('lan_not_found_rows')->default(0);
             $table->unsignedInteger('validation_failed_rows')->default(0);
             $table->unsignedInteger('processing_failed_rows')->default(0);
