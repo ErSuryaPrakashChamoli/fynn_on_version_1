@@ -1,0 +1,155 @@
+<?php
+
+namespace App\Services\Ocr;
+
+use App\Models\AiCustomerRecord;
+use App\Models\OcrDocument;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+
+class OcrDocumentProcessor
+{
+    public function __construct(
+        private readonly OcrFieldExtractionService $fieldExtractor,
+        private readonly AiDocumentMappingService $mappingService,
+        private readonly OcrTableExtractionService $tableExtractor,
+    ) {}
+
+    public function process(OcrDocument $document): void
+    {
+        $document->update([
+            'status' => 'processing',
+            'error_message' => null,
+        ]);
+
+        try {
+            $disk = Storage::disk('local');
+
+            if (! $disk->exists($document->original_path)) {
+                throw new \RuntimeException(
+                    'Original document was not found on the local disk: '
+                        . $document->original_path
+                );
+            }
+
+            $path = $disk->path($document->original_path);
+
+            $result = app('laravel-ocr.parser')->parse($path, [
+                'document_type' => $document->document_type ?: 'general',
+                'use_ai_cleanup' => (bool) env(
+                    'LARAVEL_OCR_AI_CLEANUP',
+                    false
+                ),
+                'save_to_database' => false,
+            ]);
+
+            $text = (string) ($result->text ?? '');
+            $confidence = $result->confidence ?? null;
+            $metadata = is_array($result->metadata ?? null)
+                ? $result->metadata
+                : [];
+
+            $pageCount = $metadata['pdf_pages']
+                ?? $metadata['page_count']
+                ?? null;
+
+            $pageData = is_array($metadata['pages'] ?? null)
+                ? $metadata['pages']
+                : [];
+
+            $document->update([
+                'status' => 'completed',
+                'ocr_text' => $text,
+                'extracted_data' => [
+                    'mode' => $document->schema_id
+                        ? 'table'
+                        : 'fields',
+                ],
+                'page_data' => $pageData,
+                'confidence_score' => is_numeric($confidence)
+                    ? $confidence
+                    : null,
+                'page_count' => is_numeric($pageCount)
+                    ? (int) $pageCount
+                    : null,
+                'processed_at' => now(),
+                'error_message' => null,
+            ]);
+
+            if ($document->schema) {
+
+                $table = $this->tableExtractor->extract(
+                    $path,
+                    $document->schema
+                );
+
+                $document->update([
+                    'extracted_data' => [
+                        'mode' => 'table',
+                        'headers' => $table['headers'],
+                        'rows' => $table['rows'],
+                    ],
+                ]);
+
+                /*
+                 * STEP 2A
+                 *
+                 * Re-processing the same document must NOT
+                 * create duplicate customer records.
+                 */
+                // DB::transaction(function () use (
+                //     $document,
+                //     $table
+                // ) {
+
+                //     AiCustomerRecord::where(
+                //         'ocr_document_id',
+                //         $document->id
+                //     )->delete();
+
+                //     $this->mappingService->mapAndSaveRows(
+                //         $document->fresh('schema'),
+                //         $table['rows'],
+                //     );
+                // });
+
+                $this->mappingService->mapAndSaveRows(
+                    $document->fresh('schema'),
+                    $table['rows'],
+                );
+            } else {
+
+                $fields = $this->fieldExtractor->extract(
+                    $text,
+                    $document->document_type
+                );
+
+                $this->mappingService->mapAndSave(
+                    $document->fresh('schema'),
+                    $fields,
+                    is_numeric($confidence)
+                        ? (float) $confidence
+                        : null,
+                );
+            }
+        } catch (\Throwable $e) {
+
+            Log::error(
+                'OCR document processing failed',
+                [
+                    'ocr_document_id' => $document->id,
+                    'message' => $e->getMessage(),
+                ]
+            );
+
+            $document->update([
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+                'processed_at' => now(),
+            ]);
+
+            throw $e;
+        }
+    }
+}
