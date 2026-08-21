@@ -26,7 +26,7 @@ class OcrDocumentForm
                             'image/webp',
                             'image/tiff',
                         ])
-                        ->maxSize(153600)
+                        ->maxSize(512000)
                         ->required()
                         ->downloadable()
                         ->openable(),
