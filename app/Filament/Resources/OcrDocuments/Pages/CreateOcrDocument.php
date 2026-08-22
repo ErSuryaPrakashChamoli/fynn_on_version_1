@@ -4,6 +4,7 @@ namespace App\Filament\Resources\OcrDocuments\Pages;
 
 use App\Filament\Resources\OcrDocuments\OcrDocumentResource;
 use App\Jobs\ProcessOcrDocument;
+use App\Models\OcrDocument;
 use Illuminate\Support\Facades\Storage;
 use Filament\Resources\Pages\CreateRecord;
 
@@ -37,6 +38,8 @@ class CreateOcrDocument extends CreateRecord
 
     protected function afterCreate(): void
     {
-        ProcessOcrDocument::dispatch($this->record->id);
+        if ($this->record instanceof OcrDocument) {
+            ProcessOcrDocument::dispatchFor($this->record);
+        }
     }
 }

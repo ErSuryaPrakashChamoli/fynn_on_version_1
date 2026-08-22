@@ -3,6 +3,7 @@
 namespace App\Services\Ocr;
 
 use App\Models\AiDocumentSchema;
+use Illuminate\Process\Pool;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Process;
 
@@ -35,8 +36,10 @@ class OcrTableExtractionService
         // }
 
 
-        if ($this->isThreeColumnContactTable($definitions)) {
-            $multiPage = $this->extractMultiPageTable($path, $definitions);
+        $coordinateFields = $this->identifyCoordinateTableFields($definitions);
+
+        if ($coordinateFields !== null) {
+            $multiPage = $this->extractMultiPageTable($path, $coordinateFields);
 
             if ($multiPage !== []) {
                 return $multiPage;
@@ -137,80 +140,89 @@ class OcrTableExtractionService
         ];
     }
 
-    private function isThreeColumnContactTable(array $definitions): bool
+    /**
+     * A scanned multi-page "list" table — Created On | Name | Mobile, with
+     * an optional trailing text column such as Product Type — is
+     * reconstructed from Tesseract's word coordinates instead of guessed
+     * from line order. Line-based reconstruction (extractColumnarRows)
+     * silently misaligns every row after the first cell it fails to parse,
+     * because it zips columns by array position rather than by physical
+     * row. This is far more likely on a large/dense scan, where Tesseract's
+     * line segmentation frequently merges several physical rows onto one
+     * OCR text line.
+     *
+     * This identifies whether the schema matches that shape (one date
+     * field, one mobile field, and one or two remaining text fields) and
+     * assigns each definition a role. Field position on the page is still
+     * learned from the actual date/mobile word coordinates, not from
+     * schema order; only which *remaining* definition is "name" vs.
+     * "extra" is taken from schema order, since the trailing column
+     * (e.g. Product Type) always follows the name column on these forms.
+     *
+     * @return array{date: array, name: array, mobile: array, extra: ?array}|null
+     */
+    private function identifyCoordinateTableFields(array $definitions): ?array
     {
-        if (count($definitions) !== 3) {
-            return false;
+        if (count($definitions) < 3 || count($definitions) > 4) {
+            return null;
         }
 
-        $hasDate = false;
-        $hasName = false;
-        $hasMobile = false;
+        $dateField = null;
+        $mobileField = null;
+        $remaining = [];
 
         foreach ($definitions as $definition) {
             $key = Str::lower((string) ($definition['key'] ?? ''));
             $label = Str::lower((string) ($definition['label'] ?? ''));
             $type = Str::lower((string) ($definition['type'] ?? 'text'));
 
-            if ($type === 'date' || str_contains($key, 'created') || str_contains($label, 'created')) {
-                $hasDate = true;
+            if ($dateField === null && ($type === 'date' || str_contains($key, 'created') || str_contains($label, 'created'))) {
+                $dateField = $definition;
                 continue;
             }
 
             if (
-                $type === 'mobile'
-                || str_contains($key, 'mobile')
-                || str_contains($key, 'contact')
-                || str_contains($label, 'mobile')
-                || str_contains($label, 'contact')
+                $mobileField === null
+                && (
+                    $type === 'mobile'
+                    || str_contains($key, 'mobile')
+                    || str_contains($key, 'contact')
+                    || str_contains($label, 'mobile')
+                    || str_contains($label, 'contact')
+                )
             ) {
-                $hasMobile = true;
+                $mobileField = $definition;
                 continue;
             }
 
-            $hasName = true;
+            $remaining[] = $definition;
         }
 
+        if (! $dateField || ! $mobileField || $remaining === [] || count($remaining) > 2) {
+            return null;
+        }
 
-
-        return $hasDate && $hasName && $hasMobile;
+        return [
+            'date' => $dateField,
+            'name' => $remaining[0],
+            'mobile' => $mobileField,
+            'extra' => $remaining[1] ?? null,
+        ];
     }
 
-    private function extractMultiPageTable(string $pdfPath, array $definitions): array
+    private function extractMultiPageTable(string $pdfPath, array $fields): array
     {
-        $dateField = null;
-        $nameField = null;
-        $mobileField = null;
-
-        foreach ($definitions as $definition) {
-            $key = Str::lower((string) ($definition['key'] ?? ''));
-            $label = Str::lower((string) ($definition['label'] ?? ''));
-            $type = Str::lower((string) ($definition['type'] ?? 'text'));
-
-            if ($type === 'date' || str_contains($key, 'created') || str_contains($label, 'created')) {
-                $dateField = $definition;
-            } elseif (
-                $type === 'mobile'
-                || str_contains($key, 'mobile')
-                || str_contains($key, 'contact')
-                || str_contains($label, 'mobile')
-                || str_contains($label, 'contact')
-            ) {
-                $mobileField = $definition;
-            } else {
-                $nameField = $definition;
-            }
-        }
-
-        if (! $dateField || ! $nameField || ! $mobileField) {
-            return [];
-        }
+        $dateField = $fields['date'];
+        $nameField = $fields['name'];
+        $mobileField = $fields['mobile'];
+        $extraField = $fields['extra'] ?? null;
 
         $dateKey = (string) ($dateField['key'] ?? '');
         $nameKey = (string) ($nameField['key'] ?? '');
         $mobileKey = (string) ($mobileField['key'] ?? '');
+        $extraKey = $extraField !== null ? (string) ($extraField['key'] ?? '') : null;
 
-        if ($dateKey === '' || $nameKey === '' || $mobileKey === '') {
+        if ($dateKey === '' || $nameKey === '' || $mobileKey === '' || ($extraField !== null && $extraKey === '')) {
             return [];
         }
 
@@ -252,50 +264,74 @@ class OcrTableExtractionService
                     continue;
                 }
 
-                $ocr = $this->runTesseractTsv($pagePath);
-
-                logger()->info('OCR page result', [
-                    'page' => $pageIndex + 1,
-                    'full_text_length' => strlen($ocr['text'] ?? ''),
-                    'tsv_passes' => count($ocr['tsvs'] ?? []),
-                ]);
-
-                if ($ocr['text'] !== '') {
-                    $allRawText[] = $ocr['text'];
-                }
-
-                $words = $this->mergeTsvWordPasses($ocr['tsvs'] ?? [$ocr['tsv']]);
-
-                logger()->info('OCR page words', [
-                    'page' => $pageIndex + 1,
-                    'words' => count($words),
-                ]);
-
-                if ($words === []) {
-                    continue;
-                }
-
-                /*
-                 * Learn the table layout once from the first useful page.
-                 * Following pages do not need a header and reuse the same
-                 * relative layout. This is important for PDFs where only
-                 * page 1 contains the column headings.
-                 */
                 if ($layout === null) {
-                    $layout = $this->detectTableLayout($words, $width, $height);
-                }
+                    /*
+                     * The very first usable page must run its full-page
+                     * OCR pass on its own and wait for it — the column
+                     * boundaries below cannot be computed until the table
+                     * layout is learned from that page's words.
+                     */
+                    $ocr = $this->runTesseractTsv($pagePath);
 
-                $pageRows = $this->rowsFromTsv(
-                    $ocr['tsvs'] ?? [$ocr['tsv']],
-                    $pagePath,
-                    $temporaryDirectory,
-                    $dateKey,
-                    $nameKey,
-                    $mobileKey,
-                    $width,
-                    $height,
-                    $layout,
-                );
+                    logger()->info('OCR page result', [
+                        'page' => $pageIndex + 1,
+                        'full_text_length' => strlen($ocr['text'] ?? ''),
+                        'tsv_passes' => count($ocr['tsvs'] ?? []),
+                    ]);
+
+                    if ($ocr['text'] !== '') {
+                        $allRawText[] = $ocr['text'];
+                    }
+
+                    $words = $this->mergeTsvWordPasses($ocr['tsvs'] ?? [$ocr['tsv']]);
+
+                    logger()->info('OCR page words', [
+                        'page' => $pageIndex + 1,
+                        'words' => count($words),
+                    ]);
+
+                    if ($words === []) {
+                        continue;
+                    }
+
+                    $layout = $this->detectTableLayout($words, $width, $height);
+
+                    $pageRows = $this->rowsFromTsv(
+                        $ocr['tsvs'] ?? [$ocr['tsv']],
+                        $pagePath,
+                        $temporaryDirectory,
+                        $dateKey,
+                        $nameKey,
+                        $mobileKey,
+                        $width,
+                        $height,
+                        $layout,
+                        $extraField,
+                    );
+                } else {
+                    /*
+                     * Layout is already known, so this page's full-page
+                     * pass no longer needs to happen before its column
+                     * passes — both run in one combined pool.
+                     */
+                    $page = $this->rowsFromPageWithKnownLayout(
+                        $pagePath,
+                        $temporaryDirectory,
+                        $dateKey,
+                        $nameKey,
+                        $mobileKey,
+                        $width,
+                        $height,
+                        $layout,
+                        $extraField,
+                    );
+
+                    if ($page['text'] !== '') {
+                        $allRawText[] = $page['text'];
+                    }
+
+                    $pageRows = $page['rows'];
+                }
 
                 logger()->info('OCR page rows', [
                     'page' => $pageIndex + 1,
@@ -326,12 +362,18 @@ class OcrTableExtractionService
                 return [];
             }
 
+            $headers = [
+                (string) ($dateField['label'] ?? $dateKey),
+                (string) ($nameField['label'] ?? $nameKey),
+                (string) ($mobileField['label'] ?? $mobileKey),
+            ];
+
+            if ($extraField !== null) {
+                $headers[] = (string) ($extraField['label'] ?? $extraKey);
+            }
+
             return [
-                'headers' => [
-                    (string) ($dateField['label'] ?? $dateKey),
-                    (string) ($nameField['label'] ?? $nameKey),
-                    (string) ($mobileField['label'] ?? $mobileKey),
-                ],
+                'headers' => $headers,
                 'rows' => $allRows,
                 'raw_text' => implode("\n", $allRawText),
                 'metadata' => [
@@ -425,30 +467,46 @@ class OcrTableExtractionService
         return array_values($paths);
     }
 
+    /**
+     * Runs each PSM pass as its own tesseract process, in parallel. These
+     * passes are fully independent (each reads the same image once and
+     * writes to its own stdout), so running them concurrently instead of
+     * one after another cuts wall-clock time roughly in proportion to the
+     * pass count with no change in output — this matters most on a
+     * large/multi-page scan, where every page pays this cost.
+     */
     private function runTesseractTsv(string $imagePath): array
     {
+        $psms = [6, 11];
+
+        $results = Process::pool(function (Pool $pool) use ($imagePath, $psms) {
+            foreach ($psms as $psm) {
+                $pool->as((string) $psm)->timeout(180)->command([
+                    'tesseract',
+                    $imagePath,
+                    'stdout',
+                    '--psm',
+                    (string) $psm,
+                    '-l',
+                    'eng',
+                    'tsv',
+                ]);
+            }
+        })->run();
+
         $passes = [];
 
-        foreach ([6, 11] as $psm) {
-            $process = Process::timeout(180)->run([
-                'tesseract',
-                $imagePath,
-                'stdout',
-                '--psm',
-                (string) $psm,
-                '-l',
-                'eng',
-                'tsv',
-            ]);
+        foreach ($psms as $psm) {
+            $result = $results[(string) $psm];
 
-            if ($process->failed()) {
+            if ($result->failed()) {
                 throw new \RuntimeException(
                     'Tesseract failed for OCR page (PSM ' . $psm . '): ' .
-                        trim($process->errorOutput())
+                        trim($result->errorOutput())
                 );
             }
 
-            $passes[] = $process->output();
+            $passes[] = $result->output();
         }
 
         return [
@@ -597,6 +655,7 @@ class OcrTableExtractionService
         $dateLefts = [];
         $dateRights = [];
         $mobileLefts = [];
+        $mobileRights = [];
 
         foreach ($words as $word) {
             $text = (string) $word['text'];
@@ -609,11 +668,13 @@ class OcrTableExtractionService
 
             if ($left >= (int) round($pageWidth * 0.55) && $this->extractMobileValue($text) !== null) {
                 $mobileLefts[] = $left;
+                $mobileRights[] = (int) $word['right'];
             }
         }
 
         $dateRight = $dateRights !== [] ? (int) round($this->median($dateRights)) : (int) round($pageWidth * 0.30);
         $mobileLeft = $mobileLefts !== [] ? (int) round($this->median($mobileLefts)) : (int) round($pageWidth * 0.72);
+        $mobileRight = $mobileRights !== [] ? (int) round($this->median($mobileRights)) : (int) round($mobileLeft + ($pageWidth * 0.12));
 
         $dateNameBoundary = (int) round($dateRight + (($mobileLeft - $dateRight) * 0.25));
         /*
@@ -626,6 +687,17 @@ class OcrTableExtractionService
             (int) round($mobileLeft - ($pageWidth * 0.10))
         );
 
+        /*
+         * Only used when the schema has a fourth, trailing text column
+         * (e.g. Product Type) after the mobile number. The mobile number's
+         * own right edge — not a fixed fraction of the page — marks where
+         * that column starts, since mobile-number width does not vary.
+         */
+        $extraBoundary = min(
+            $pageWidth,
+            max($mobileBoundary + 1, (int) round($mobileRight + ($pageWidth * 0.02)))
+        );
+
         return [
             'page_width' => $pageWidth,
             'page_height' => $pageHeight,
@@ -633,8 +705,10 @@ class OcrTableExtractionService
             'date_name_boundary' => $dateNameBoundary,
             'mobile_boundary' => $mobileBoundary,
             'mobile_left' => $mobileLeft,
+            'extra_boundary' => $extraBoundary,
             'relative_date_name_boundary' => $pageWidth > 0 ? $dateNameBoundary / $pageWidth : 0.35,
             'relative_mobile_boundary' => $pageWidth > 0 ? $mobileBoundary / $pageWidth : 0.62,
+            'relative_extra_boundary' => $pageWidth > 0 ? $extraBoundary / $pageWidth : 0.85,
         ];
     }
 
@@ -662,6 +736,7 @@ class OcrTableExtractionService
         int $pageWidth,
         int $pageHeight,
         ?array $layout = null,
+        ?array $extraField = null,
     ): array {
         $fullWords = $this->mergeTsvWordPasses($tsvs);
         if ($fullWords === []) {
@@ -670,52 +745,193 @@ class OcrTableExtractionService
 
         $layout ??= $this->detectTableLayout($fullWords, $pageWidth, $pageHeight);
 
+        $extraKey = $extraField !== null ? (string) ($extraField['key'] ?? '') : null;
+        if ($extraKey === '') {
+            $extraKey = null;
+        }
+
+        $boundaries = $this->computeColumnBoundaries($layout, $pageWidth, $extraKey);
+
+        $columnWords = $this->runColumnsOcr(
+            $boundaries['bounds'],
+            $imagePath,
+            $pageWidth,
+            $pageHeight,
+            $temporaryDirectory,
+        )['columns'];
+
+        return $this->reconstructRowsFromWords(
+            $tsvs,
+            $fullWords,
+            $columnWords['date'],
+            $columnWords['name'],
+            $columnWords['mobile'],
+            $columnWords['extra'] ?? [],
+            $dateKey,
+            $nameKey,
+            $mobileKey,
+            $extraKey,
+            $extraField,
+            $boundaries['date_boundary'],
+            $boundaries['mobile_boundary'],
+            $boundaries['extra_boundary'],
+            $pageHeight,
+        );
+    }
+
+    /**
+     * Runs a page's full-page OCR pass and its column OCR passes together
+     * in one process pool, instead of the separate sequential pool that
+     * rowsFromTsv() needs when the table layout isn't known yet. Only
+     * valid once layout has already been learned from an earlier page.
+     *
+     * @return array{text: string, rows: array<int, array<string, mixed>>}
+     */
+    private function rowsFromPageWithKnownLayout(
+        string $pagePath,
+        string $temporaryDirectory,
+        string $dateKey,
+        string $nameKey,
+        string $mobileKey,
+        int $pageWidth,
+        int $pageHeight,
+        array $layout,
+        ?array $extraField,
+    ): array {
+        $extraKey = $extraField !== null ? (string) ($extraField['key'] ?? '') : null;
+        if ($extraKey === '') {
+            $extraKey = null;
+        }
+
+        $boundaries = $this->computeColumnBoundaries($layout, $pageWidth, $extraKey);
+
+        $result = $this->runColumnsOcr(
+            $boundaries['bounds'],
+            $pagePath,
+            $pageWidth,
+            $pageHeight,
+            $temporaryDirectory,
+            $pagePath,
+        );
+
+        $columnWords = $result['columns'];
+        $fullPageTsvs = $result['full_page_tsvs'];
+        $fullWords = $this->mergeTsvWordPasses($fullPageTsvs);
+        $fullText = $fullPageTsvs !== [] ? $this->tsvToText($fullPageTsvs[0]) : '';
+
+        $rows = $this->reconstructRowsFromWords(
+            $fullPageTsvs,
+            $fullWords,
+            $columnWords['date'],
+            $columnWords['name'],
+            $columnWords['mobile'],
+            $columnWords['extra'] ?? [],
+            $dateKey,
+            $nameKey,
+            $mobileKey,
+            $extraKey,
+            $extraField,
+            $boundaries['date_boundary'],
+            $boundaries['mobile_boundary'],
+            $boundaries['extra_boundary'],
+            $pageHeight,
+        );
+
+        return ['text' => $fullText, 'rows' => $rows];
+    }
+
+    /**
+     * Column boundaries (in pixels) derived from a learned table layout.
+     * Shared between rowsFromTsv() (layout just learned, page 1) and
+     * rowsFromPageWithKnownLayout() (layout already known, page 2+) so
+     * both build identical column crops from the same layout.
+     *
+     * @return array{bounds: array<string, array{x1: int, x2: int}>, date_boundary: int, mobile_boundary: int, extra_boundary: ?int}
+     */
+    private function computeColumnBoundaries(array $layout, int $pageWidth, ?string $extraKey): array
+    {
         $dateBoundary = (int) round(
             $pageWidth * (float) ($layout['relative_date_name_boundary'] ?? 0.35)
         );
         $mobileBoundary = (int) round(
             $pageWidth * (float) ($layout['relative_mobile_boundary'] ?? 0.70)
         );
+        $extraBoundary = $extraKey !== null
+            ? (int) round($pageWidth * (float) ($layout['relative_extra_boundary'] ?? 0.85))
+            : null;
 
-        $dateWords = $this->runColumnOcr(
-            $imagePath,
-            0,
-            max(1, $dateBoundary),
-            $pageWidth,
-            $pageHeight,
-            $temporaryDirectory,
-            'date',
-        );
+        /*
+         * Every column used to be cropped and OCR'd (each already its own
+         * internal pool of PSM passes) one after another — date, then
+         * name, then mobile, then extra. Those columns are just as
+         * independent of each other as the passes within one column are,
+         * so batching every column's passes into a single process pool
+         * turns a page's column OCR into roughly one pass' worth of
+         * wall-clock time total instead of one pass' worth *per column*.
+         */
+        $bounds = [
+            'date' => [
+                'x1' => 0,
+                'x2' => max(1, $dateBoundary),
+            ],
+            'name' => [
+                'x1' => min($pageWidth - 1, max(0, (int) round($dateBoundary * 0.88))),
+                'x2' => min($pageWidth, max($dateBoundary + 1, $mobileBoundary)),
+            ],
+            'mobile' => [
+                'x1' => min($pageWidth - 1, $mobileBoundary),
+                'x2' => $extraBoundary !== null
+                    ? min($pageWidth, max($mobileBoundary + 1, $extraBoundary))
+                    : $pageWidth,
+            ],
+        ];
 
-        $nameWords = $this->runColumnOcr(
-            $imagePath,
-            min($pageWidth - 1, max(0, (int) round($dateBoundary * 0.88))),
-            min($pageWidth, max($dateBoundary + 1, $mobileBoundary)),
-            $pageWidth,
-            $pageHeight,
-            $temporaryDirectory,
-            'name',
-        );
+        if ($extraKey !== null) {
+            $bounds['extra'] = [
+                'x1' => min($pageWidth - 1, max(0, $extraBoundary - (int) round($pageWidth * 0.03))),
+                'x2' => $pageWidth,
+            ];
+        }
 
-        $mobileWords = $this->runColumnOcr(
-            $imagePath,
-            min($pageWidth - 1, $mobileBoundary),
-            $pageWidth,
-            $pageWidth,
-            $pageHeight,
-            $temporaryDirectory,
-            'mobile',
-        );
+        return [
+            'bounds' => $bounds,
+            'date_boundary' => $dateBoundary,
+            'mobile_boundary' => $mobileBoundary,
+            'extra_boundary' => $extraBoundary,
+        ];
+    }
 
+    /**
+     * Reconstructs table rows from already-fetched OCR words — shared by
+     * rowsFromTsv() and rowsFromPageWithKnownLayout(), which differ only
+     * in how (and how many process pools) they use to obtain those words.
+     */
+    private function reconstructRowsFromWords(
+        array $tsvs,
+        array $fullWords,
+        array $dateWords,
+        array $nameWords,
+        array $mobileWords,
+        array $extraWords,
+        string $dateKey,
+        string $nameKey,
+        string $mobileKey,
+        ?string $extraKey,
+        ?array $extraField,
+        int $dateBoundary,
+        int $mobileBoundary,
+        ?int $extraBoundary,
+        int $pageHeight,
+    ): array {
         $rowCenters = $this->detectPhysicalRowCenters(
-            array_merge($dateWords, $nameWords, $mobileWords),
+            array_merge($dateWords, $nameWords, $mobileWords, $extraWords),
             $pageHeight,
         );
 
         if (count($rowCenters) < 2) {
             // Last-resort fallback to the full-page OCR anchors.
             $rowCenters = $this->detectPhysicalRowCenters(
-                array_merge($dateWords, $nameWords, $mobileWords),
+                array_merge($dateWords, $nameWords, $mobileWords, $extraWords),
                 $pageHeight,
             );
 
@@ -746,6 +962,7 @@ class OcrTableExtractionService
             $dateRowWords = $this->wordsNearRow($dateWords, $rowCenter, $tolerance);
             $nameRowWords = $this->wordsNearRow($nameWords, $rowCenter, $tolerance);
             $mobileRowWords = $this->wordsNearRow($mobileWords, $rowCenter, $tolerance);
+            $extraRowWords = $extraKey !== null ? $this->wordsNearRow($extraWords, $rowCenter, $tolerance) : [];
 
             // Full-page OCR is useful as a fallback when a column crop misses
             // a word because of the scan noise.
@@ -754,6 +971,7 @@ class OcrTableExtractionService
             $dateText = $this->joinWords($dateRowWords);
             $nameText = $this->joinWords($nameRowWords);
             $mobileText = $this->joinWords($mobileRowWords);
+            $extraText = $extraKey !== null ? $this->joinWords($extraRowWords) : '';
 
             if ($dateText === '') {
                 $dateText = $this->joinWords(array_values(array_filter(
@@ -774,7 +992,16 @@ class OcrTableExtractionService
             if ($mobileText === '') {
                 $mobileText = $this->joinWords(array_values(array_filter(
                     $fullRowWords,
-                    fn(array $word): bool => $word['left'] >= $mobileBoundary
+                    fn(array $word): bool =>
+                    $word['left'] >= $mobileBoundary
+                        && ($extraBoundary === null || $word['left'] < $extraBoundary)
+                )));
+            }
+
+            if ($extraKey !== null && $extraText === '') {
+                $extraText = $this->joinWords(array_values(array_filter(
+                    $fullRowWords,
+                    fn(array $word): bool => $word['left'] >= $extraBoundary
                 )));
             }
 
@@ -799,16 +1026,30 @@ class OcrTableExtractionService
                 $name = $this->cleanCoordinateName($fallbackNameWords);
             }
 
-            // Ignore the header and completely empty/noise rows.
-            if ($this->looksLikeHeaderLine($dateText . ' ' . $nameText . ' ' . $mobileText, [
+            $extra = $extraKey !== null ? $this->cleanCoordinateText($extraText) : null;
+
+            $headerCheckDefinitions = [
                 ['key' => $dateKey, 'label' => 'Created On', 'type' => 'date'],
                 ['key' => $nameKey, 'label' => 'Full Name/Entity', 'type' => 'text'],
                 ['key' => $mobileKey, 'label' => 'Mobile Number', 'type' => 'mobile'],
-            ])) {
+            ];
+            $headerCheckText = $dateText . ' ' . $nameText . ' ' . $mobileText;
+
+            if ($extraKey !== null) {
+                $headerCheckDefinitions[] = [
+                    'key' => $extraKey,
+                    'label' => (string) ($extraField['label'] ?? 'Product Type'),
+                    'type' => 'text',
+                ];
+                $headerCheckText .= ' ' . $extraText;
+            }
+
+            // Ignore the header and completely empty/noise rows.
+            if ($this->looksLikeHeaderLine($headerCheckText, $headerCheckDefinitions)) {
                 continue;
             }
 
-            if ($date === null && $mobile === null && $name === null) {
+            if ($date === null && $mobile === null && $name === null && ($extraKey === null || $extra === null)) {
                 continue;
             }
 
@@ -818,6 +1059,12 @@ class OcrTableExtractionService
                 $mobileKey => $mobile,
             ];
 
+            if ($extraKey !== null) {
+                $data[$extraKey] = $extra;
+            }
+
+            $expectedFieldCount = $extraKey !== null ? 4 : 3;
+
             $present = count(array_filter(
                 $data,
                 fn($value) => $value !== null && trim((string) $value) !== ''
@@ -825,11 +1072,12 @@ class OcrTableExtractionService
 
             $rows[] = [
                 'data' => $data,
-                'confidence' => round($present / 3, 4),
+                'confidence' => round($present / $expectedFieldCount, 4),
                 'source_row' => trim(implode(' | ', array_filter([
                     $dateText,
                     $nameText,
                     $mobileText,
+                    $extraKey !== null ? $extraText : null,
                 ]))),
                 '_top' => (int) round($rowCenter),
             ];
@@ -861,7 +1109,7 @@ class OcrTableExtractionService
         return $deduplicated;
     }
 
-    private function runColumnOcr(
+    private function cropColumnImage(
         string $imagePath,
         int $x1,
         int $x2,
@@ -869,7 +1117,7 @@ class OcrTableExtractionService
         int $pageHeight,
         string $temporaryDirectory,
         string $column,
-    ): array {
+    ): ?array {
         $x1 = max(0, min($pageWidth - 1, $x1));
         $x2 = max($x1 + 1, min($pageWidth, $x2));
         $cropWidth = $x2 - $x1;
@@ -895,41 +1143,268 @@ class OcrTableExtractionService
             ]);
 
             if ($process->failed()) {
-                return [];
+                return null;
             }
         }
 
-        $passes = [];
+        return ['path' => $cropPath, 'x1' => $x1];
+    }
 
-        foreach ([4, 6, 11] as $psm) {
-            $process = Process::timeout(120)->run([
-                'tesseract',
-                $cropPath,
-                'stdout',
-                '--psm',
-                (string) $psm,
-                '-l',
-                'eng',
-                'tsv',
-            ]);
+    /**
+     * Runs OCR for every table column of a page in a single process pool,
+     * rather than fully cropping and OCR'ing one column before starting
+     * the next. Columns are exactly as independent of each other as the
+     * PSM passes within one column are (each just reads its own crop and
+     * is only combined afterwards), so batching every column's passes
+     * into one pool turns a page's column OCR into roughly one pass'
+     * worth of wall-clock time total, not one pass' worth *per column*.
+     *
+     * $fullPagePath optionally folds the page's own full-page OCR passes
+     * (normally run separately beforehand, via runTesseractTsv) into this
+     * SAME pool. That's only safe once the table layout is already known:
+     * the very first page still needs its full-page words *first* to
+     * derive the column boundaries below, but every page after that
+     * reuses page 1's layout, so its full-page pass and its column passes
+     * don't depend on each other's output at all and can run together —
+     * removing a full sequential pool round-trip from every page after
+     * the first, which is nearly the entire page count on a large scan.
+     *
+     * @param array<string, array{x1: int, x2: int}> $columns
+     * @return array{columns: array<string, array<int, array<string, mixed>>>, full_page_tsvs: array<int, string>}
+     */
+    private function runColumnsOcr(
+        array $columns,
+        string $imagePath,
+        int $pageWidth,
+        int $pageHeight,
+        string $temporaryDirectory,
+        ?string $fullPagePath = null,
+    ): array {
+        $crops = [];
 
-            if (! $process->failed()) {
-                $passes[] = $process->output();
+        foreach ($columns as $column => $bounds) {
+            $crop = $this->cropColumnImage(
+                $imagePath,
+                $bounds['x1'],
+                $bounds['x2'],
+                $pageWidth,
+                $pageHeight,
+                $temporaryDirectory,
+                $column,
+            );
+
+            if ($crop !== null) {
+                $crops[$column] = $crop;
             }
         }
 
-        @unlink($cropPath);
+        $wordsByColumn = array_fill_keys(array_keys($columns), []);
 
-        $words = [];
-        foreach ($passes as $tsv) {
-            foreach ($this->parseTsvWords($tsv, 0) as $word) {
-                $word['left'] += $x1;
-                $word['right'] += $x1;
-                $words[] = $word;
+        if ($crops === [] && $fullPagePath === null) {
+            return ['columns' => $wordsByColumn, 'full_page_tsvs' => []];
+        }
+
+        $generalPsms = [4, 6, 11];
+        $digitPsms = [6, 4];
+        $fullPagePsms = [6, 11];
+
+        $results = Process::pool(function (Pool $pool) use ($crops, $generalPsms, $digitPsms, $fullPagePath, $fullPagePsms) {
+            foreach ($crops as $column => $crop) {
+                foreach ($generalPsms as $psm) {
+                    $pool->as($column . '::general-' . $psm)->timeout(120)->command([
+                        'tesseract',
+                        $crop['path'],
+                        'stdout',
+                        '--psm',
+                        (string) $psm,
+                        '-l',
+                        'eng',
+                        'tsv',
+                    ]);
+                }
+
+                /*
+                 * Mobile numbers are pure digits, but the general "eng"
+                 * pass reads the crop against a full alphanumeric
+                 * alphabet and occasionally drifts onto a visually similar
+                 * letter/digit (e.g. 8 -> 0, 3 -> 9). A digit-whitelisted
+                 * pass removes that ambiguity.
+                 */
+                if ($column === 'mobile') {
+                    foreach ($digitPsms as $psm) {
+                        $pool->as($column . '::digit-' . $psm)->timeout(120)->command([
+                            'tesseract',
+                            $crop['path'],
+                            'stdout',
+                            '--psm',
+                            (string) $psm,
+                            '-l',
+                            'eng',
+                            '-c',
+                            'tessedit_char_whitelist=0123456789',
+                            'tsv',
+                        ]);
+                    }
+                }
+            }
+
+            if ($fullPagePath !== null) {
+                foreach ($fullPagePsms as $psm) {
+                    $pool->as('__fullpage__::' . $psm)->timeout(180)->command([
+                        'tesseract',
+                        $fullPagePath,
+                        'stdout',
+                        '--psm',
+                        (string) $psm,
+                        '-l',
+                        'eng',
+                        'tsv',
+                    ]);
+                }
+            }
+        })->run();
+
+        foreach ($crops as $column => $crop) {
+            $x1 = $crop['x1'];
+            $words = [];
+
+            foreach ($generalPsms as $psm) {
+                $result = $results[$column . '::general-' . $psm];
+
+                if ($result->failed()) {
+                    continue;
+                }
+
+                foreach ($this->parseTsvWords($result->output(), 0) as $word) {
+                    $word['left'] += $x1;
+                    $word['right'] += $x1;
+                    $words[] = $word;
+                }
+            }
+
+            /*
+             * The digit-only readings rarely text-match the general
+             * pass's readings at the same spot, so they must be merged by
+             * position (not by equal text) before the normal
+             * text-equality dedupe runs.
+             */
+            if ($column === 'mobile') {
+                $digitWords = [];
+
+                foreach ($digitPsms as $psm) {
+                    $result = $results[$column . '::digit-' . $psm];
+
+                    if ($result->failed()) {
+                        continue;
+                    }
+
+                    foreach ($this->parseTsvWords($result->output(), 0) as $word) {
+                        $word['left'] += $x1;
+                        $word['right'] += $x1;
+                        $digitWords[] = $word;
+                    }
+                }
+
+                $words = $this->preferDigitOnlyReadings($words, $digitWords);
+            }
+
+            @unlink($crop['path']);
+
+            $wordsByColumn[$column] = $this->dedupeCoordinateWords($words);
+        }
+
+        $fullPageTsvs = [];
+
+        if ($fullPagePath !== null) {
+            foreach ($fullPagePsms as $psm) {
+                $result = $results['__fullpage__::' . $psm];
+
+                if (! $result->failed()) {
+                    $fullPageTsvs[] = $result->output();
+                }
             }
         }
 
-        return $this->dedupeCoordinateWords($words);
+        return ['columns' => $wordsByColumn, 'full_page_tsvs' => $fullPageTsvs];
+    }
+
+    /**
+     * Overrides a general-pass word's text with the digit-only pass's
+     * reading, but only when that is safe:
+     *   - the general-pass word had no usable digits at all (fills a gap), or
+     *   - both readings are essentially "the same number" (small edit
+     *     distance), i.e. a genuine digit-level correction.
+     * The digit-only pass segments the crop independently, so its bounding
+     * boxes do not always align to the same physical word as the general
+     * pass; blindly trusting position proximity can attach a completely
+     * different row's number to this word. Requiring agreement (or an
+     * empty original) avoids that cross-row corruption while still fixing
+     * single-digit misreads (e.g. 8 <-> 0, 3 <-> 9) and filling values the
+     * general pass missed entirely.
+     */
+    private function preferDigitOnlyReadings(array $words, array $digitWords): array
+    {
+        if ($digitWords === []) {
+            return $words;
+        }
+
+        $consumed = array_fill(0, count($digitWords), false);
+
+        $resolved = array_map(function (array $word) use ($digitWords, &$consumed): array {
+            $originalDigits = preg_replace('/\D+/', '', (string) $word['text']);
+
+            $bestIndex = null;
+            $bestDistance = PHP_INT_MAX;
+
+            foreach ($digitWords as $index => $digitWord) {
+                $positionDistance = abs($word['left'] - $digitWord['left'])
+                    + abs($word['center_y'] - $digitWord['center_y']);
+
+                if (
+                    $positionDistance > 35
+                    || abs($word['left'] - $digitWord['left']) > 45
+                    || abs($word['center_y'] - $digitWord['center_y']) > 22
+                ) {
+                    continue;
+                }
+
+                $candidateDigits = preg_replace('/\D+/', '', (string) $digitWord['text']);
+                if ($candidateDigits === '') {
+                    continue;
+                }
+
+                $agrees = $originalDigits === ''
+                    || (
+                        abs(strlen($candidateDigits) - strlen($originalDigits)) <= 1
+                        && levenshtein($originalDigits, $candidateDigits) <= 2
+                    );
+
+                if (! $agrees) {
+                    continue;
+                }
+
+                if ($positionDistance < $bestDistance) {
+                    $bestIndex = $index;
+                    $bestDistance = $positionDistance;
+                }
+            }
+
+            if ($bestIndex !== null) {
+                $consumed[$bestIndex] = true;
+                $word['text'] = $digitWords[$bestIndex]['text'];
+                $word['confidence'] = max($word['confidence'], $digitWords[$bestIndex]['confidence']);
+            }
+
+            return $word;
+        }, $words);
+
+        foreach ($digitWords as $index => $digitWord) {
+            if (! $consumed[$index]) {
+                $resolved[] = $digitWord;
+            }
+        }
+
+        return $resolved;
     }
 
     private function dedupeCoordinateWords(array $words): array
@@ -977,7 +1452,15 @@ class OcrTableExtractionService
             $text = trim((string) ($word['text'] ?? ''));
             $y = (float) ($word['center_y'] ?? 0);
 
-            if ($text === '' || $y < ($pageHeight * 0.08) || $y > ($pageHeight * 0.94)) {
+            /*
+             * A full page's last table row can sit right at the bottom
+             * margin. The previous 0.94 cutoff was clipping genuine last
+             * rows (dropping real customers), not just footer noise —
+             * this function already only keeps positions that look like a
+             * date/mobile/name, so widening the margin does not let raw
+             * footer text back in.
+             */
+            if ($text === '' || $y < ($pageHeight * 0.08) || $y > ($pageHeight * 0.975)) {
                 continue;
             }
 
@@ -1065,6 +1548,49 @@ class OcrTableExtractionService
         }
 
         return $gaps !== [] ? $this->median($gaps) : 85.0;
+    }
+
+    /**
+     * Last-resort row anchors, used only when the column-crop based row
+     * detection (detectPhysicalRowCenters on the date/name/mobile/extra
+     * crops) finds fewer than two rows — for example a scan where the
+     * column crops themselves failed to OCR anything usable. Falls back to
+     * full-page word coordinates and anchors a row wherever a date or
+     * mobile value is recognised, since those are the most reliably-read
+     * tokens on a noisy scan.
+     */
+    private function buildRowAnchors(
+        array $tsvs,
+        array $fullWords,
+        int $dateBoundary,
+        int $mobileBoundary,
+        int $pageHeight,
+    ): array {
+        $anchors = [];
+
+        foreach ($fullWords as $word) {
+            $text = trim((string) ($word['text'] ?? ''));
+            if ($text === '') {
+                continue;
+            }
+
+            $y = (float) ($word['center_y'] ?? 0);
+            if ($y < ($pageHeight * 0.08) || $y > ($pageHeight * 0.975)) {
+                continue;
+            }
+
+            $left = (int) ($word['left'] ?? 0);
+            $isDateAnchor = $left < $dateBoundary && $this->containsDatePattern($text);
+            $isMobileAnchor = $left >= $mobileBoundary && $this->extractMobileValue($text) !== null;
+
+            if ($isDateAnchor || $isMobileAnchor) {
+                $anchors[] = ['top' => $y];
+            }
+        }
+
+        usort($anchors, fn(array $a, array $b) => $a['top'] <=> $b['top']);
+
+        return $anchors;
     }
 
     private function wordsNearRow(array $words, float $rowCenter, float $tolerance): array
@@ -1176,6 +1702,37 @@ class OcrTableExtractionService
         }
 
         return $name;
+    }
+
+    /**
+     * Lightweight cleanup for a trailing free-text coordinate column (e.g.
+     * Product Type). Unlike cleanCoordinateName this does not restrict
+     * itself to uppercase name-shaped tokens — values like "Personal Loan"
+     * are normal here — but it still strips stray date/time fragments that
+     * bled in from the neighbouring mobile-number crop on a noisy scan.
+     */
+    private function cleanCoordinateText(string $text): ?string
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return null;
+        }
+
+        $text = preg_replace(
+            '/\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}(?:\s+\d{1,2}[:.]\d{2}\s*(?:AM|PM)?)?/i',
+            ' ',
+            $text
+        );
+        $text = preg_replace('/\b\d{1,2}[:.]\d{2}\s*(?:AM|PM)\b/i', ' ', (string) $text);
+        $text = preg_replace('/[|=:;>]+/', ' ', (string) $text);
+        $text = preg_replace('/\s+/', ' ', (string) $text);
+        $text = trim((string) $text, " \t\n\r\0\x0B-");
+
+        if ($text === '' || strlen(preg_replace('/[^A-Za-z0-9]/', '', $text)) < 2) {
+            return null;
+        }
+
+        return $text;
     }
 
     private function isLikelyHeaderOrGarbageName(string $name): bool

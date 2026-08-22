@@ -58,8 +58,16 @@ class OcrDocumentProcessor
                 ? $metadata['pages']
                 : [];
 
+            /*
+             * This general pass is fast, but it is not the real work for a
+             * schema-driven document — the (much slower) table extraction
+             * and customer-record mapping below still has to run. Do NOT
+             * mark the document 'completed' or stamp 'processed_at' here,
+             * or status/timestamp will lie about being done while the
+             * multi-page table OCR is still running in the background,
+             * which is especially misleading on large, many-page files.
+             */
             $document->update([
-                'status' => 'completed',
                 'ocr_text' => $text,
                 'extracted_data' => [
                     'mode' => $document->schema_id
@@ -73,7 +81,6 @@ class OcrDocumentProcessor
                 'page_count' => is_numeric($pageCount)
                     ? (int) $pageCount
                     : null,
-                'processed_at' => now(),
                 'error_message' => null,
             ]);
 
@@ -133,6 +140,11 @@ class OcrDocumentProcessor
                         : null,
                 );
             }
+
+            $document->update([
+                'status' => 'completed',
+                'processed_at' => now(),
+            ]);
         } catch (\Throwable $e) {
 
             Log::error(

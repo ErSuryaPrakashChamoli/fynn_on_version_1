@@ -108,5 +108,19 @@ class AdminPanelProvider extends PanelProvider
                 '<meta name="csrf-token" content="{{ csrf_token() }}">'
             ),
         );
+
+        FilamentView::registerRenderHook(
+            PanelsRenderHook::PAGE_HEADER_ACTIONS_BEFORE,
+            fn(): string => Blade::render(<<<'BLADE'
+                <x-filament::button
+                    icon="heroicon-o-arrow-left"
+                    color="gray"
+                    outlined
+                    x-on:click="window.history.back()"
+                >
+                    Back
+                </x-filament::button>
+            BLADE),
+        );
     }
 }

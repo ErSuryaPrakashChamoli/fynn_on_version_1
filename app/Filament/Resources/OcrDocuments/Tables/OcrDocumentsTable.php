@@ -74,7 +74,7 @@ class OcrDocumentsTable
                     ->requiresConfirmation()
                     ->action(function (OcrDocument $record): void {
                         $record->update(['status' => 'pending', 'error_message' => null]);
-                        ProcessOcrDocument::dispatch($record->id);
+                        ProcessOcrDocument::dispatchFor($record);
                         Notification::make()->title('OCR processing queued')->success()->send();
                     }),
             ])

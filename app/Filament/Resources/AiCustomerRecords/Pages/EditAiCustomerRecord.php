@@ -163,8 +163,13 @@ class EditAiCustomerRecord extends EditRecord
     {
         $this->record = $this->resolveRecord($record);
 
+        /*
+         * Form fields are defined as "data.$key" (see AiCustomerRecordForm),
+         * so the fill state must nest the JSON column's values under a
+         * "data" key, not spread them onto the top level.
+         */
         $this->form->fill([
-            ...($this->record->data ?? []),
+            'data' => $this->record->data ?? [],
         ]);
     }
 }

@@ -13,15 +13,23 @@ class AiCustomerRecordForm
 {
     public static function configure(Schema $schema): Schema
     {
-        $record = request()->route('record');
+        /*
+         * Filament rebuilds this schema on every Livewire round-trip, not
+         * just the initial page load — including the AJAX "save" request,
+         * which is POSTed to Livewire's own generic update endpoint rather
+         * than this resource's /{record}/edit URL. request()->route('record')
+         * only resolves on the original page request, so reading the record
+         * from the request's route silently produced zero form fields (and
+         * therefore nothing to save) on every actual save. The owning
+         * Livewire page component's own record — restored from Livewire's
+         * snapshot on every request, independent of the current URL — is
+         * the reliable source here.
+         */
+        $livewire = $schema->getLivewire();
+        $record = method_exists($livewire, 'getRecord') ? $livewire->getRecord() : null;
 
-        if ($record instanceof AiCustomerRecord) {
-            $model = $record;
-        } elseif (is_numeric($record)) {
-            $model = AiCustomerRecord::with('schema')->find($record);
-        } else {
-            $model = null;
-        }
+        $model = $record instanceof AiCustomerRecord ? $record : null;
+        $model?->loadMissing('schema');
 
         $components = [];
         foreach ($model?->schema?->getFieldDefinitions() ?? [] as $field) {
@@ -123,9 +131,21 @@ class AiCustomerRecordForm
                 default => TextInput::make("data.$key"),
             };
 
+            /*
+             * This form is a correction/review step for OCR-extracted data,
+             * not the final record — a row can legitimately have a blank
+             * required field (e.g. OCR never found a mobile number) that
+             * the reviewer is still in the process of fixing one field at
+             * a time. Hard-enforcing required() here blocks saving ANY
+             * field whenever another required field is still blank, which
+             * silently prevents edits from persisting. Actual
+             * required-field completeness is already enforced separately
+             * before a record can be approved (see the "approve" header
+             * action), so here we only show the asterisk, not a hard rule.
+             */
             $component
                 ->label($label)
-                ->required((bool) ($field['required'] ?? false));
+                ->markAsRequired((bool) ($field['required'] ?? false));
 
             $components[] = $component;
         }
