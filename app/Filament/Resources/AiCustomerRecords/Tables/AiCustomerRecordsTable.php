@@ -13,6 +13,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Throwable;
 
+use App\Filament\Actions\AssignCustomersToUserBulkAction;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -157,6 +158,11 @@ class AiCustomerRecordsTable
                         ->deselectRecordsAfterCompletion(),
 
                     DeleteBulkAction::make(),
+
+                    AssignCustomersToUserBulkAction::make(
+                        fn (AiCustomerRecord $record) => $record->id,
+                        'ai_customer_record',
+                    ),
                 ]),
             ]);
     }

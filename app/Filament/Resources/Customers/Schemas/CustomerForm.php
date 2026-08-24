@@ -209,6 +209,8 @@ class CustomerForm
                                 CustomerPanRequest::create([
                                     // 'customer_id' => $get('existing_customer_id'),
                                     'customer_id' => $customer->id,
+                                    'ai_customer_record_id' => $livewire->aiCustomerRecordId ?? null,
+                                    'lead_id' => $livewire->leadId ?? null,
                                     'pan_number' => $customer->pan_number,
 
                                     'requested_by' => $employee->id,

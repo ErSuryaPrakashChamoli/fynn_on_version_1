@@ -9,9 +9,8 @@ use Filament\Tables\Table;
 use App\Models\Lead;
 use Filament\Tables\Columns\TextColumn;
 
-use App\Models\Customer;
-use Illuminate\Support\Str;
 use Filament\Actions\Action;
+use App\Filament\Resources\Customers\CustomerResource;
 
 use App\Filament\Imports\LeadImporter;
 use Filament\Actions\ImportAction;
@@ -75,10 +74,10 @@ class LeadsTable
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
                     // Show button only when lead status is marked 'Interested'
-                    ->visible(fn(Lead $record) => $record->status === 'Interested')
+                    ->visible(fn(Lead $record) => $record->status === 'Interested' && ! $record->is_converted)
                     ->requiresConfirmation()
                     ->modalHeading('Convert Lead to Customer Profile?')
-                    ->modalDescription('This will create a unique Customer profile record and initialize their active financial journey.')
+                    ->modalDescription('This will check the PAN number for duplicates and take you to the Customer creation form. If the PAN already belongs to an existing customer, you will need to request admin approval before proceeding.')
                     ->action(function (Lead $record) {
 
                         $missingFields = [];
@@ -118,36 +117,12 @@ class LeadsTable
                             return;
                         }
 
-                        // 1. Generate unique internal running application parameter
-                        $generatedApplicationNo = 'APP-' . strtoupper(Str::random(8));
-
-                        // 2. Create entry inside customers table matching your CustomerForm schema parameters
-                        $customer = Customer::create([
-                            'application_no' => $generatedApplicationNo,
-                            'customer_name' => Str::title($record->customer_name),
-                            'mobile_no' => $record->mobile_no,
-                            'pan_number' => $record->pan_number,
-                            'current_location' => $record->current_location,
-                            'job_location' => $record->job_location,
-                            'salary' => $record->salary,
-                            'eligibility_status' => 'eligible', // Initial baseline default step
-                            'journey_status' => 'sfl',          // Initial phase journey status step
-                            'assign_to' => $record->employee_id,
-                            'employee_id' => $record->employee_id,
-                            'email' => $record->email,
-                            'residence_location' => $record->residence_location,
-                        ]);
-
-                        // 3. Mark the lead as converted so it pulls out of this pending table layout automatically
-                        $record->update([
-                            'is_converted' => true,
-                            'converted_customer_id' => $customer->id
-                        ]);
-
-                        Notification::make()
-                            ->title('Lead converted successfully')
-                            ->success()
-                            ->send();
+                        // Hand off to the standard Customer creation form, which
+                        // runs the same PAN duplicate check and admin approval
+                        // flow used everywhere else customers are created.
+                        return redirect(CustomerResource::getUrl('create', [
+                            'lead' => $record->id,
+                        ]));
                     }),
 
                 ViewAction::make(),

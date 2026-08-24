@@ -55,6 +55,16 @@ class AiCustomerRecord extends Model
         return $this->belongsTo(User::class, 'reviewed_by');
     }
 
+    public function assignments()
+    {
+        return $this->hasMany(CustomerAssignment::class);
+    }
+
+    public function followUps()
+    {
+        return $this->hasMany(FollowUp::class);
+    }
+
     public function value(string $key, mixed $default = null): mixed
     {
         return data_get($this->data, $key, $default);

@@ -330,4 +330,9 @@ class Customer extends Model
         return $this->hasOne(CustomerSettlement::class)
             ->latestOfMany('version');
     }
+
+    public function assignments()
+    {
+        return $this->hasMany(CustomerAssignment::class);
+    }
 }

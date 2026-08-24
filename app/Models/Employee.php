@@ -200,6 +200,17 @@ class Employee extends Model
         return $this->hasMany(FollowUp::class);
     }
 
+    public function getInitialsAttribute(): string
+    {
+        $initials = collect(preg_split('/\s+/', trim((string) $this->emp_name)))
+            ->filter()
+            ->map(fn (string $part) => mb_substr($part, 0, 1))
+            ->take(2)
+            ->implode('');
+
+        return $initials !== '' ? mb_strtoupper($initials) : '?';
+    }
+
     public function getTargetAmountAttribute(): int
     {
         $categoryTargets = [
@@ -241,8 +252,29 @@ class Employee extends Model
         ];
     }
 
+    public static function designationColorClass(?int $designation): string
+    {
+        return match ($designation) {
+            self::DESIGNATION_CLUSTER => 'text-violet-600 dark:text-violet-400',
+            self::DESIGNATION_MANAGER => 'text-blue-600 dark:text-blue-400',
+            self::DESIGNATION_TEAM_LEADER => 'text-teal-600 dark:text-teal-400',
+            self::DESIGNATION_CALLER => 'text-slate-500 dark:text-slate-400',
+            default => 'text-gray-500 dark:text-gray-400',
+        };
+    }
+
     public function loginSessions()
     {
         return $this->hasMany(UserLoginSession::class);
+    }
+
+    public function assignmentBatchesCreated()
+    {
+        return $this->hasMany(CustomerAssignmentBatch::class, 'assigned_by');
+    }
+
+    public function assignmentsReceived()
+    {
+        return $this->hasMany(CustomerAssignment::class, 'employee_id');
     }
 }

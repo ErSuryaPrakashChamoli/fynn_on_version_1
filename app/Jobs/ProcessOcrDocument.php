@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\OcrDocument;
 use App\Services\Ocr\OcrDocumentProcessor;
+use Filament\Notifications\Notification;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -79,9 +80,29 @@ class ProcessOcrDocument implements ShouldQueue
 
     public function failed(Throwable $exception): void
     {
-        OcrDocument::whereKey($this->ocrDocumentId)->update([
+        $document = OcrDocument::with('uploader')->find($this->ocrDocumentId);
+
+        $document?->update([
             'status' => 'failed',
             'error_message' => $exception->getMessage(),
         ]);
+
+        /*
+         * This is the one place Laravel calls when a job has definitively
+         * failed for good (retries exhausted) — OcrDocumentProcessor's own
+         * catch block also sets status=failed, but that can still be
+         * retried afterwards, so notifying there would fire on attempts
+         * that go on to succeed or get retried again. Mirrors the
+         * completion notification in OcrDocumentProcessor::process() so
+         * the uploader hears about a large scan finishing either way
+         * without having to keep the tab open.
+         */
+        if ($document?->uploader) {
+            Notification::make()
+                ->title('OCR processing failed')
+                ->body($document->original_name . ': ' . $exception->getMessage())
+                ->danger()
+                ->sendToDatabase($document->uploader);
+        }
     }
 }

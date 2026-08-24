@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\FollowUps\Schemas;
 
+use App\Models\AiCustomerRecord;
 use App\Models\Bank;
 use App\Models\Customer;
 use Filament\Forms\Components\DatePicker;
@@ -19,22 +20,28 @@ class FollowUpForm
     public static function configure(Schema $schema): Schema
     {
         $customer = Customer::find(request('customer'));
+        $aiRecord = $customer ? null : AiCustomerRecord::find(request('ai_customer_record'));
 
         return $schema
             ->schema([
 
                 Section::make('Customer Details')
+                    ->description(
+                        $aiRecord
+                            ? 'This lead has not been converted into a customer profile yet — details below come from the AI-extracted document.'
+                            : null
+                    )
                     ->schema([
 
                         TextInput::make('customer_name')
                             ->label('Customer Name')
-                            ->default($customer?->customer_name)
+                            ->default($customer?->customer_name ?? $aiRecord?->value('customer_name'))
                             ->disabled()
                             ->dehydrated(false),
 
                         TextInput::make('mobile_no')
                             ->label('Phone')
-                            ->default($customer?->mobile_no)
+                            ->default($customer?->mobile_no ?? $aiRecord?->value('mobile_number'))
                             ->disabled()
                             ->dehydrated(false),
 
@@ -213,12 +220,16 @@ class FollowUpForm
                         Hidden::make('customer_id')
                             ->default(fn() => request()->query('customer'))
                             ->dehydrated(true)
-                            ->required(),
+                            ->required(fn() => blank(request()->query('ai_customer_record'))),
+
+                        Hidden::make('ai_customer_record_id')
+                            ->default(fn() => request()->query('ai_customer_record'))
+                            ->dehydrated(true)
+                            ->required(fn() => blank(request()->query('customer'))),
 
                         Hidden::make('employee_id')
                             ->default(fn() => auth()->user()?->employee?->id)
-                            ->dehydrated(true)
-                            ->required(),
+                            ->dehydrated(true),
 
                     ])
                     ->columns(2),

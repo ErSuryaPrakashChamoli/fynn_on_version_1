@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Auth;
 use App\Filament\Imports\LeadImporter;
 use Filament\Actions\ImportAction;
 use App\Filament\Resources\Leads\Schemas\LeadInfolist;
+use UnitEnum;
 
 class LeadResource extends Resource
 {
@@ -32,7 +33,11 @@ class LeadResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'customer_name';
 
+    protected static string|UnitEnum|null $navigationGroup = 'Leads';
+
     protected static ?int $navigationSort = 1;
+
+    protected static ?string $navigationLabel = 'My Leads';
 
 
 

@@ -4,6 +4,7 @@ namespace App\Services\Ocr;
 
 use App\Models\AiDocumentSchema;
 use Illuminate\Process\Pool;
+use Illuminate\Process\ProcessPoolResults;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Process;
 
@@ -264,41 +265,18 @@ class OcrTableExtractionService
                     continue;
                 }
 
-                if ($layout === null) {
-                    /*
-                     * The very first usable page must run its full-page
-                     * OCR pass on its own and wait for it — the column
-                     * boundaries below cannot be computed until the table
-                     * layout is learned from that page's words.
-                     */
-                    $ocr = $this->runTesseractTsv($pagePath);
-
-                    logger()->info('OCR page result', [
-                        'page' => $pageIndex + 1,
-                        'full_text_length' => strlen($ocr['text'] ?? ''),
-                        'tsv_passes' => count($ocr['tsvs'] ?? []),
-                    ]);
-
-                    if ($ocr['text'] !== '') {
-                        $allRawText[] = $ocr['text'];
-                    }
-
-                    $words = $this->mergeTsvWordPasses($ocr['tsvs'] ?? [$ocr['tsv']]);
-
-                    logger()->info('OCR page words', [
-                        'page' => $pageIndex + 1,
-                        'words' => count($words),
-                    ]);
-
-                    if ($words === []) {
-                        continue;
-                    }
-
-                    $layout = $this->detectTableLayout($words, $width, $height);
-
-                    $pageRows = $this->rowsFromTsv(
-                        $ocr['tsvs'] ?? [$ocr['tsv']],
+                /*
+                 * runTesseractTsv()/runColumnsOcr() already tolerate a
+                 * single pooled process failing, but this is a second,
+                 * cheap safety net: on a many-page document, one page
+                 * hitting an unexpected error (out of memory, a corrupt
+                 * render, anything) must not throw away every other page
+                 * already successfully collected in $allRows.
+                 */
+                try {
+                    $pageRows = $this->processOnePage(
                         $pagePath,
+                        $pageIndex,
                         $temporaryDirectory,
                         $dateKey,
                         $nameKey,
@@ -307,30 +285,12 @@ class OcrTableExtractionService
                         $height,
                         $layout,
                         $extraField,
+                        $allRawText,
                     );
-                } else {
-                    /*
-                     * Layout is already known, so this page's full-page
-                     * pass no longer needs to happen before its column
-                     * passes — both run in one combined pool.
-                     */
-                    $page = $this->rowsFromPageWithKnownLayout(
-                        $pagePath,
-                        $temporaryDirectory,
-                        $dateKey,
-                        $nameKey,
-                        $mobileKey,
-                        $width,
-                        $height,
-                        $layout,
-                        $extraField,
-                    );
+                } catch (\Throwable $e) {
+                    report($e);
 
-                    if ($page['text'] !== '') {
-                        $allRawText[] = $page['text'];
-                    }
-
-                    $pageRows = $page['rows'];
+                    continue;
                 }
 
                 logger()->info('OCR page rows', [
@@ -397,6 +357,97 @@ class OcrTableExtractionService
                 @rmdir($temporaryDirectory);
             }
         }
+    }
+
+    /**
+     * Runs OCR for a single rendered page and returns its rows. $layout
+     * and $allRawText are mutated by reference: the first usable page
+     * learns $layout (sequentially — see rowsFromTsv) so every later page
+     * can reuse it via the pipelined rowsFromPageWithKnownLayout() path,
+     * and each page's raw text is appended for the document's raw_text
+     * output.
+     */
+    private function processOnePage(
+        string $pagePath,
+        int $pageIndex,
+        string $temporaryDirectory,
+        string $dateKey,
+        string $nameKey,
+        string $mobileKey,
+        int $width,
+        int $height,
+        ?array &$layout,
+        ?array $extraField,
+        array &$allRawText,
+    ): array {
+        if ($layout === null) {
+            /*
+             * The very first usable page must run its full-page OCR pass
+             * on its own and wait for it — the column boundaries below
+             * cannot be computed until the table layout is learned from
+             * that page's words.
+             */
+            $ocr = $this->runTesseractTsv($pagePath);
+
+            logger()->info('OCR page result', [
+                'page' => $pageIndex + 1,
+                'full_text_length' => strlen($ocr['text'] ?? ''),
+                'tsv_passes' => count($ocr['tsvs'] ?? []),
+            ]);
+
+            if ($ocr['text'] !== '') {
+                $allRawText[] = $ocr['text'];
+            }
+
+            $words = $this->mergeTsvWordPasses($ocr['tsvs'] ?? [$ocr['tsv']]);
+
+            logger()->info('OCR page words', [
+                'page' => $pageIndex + 1,
+                'words' => count($words),
+            ]);
+
+            if ($words === []) {
+                return [];
+            }
+
+            $layout = $this->detectTableLayout($words, $width, $height);
+
+            return $this->rowsFromTsv(
+                $ocr['tsvs'] ?? [$ocr['tsv']],
+                $pagePath,
+                $temporaryDirectory,
+                $dateKey,
+                $nameKey,
+                $mobileKey,
+                $width,
+                $height,
+                $layout,
+                $extraField,
+            );
+        }
+
+        /*
+         * Layout is already known, so this page's full-page pass no
+         * longer needs to happen before its column passes — both run in
+         * one combined pool.
+         */
+        $page = $this->rowsFromPageWithKnownLayout(
+            $pagePath,
+            $temporaryDirectory,
+            $dateKey,
+            $nameKey,
+            $mobileKey,
+            $width,
+            $height,
+            $layout,
+            $extraField,
+        );
+
+        if ($page['text'] !== '') {
+            $allRawText[] = $page['text'];
+        }
+
+        return $page['rows'];
     }
 
     /**
@@ -478,8 +529,7 @@ class OcrTableExtractionService
     private function runTesseractTsv(string $imagePath): array
     {
         $psms = [6, 11];
-
-        $results = Process::pool(function (Pool $pool) use ($imagePath, $psms) {
+        $results = $this->runPoolTolerantly(function (Pool $pool) use ($imagePath, $psms) {
             foreach ($psms as $psm) {
                 $pool->as((string) $psm)->timeout(180)->command([
                     'tesseract',
@@ -492,28 +542,50 @@ class OcrTableExtractionService
                     'tsv',
                 ]);
             }
-        })->run();
+        });
 
         $passes = [];
 
-        foreach ($psms as $psm) {
-            $result = $results[(string) $psm];
+        if ($results !== null) {
+            foreach ($psms as $psm) {
+                $result = $results[(string) $psm];
 
-            if ($result->failed()) {
-                throw new \RuntimeException(
-                    'Tesseract failed for OCR page (PSM ' . $psm . '): ' .
-                        trim($result->errorOutput())
-                );
+                if (! $result->failed()) {
+                    $passes[] = $result->output();
+                }
             }
-
-            $passes[] = $result->output();
         }
 
         return [
-            'tsv' => $passes[0],
+            'tsv' => $passes[0] ?? '',
             'tsvs' => $passes,
-            'text' => $this->tsvToText($passes[0]),
+            'text' => $passes !== [] ? $this->tsvToText($passes[0]) : '',
         ];
+    }
+
+    /**
+     * Runs a process pool but never lets it take down the caller. Under
+     * heavy machine load (many pooled tesseract processes competing for
+     * few CPU cores — expected on a large scan) a single pooled process
+     * can exceed its own ->timeout() even while the rest of the pool is
+     * still healthy. Laravel's Process::pool()->run() does not turn that
+     * into a normal "failed" result for just that one process — it
+     * throws, which aborts the ENTIRE pool call and, left uncaught,
+     * bubbles all the way up through extractMultiPageTable's catch
+     * block, discarding every page already successfully processed on a
+     * many-page document. Treating one bad pool round as "no results this
+     * round" (letting the affected page contribute less, or nothing)
+     * beats losing the whole document.
+     */
+    private function runPoolTolerantly(callable $callback): ?ProcessPoolResults
+    {
+        try {
+            return Process::pool($callback)->run();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return null;
+        }
     }
 
     private function tsvToText(string $tsv): string
@@ -1208,7 +1280,7 @@ class OcrTableExtractionService
         $digitPsms = [6, 4];
         $fullPagePsms = [6, 11];
 
-        $results = Process::pool(function (Pool $pool) use ($crops, $generalPsms, $digitPsms, $fullPagePath, $fullPagePsms) {
+        $results = $this->runPoolTolerantly(function (Pool $pool) use ($crops, $generalPsms, $digitPsms, $fullPagePath, $fullPagePsms) {
             foreach ($crops as $column => $crop) {
                 foreach ($generalPsms as $psm) {
                     $pool->as($column . '::general-' . $psm)->timeout(120)->command([
@@ -1262,7 +1334,15 @@ class OcrTableExtractionService
                     ]);
                 }
             }
-        })->run();
+        });
+
+        if ($results === null) {
+            foreach ($crops as $crop) {
+                @unlink($crop['path']);
+            }
+
+            return ['columns' => $wordsByColumn, 'full_page_tsvs' => []];
+        }
 
         foreach ($crops as $column => $crop) {
             $x1 = $crop['x1'];

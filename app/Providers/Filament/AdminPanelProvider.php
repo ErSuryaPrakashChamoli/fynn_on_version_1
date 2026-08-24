@@ -32,6 +32,7 @@ use App\Filament\Pages\ChangePassword;
 use Filament\Support\Assets\Js;
 use Filament\Support\Facades\FilamentAsset;
 use Filament\Support\Facades\FilamentView;
+use Saade\FilamentFullCalendar\FilamentFullCalendarPlugin;
 
 
 
@@ -53,6 +54,21 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Amber,
             ])
+            /*
+             * Large OCR documents can take a long time to process even
+             * fully optimized — this is what lets a background job notify
+             * the uploader (via the bell icon) once it's actually done,
+             * instead of them having to keep the page open watching a
+             * status badge. See OcrDocumentProcessor::process() and
+             * ProcessOcrDocument::failed().
+             */
+            ->databaseNotifications()
+            ->databaseNotificationsPolling('30s')
+            ->plugin(
+                FilamentFullCalendarPlugin::make()
+                    ->selectable()
+                    ->editable(false)
+            )
             ->renderHook(
                 // PanelsRenderHook::TOPBAR_START,
                 PanelsRenderHook::GLOBAL_SEARCH_BEFORE,

@@ -4,6 +4,7 @@ namespace App\Services\Ocr;
 
 use App\Models\AiCustomerRecord;
 use App\Models\OcrDocument;
+use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -145,6 +146,24 @@ class OcrDocumentProcessor
                 'status' => 'completed',
                 'processed_at' => now(),
             ]);
+
+            /*
+             * A large scan can take a long time even fully optimized —
+             * the uploader shouldn't have to keep the tab open watching a
+             * status badge to find out it's done. This lands in Filament's
+             * notification bell (requires ->databaseNotifications() on the
+             * panel) rather than a one-off flash message, so it's still
+             * there whenever they next check, on any page.
+             */
+            if ($document->uploader) {
+                $rows = $document->extracted_data['rows'] ?? null;
+
+                Notification::make()
+                    ->title('OCR processing completed')
+                    ->body($document->original_name . ' finished processing' . (is_array($rows) ? ' — ' . count($rows) . ' row(s) extracted.' : '.'))
+                    ->success()
+                    ->sendToDatabase($document->uploader);
+            }
         } catch (\Throwable $e) {
 
             Log::error(

@@ -9,6 +9,7 @@ use Filament\Actions\ViewAction;
 use Filament\Tables\Table;
 use Filament\Tables\Columns\TextColumn;
 use App\Models\Employee;
+use App\Filament\Actions\AssignCustomersToUserBulkAction;
 use App\Filament\Resources\FollowUps\FollowUpResource;
 use Filament\Actions\Action;
 use App\Filament\Exports\CustomerExporter;
@@ -390,6 +391,7 @@ class CustomersTable
                 //     fn() => auth()->user()->employee?->designation === Employee::DESIGNATION_ADMIN
                 // ),
 
+                AssignCustomersToUserBulkAction::make(),
 
             ]);
     }

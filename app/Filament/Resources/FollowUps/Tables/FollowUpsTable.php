@@ -21,15 +21,16 @@ class FollowUpsTable
     public static function configure(Table $table): Table
     {
         return $table
+            ->defaultSort('next_follow_up_date', 'asc')
             ->columns([
 
 
-                TextColumn::make('customer.customer_name')
-                    ->label('Customer')
-                    ->searchable(),
+                TextColumn::make('display_name')
+                    ->label('Customer'),
 
                 TextColumn::make('customer.mobile_no')
-                    ->label('Mobile'),
+                    ->label('Mobile')
+                    ->placeholder('-'),
 
 
 
@@ -58,10 +59,25 @@ class FollowUpsTable
                 TextColumn::make('next_follow_up_date')
                     ->label('Next Follow Up')
                     ->dateTime('d M Y h:i A')
-                    ->sortable(),
+                    ->sortable()
+                    ->badge()
+                    ->color(function (?string $state): string {
+                        if (blank($state)) {
+                            return 'gray';
+                        }
+
+                        $date = \Illuminate\Support\Carbon::parse($state);
+
+                        if ($date->isPast() && ! $date->isToday()) {
+                            return 'danger';
+                        }
+
+                        return $date->isToday() ? 'warning' : 'gray';
+                    }),
 
                 TextColumn::make('employee.emp_name')
-                    ->label('Followed By'),
+                    ->label('Followed By')
+                    ->placeholder('Admin'),
 
                 TextColumn::make('created_at')
                     ->label('Created On')
@@ -101,9 +117,9 @@ class FollowUpsTable
                     ->label('Follow Up')
                     ->icon('heroicon-o-phone')
                     ->color('warning')
-                    ->url(fn($record) => FollowUpResource::getUrl('create', [
-                        'customer' => $record->customer_id,
-                    ])),
+                    ->url(fn($record) => FollowUpResource::getUrl('create', filled($record->customer_id)
+                        ? ['customer' => $record->customer_id]
+                        : ['ai_customer_record' => $record->ai_customer_record_id])),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([

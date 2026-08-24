@@ -41,6 +41,7 @@ class FollowUp extends Model
 
     protected $fillable = [
         'customer_id',
+        'ai_customer_record_id',
         'employee_id',
         'follow_up_date',
         'follow_up_type',
@@ -59,6 +60,25 @@ class FollowUp extends Model
     public function customer()
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function aiCustomerRecord()
+    {
+        return $this->belongsTo(AiCustomerRecord::class);
+    }
+
+    public function getDisplayNameAttribute(): string
+    {
+        if ($this->customer) {
+            return $this->customer->customer_name;
+        }
+
+        if ($this->aiCustomerRecord) {
+            return $this->aiCustomerRecord->value('customer_name')
+                ?? ('AI Record #' . $this->aiCustomerRecord->id);
+        }
+
+        return '—';
     }
 
     public function employee()
