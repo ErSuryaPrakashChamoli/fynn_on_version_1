@@ -3,9 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
-use App\Models\Bank;
-
 
 /**
  * @property int $id
@@ -16,17 +15,18 @@ use App\Models\Bank;
  * @property string|null $current_location
  * @property string|null $job_location
  * @property numeric|null $salary
- * @property \Illuminate\Support\Carbon $follow_up_date
+ * @property Carbon $follow_up_date
  * @property string $follow_up_type
  * @property string $status
- * @property \Illuminate\Support\Carbon|null $next_follow_up_date
+ * @property Carbon|null $next_follow_up_date
  * @property string $remarks
  * @property bool $is_converted
  * @property int|null $converted_customer_id
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\Customer|null $convertedCustomer
- * @property-read \App\Models\Employee|null $employee
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Customer|null $convertedCustomer
+ * @property-read Employee|null $employee
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Lead newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Lead newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Lead query()
@@ -47,6 +47,7 @@ use App\Models\Bank;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Lead whereSalary($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Lead whereStatus($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Lead whereUpdatedAt($value)
+ *
  * @mixin \Eloquent
  */
 class Lead extends Model
@@ -71,7 +72,7 @@ class Lead extends Model
         'email',
         'application_no',
         'residence_location',
-        'bank_id'
+        'bank_id',
     ];
 
     protected $casts = [
@@ -80,7 +81,6 @@ class Lead extends Model
         'next_follow_up_date' => 'datetime',
         'is_converted' => 'boolean',
     ];
-
 
     public function employee()
     {
@@ -92,6 +92,23 @@ class Lead extends Model
         return $this->belongsTo(Customer::class, 'converted_customer_id');
     }
 
+    /**
+     * Follow-up columns kept directly on the lead. A change to any of
+     * these represents a new follow-up interaction and is mirrored into
+     * the follow_ups table so it surfaces on the Lead Follow-Up Calendar
+     * and the dashboard calendar.
+     *
+     * @var array<int, string>
+     */
+    protected const FOLLOW_UP_FIELDS = [
+        'follow_up_date',
+        'follow_up_type',
+        'status',
+        'next_follow_up_date',
+        'remarks',
+        'bank_id',
+    ];
+
     protected static function booted()
     {
         static::creating(function ($lead) {
@@ -99,9 +116,37 @@ class Lead extends Model
                 $lead->employee_id = Auth::user()->employee?->id;
             }
         });
+
+        static::created(function (Lead $lead) {
+            $lead->logFollowUp();
+        });
+
+        static::updated(function (Lead $lead) {
+            if (! $lead->wasChanged(self::FOLLOW_UP_FIELDS)) {
+                return;
+            }
+
+            $lead->logFollowUp();
+        });
     }
 
+    protected function logFollowUp(): void
+    {
+        $this->followUps()->create([
+            'employee_id' => $this->employee_id,
+            'follow_up_date' => $this->follow_up_date,
+            'follow_up_type' => $this->follow_up_type,
+            'status' => $this->status ?? 'Pending',
+            'remarks' => $this->remarks,
+            'next_follow_up_date' => $this->next_follow_up_date,
+            'bank_id' => $this->bank_id,
+        ]);
+    }
 
+    public function followUps()
+    {
+        return $this->hasMany(FollowUp::class);
+    }
 
     public function bank()
     {

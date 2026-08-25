@@ -394,16 +394,54 @@
 
 /* ---- Tables ---- */
 
-.fi-ta-header-cell {
-    background-color: rgb(30 27 75 / 4%);
-}
-
-.dark .fi-ta-header-cell {
-    background-color: rgb(255 255 255 / 4%);
-}
-
 .fi-ta-record:hover {
     background-color: color-mix(in oklab, var(--primary-500) 4%, transparent);
+}
+
+/* ---- Sticky table header ----
+   Bounds Filament's own table wrapper (.fi-ta-content-ctn -- already
+   overflow-x:auto for the horizontal-scroll-nav feature below) with a
+   max-height so it becomes a real, bounded vertical scroll container too,
+   not just a horizontal one. thead th sticky top:0 then resolves against
+   that container correctly -- .fi-ta-content-ctn is the table's actual
+   DOM wrapper (a plain div), so the table element itself stays untouched
+   (still `display:table`), which is what keeps header/body column widths
+   in sync automatically via normal table layout; nothing here relies on
+   re-deriving column widths by hand.
+   This is Filament's own shared table Blade partial, so every resource
+   list, relation manager, and widget table gets this globally -- no
+   per-page changes needed. Pagination and the toolbar/filters bar sit
+   OUTSIDE .fi-ta-content-ctn in the DOM, so they stay always visible;
+   only the header + rows scroll internally within the bounded box.
+   Scoped away from `.fi-ta-table-stacked-on-mobile` (an opt-in mobile
+   layout not currently used anywhere in this app) since that variant
+   already handles its own header visibility per breakpoint and doesn't
+   need this treatment.
+   Making .fi-ta-content-ctn genuinely scroll vertically (not just
+   horizontally) means the horizontal-scroll-nav arrow clusters below --
+   which are absolutely positioned descendants of this same container --
+   would otherwise drift vertically as rows scroll, exactly like they
+   already drift horizontally; table-scroll-nav.js compensates for both
+   axes in its `compensation` transform now, not just scrollLeft. */
+
+.fi-ta-content-ctn {
+    max-height: 65dvh;
+    overflow-y: auto;
+}
+
+.fi-ta-table:not(.fi-ta-table-stacked-on-mobile) > thead > tr > th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    /* Opaque, not the translucent tint a non-sticky header cell could get
+       away with -- rows scrolling underneath a sticky header must not
+       show through it. Composited over the same base surface the tint
+       used to sit on top of, so it reads identically to before. */
+    background-color: color-mix(in oklab, rgb(30 27 75) 4%, white);
+}
+
+.dark .fi-ta-table:not(.fi-ta-table-stacked-on-mobile) > thead > tr > th {
+    background-color: color-mix(in oklab, white 4%, rgb(15 23 42));
 }
 
 /* ---- Table row contextual actions ----
@@ -539,14 +577,23 @@
    cluster visually pinned to its edge regardless of scroll position.
 
    Each side gets up to three vertically-anchored clusters (top /
-   middle / bottom of the listing's own full height, not the
-   viewport -- .fi-ta-content-ctn only ever scrolls horizontally, so a
-   tall table's vertical centre can be far off-screen from wherever
-   the page itself is currently scrolled to). Top/bottom clusters only
-   render for tables tall enough that a single centred arrow would be
-   hard to reach. Each cluster stacks a primary "step" arrow over a
-   smaller "jump to opposite edge" arrow, so a user who has scrolled
-   away from an edge always has a one-click way back to the far side.
+   middle / bottom of the listing's own box, sized against
+   .fi-ta-content-ctn's own height rather than the viewport). Top/bottom
+   clusters only render for tables tall enough that a single centred
+   arrow would be hard to reach. Each cluster stacks a primary "step"
+   arrow over a smaller "jump to opposite edge" arrow, so a user who has
+   scrolled away from an edge always has a one-click way back to the far
+   side.
+
+   .fi-ta-content-ctn is ALSO now bounded (see the STICKY TABLE HEADER
+   block above) and therefore genuinely scrolls vertically as well as
+   horizontally, for the sticky header to have a real scroll container
+   to resolve against. Since these clusters are absolutely positioned
+   descendants of that same container, they drift vertically on a row
+   scroll exactly like they already drift horizontally on a column
+   scroll (same mechanism, same fix) -- table-scroll-nav.js's
+   `compensation` transform cancels both `scrollLeft` and `scrollTop`
+   now, not just `scrollLeft`.
    ========================================================= */
 
 .fynn-table-scroll-nav {
@@ -860,31 +907,47 @@
     pointer-events: none;
 }
 
+.fynn-auth-banner-image {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.fynn-auth-banner-logo-overlay {
+    position: absolute;
+    z-index: 2;
+    top: 2.5rem;
+    left: 50%;
+    width: 60%;
+    max-width: 14rem;
+    transform: translateX(-50%);
+}
+
+.fynn-auth-banner-logo-overlay .fynn-auth-banner-logo {
+    width: 100%;
+    height: auto;
+    filter: drop-shadow(0 6px 14px rgb(0 0 0 / 45%));
+}
+
 .fynn-auth-banner-content {
     position: relative;
     z-index: 1;
-    max-width: 26rem;
+    max-width: 28rem;
     text-align: center;
 }
 
-.fynn-auth-banner-logo {
-    width: 100%;
-    max-width: 17rem;
-    margin-inline: auto;
-    margin-bottom: 2rem;
-}
-
 .fynn-auth-banner-kicker {
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     font-weight: 700;
     letter-spacing: 0.3em;
     text-transform: uppercase;
     color: rgb(163 230 53);
-    margin-bottom: 1.25rem;
+    margin-bottom: 1.5rem;
 }
 
 .fynn-auth-banner-heading {
-    font-size: 1.85rem;
     line-height: 1.25;
     font-weight: 800;
     color: rgb(255 255 255);
@@ -892,12 +955,20 @@
 }
 
 .fynn-auth-banner-accent-line {
-    width: 3.5rem;
+    width: 4rem;
     height: 3px;
-    margin: 1.5rem auto 0;
+    margin-top: 2rem;
     border-radius: 9999px;
     background: linear-gradient(90deg, rgb(163 230 53), rgb(59 130 246));
     box-shadow: 0 0 12px rgb(163 230 53 / 60%);
+}
+
+.fynn-auth-banner-accent-line--center {
+    margin-inline: auto;
+}
+
+.fynn-auth-banner-accent-line--right {
+    margin-inline-start: auto;
 }
 
 .fynn-auth-panel {
@@ -905,50 +976,49 @@
     flex: 1 1 50%;
     align-items: center;
     justify-content: center;
-    padding: 2.5rem 1.5rem;
+    padding: 3vh 1.5rem;
     background-color: rgb(255 255 255);
 }
 
 .fynn-auth-panel-inner {
     width: 100%;
-    max-width: 26rem;
+    max-width: 29rem;
 }
 
 .fynn-auth-panel-logo {
     display: block;
-    height: 3.5rem;
+    height: 5.5rem;
     width: auto;
     margin-inline: auto;
-    margin-bottom: 1rem;
+    margin-bottom: 1.5rem;
 }
 
 .fynn-auth-panel-tagline {
     text-align: center;
-    font-size: 0.9rem;
+    font-size: 1.05rem;
     font-style: italic;
     color: rgb(100 116 139);
 }
 
 .fynn-auth-panel-divider {
-    width: 3rem;
+    width: 3.5rem;
     height: 2px;
-    margin: 1.25rem auto 1.5rem;
+    margin: 1.75rem auto 2.25rem;
     border-radius: 9999px;
     background: color-mix(in oklab, var(--primary-500) 60%, transparent);
 }
 
 .fynn-auth-panel-heading {
-    text-align: center;
-    font-size: 1.5rem;
     font-weight: 800;
+    line-height: 1.25;
     color: rgb(15 23 42);
+    text-wrap: balance;
 }
 
 .fynn-auth-panel-subheading {
-    margin-top: 0.375rem;
-    margin-bottom: 2rem;
-    text-align: center;
-    font-size: 0.925rem;
+    margin-top: 0.5rem;
+    margin-bottom: 3rem;
+    font-size: 1.05rem;
     color: rgb(100 116 139);
 }
 
@@ -957,10 +1027,44 @@
     color: var(--primary-600);
 }
 
-.fynn-auth-panel-footer {
-    margin-top: 2rem;
+/* ---- Configurable heading size/alignment (Login Page Banner settings) ---- */
+
+.fynn-auth-banner-heading--sm,
+.fynn-auth-panel-heading--sm {
+    font-size: 1.5rem;
+}
+
+.fynn-auth-banner-heading--md,
+.fynn-auth-panel-heading--md {
+    font-size: 1.875rem;
+}
+
+.fynn-auth-banner-heading--lg,
+.fynn-auth-panel-heading--lg {
+    font-size: 2.25rem;
+}
+
+.fynn-auth-banner-heading--xl,
+.fynn-auth-panel-heading--xl {
+    font-size: 2.75rem;
+}
+
+.fynn-auth-text-left {
+    text-align: left;
+}
+
+.fynn-auth-text-center {
     text-align: center;
-    font-size: 0.75rem;
+}
+
+.fynn-auth-text-right {
+    text-align: right;
+}
+
+.fynn-auth-panel-footer {
+    margin-top: 3rem;
+    text-align: center;
+    font-size: 0.8rem;
     color: rgb(148 163 184);
 }
 

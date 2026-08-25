@@ -1546,33 +1546,252 @@ class CustomerForm
                                         fn ($state, ?Model $record) => $state ?: ($record?->documents_submitted ?? false)
                                     ),
 
+                                // FileUpload::make('disbursal_pdf')
+                                //     ->disk('public')
+                                //     ->directory('disbursal-documents')
+                                //     ->multiple()
+                                //     ->appendFiles()              // Keep old files and append new ones
+                                //     ->openable()
+                                //     ->downloadable()
+
+                                //     // Prevent removing uploaded files after document submission
+                                //     ->deletable(fn (?Customer $record) => ! ($record?->documents_submitted ?? false))
+
+                                //     // Optional: Prevent reordering after submission
+                                //     ->reorderable(fn (?Customer $record) => ! ($record?->documents_submitted ?? false))
+
+                                //     ->rules([
+                                //         function ($attribute, $value, $fail) {
+                                //             if (is_array($value)) {
+                                //                 foreach ($value as $file) {
+                                //                     if ($file instanceof TemporaryUploadedFile) {
+                                //                         if ($file->getMimeType() !== 'application/pdf') {
+                                //                             $fail('Only PDF files are allowed.');
+                                //                         }
+                                //                     }
+                                //                 }
+                                //             }
+                                //         },
+                                //     ]),
+
+                                // FileUpload::make('disbursal_pdf')
+                                //     ->label('Upload Disbursal Documents')
+                                //     ->disk('public')
+                                //     ->directory('disbursal-documents')
+                                //     ->multiple()
+                                //     ->appendFiles()
+                                //     ->openable()
+                                //     ->downloadable()
+
+                                //     // Existing saved files can NEVER be removed.
+                                //     ->deletable(fn(?Customer $record) => ! filled($record?->disbursal_pdf))
+
+                                //     // Existing saved files cannot be reordered.
+                                //     ->reorderable(false)
+
+                                //     // Allow PDF and JPEG/JPG.
+                                //     ->acceptedFileTypes([
+                                //         'application/pdf',
+                                //         'image/jpeg',
+                                //     ])
+
+                                //     ->rules([
+                                //         'array',
+                                //         'max:100',
+                                //     ])
+                                //     ->itemRules([
+                                //         'mimes:pdf,jpg,jpeg',
+                                //         'max:512000',
+                                //     ]),
+
+                                // FileUpload::make('disbursal_pdf')
+                                //     ->label('Upload Disbursal Documents')
+                                //     ->disk('public')
+                                //     ->directory('disbursal-documents')
+                                //     ->multiple()
+                                //     ->appendFiles()
+                                //     ->openable()
+                                //     ->downloadable()
+
+                                //     // Existing saved files can NEVER be removed.
+                                //     ->deletable(fn(?Customer $record) => ! filled($record?->disbursal_pdf))
+
+                                //     // Existing saved files cannot be reordered.
+                                //     ->reorderable(false)
+
+                                //     // Allow PDF and JPEG/JPG
+                                //     ->acceptedFileTypes([
+                                //         'application/pdf',
+                                //         'image/jpeg',
+                                //     ])
+
+                                //     // Max file size per item in kilobytes (512000 KB = ~500 MB)
+                                //     ->maxSize(512000)
+
+                                //     // Array-level rules (e.g. max number of files)
+                                //     ->rules([
+                                //         'array',
+                                //         'max:100',
+                                //     ]),
+
+                                // FileUpload::make('disbursal_pdf')
+                                //     ->label('Upload Disbursal Documents')
+                                //     ->disk('public')
+                                //     ->directory('disbursal-documents')
+                                //     ->multiple()
+                                //     ->appendFiles()
+                                //     ->openable()
+                                //     ->downloadable()
+
+                                //     // Existing saved files cannot be removed
+                                //     ->deletable(fn(?Customer $record) => ! filled($record?->disbursal_pdf))
+
+                                //     ->reorderable(false)
+
+                                //     ->acceptedFileTypes([
+                                //         'application/pdf',
+                                //         'image/jpeg',
+                                //         'image/jpg',
+                                //     ])
+
+                                //     ->maxSize(512000)
+
+                                //     ->dehydrated(true),
+
+                                // FileUpload::make('disbursal_pdf')
+                                //     ->label('Upload Disbursal Documents')
+                                //     ->disk('public')
+                                //     ->directory('disbursal-documents')
+                                //     ->multiple()
+                                //     ->appendFiles()
+                                //     ->openable()
+                                //     ->downloadable()
+
+                                //     // Existing saved files cannot be removed
+                                //     ->deletable(fn(?Customer $record) => ! filled($record?->disbursal_pdf))
+
+                                //     ->reorderable(false)
+
+                                //     ->acceptedFileTypes([
+                                //         'application/pdf',
+                                //         'image/jpeg',
+                                //         'image/jpg',
+                                //     ])
+
+                                //     ->maxSize(512000)
+
+                                //     ->dehydrated(true),
+
+                                // FileUpload::make('disbursal_pdf')
+                                //     ->label('Upload Disbursal Documents')
+                                //     ->disk('public')
+                                //     ->directory('disbursal-documents')
+                                //     ->multiple()
+                                //     ->appendFiles()
+                                //     ->openable()
+                                //     ->downloadable()
+
+                                //     // Existing saved files cannot be removed
+                                //     ->deletable(fn(?Customer $record) => ! filled($record?->disbursal_pdf))
+
+                                //     ->reorderable(false)
+
+                                //     ->acceptedFileTypes([
+                                //         'application/pdf',
+                                //         'image/jpeg',
+                                //         'image/jpg',
+                                //     ])
+
+                                //     ->maxSize(512000)
+
+                                //     ->rules([
+                                //         function ($attribute, $value, $fail) {
+
+                                //             $files = is_array($value) ? $value : [$value];
+
+                                //             // Only check NEW uploads.
+                                //             $hasNewUpload = collect($files)->contains(
+                                //                 fn($file) => $file instanceof TemporaryUploadedFile
+                                //             );
+
+                                //             if (! $hasNewUpload) {
+                                //                 return;
+                                //             }
+
+                                //             // New file exists but Submit Documents was not clicked.
+                                //             if (! request()->input('data.documents_submitted')) {
+                                //                 $fail(
+                                //                     'Please click "Submit Documents" before saving the customer.'
+                                //                 );
+                                //             }
+                                //         },
+                                //     ])
+
+                                //     ->dehydrated(true),
+
                                 FileUpload::make('disbursal_pdf')
+                                    ->label('Upload Disbursal Documents')
                                     ->disk('public')
                                     ->directory('disbursal-documents')
                                     ->multiple()
-                                    ->appendFiles()              // Keep old files and append new ones
+                                    ->appendFiles()
                                     ->openable()
                                     ->downloadable()
 
-                                    // Prevent removing uploaded files after document submission
-                                    ->deletable(fn (?Customer $record) => ! ($record?->documents_submitted ?? false))
+                                    // Existing saved files cannot be removed
+                                    ->deletable(fn (?Customer $record) => ! filled($record?->disbursal_pdf))
 
-                                    // Optional: Prevent reordering after submission
-                                    ->reorderable(fn (?Customer $record) => ! ($record?->documents_submitted ?? false))
+                                    ->reorderable(false)
+
+                                    ->acceptedFileTypes([
+                                        'application/pdf',
+                                        'image/jpeg',
+                                        'image/jpg',
+                                    ])
+
+                                    ->maxSize(512000)
+
+                                    ->live()
+
+                                    // IMPORTANT:
+                                    // Whenever a NEW file is uploaded, force the user
+                                    // to click Submit Documents again before Save.
+                                    ->afterStateUpdated(function ($state, Set $set) {
+
+                                        $files = is_array($state) ? $state : [$state];
+
+                                        $hasNewUpload = collect($files)->contains(
+                                            fn ($file) => $file instanceof TemporaryUploadedFile
+                                        );
+
+                                        if ($hasNewUpload) {
+                                            $set('documents_submitted', false);
+                                        }
+                                    })
 
                                     ->rules([
-                                        function ($attribute, $value, $fail) {
-                                            if (is_array($value)) {
-                                                foreach ($value as $file) {
-                                                    if ($file instanceof TemporaryUploadedFile) {
-                                                        if ($file->getMimeType() !== 'application/pdf') {
-                                                            $fail('Only PDF files are allowed.');
-                                                        }
-                                                    }
+                                        function (Get $get) {
+                                            return function ($attribute, $value, $fail) use ($get) {
+
+                                                $files = is_array($value) ? $value : [$value];
+
+                                                $hasNewUpload = collect($files)->contains(
+                                                    fn ($file) => $file instanceof TemporaryUploadedFile
+                                                );
+
+                                                if (
+                                                    $hasNewUpload
+                                                    && ! $get('documents_submitted')
+                                                ) {
+                                                    $fail(
+                                                        'Please click "Submit Documents" before saving.'
+                                                    );
                                                 }
-                                            }
+                                            };
                                         },
-                                    ]),
+                                    ])
+
+                                    ->dehydrated(true),
 
                                 Placeholder::make('document_submit_action')
                                     ->key('document_submit_action')
@@ -1618,22 +1837,43 @@ class CustomerForm
                                                     ->pluck('document_name')
                                                     ->toArray();
 
+                                                // foreach ($filesArray as $singlePath) {
+
+                                                //     if ($singlePath instanceof TemporaryUploadedFile) {
+
+                                                //         $path = $singlePath->storePublicly(
+                                                //             'disbursal-documents',
+                                                //             'public'
+                                                //         );
+                                                //     } else {
+
+                                                //         $path = $singlePath;
+                                                //     }
+
+                                                //     CustomerDocument::create([
+                                                //         'customer_id' => $record->id,
+                                                //         'document_type' => 'Disbursal Letter',
+                                                //         'document_name' => basename($path),
+                                                //         'document_path' => $path,
+                                                //         'uploaded_by' => auth()->id(),
+                                                //     ]);
+                                                // }
+
                                                 foreach ($filesArray as $singlePath) {
 
-                                                    if ($singlePath instanceof TemporaryUploadedFile) {
-
-                                                        $path = $singlePath->storePublicly(
-                                                            'disbursal-documents',
-                                                            'public'
-                                                        );
-                                                    } else {
-
-                                                        $path = $singlePath;
+                                                    // Only create a CustomerDocument for a NEW upload.
+                                                    if (! $singlePath instanceof TemporaryUploadedFile) {
+                                                        continue;
                                                     }
+
+                                                    $path = $singlePath->storePublicly(
+                                                        'disbursal-documents',
+                                                        'public'
+                                                    );
 
                                                     CustomerDocument::create([
                                                         'customer_id' => $record->id,
-                                                        'document_type' => 'Disbursal Letter',
+                                                        'document_type' => 'Disbursal Document',
                                                         'document_name' => basename($path),
                                                         'document_path' => $path,
                                                         'uploaded_by' => auth()->id(),

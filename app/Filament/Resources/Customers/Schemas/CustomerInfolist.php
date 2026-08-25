@@ -2,25 +2,16 @@
 
 namespace App\Filament\Resources\Customers\Schemas;
 
-use Filament\Schemas\Schema;
+use Carbon\Carbon;
+use Filament\Infolists\Components\RepeatableEntry;
+use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\View;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Infolists\Components\ImageEntry;
-use Filament\Infolists\Components\IconEntry;
-use Filament\Schemas\Components\Grid;
-use Filament\Schemas\Components\Split;
-use Filament\Infolists\Components\RepeatableEntry;
+use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
-use Filament\Actions\Action;
 // use Illuminate\Support\Facades\Storage;
-use Carbon\Carbon;
-
-use App\Models\CustomerSettlement;
-
-
-
+use Illuminate\Support\Str;
 
 class CustomerInfolist
 {
@@ -34,8 +25,6 @@ class CustomerInfolist
                     ->schema([
                         Grid::make(3)
                             ->schema([
-
-
 
                                 TextEntry::make('customer_name')
                                     ->label('Customer Name'),
@@ -53,7 +42,6 @@ class CustomerInfolist
                                 TextEntry::make('assignedTo.emp_name')
                                     ->label('Assigned To'),
 
-
                                 // TextEntry::make('journey_status')
                                 //     ->label('Current Stage')
                                 //     ->badge()
@@ -67,7 +55,6 @@ class CustomerInfolist
                                 //         'Rejected' => 'danger',
                                 //         default => 'gray',
                                 //     }),
-
 
                                 TextEntry::make('journey_status')
                                     ->label('Current Stage')
@@ -113,9 +100,8 @@ class CustomerInfolist
                                 TextEntry::make('updated_at')
                                     ->dateTime(),
 
-                            ])
+                            ]),
                     ]),
-
 
                 Section::make('📍 Personal Details')
                     ->columnSpanFull()
@@ -138,9 +124,8 @@ class CustomerInfolist
                                 TextEntry::make('eligibility_status')
                                     ->badge(),
 
-                            ])
+                            ]),
                     ]),
-
 
                 Section::make('🏦 Loan Application Details')
                     ->columnSpanFull()
@@ -167,9 +152,8 @@ class CustomerInfolist
                                 TextEntry::make('underwriting_status')
                                     ->badge(),
 
-                            ])
+                            ]),
                     ]),
-
 
                 Section::make('📑 Step 1 - Source File Logging')
                     ->columnSpanFull()
@@ -194,12 +178,9 @@ class CustomerInfolist
                                 // TextEntry::make('sfl_completed_date')
                                 //     ->dateTime(),
 
-                            ])
+                            ]),
 
                     ]),
-
-
-
 
                 Section::make('🔍 Step 2 - Underwriting')
                     ->columnSpanFull()
@@ -216,10 +197,8 @@ class CustomerInfolist
                                 TextEntry::make('approval_date')
                                     ->dateTime(),
 
-                            ])
+                            ]),
                     ]),
-
-
 
                 Section::make('✅ Step 3 - Credit Approval')
                     ->columnSpanFull()
@@ -236,10 +215,8 @@ class CustomerInfolist
                                 TextEntry::make('approval_remarks')
                                     ->columnSpan(2),
 
-                            ])
+                            ]),
                     ]),
-
-
 
                 Section::make('💰 Step 4 - Disbursal')
                     ->columnSpanFull()
@@ -253,19 +230,19 @@ class CustomerInfolist
                                 TextEntry::make('disbursal_status')
                                     ->label('Disbursal Status')
                                     ->badge()
-                                    ->color(fn(?string $state): string => match ($state) {
-                                        'disbursed'     => 'success',
-                                        'dropped'       => 'danger',
+                                    ->color(fn (?string $state): string => match ($state) {
+                                        'disbursed' => 'success',
+                                        'dropped' => 'danger',
                                         'carry_forward' => 'warning',
-                                        'on_hold'       => 'gray',
-                                        default         => 'gray',
+                                        'on_hold' => 'gray',
+                                        default => 'gray',
                                     })
-                                    ->formatStateUsing(fn(?string $state) => match ($state) {
-                                        'disbursed'     => 'Disbursed',
-                                        'dropped'       => 'Dropped',
+                                    ->formatStateUsing(fn (?string $state) => match ($state) {
+                                        'disbursed' => 'Disbursed',
+                                        'dropped' => 'Dropped',
                                         'carry_forward' => 'Carry Forward',
-                                        'on_hold'       => 'On Hold',
-                                        default         => '-',
+                                        'on_hold' => 'On Hold',
+                                        default => '-',
                                     }),
                                 TextEntry::make('channel'),
 
@@ -285,9 +262,8 @@ class CustomerInfolist
 
                                 TextEntry::make('payout_rate'),
 
-                            ])
+                            ]),
                     ]),
-
 
                 Section::make('Customer Documents')
                     ->columnSpanFull()
@@ -320,27 +296,22 @@ class CustomerInfolist
                                 //     ->openUrlInNewTab(),
                                 TextEntry::make('document_path')
                                     ->label('Document')
-                                    ->state('📄 View PDF')
-                                    ->url(fn($record) => Storage::disk('public')->url($record->document_path))
+                                    // ->state('📄 View PDF')
+                                    ->state('📄 View File')
+                                    ->url(fn ($record) => Storage::disk('public')->url($record->document_path))
                                     ->openUrlInNewTab(),
-
-
-
 
                             ])
                             ->columns(5),
 
                     ])
-                    ->visible(fn($record) => $record?->documents()->exists())
+                    ->visible(fn ($record) => $record?->documents()->exists())
                     ->columnSpanFull(),
-
-
 
                 Section::make('❌ Rejection Details')
                     ->columnSpanFull()
                     ->visible(
-                        fn($record) =>
-                        $record->journey_status === 'rejected'
+                        fn ($record) => $record->journey_status === 'rejected'
                     )
                     ->schema([
 
@@ -362,17 +333,12 @@ class CustomerInfolist
                                     ->label('Activity')
                                     ->columnSpanFull(),
 
-
                                 TextEntry::make('causer.name')
                                     ->label('Changed By'),
-
 
                                 TextEntry::make('created_at')
                                     ->label('Date & Time')
                                     ->dateTime(),
-
-
-
 
                                 TextEntry::make('changes')
                                     ->label('Field Changes')
@@ -463,7 +429,6 @@ class CustomerInfolist
 
                     ]),
 
-
                 Section::make('Customer Settlement')
                     ->schema([
                         TextEntry::make('latestSettlement.settlement_no')
@@ -523,9 +488,6 @@ class CustomerInfolist
                             ->dateTime(),
                     ])
                     ->columns(2),
-
-
-
 
             ]);
     }

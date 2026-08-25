@@ -127,6 +127,12 @@
     // asymmetry, not a general sticky failure). Cancelling the drift with an
     // explicit counter-transform is simple, symmetric for both sides, and
     // avoids relying on sticky's containing-block quirks entirely.
+    //
+    // `container` (.fi-ta-content-ctn) is now also bounded to a max-height
+    // with its own vertical overflow (see the STICKY TABLE HEADER CSS), so
+    // it scrolls on both axes -- these clusters drift on a row scroll the
+    // same way they drift on a column scroll, and the `translateY` term
+    // below cancels that on top of its own `-50%` self-centering.
     function updateVisibility(container) {
         const clusters = container.querySelectorAll(':scope > .fynn-table-scroll-nav');
 
@@ -137,13 +143,14 @@
         const maxScrollLeft = container.scrollWidth - container.clientWidth;
         const hasOverflow = maxScrollLeft > 2;
         const scrollLeft = container.scrollLeft;
+        const scrollTop = container.scrollTop;
         const canScrollLeft = hasOverflow && scrollLeft > 2;
         const canScrollRight = hasOverflow && scrollLeft < maxScrollLeft - 2;
         const stepAmount = container.clientWidth * SCROLL_RATIO;
         const farFromStart = scrollLeft > stepAmount * 1.4;
         const farFromEnd = (maxScrollLeft - scrollLeft) > stepAmount * 1.4;
         const isTall = container.offsetHeight > TALL_LISTING_HEIGHT;
-        const compensation = `translateY(-50%) translateX(${scrollLeft}px)`;
+        const compensation = `translate(${scrollLeft}px, calc(-50% + ${scrollTop}px))`;
 
         clusters.forEach((cluster) => {
             const isLeft = cluster.dataset.fynnSide === 'left';

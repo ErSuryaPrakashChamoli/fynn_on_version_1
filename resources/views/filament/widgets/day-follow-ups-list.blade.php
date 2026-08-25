@@ -7,10 +7,9 @@
         default => 'bg-gray-100 text-gray-700 dark:bg-gray-500/10 dark:text-gray-300',
     };
 
-    // Every follow-up here is tied to either a Customer or an AI-extracted
-    // customer record (never a raw Lead — CustomerAssignment has no
-    // relationship to the Lead model), so "open the record" always means
-    // one of these two existing pages.
+    // A follow-up here is tied to a Customer, an AI-extracted customer
+    // record, or a raw Lead — "open the record" means whichever of those
+    // three it's linked to.
     $recordUrl = function ($followUp) {
         if ($followUp->customer_id) {
             return \App\Filament\Resources\Customers\CustomerResource::getUrl('view', ['record' => $followUp->customer_id]);
@@ -18,6 +17,10 @@
 
         if ($followUp->ai_customer_record_id) {
             return \App\Filament\Resources\AiCustomerRecords\AiCustomerRecordResource::getUrl('view', ['record' => $followUp->ai_customer_record_id]);
+        }
+
+        if ($followUp->lead_id) {
+            return \App\Filament\Resources\Leads\LeadResource::getUrl('edit', ['record' => $followUp->lead_id]);
         }
 
         return null;

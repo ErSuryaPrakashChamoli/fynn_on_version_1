@@ -5,6 +5,7 @@ namespace App\Filament\Widgets;
 use App\Models\Bank;
 use App\Models\CustomerAssignment;
 use App\Models\FollowUp;
+use App\Models\Lead;
 use App\Services\HierarchyService;
 use Carbon\Carbon;
 use Coolsam\Flatpickr\Forms\Components\Flatpickr;
@@ -131,20 +132,19 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
 
     public function fetchEvents(array $info): array
     {
-        [$customerIds, $aiRecordIds] = $this->visibleLeadIds();
+        [$customerIds, $aiRecordIds, $leadIds] = $this->visibleLeadIds();
 
-        if (empty($customerIds) && empty($aiRecordIds)) {
+        if (empty($customerIds) && empty($aiRecordIds) && empty($leadIds)) {
             return [];
         }
 
         $start = Carbon::parse($info['start']);
         $end = Carbon::parse($info['end']);
 
-        return FollowUp::query()
-            ->where(function (Builder $query) use ($customerIds, $aiRecordIds) {
-                $query->when(filled($customerIds), fn (Builder $q) => $q->whereIn('customer_id', $customerIds))
-                    ->when(filled($aiRecordIds), fn (Builder $q) => $q->orWhereIn('ai_customer_record_id', $aiRecordIds));
-            })
+        $query = FollowUp::query();
+        $this->scopeToVisibleLeadFollowUps($query, $customerIds, $aiRecordIds, $leadIds);
+
+        return $query
             ->whereRaw('COALESCE(next_follow_up_date, follow_up_date) BETWEEN ? AND ?', [$start, $end])
             ->get(['id', 'next_follow_up_date', 'follow_up_date'])
             ->groupBy(fn (FollowUp $followUp) => Carbon::parse($followUp->next_follow_up_date ?? $followUp->follow_up_date)->toDateString())
@@ -190,21 +190,39 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
 
     protected function followUpsForDate(string $date): Collection
     {
-        [$customerIds, $aiRecordIds] = $this->visibleLeadIds();
+        [$customerIds, $aiRecordIds, $leadIds] = $this->visibleLeadIds();
 
-        if (empty($customerIds) && empty($aiRecordIds)) {
+        if (empty($customerIds) && empty($aiRecordIds) && empty($leadIds)) {
             return new Collection;
         }
 
-        return FollowUp::query()
-            ->where(function (Builder $query) use ($customerIds, $aiRecordIds) {
-                $query->when(filled($customerIds), fn (Builder $q) => $q->whereIn('customer_id', $customerIds))
-                    ->when(filled($aiRecordIds), fn (Builder $q) => $q->orWhereIn('ai_customer_record_id', $aiRecordIds));
-            })
+        $query = FollowUp::query();
+        $this->scopeToVisibleLeadFollowUps($query, $customerIds, $aiRecordIds, $leadIds);
+
+        return $query
             ->whereRaw('DATE(COALESCE(next_follow_up_date, follow_up_date)) = ?', [$date])
-            ->with(['customer', 'aiCustomerRecord', 'employee'])
+            ->with(['customer', 'aiCustomerRecord', 'lead', 'employee'])
             ->orderByRaw('COALESCE(next_follow_up_date, follow_up_date)')
             ->get();
+    }
+
+    /**
+     * Scopes a FollowUp query to those tied to the given visible
+     * customers, AI-extracted records, or raw Leads. Shared by
+     * fetchEvents/followUpsForDate here and by
+     * DashboardFollowUpCalendarWidget's lead-side counts.
+     *
+     * @param  array<int, int>  $customerIds
+     * @param  array<int, int>  $aiRecordIds
+     * @param  array<int, int>  $leadIds
+     */
+    protected function scopeToVisibleLeadFollowUps(Builder $query, array $customerIds, array $aiRecordIds, array $leadIds): Builder
+    {
+        return $query->where(function (Builder $query) use ($customerIds, $aiRecordIds, $leadIds) {
+            $query->when(filled($customerIds), fn (Builder $q) => $q->whereIn('customer_id', $customerIds))
+                ->when(filled($aiRecordIds), fn (Builder $q) => $q->orWhereIn('ai_customer_record_id', $aiRecordIds))
+                ->when(filled($leadIds), fn (Builder $q) => $q->orWhereIn('lead_id', $leadIds));
+        });
     }
 
     /**
@@ -334,7 +352,7 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
     }
 
     /**
-     * @return array{0: array<int, int>, 1: array<int, int>}
+     * @return array{0: array<int, int>, 1: array<int, int>, 2: array<int, int>}
      */
     protected function visibleLeadIds(): array
     {
@@ -344,12 +362,30 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
         return [
             $assignments->pluck('customer_id')->filter()->unique()->values()->all(),
             $assignments->pluck('ai_customer_record_id')->filter()->unique()->values()->all(),
+            $this->visibleLeadsQuery()->pluck('id')->all(),
         ];
     }
 
     protected function visibleAssignmentsQuery(): Builder
     {
         $query = CustomerAssignment::query();
+
+        $user = Filament::auth()->user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if ($user->hasRole('Admin')) {
+            return $query;
+        }
+
+        return $query->whereIn('employee_id', HierarchyService::visibleEmployeeIds($user));
+    }
+
+    protected function visibleLeadsQuery(): Builder
+    {
+        $query = Lead::query();
 
         $user = Filament::auth()->user();
 

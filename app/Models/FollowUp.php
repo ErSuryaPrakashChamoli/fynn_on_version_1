@@ -2,23 +2,24 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use App\Models\Bank;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
  * @property int $customer_id
  * @property int $employee_id
- * @property \Illuminate\Support\Carbon $follow_up_date
+ * @property Carbon $follow_up_date
  * @property string $follow_up_type
  * @property string $remarks
- * @property \Illuminate\Support\Carbon|null $next_follow_up_date
+ * @property Carbon|null $next_follow_up_date
  * @property string $status
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\Customer $customer
- * @property-read \App\Models\Employee $employee
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Customer $customer
+ * @property-read Employee $employee
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|FollowUp newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|FollowUp newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|FollowUp query()
@@ -32,6 +33,7 @@ use App\Models\Bank;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|FollowUp whereRemarks($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|FollowUp whereStatus($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|FollowUp whereUpdatedAt($value)
+ *
  * @mixin \Eloquent
  */
 class FollowUp extends Model
@@ -42,6 +44,7 @@ class FollowUp extends Model
     protected $fillable = [
         'customer_id',
         'ai_customer_record_id',
+        'lead_id',
         'employee_id',
         'follow_up_date',
         'follow_up_type',
@@ -49,7 +52,7 @@ class FollowUp extends Model
         'next_follow_up_date',
         'status',
         'email',
-        'bank_id'
+        'bank_id',
     ];
 
     protected $casts = [
@@ -67,6 +70,11 @@ class FollowUp extends Model
         return $this->belongsTo(AiCustomerRecord::class);
     }
 
+    public function lead()
+    {
+        return $this->belongsTo(Lead::class);
+    }
+
     public function getDisplayNameAttribute(): string
     {
         if ($this->customer) {
@@ -75,7 +83,11 @@ class FollowUp extends Model
 
         if ($this->aiCustomerRecord) {
             return $this->aiCustomerRecord->value('customer_name')
-                ?? ('AI Record #' . $this->aiCustomerRecord->id);
+                ?? ('AI Record #'.$this->aiCustomerRecord->id);
+        }
+
+        if ($this->lead) {
+            return $this->lead->customer_name;
         }
 
         return '—';

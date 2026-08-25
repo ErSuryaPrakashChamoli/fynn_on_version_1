@@ -15,11 +15,16 @@ class LoginPageSetting extends Model
 {
     protected $fillable = [
         'left_logo_path',
+        'left_banner_path',
         'left_heading',
+        'left_heading_size',
+        'left_heading_align',
         'left_tagline',
         'right_logo_path',
         'right_tagline',
         'welcome_heading',
+        'welcome_heading_size',
+        'welcome_heading_align',
         'welcome_subheading',
         'footer_text',
     ];
@@ -34,6 +39,19 @@ class LoginPageSetting extends Model
         return Attribute::get(fn (): string => $this->left_logo_path
             ? Storage::disk('public')->url($this->left_logo_path)
             : asset('images/fynn-on-logo.png'));
+    }
+
+    /**
+     * A complete, admin-uploaded banner image for the whole left panel —
+     * unlike the other image fields, there's no built-in fallback asset:
+     * a null value means "no custom banner", and the login page falls
+     * back to composing the logo/heading/tagline itself instead.
+     */
+    protected function leftBannerUrl(): Attribute
+    {
+        return Attribute::get(fn (): ?string => $this->left_banner_path
+            ? Storage::disk('public')->url($this->left_banner_path)
+            : null);
     }
 
     protected function rightLogoUrl(): Attribute

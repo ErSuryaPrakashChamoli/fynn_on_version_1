@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Models\LoginPageSetting;
 use BackedEnum;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -31,6 +32,25 @@ class LoginPageSettings extends Page
 
     public ?array $data = [];
 
+    /**
+     * @var array<string, string>
+     */
+    protected static array $headingSizeOptions = [
+        'sm' => 'Small',
+        'md' => 'Medium',
+        'lg' => 'Large',
+        'xl' => 'Extra large',
+    ];
+
+    /**
+     * @var array<string, string>
+     */
+    protected static array $headingAlignOptions = [
+        'left' => 'Left',
+        'center' => 'Center',
+        'right' => 'Right',
+    ];
+
     public function mount(): void
     {
         $this->form->fill(LoginPageSetting::current()->toArray());
@@ -41,27 +61,54 @@ class LoginPageSettings extends Page
         return $schema
             ->components([
                 Section::make('Left banner')
-                    ->description('The dark panel shown beside the sign-in form.')
+                    ->description('The panel shown beside the sign-in form.')
                     ->schema([
-                        FileUpload::make('left_logo_path')
-                            ->label('Logo')
-                            ->helperText('Leave empty to keep using the default FYNN-ON logo.')
+                        FileUpload::make('left_banner_path')
+                            ->label('Custom banner image (optional)')
+                            ->helperText('Upload a complete, ready-made banner and it replaces this whole panel exactly as provided (the logo below is still shown as a small overlay on top of it). Recommended size: 1080 × 1350px (portrait) or taller; it\'s cropped to fill the panel. Leave empty to use the logo/heading/tagline composition below instead.')
                             ->image()
+                            ->imageEditor()
+                            ->imageEditorAspectRatios(['3:4', '9:16', null])
                             ->disk('public')
                             ->directory('login-page')
                             ->visibility('public')
-                            ->preventFilePathTampering()
+                            ->live()
                             ->columnSpanFull(),
 
-                        Grid::make(2)->schema([
-                            TextInput::make('left_heading')
-                                ->label('Heading')
-                                ->required(),
+                        FileUpload::make('left_logo_path')
+                            ->label('Logo')
+                            ->helperText('Shown at the top of the panel — over the custom banner above if one is set, or over the default composition otherwise. Leave empty to keep using the default FYNN-ON logo. Recommended size: 480 × 220px.')
+                            ->image()
+                            ->imageEditor()
+                            ->imageEditorAspectRatios(['16:9', '4:3', null])
+                            ->disk('public')
+                            ->directory('login-page')
+                            ->visibility('public')
+                            ->columnSpanFull(),
 
-                            TextInput::make('left_tagline')
-                                ->label('Tagline')
-                                ->required(),
-                        ]),
+                        Grid::make(2)
+                            ->schema([
+                                TextInput::make('left_heading')
+                                    ->label('Heading')
+                                    ->required(),
+
+                                TextInput::make('left_tagline')
+                                    ->label('Tagline')
+                                    ->required(),
+                            ]),
+
+                        Grid::make(2)
+                            ->schema([
+                                Select::make('left_heading_size')
+                                    ->label('Heading font size')
+                                    ->options(self::$headingSizeOptions)
+                                    ->required(),
+
+                                Select::make('left_heading_align')
+                                    ->label('Heading alignment')
+                                    ->options(self::$headingAlignOptions)
+                                    ->required(),
+                            ]),
                     ]),
 
                 Section::make('Right panel')
@@ -69,12 +116,13 @@ class LoginPageSettings extends Page
                     ->schema([
                         FileUpload::make('right_logo_path')
                             ->label('Logo')
-                            ->helperText('Leave empty to keep using the default Fynnedge Advisory logo.')
+                            ->helperText('Leave empty to keep using the default Fynnedge Advisory logo. Recommended size: 480 × 480px.')
                             ->image()
+                            ->imageEditor()
+                            ->imageEditorAspectRatios(['1:1', '4:3', null])
                             ->disk('public')
                             ->directory('login-page')
                             ->visibility('public')
-                            ->preventFilePathTampering()
                             ->columnSpanFull(),
 
                         TextInput::make('right_tagline')
@@ -92,6 +140,20 @@ class LoginPageSettings extends Page
                                 ->required(),
                         ]),
 
+                        Grid::make(2)
+                            ->schema([
+                                Select::make('welcome_heading_size')
+                                    ->label('Welcome heading font size')
+                                    ->options(self::$headingSizeOptions)
+                                    ->helperText('Shrink this if a longer heading is wrapping awkwardly.')
+                                    ->required(),
+
+                                Select::make('welcome_heading_align')
+                                    ->label('Welcome heading alignment')
+                                    ->options(self::$headingAlignOptions)
+                                    ->required(),
+                            ]),
+
                         TextInput::make('footer_text')
                             ->label('Footer text')
                             ->required()
@@ -103,9 +165,15 @@ class LoginPageSettings extends Page
 
     public function save(): void
     {
-        $this->validate();
+        // `$this->form->getState()` (not the raw `$this->data` property) is
+        // what runs validation *and* dehydrates FileUpload's internal
+        // Livewire upload-tracking state into a plain storable path —
+        // reading `$this->data` directly skipped that and was saving the
+        // tracker's raw internal structure instead of the uploaded file's
+        // path (visible as literal `{"<uuid>":{}}` strings in the database).
+        $data = $this->form->getState();
 
-        LoginPageSetting::current()->update($this->data);
+        LoginPageSetting::current()->update($data);
 
         Notification::make()
             ->title('Login page banner updated')

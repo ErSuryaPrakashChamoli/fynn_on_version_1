@@ -63,9 +63,10 @@ class FollowUpResource extends Resource
                 ->whereRaw('1 = 0');
         }
 
-        // Admin sees everything
+        // Admin sees everything (still excluding Lead follow-ups — see below)
         if ($user->hasRole('Admin')) {
-            return parent::getEloquentQuery();
+            return parent::getEloquentQuery()
+                ->whereNull('lead_id');
         }
 
         $employee = $user->employee;
@@ -97,7 +98,11 @@ class FollowUpResource extends Resource
         $employeeIds = HierarchyHelper::subordinateIds($employee);
 
         return parent::getEloquentQuery()
-            ->whereIn('employee_id', $employeeIds);
+            ->whereIn('employee_id', $employeeIds)
+            // Raw-Lead follow-ups belong to the Lead Follow-Up Calendar,
+            // not here — keeps "My Customer Follow-ups" scoped to
+            // Customer / AI-record follow-ups only.
+            ->whereNull('lead_id');
     }
 
     public static function getRelations(): array

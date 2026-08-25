@@ -5,7 +5,6 @@ namespace App\Filament\Widgets;
 use App\Filament\Resources\FollowUps\FollowUpResource;
 use App\Models\FollowUp;
 use Carbon\Carbon;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Saade\FilamentFullCalendar\Data\EventData;
 
@@ -66,17 +65,16 @@ class DashboardFollowUpCalendarWidget extends AssignedLeadFollowUpCalendarWidget
      */
     protected function leadFollowUpCountsByDate(Carbon $start, Carbon $end): array
     {
-        [$customerIds, $aiRecordIds] = $this->visibleLeadIds();
+        [$customerIds, $aiRecordIds, $leadIds] = $this->visibleLeadIds();
 
-        if (empty($customerIds) && empty($aiRecordIds)) {
+        if (empty($customerIds) && empty($aiRecordIds) && empty($leadIds)) {
             return [];
         }
 
-        return FollowUp::query()
-            ->where(function (Builder $query) use ($customerIds, $aiRecordIds) {
-                $query->when(filled($customerIds), fn (Builder $q) => $q->whereIn('customer_id', $customerIds))
-                    ->when(filled($aiRecordIds), fn (Builder $q) => $q->orWhereIn('ai_customer_record_id', $aiRecordIds));
-            })
+        $query = FollowUp::query();
+        $this->scopeToVisibleLeadFollowUps($query, $customerIds, $aiRecordIds, $leadIds);
+
+        return $query
             ->whereRaw('COALESCE(next_follow_up_date, follow_up_date) BETWEEN ? AND ?', [$start, $end])
             ->get(['next_follow_up_date', 'follow_up_date'])
             ->groupBy(fn (FollowUp $followUp) => Carbon::parse($followUp->next_follow_up_date ?? $followUp->follow_up_date)->toDateString())
