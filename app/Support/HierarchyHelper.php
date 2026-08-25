@@ -2,19 +2,18 @@
 
 namespace App\Support;
 
+use App\Filament\Resources\Teams\TeamResource;
 use App\Models\Employee;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
-use Carbon\Carbon;
 
 class HierarchyHelper
 {
     /**
      * Get all visible employee IDs for the logged-in user.
      */
-
-
     public static function visibleEmployeeIds(User $user): Collection
     {
         /*
@@ -33,7 +32,7 @@ class HierarchyHelper
                                 Employee::DESIGNATION_MANAGER,
                                 Employee::DESIGNATION_TEAM_LEADER,
                             ])
-                            ->where('exit_status', '!=', 'yes');
+                                ->where('exit_status', '!=', 'yes');
                         });
                 })
                 ->pluck('id');
@@ -53,7 +52,6 @@ class HierarchyHelper
 
         if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
 
-
             return self::ids('cluster_id', $employee->id);
         }
 
@@ -65,7 +63,6 @@ class HierarchyHelper
 
         if ($employee->designation === Employee::DESIGNATION_MANAGER) {
 
-
             return self::ids('manager_id', $employee->id);
         }
 
@@ -76,7 +73,6 @@ class HierarchyHelper
         */
 
         if ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
-
 
             return self::ids('superviser_id', $employee->id);
         }
@@ -126,6 +122,7 @@ class HierarchyHelper
         if ($viewer->hasRole('Admin')) {
             return true;
         }
+
         return self::canViewEmployee($viewer, $employee);
     }
 
@@ -137,11 +134,40 @@ class HierarchyHelper
         // We will implement this in the next step.
         // return [];
         return [
-            'caller'       => $employee,
-            'team_leader'  => $employee->supervisor,
-            'manager'      => $employee->manager,
-            'cluster'      => $employee->cluster,
+            'caller' => $employee,
+            'team_leader' => $employee->supervisor,
+            'manager' => $employee->manager,
+            'cluster' => $employee->cluster,
         ];
+    }
+
+    /**
+     * Employee IDs the user is allowed to look up in the Reporting Hierarchy
+     * page: their own downward team (self + subordinates) plus their upward
+     * chain of superiors (team leader, manager, cluster manager). Admin
+     * sees everyone. Nobody sees another team's hierarchy.
+     */
+    public static function ownHierarchyIds(User $user): Collection
+    {
+        if ($user->hasRole('Admin')) {
+            return Employee::query()->pluck('id');
+        }
+
+        $employee = $user->employee;
+
+        if (! $employee) {
+            return collect();
+        }
+
+        $downward = self::subordinateIds($employee);
+
+        $upward = collect([
+            $employee->superviser_id,
+            $employee->manager_id,
+            $employee->cluster_id,
+        ])->filter();
+
+        return $downward->merge($upward)->unique()->values();
     }
 
     private static function ids(string $column, int $id): Collection
@@ -156,10 +182,8 @@ class HierarchyHelper
             ->values();
     }
 
-
     public static function directReportees(User $user): Builder
     {
-
 
         // Admin sees Cluster Managers
         if ($user->hasRole('Admin')) {
@@ -171,7 +195,6 @@ class HierarchyHelper
         $employee = $user->employee;
         // dd($user);
         // dd($employee->designation);
-
 
         if (! $employee) {
             return Employee::query()->whereRaw('1 = 0');
@@ -205,11 +228,8 @@ class HierarchyHelper
         return Employee::query()->whereRaw('1 = 0');
     }
 
-
-
     public static function children(Employee $employee): Builder
     {
-
 
         if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
 
@@ -236,8 +256,6 @@ class HierarchyHelper
 
         return Employee::query()->whereRaw('1=0');
     }
-
-
 
     public static function callerIds(Employee $employee): Collection
     {
@@ -283,7 +301,6 @@ class HierarchyHelper
         return collect();
     }
 
-
     public static function breadcrumb(Employee $employee): array
     {
         $items = [];
@@ -291,7 +308,7 @@ class HierarchyHelper
         if ($employee->cluster) {
             $items[] = [
                 'label' => $employee->cluster->emp_name,
-                'url' => \App\Filament\Resources\Teams\TeamResource::getUrl('view-team', [
+                'url' => TeamResource::getUrl('view-team', [
                     'record' => $employee->cluster,
                 ]),
             ];
@@ -300,7 +317,7 @@ class HierarchyHelper
         if ($employee->manager) {
             $items[] = [
                 'label' => $employee->manager->emp_name,
-                'url' => \App\Filament\Resources\Teams\TeamResource::getUrl('view-team', [
+                'url' => TeamResource::getUrl('view-team', [
                     'record' => $employee->manager,
                 ]),
             ];
@@ -309,7 +326,7 @@ class HierarchyHelper
         if ($employee->superviser) {
             $items[] = [
                 'label' => $employee->superviser->emp_name,
-                'url' => \App\Filament\Resources\Teams\TeamResource::getUrl('view-team', [
+                'url' => TeamResource::getUrl('view-team', [
                     'record' => $employee->superviser,
                 ]),
             ];
@@ -322,7 +339,6 @@ class HierarchyHelper
 
         return $items;
     }
-
 
     public static function subordinateIds(Employee $employee): Collection
     {
@@ -372,8 +388,8 @@ class HierarchyHelper
         $today = Carbon::today();
 
         $currentMonth = $today->month;
-        $currentYear  = $today->year;
-        $monthEnd     = $today->copy()->endOfMonth();
+        $currentYear = $today->year;
+        $monthEnd = $today->copy()->endOfMonth();
 
         /*
         |--------------------------------------------------------------------------
@@ -399,7 +415,7 @@ class HierarchyHelper
 
         if (
             $employee->exit_status === 'yes' &&
-            !empty($employee->exit_date)
+            ! empty($employee->exit_date)
         ) {
 
             $exitDate = Carbon::parse($employee->exit_date);
@@ -496,7 +512,7 @@ class HierarchyHelper
                                 Employee::DESIGNATION_MANAGER,
                                 Employee::DESIGNATION_TEAM_LEADER,
                             ])
-                            ->where('exit_status', '!=', 'yes');
+                                ->where('exit_status', '!=', 'yes');
                         });
                 })
                 ->pluck('id')

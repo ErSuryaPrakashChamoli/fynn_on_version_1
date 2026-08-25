@@ -51,4 +51,9 @@ class OcrDocumentResource extends Resource
             'edit' => EditOcrDocument::route('/{record}/edit'),
         ];
     }
+
+    public static function canAccess(): bool
+    {
+        return auth()->user()?->hasRole('Admin') ?? false;
+    }
 }

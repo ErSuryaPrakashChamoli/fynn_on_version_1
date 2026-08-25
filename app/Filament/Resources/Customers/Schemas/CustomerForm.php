@@ -2,46 +2,43 @@
 
 namespace App\Filament\Resources\Customers\Schemas;
 
-
-
-use Filament\Schemas\Schema;
-use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Textarea;
-use Filament\Schemas\Components\Utilities\Get;
-use Filament\Schemas\Components\Section;
-use Filament\Schemas\Components\View;
-use Filament\Forms\Components\CheckboxList;
+use App\Filament\Resources\CustomerPanRequests\CustomerPanRequestResource;
+use App\Filament\Resources\Customers\Pages\CreateCustomer;
+use App\Models\Bank;
 use App\Models\City;
 use App\Models\Customer;
-use App\Models\Employee;
-use Illuminate\Support\Str;
-use Illuminate\Support\HtmlString;
+use App\Models\CustomerDocument;
+use App\Models\CustomerPanRequest;
 use App\Models\CustomerStageHistory;
-
-use Filament\Forms\Components\Placeholder;
+use App\Models\Employee;
+use App\Models\User;
+use App\Services\CustomerJourneyService;
+use Filament\Actions\Action;
 use Filament\Actions\Action as FormAction;
+use Filament\Facades\Filament;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
-use App\Models\CustomerDocument;
-use Filament\Notifications\Notification;
 use Filament\Forms\Components\Hidden;
-
-use Filament\Forms\Components\Component;
-use App\Models\Bank;
+use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\ViewField;
-use Filament\Actions\Action;
+use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
-use App\Services\CustomerJourneyService;
-use App\Models\CustomerPanRequest;
-use Filament\Infolists\Components\ViewEntry;
+use Filament\Schemas\Components\View;
+use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
-use Filament\Facades\Filament;
-
+use Illuminate\Support\HtmlString;
+use Illuminate\Support\Str;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 class CustomerForm
 {
-
     protected static function lockCallerFields(?Customer $record): bool
     {
         if (! $record) {
@@ -71,13 +68,13 @@ class CustomerForm
 
     protected static function isApprovedPanRequest($livewire): bool
     {
-        return $livewire instanceof \App\Filament\Resources\Customers\Pages\CreateCustomer
+        return $livewire instanceof CreateCustomer
             && $livewire->isApprovedPanRequest;
     }
 
     protected static function showPanRequests($livewire): bool
     {
-        return $livewire instanceof \App\Filament\Resources\Customers\Pages\CreateCustomer
+        return $livewire instanceof CreateCustomer
             && $livewire->showPanRequests;
     }
 
@@ -107,17 +104,17 @@ class CustomerForm
             'Canara Bank' => 'Canara Bank',
             'IDFC First Bank' => 'IDFC First Bank',
             'AU Small Finance Bank' => 'AU Small Finance Bank',
-            'LNT' => 'LNT'
+            'LNT' => 'LNT',
             // 'Other' => 'Other',
         ];
 
         asort($banks);
 
-        $currencyField = fn(string $name, string $label) => TextInput::make($name)
+        $currencyField = fn (string $name, string $label) => TextInput::make($name)
             ->label($label)
             ->prefix('₹')
             ->live()
-            ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null)
+            ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
             ->afterStateUpdated(function ($state, Set $set) use ($name) {
                 $value = preg_replace('/[^0-9]/', '', (string) $state);
 
@@ -125,8 +122,8 @@ class CustomerForm
                     $set($name, indianCurrencyFormat($value));
                 }
             })
-            ->dehydrateStateUsing(fn($state) => preg_replace('/[^0-9]/', '', (string) $state))
-            ->visible(fn(Get $get) => $get('disbursal_status') === 'disbursed');
+            ->dehydrateStateUsing(fn ($state) => preg_replace('/[^0-9]/', '', (string) $state))
+            ->visible(fn (Get $get) => $get('disbursal_status') === 'disbursed');
 
         return $schema
 
@@ -137,12 +134,15 @@ class CustomerForm
                     ->columnSpanFull()
                     ->visibleOn('edit')
                     ->extraAttributes([
-                        'class' => 'sticky z-50 self-start',
-                        'style' => 'top: 5.5rem;',
+                        // `.fi-main-ctn` is the page's own scroll container
+                        // (see the global app-shell rules in theme.css), so
+                        // sticking to its top edge is enough on its own —
+                        // no more manually offsetting past the topbar.
+                        'class' => 'sticky top-0 z-50 self-start',
                     ]),
 
-
                 Section::make('Existing Customer')
+                    ->key('existingCustomerSection')
                     // ->visible(function (Get $get, $livewire): bool {
 
                     //     if ($livewire->isApprovedPanRequest) {
@@ -206,7 +206,7 @@ class CustomerForm
                                     $get('existing_customer_id')
                                 );
 
-                                CustomerPanRequest::create([
+                                $panRequest = CustomerPanRequest::create([
                                     // 'customer_id' => $get('existing_customer_id'),
                                     'customer_id' => $customer->id,
                                     'ai_customer_record_id' => $livewire->aiCustomerRecordId ?? null,
@@ -242,19 +242,30 @@ class CustomerForm
                                     ->body('Your request has been sent to Admin for approval.')
                                     ->success()
                                     ->send();
+
+                                Notification::make()
+                                    ->title('New Duplicate PAN Request')
+                                    ->body("{$employee->emp_name} requested approval for {$customer->customer_name} (PAN: {$panRequest->pan_number}) with {$bank?->bank_name}.")
+                                    ->warning()
+                                    ->icon('heroicon-o-shield-check')
+                                    ->actions([
+                                        Action::make('review')
+                                            ->label('Review Request')
+                                            ->url(CustomerPanRequestResource::getUrl('index'))
+                                            ->markAsRead(),
+                                    ])
+                                    ->sendToDatabase(User::role('Admin')->get());
                             }),
 
                         // VIEW / HIDE REQUESTS
                         Action::make('togglePanRequests')
                             ->label(
-                                fn($livewire) =>
-                                $livewire->showPanRequests
+                                fn ($livewire) => $livewire->showPanRequests
                                     ? 'Hide Requests'
                                     : 'View Requests'
                             )
                             ->icon(
-                                fn($livewire) =>
-                                $livewire->showPanRequests
+                                fn ($livewire) => $livewire->showPanRequests
                                     ? 'heroicon-o-chevron-up'
                                     : 'heroicon-o-chevron-down'
                             )
@@ -270,31 +281,26 @@ class CustomerForm
                         Placeholder::make('customer_name')
                             ->label('Customer Name')
                             ->content(
-                                fn($livewire) =>
-                                $livewire->existingCustomer?->customer_name
+                                fn ($livewire) => $livewire->existingCustomer?->customer_name
                             ),
 
                         Placeholder::make('mobile')
                             ->label('Mobile')
                             ->content(
-                                fn($livewire) =>
-                                $livewire->existingCustomer?->mobile_no
+                                fn ($livewire) => $livewire->existingCustomer?->mobile_no
                             ),
 
                         Placeholder::make('owner')
                             ->label('Owner')
                             ->content(
-                                fn($livewire) =>
-                                $livewire->existingCustomer?->employee?->emp_name
+                                fn ($livewire) => $livewire->existingCustomer?->employee?->emp_name
                             ),
 
                         Placeholder::make('status')
                             ->label('Current Status')
                             ->content(
-                                fn($livewire) =>
-                                $livewire->existingCustomer?->journey_status
+                                fn ($livewire) => $livewire->existingCustomer?->journey_status
                             ),
-
 
                         ViewField::make('pan_request_history')
                             ->view('filament.resources.customers.pages.pan-request-history')
@@ -396,7 +402,7 @@ class CustomerForm
                                     'requests' => $query->get(),
                                 ];
                             })
-                            ->visible(fn($livewire) => self::showPanRequests($livewire))
+                            ->visible(fn ($livewire) => self::showPanRequests($livewire))
                             ->columnSpanFull(),
 
                     ])
@@ -444,6 +450,7 @@ class CustomerForm
 
                                 if (strlen($state) !== 10) {
                                     $set('pan_loading', false);
+
                                     return;
                                 }
 
@@ -479,7 +486,7 @@ class CustomerForm
                             })
 
                             ->dehydrateStateUsing(
-                                fn($state) => strtoupper($state)
+                                fn ($state) => strtoupper($state)
                             )
 
                             ->rules([
@@ -493,8 +500,7 @@ class CustomerForm
                             ->dehydrated(true)
 
                             ->disabled(
-                                fn(?Customer $record, $livewire) =>
-                                self::lockCallerFields($record)
+                                fn (?Customer $record, $livewire) => self::lockCallerFields($record)
                                     || $livewire->isApprovedPanRequest
                             )
 
@@ -541,14 +547,12 @@ class CustomerForm
                             ->maxLength(255)
                             ->live()
                             ->disabled(
-                                fn(Get $get, ?Customer $record) =>
-                                self::lockCallerFields($record)
+                                fn (Get $get, ?Customer $record) => self::lockCallerFields($record)
                                     || filled($get('existing_customer_id'))
                             )
                             ->dehydrated(true)
                             ->afterStateUpdated(
-                                fn($state, callable $set) =>
-                                $set('customer_name', Str::title($state))
+                                fn ($state, callable $set) => $set('customer_name', Str::title($state))
                             ),
 
                         TextInput::make('mobile_no')
@@ -593,8 +597,7 @@ class CustomerForm
                             ])
 
                             ->disabled(
-                                fn(Get $get, ?Customer $record) =>
-                                self::lockCallerFields($record)
+                                fn (Get $get, ?Customer $record) => self::lockCallerFields($record)
                                     || filled($get('existing_customer_id'))
                             )
 
@@ -627,7 +630,6 @@ class CustomerForm
 
                             ->dehydrated(true),
 
-
                         // TextInput::make('email')
                         //     ->label('Email Address')
                         //     ->email()
@@ -658,26 +660,20 @@ class CustomerForm
                         //         ]);
                         //     }),
 
-
-
-
-
-
                         Select::make('job_location')
                             ->label('Job Location')
                             // ->required()
                             ->searchable()
                             ->preload()
                             ->disabled(
-                                fn(Get $get, ?Customer $record, $livewire) =>
-                                self::lockCallerFields($record)
+                                fn (Get $get, ?Customer $record, $livewire) => self::lockCallerFields($record)
                                     || (
                                         filled($get('existing_customer_id'))
                                         && ! $livewire->isApprovedPanRequest
                                     )
                             )
 
-                            ->options(fn() => City::query()->where('is_active', 1)->orderBy('city')->get()->pluck('city', 'city')),
+                            ->options(fn () => City::query()->where('is_active', 1)->orderBy('city')->get()->pluck('city', 'city')),
 
                         Select::make('residence_location')
                             ->label('Residence Location')
@@ -685,15 +681,14 @@ class CustomerForm
                             ->searchable()
                             ->preload()
                             ->disabled(
-                                fn(Get $get, ?Customer $record, $livewire) =>
-                                self::lockCallerFields($record)
+                                fn (Get $get, ?Customer $record, $livewire) => self::lockCallerFields($record)
                                     || (
                                         filled($get('existing_customer_id'))
                                         && ! $livewire->isApprovedPanRequest
                                     )
                             )
 
-                            ->options(fn() => City::query()->where('is_active', 1)->orderBy('city')->get()->mapWithKeys(fn($item) => [$item->city => "{$item->city}, {$item->state}"])),
+                            ->options(fn () => City::query()->where('is_active', 1)->orderBy('city')->get()->mapWithKeys(fn ($item) => [$item->city => "{$item->city}, {$item->state}"])),
 
                         TextInput::make('salary')
                             ->label('Salary')
@@ -701,13 +696,11 @@ class CustomerForm
                             ->live()
                             // ->required()
                             ->required(
-                                fn(Get $get) =>
-                                $get('eligibility_status') === 'eligible'
+                                fn (Get $get) => $get('eligibility_status') === 'eligible'
                             )
-                            ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null)
+                            ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                             ->disabled(
-                                fn(Get $get, ?Customer $record, $livewire) =>
-                                self::lockCallerFields($record)
+                                fn (Get $get, ?Customer $record, $livewire) => self::lockCallerFields($record)
                                     || (
                                         filled($get('existing_customer_id'))
                                         && ! $livewire->isApprovedPanRequest
@@ -720,7 +713,7 @@ class CustomerForm
                                     $set('salary', indianCurrencyFormat($value));
                                 }
                             })
-                            ->dehydrateStateUsing(fn($state) => preg_replace('/[^0-9]/', '', (string) $state)),
+                            ->dehydrateStateUsing(fn ($state) => preg_replace('/[^0-9]/', '', (string) $state)),
 
                         Select::make('current_location')
                             ->label('Current Location')
@@ -728,15 +721,14 @@ class CustomerForm
                             ->searchable()
                             ->preload()
                             ->disabled(
-                                fn(Get $get, ?Customer $record, $livewire) =>
-                                self::lockCallerFields($record)
+                                fn (Get $get, ?Customer $record, $livewire) => self::lockCallerFields($record)
                                     || (
                                         filled($get('existing_customer_id'))
                                         && ! $livewire->isApprovedPanRequest
                                     )
                             )
 
-                            ->options(fn() => City::query()->where('is_active', 1)->orderBy('city')->get()->mapWithKeys(fn($item) => [$item->city => "{$item->city}, {$item->state}"])),
+                            ->options(fn () => City::query()->where('is_active', 1)->orderBy('city')->get()->mapWithKeys(fn ($item) => [$item->city => "{$item->city}, {$item->state}"])),
 
                         Select::make('eligibility_status')
                             ->label('Eligibility')
@@ -781,7 +773,6 @@ class CustomerForm
                                     );
                             }),
 
-
                         // Select::make('assign_to')
                         //     ->label('Assign To')
                         //     ->relationship('assignedTo', 'emp_name')
@@ -823,22 +814,20 @@ class CustomerForm
                             ->searchable()
                             ->required()
                             ->disabled(
-                                fn(Get $get, ?Customer $record, $livewire): bool =>
-                                self::lockCallerFields($record)
+                                fn (Get $get, ?Customer $record, $livewire): bool => self::lockCallerFields($record)
                                     || (
                                         filled($get('existing_customer_id'))
                                         && ! $livewire->isApprovedPanRequest
                                     )
                                     || (
-                                        $livewire instanceof \App\Filament\Resources\Customers\Pages\CreateCustomer
+                                        $livewire instanceof CreateCustomer
                                         && $livewire->isDirectCustomer
                                     )
                             )
-                            ->default(fn() => auth()->user()->employee?->id)
+                            ->default(fn () => auth()->user()->employee?->id)
                             ->dehydrated(true)
                             ->preload()
                             ->nullable(),
-
 
                         Select::make('eligibility_reason')
                             ->label('Not Eligible Reason')
@@ -851,24 +840,22 @@ class CustomerForm
                                 'location_issue' => 'Location',
                             ])
                             ->disabled(
-                                fn(Get $get, ?Customer $record) =>
-                                self::lockCallerFields($record)
+                                fn (Get $get, ?Customer $record) => self::lockCallerFields($record)
                                     || filled($get('existing_customer_id'))
                             )
-                            ->visible(fn(Get $get): bool => $get('eligibility_status') === 'not_eligible')
-                            ->required(fn(Get $get): bool => $get('eligibility_status') === 'not_eligible'),
+                            ->visible(fn (Get $get): bool => $get('eligibility_status') === 'not_eligible')
+                            ->required(fn (Get $get): bool => $get('eligibility_status') === 'not_eligible'),
                     ])
                     ->columns(2)
                     ->columnSpanFull()
                     ->disabled(
-                        fn(string $operation): bool =>
-                        $operation === 'edit'
+                        fn (string $operation): bool => $operation === 'edit'
                             && auth()->user()->hasRole('Employee')
                     ),
 
                 // PIPELINE AREA: Dynamic Sequential Sections Layout Container
                 Section::make('Application Progress Steps')
-                    ->visible(fn() => ! auth()->user()->hasRole('Caller'))
+                    ->visible(fn () => ! auth()->user()->hasRole('Caller'))
                     ->schema([
 
                         Placeholder::make('stage_history_timeline')
@@ -904,7 +891,7 @@ class CustomerForm
                                         <div class="text-xs text-gray-400 font-mono mt-0.5">%s by %s</div>
                                     </div>',
                                         e($log->stage_name),
-                                        e(\Illuminate\Support\Str::headline($log->status_value)),
+                                        e(Str::headline($log->status_value)),
                                         e($log->created_at->format('d-M-Y h:i A')),
                                         e($log->user?->name ?? 'System')
                                     );
@@ -917,8 +904,7 @@ class CustomerForm
                         // STAGE 1: Journey Requirements (Always Visible for Admin/Manager)
                         Section::make('Journey Configuration')
                             ->visible(
-                                fn() =>
-                                auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
+                                fn () => auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
                             )
                             ->schema([
 
@@ -927,18 +913,15 @@ class CustomerForm
                                     ->maxLength(255)
                                     ->live()
                                     ->required(
-                                        fn(Get $get) =>
-                                        auth()->user()->hasAnyRole([
+                                        fn (Get $get) => auth()->user()->hasAnyRole([
                                             'Admin',
                                             'Manager',
                                             'Team Leader',
                                             'Cluster Manager',
                                         ]) && $get('eligibility_status') === 'eligible'
                                     )
-                                    ->afterStateUpdated(fn($state, callable $set) => $set('company_category', Str::title($state)))
-                                    ->disabled(fn(?Customer $record) => self::lockAfterFilled($record, 'company_category')),
-
-
+                                    ->afterStateUpdated(fn ($state, callable $set) => $set('company_category', Str::title($state)))
+                                    ->disabled(fn (?Customer $record) => self::lockAfterFilled($record, 'company_category')),
 
                                 Select::make('loan_applied')
                                     ->label('Loan Type')
@@ -957,8 +940,7 @@ class CustomerForm
                                     ->searchable()
                                     ->preload()
                                     ->required(
-                                        fn(Get $get) =>
-                                        auth()->user()->hasAnyRole([
+                                        fn (Get $get) => auth()->user()->hasAnyRole([
                                             'Admin',
                                             'Manager',
                                             'Team Leader',
@@ -970,8 +952,7 @@ class CustomerForm
 
                                     // Existing normal lock + approved PAN request lock
                                     ->disabled(
-                                        fn(Get $get, ?Customer $record, $livewire): bool =>
-                                        self::lockAfterFilled($record, 'loan_applied')
+                                        fn (Get $get, ?Customer $record, $livewire): bool => self::lockAfterFilled($record, 'loan_applied')
                                             || self::isApprovedPanRequest($livewire)
                                     )
 
@@ -980,13 +961,12 @@ class CustomerForm
 
                                 TextInput::make('other_loan_applied')
                                     ->label('Other Loan Type')
-                                    ->visible(fn(Get $get): bool => $get('loan_applied') === 'other')
+                                    ->visible(fn (Get $get): bool => $get('loan_applied') === 'other')
                                     // ->required(fn(Get $get): bool => $get('loan_applied') === 'other')
-                                    ->required(fn(Get $get) =>
-                                    auth()->user()->hasAnyRole([
+                                    ->required(fn (Get $get) => auth()->user()->hasAnyRole([
                                         'Admin',
                                         'Manager',
-                                        'Team Leader'
+                                        'Team Leader',
                                     ])
                                         && $get('loan_applied') === 'other')
                                     ->maxLength(255),
@@ -997,8 +977,7 @@ class CustomerForm
                                     ->searchable()
                                     ->preload()
                                     ->required(
-                                        fn(Get $get) =>
-                                        auth()->user()->hasAnyRole([
+                                        fn (Get $get) => auth()->user()->hasAnyRole([
                                             'Admin',
                                             'Manager',
                                             'Team Leader',
@@ -1006,15 +985,14 @@ class CustomerForm
                                         ]) && $get('eligibility_status') === 'eligible'
                                     )
                                     ->live()
-                                    ->disabled(fn(?Customer $record) => self::lockAfterFilled($record, 'bank_eligible_for')),
+                                    ->disabled(fn (?Customer $record) => self::lockAfterFilled($record, 'bank_eligible_for')),
 
                                 TextInput::make('other_bank_eligible_for')
                                     ->label('Other Bank Name')
                                     ->maxLength(255)
-                                    ->visible(fn(Get $get): bool => $get('bank_eligible_for') === 'Other')
-                                    ->required(fn(Get $get): bool => $get('bank_eligible_for') === 'Other')
-                                    ->required(fn(Get $get) =>
-                                    auth()->user()->hasAnyRole(['Admin', 'Manager', 'Team Leader'])
+                                    ->visible(fn (Get $get): bool => $get('bank_eligible_for') === 'Other')
+                                    ->required(fn (Get $get): bool => $get('bank_eligible_for') === 'Other')
+                                    ->required(fn (Get $get) => auth()->user()->hasAnyRole(['Admin', 'Manager', 'Team Leader'])
                                         && $get('bank_eligible_for') === 'other'),
 
                                 // Displaying Status as a clean read-only text input instead of manual choice dropdown
@@ -1028,37 +1006,30 @@ class CustomerForm
                             ->columns(2)
                             ->columnSpanFull(),
 
-
-
-
-
                         // ---------------- PROGRESSIVE STEP 1: SFL SECTION ----------------
                         Section::make('Step 1: SFL (Source File Logging)')
                             ->schema([
 
-
                                 TextInput::make('application_no')
                                     ->label('Application No')
                                     ->maxLength(255)
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sfl', 'underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sfl', 'underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->dehydrated(),
 
                                 TextInput::make('lan_no')
                                     ->label('Loan Account Number')
                                     ->maxLength(255)
-                                    // ->required()
+                                    ->required()
 
                                     // Fix: Agli stages me yeh field non-editable ho jaye par data visible rahe
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->dehydrated(),
-
-
 
                                 TextInput::make('eligible_loan_amount')
                                     ->label('Eligible Loan Amount')
                                     ->prefix('₹')
                                     ->live()
-                                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null)
+                                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->afterStateUpdated(function ($state, callable $set) {
                                         $value = preg_replace('/[^0-9]/', '', (string) $state);
 
@@ -1066,7 +1037,7 @@ class CustomerForm
                                             $set('eligible_loan_amount', indianCurrencyFormat($value));
                                         }
                                     })
-                                    ->required(fn(Get $get) => $get('eligibility_status') === 'eligible')
+                                    ->required(fn (Get $get) => $get('eligibility_status') === 'eligible')
                                     // ->dehydrateStateUsing(fn ($state) => preg_replace('/[^0-9]/', '', (string) $state))
                                     ->dehydrateStateUsing(function ($state) {
                                         $value = preg_replace('/[^0-9]/', '', (string) $state);
@@ -1074,8 +1045,7 @@ class CustomerForm
                                         return $value !== '' ? $value : null;
                                     })
                                     ->disabled(
-                                        fn(Get $get): bool =>
-                                        $get('eligibility_status') !== 'eligible'
+                                        fn (Get $get): bool => $get('eligibility_status') !== 'eligible'
                                             || in_array(
                                                 strtolower((string) $get('journey_status')),
                                                 [
@@ -1098,40 +1068,39 @@ class CustomerForm
                                     ])
                                     ->live()
                                     // ->required()
-                                    ->required(fn(Get $get) => $get('eligibility_status') === 'eligible')
+                                    ->required(fn (Get $get) => $get('eligibility_status') === 'eligible')
                                     // Fix: Underwriting ya uske aage selection freeze ho jaye
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->dehydrated(),
 
                                 CheckboxList::make('pending_document')
                                     ->label('Pending Documents Checklist')
                                     ->options([
-                                        'aadhaar_card'            => 'AADHAR Card',
-                                        'current_address_proof'   => 'Current Address Proof',
-                                        'electricity_bill'        => 'Electricity Bill',
-                                        'bank_statement'          => 'Bank Statement',
-                                        'form_26as'               => 'Form 26AS',
-                                        'photo'                   => 'Photo',
-                                        'payslip'                 => 'Payslip',
-                                        'soa_repayment_schedule'  => 'SOA / Repayment Schedule',
-                                        'other'                   => 'Other',
+                                        'aadhaar_card' => 'AADHAR Card',
+                                        'current_address_proof' => 'Current Address Proof',
+                                        'electricity_bill' => 'Electricity Bill',
+                                        'bank_statement' => 'Bank Statement',
+                                        'form_26as' => 'Form 26AS',
+                                        'photo' => 'Photo',
+                                        'payslip' => 'Payslip',
+                                        'soa_repayment_schedule' => 'SOA / Repayment Schedule',
+                                        'other' => 'Other',
                                     ])
                                     ->columns(2)
                                     ->bulkToggleable()
                                     ->searchable()
-                                    ->visible(fn(Get $get): bool => strtolower((string) $get('documentation_status')) === 'pending')
-                                    ->required(fn(Get $get): bool => strtolower((string) $get('documentation_status')) === 'pending')
+                                    ->visible(fn (Get $get): bool => strtolower((string) $get('documentation_status')) === 'pending')
+                                    ->required(fn (Get $get): bool => strtolower((string) $get('documentation_status')) === 'pending')
                                     // Fix: Lock checkbox list when moved ahead
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->dehydrated(),
-
 
                                 Textarea::make('sfl_remarks')
                                     ->label('SFL Remarks')
                                     ->rows(2)
                                     ->columnSpanFull()
                                     // Fix: Underwriting ya uske aage remarks non-editable ho jaye
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->dehydrated(),
 
                                 Hidden::make('underwriting_status')
@@ -1142,8 +1111,9 @@ class CustomerForm
                                     ->label('')
                                     ->visible(function (Get $get): bool {
                                         $journeyStatus = $get('journey_status');
+
                                         return filled($journeyStatus)
-                                            && strtolower((string) $journeyStatus) === 'sfl' //not_started
+                                            && strtolower((string) $journeyStatus) === 'sfl' // not_started
                                             && strtolower((string) $get('documentation_status')) === 'complete';
                                     })
                                     ->hintAction(
@@ -1177,25 +1147,17 @@ class CustomerForm
                                                     ->send();
                                             })
 
-
-
                                     ),
-
 
                             ])
                             ->columns(2)
-                            ->visible(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'sfl', 'not_approved', 'dropped', 'carry_forward'])),
-
-
-
-
+                            ->visible(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'sfl', 'not_approved', 'dropped', 'carry_forward'])),
 
                         // ---------------- PROGRESSIVE STEP 2: UNDERWRITING SECTION ----------------
 
                         Section::make('Step 2: Underwriting Analysis')
                             ->disabled(
-                                fn(Get $get): bool =>
-                                in_array(
+                                fn (Get $get): bool => in_array(
                                     strtolower((string) $get('journey_status')),
                                     ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']
                                 )
@@ -1215,25 +1177,22 @@ class CustomerForm
                                     }),
                                 // ->required(fn(Get $get) => $get('documentation_status') === 'complete'),
 
-
                                 DatePicker::make('approval_date')
                                     ->displayFormat('d F Y')
                                     ->maxDate(now())
                                     ->native(false)
                                     ->suffixIcon('heroicon-m-calendar')
-                                    ->visible(fn(Get $get) => $get('underwriting_status') === 'approved')
-                                    ->required(fn(Get $get) => $get('underwriting_status') === 'approved')
+                                    ->visible(fn (Get $get) => $get('underwriting_status') === 'approved')
+                                    ->required(fn (Get $get) => $get('underwriting_status') === 'approved')
                                     ->dehydrated(true)
                                     ->label('Approval Date'),
-
 
                                 Textarea::make('underwriting_remarks')
                                     ->label('Underwriting Remarks')
                                     ->rows(2)
                                     ->columnSpanFull()
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->dehydrated(),
-
 
                             ])
                             ->columns(2)
@@ -1257,8 +1216,6 @@ class CustomerForm
                                     );
                             }),
 
-
-
                         // ---------------- PROGRESSIVE STEP 3: APPROVAL SECTION ----------------
                         Section::make('Step 3: Credit Approval Information')
                             ->schema([
@@ -1266,19 +1223,17 @@ class CustomerForm
                                     ->label('Approved Sanctioned Amount')
                                     ->prefix('₹')
                                     ->live()
-                                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null)
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->afterStateUpdated(function ($state, callable $set) {
                                         $value = preg_replace('/[^0-9]/', '', (string) $state);
                                         if ($value !== '') {
                                             $set('approved_loan_amount', indianCurrencyFormat($value));
                                         }
                                     })
-                                    ->dehydrateStateUsing(fn($state) => preg_replace('/[^0-9]/', '', (string) $state))
+                                    ->dehydrateStateUsing(fn ($state) => preg_replace('/[^0-9]/', '', (string) $state))
                                     ->dehydrated(true)
                                     ->required(),
-
-
 
                                 Select::make('sanctioned_bank')
                                     ->label('Final Sanctioned Issuing Bank')
@@ -1286,7 +1241,7 @@ class CustomerForm
                                         'other' => 'Other',
                                     ]))
                                     ->searchable()
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->dehydrated(true)
                                     ->live(),
 
@@ -1295,51 +1250,47 @@ class CustomerForm
 
                                 TextInput::make('other_sanctioned_bank')
                                     ->label('Enter Bank Name')
-                                    ->visible(fn($get) => $get('sanctioned_bank') === 'other')
-                                    ->required(fn($get) => $get('sanctioned_bank') === 'other')
+                                    ->visible(fn ($get) => $get('sanctioned_bank') === 'other')
+                                    ->required(fn ($get) => $get('sanctioned_bank') === 'other')
                                     ->live()
                                     ->dehydrated(true)
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
-                                    ->afterStateUpdated(fn($state, callable $set) => $set('other_sanctioned_bank', Str::title($state)))
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->afterStateUpdated(fn ($state, callable $set) => $set('other_sanctioned_bank', Str::title($state)))
                                     ->maxLength(255),
-
-
 
                                 Textarea::make('approved_remarks')
                                     ->label('Approved Credit Remarks')
                                     ->rows(2)
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->dehydrated(true)
                                     ->columnSpanFull(),
 
                                 Placeholder::make('underwriting_actions')
                                     ->label('')
-                                    ->visible(fn(Get $get): bool => strtolower((string) $get('journey_status')) === 'underwriting')
+                                    ->visible(fn (Get $get): bool => strtolower((string) $get('journey_status')) === 'underwriting')
                                     ->hintActions([
                                         FormAction::make('promote_to_approval')
                                             ->label('Approve & Move to Credit Approval')
                                             ->visible(
-                                                fn(Get $get) =>
-                                                $get('underwriting_status') === 'approved'
+                                                fn (Get $get) => $get('underwriting_status') === 'approved'
                                             )
                                             ->icon('heroicon-m-check-badge')
                                             ->color('success')
                                             ->requiresConfirmation()
                                             // FIX 2: Added $set utility layer
-                                            ->action(function (?\Illuminate\Database\Eloquent\Model $record, callable $set, Get $get) {
-
+                                            ->action(function (?Model $record, callable $set, Get $get) {
 
                                                 if (! $record) {
                                                     return;
                                                 }
 
                                                 $data = [
-                                                    'approved_loan_amount'   => $get('approved_loan_amount'),
-                                                    'sanctioned_bank'        => $get('sanctioned_bank'),
-                                                    'other_sanctioned_bank'  => $get('other_sanctioned_bank'),
-                                                    'approved_remarks'       => $get('approved_remarks'),
-                                                    'approval_date'         => $get('approval_date'),
-                                                    'underwriting_remarks'   => $get('underwriting_remarks')
+                                                    'approved_loan_amount' => $get('approved_loan_amount'),
+                                                    'sanctioned_bank' => $get('sanctioned_bank'),
+                                                    'other_sanctioned_bank' => $get('other_sanctioned_bank'),
+                                                    'approved_remarks' => $get('approved_remarks'),
+                                                    'approval_date' => $get('approval_date'),
+                                                    'underwriting_remarks' => $get('underwriting_remarks'),
                                                 ];
 
                                                 $record = CustomerJourneyService::approve($record, $data);
@@ -1371,12 +1322,9 @@ class CustomerForm
                                     );
                             })
                             ->disabled(
-                                fn(Get $get): bool =>
-                                strtolower((string) $get('journey_status')) === 'sanctioned'
+                                fn (Get $get): bool => strtolower((string) $get('journey_status')) === 'sanctioned'
                             )
                             ->dehydrated(),
-
-
 
                         // ---------------- PROGRESSIVE STEP 4: DISBURSED SECTION ----------------
                         Section::make('Step 4: Disbursal Payouts & Close')
@@ -1394,7 +1342,7 @@ class CustomerForm
                                     ])
                                     ->live()
                                     ->dehydrated(true)
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
                                     ->required(),
 
                                 Select::make('channel')
@@ -1407,11 +1355,10 @@ class CustomerForm
                                         'fast_credit' => 'Fast Credit',
                                         'kms_finbud' => 'KMS Finbud',
                                     ])
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
                                     ->dehydrated(true)
                                     ->visible(
-                                        fn(Get $get) =>
-                                        in_array($get('disbursal_status'), [
+                                        fn (Get $get) => in_array($get('disbursal_status'), [
                                             'disbursed',
                                             // 'carry_forward',
                                             'dropped',
@@ -1424,7 +1371,7 @@ class CustomerForm
                                     ->prefix('₹')
                                     ->live()
                                     ->dehydrated(true)
-                                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null)
+                                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->afterStateUpdated(function ($state, callable $set) {
                                         $value = preg_replace('/[^0-9]/', '', (string) $state);
 
@@ -1432,16 +1379,16 @@ class CustomerForm
                                             $set('sanctioned_loan_amount', indianCurrencyFormat($value));
                                         }
                                     })
-                                    ->dehydrateStateUsing(fn($state) => preg_replace('/[^0-9]/', '', (string) $state))
-                                    ->visible(fn(Get $get) => $get('disbursal_status') === 'disbursed')
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
-                                    ->required(fn(Get $get) => $get('disbursal_status') === 'disbursed'),
+                                    ->dehydrateStateUsing(fn ($state) => preg_replace('/[^0-9]/', '', (string) $state))
+                                    ->visible(fn (Get $get) => $get('disbursal_status') === 'disbursed')
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
+                                    ->required(fn (Get $get) => $get('disbursal_status') === 'disbursed'),
 
                                 TextInput::make('cashback')
                                     ->label('Cashback Given')
                                     ->prefix('₹')
                                     ->live()
-                                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null)
+                                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->afterStateUpdated(function ($state, callable $set) {
                                         $value = preg_replace('/[^0-9]/', '', (string) $state);
 
@@ -1449,15 +1396,15 @@ class CustomerForm
                                             $set('cashback', indianCurrencyFormat($value));
                                         }
                                     })
-                                    ->dehydrateStateUsing(fn($state) => preg_replace('/[^0-9]/', '', (string) $state))
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
-                                    ->visible(fn(Get $get) => $get('disbursal_status') === 'disbursed'),
+                                    ->dehydrateStateUsing(fn ($state) => preg_replace('/[^0-9]/', '', (string) $state))
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
+                                    ->visible(fn (Get $get) => $get('disbursal_status') === 'disbursed'),
 
                                 TextInput::make('subvention')
                                     ->label('Subvention Fees')
                                     ->prefix('₹')
                                     ->live()
-                                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null)
+                                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->afterStateUpdated(function ($state, callable $set) {
                                         $value = preg_replace('/[^0-9]/', '', (string) $state);
 
@@ -1465,16 +1412,16 @@ class CustomerForm
                                             $set('subvention', indianCurrencyFormat($value));
                                         }
                                     })
-                                    ->dehydrateStateUsing(fn($state) => preg_replace('/[^0-9]/', '', (string) $state))
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
-                                    ->visible(fn(Get $get) => $get('disbursal_status') === 'disbursed'),
+                                    ->dehydrateStateUsing(fn ($state) => preg_replace('/[^0-9]/', '', (string) $state))
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
+                                    ->visible(fn (Get $get) => $get('disbursal_status') === 'disbursed'),
 
                                 TextInput::make('docking')
                                     ->label('Docking Charges')
                                     ->prefix('₹')
                                     ->live()
-                                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : null)
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
+                                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
                                     ->afterStateUpdated(function ($state, callable $set) {
                                         $value = preg_replace('/[^0-9]/', '', (string) $state);
 
@@ -1482,13 +1429,11 @@ class CustomerForm
                                             $set('docking', indianCurrencyFormat($value));
                                         }
                                     })
-                                    ->dehydrateStateUsing(fn($state) => preg_replace('/[^0-9]/', '', (string) $state))
+                                    ->dehydrateStateUsing(fn ($state) => preg_replace('/[^0-9]/', '', (string) $state))
                                     ->visible(
-                                        fn(Get $get) =>
-                                        $get('disbursal_status') === 'disbursed'
+                                        fn (Get $get) => $get('disbursal_status') === 'disbursed'
                                             && auth()->user()?->hasRole('Admin')
                                     ),
-
 
                                 DatePicker::make('carry_forward_date')
                                     ->label('Carry Forward Date')
@@ -1497,17 +1442,17 @@ class CustomerForm
                                     ->dehydrated(true)
                                     ->suffixIcon('heroicon-m-calendar')
                                     ->minDate(today()) // Today and future dates only
-                                    ->disabled(fn(Get $get): bool => in_array(
+                                    ->disabled(fn (Get $get): bool => in_array(
                                         strtolower((string) $get('journey_status')),
                                         ['sanctioned', 'not_approved', 'dropped', 'carry_forward']
                                     ))
-                                    ->visible(fn(Get $get) => $get('disbursal_status') === 'carry_forward')
-                                    ->required(fn(Get $get) => $get('disbursal_status') === 'carry_forward'),
+                                    ->visible(fn (Get $get) => $get('disbursal_status') === 'carry_forward')
+                                    ->required(fn (Get $get) => $get('disbursal_status') === 'carry_forward'),
 
                                 Textarea::make('sanctioned_remarks')
                                     ->label('Final Disbursal Remarks')
                                     ->rows(2)
-                                    ->disabled(fn(Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
                                     ->columnSpanFull()
                                     ->required(),
 
@@ -1517,8 +1462,7 @@ class CustomerForm
                                 Placeholder::make('disbursal_actions')
                                     ->label('')
                                     ->visible(
-                                        fn(Get $get): bool =>
-                                        ! $get('disbursal_finalized')
+                                        fn (Get $get): bool => ! $get('disbursal_finalized')
                                             && $get('disbursal_status') === 'disbursed'
                                             && (
                                                 auth()->user()->hasRole('Admin')
@@ -1532,31 +1476,28 @@ class CustomerForm
                                             ->icon('heroicon-m-check-circle')
                                             ->color('success')
                                             ->requiresConfirmation()
-                                            ->action(function (?\Illuminate\Database\Eloquent\Model $record, callable $set,  Get $get) {
-
+                                            ->action(function (?Model $record, callable $set, Get $get) {
 
                                                 if (! $record) {
                                                     return;
                                                 }
 
                                                 $data = [
-                                                    'disbursal_status'      => $get('disbursal_status'),
-                                                    'channel'               => $get('channel'),
+                                                    'disbursal_status' => $get('disbursal_status'),
+                                                    'channel' => $get('channel'),
                                                     'sanctioned_loan_amount' => $get('sanctioned_loan_amount'),
-                                                    'cashback'              => $get('cashback'),
-                                                    'subvention'            => $get('subvention'),
-                                                    'docking'               => $get('docking'),
-                                                    'carry_forward_date'    => $get('carry_forward_date'),
-                                                    'sanctioned_remarks'    => $get('sanctioned_remarks'),
+                                                    'cashback' => $get('cashback'),
+                                                    'subvention' => $get('subvention'),
+                                                    'docking' => $get('docking'),
+                                                    'carry_forward_date' => $get('carry_forward_date'),
+                                                    'sanctioned_remarks' => $get('sanctioned_remarks'),
                                                 ];
-
 
                                                 $record = CustomerJourneyService::sanction($record, $data);
                                                 // $record = CustomerJourneyService::finalize($record,$data);
 
                                                 $set('journey_status', $record->journey_status);
                                                 // $set('disbursal_finalized', true);
-
 
                                                 Notification::make()
                                                     ->success()
@@ -1574,7 +1515,7 @@ class CustomerForm
 
                             ->columns(2)
                             ->visible(
-                                fn(Get $get) => (
+                                fn (Get $get) => (
                                     auth()->user()->hasRole('Admin')
                                     || auth()->user()->hasRole('Manager')
                                 )
@@ -1600,10 +1541,9 @@ class CustomerForm
                                 Hidden::make('documents_submitted')
                                     ->live()
                                     ->dehydrated()
-                                    ->default(fn(?\Illuminate\Database\Eloquent\Model $record) => $record?->documents_submitted ?? false)
+                                    ->default(fn (?Model $record) => $record?->documents_submitted ?? false)
                                     ->formatStateUsing(
-                                        fn($state, ?\Illuminate\Database\Eloquent\Model $record) =>
-                                        $state ?: ($record?->documents_submitted ?? false)
+                                        fn ($state, ?Model $record) => $state ?: ($record?->documents_submitted ?? false)
                                     ),
 
                                 FileUpload::make('disbursal_pdf')
@@ -1615,16 +1555,16 @@ class CustomerForm
                                     ->downloadable()
 
                                     // Prevent removing uploaded files after document submission
-                                    ->deletable(fn(?Customer $record) => ! ($record?->documents_submitted ?? false))
+                                    ->deletable(fn (?Customer $record) => ! ($record?->documents_submitted ?? false))
 
                                     // Optional: Prevent reordering after submission
-                                    ->reorderable(fn(?Customer $record) => ! ($record?->documents_submitted ?? false))
+                                    ->reorderable(fn (?Customer $record) => ! ($record?->documents_submitted ?? false))
 
                                     ->rules([
                                         function ($attribute, $value, $fail) {
                                             if (is_array($value)) {
                                                 foreach ($value as $file) {
-                                                    if ($file instanceof \Livewire\Features\SupportFileUploads\TemporaryUploadedFile) {
+                                                    if ($file instanceof TemporaryUploadedFile) {
                                                         if ($file->getMimeType() !== 'application/pdf') {
                                                             $fail('Only PDF files are allowed.');
                                                         }
@@ -1634,8 +1574,6 @@ class CustomerForm
                                         },
                                     ]),
 
-
-
                                 Placeholder::make('document_submit_action')
                                     ->key('document_submit_action')
                                     ->label('')
@@ -1643,17 +1581,17 @@ class CustomerForm
                                     ->hintAction(
                                         FormAction::make('submit_documents')
                                             ->label(
-                                                fn(Get $get, ?\Illuminate\Database\Eloquent\Model $record) => ($get('documents_submitted') || ($record && session()->has("customer_{$record->id}_docs_submitted")))
+                                                fn (Get $get, ?Model $record) => ($get('documents_submitted') || ($record && session()->has("customer_{$record->id}_docs_submitted")))
                                                     ? 'Documents Submitted'
                                                     : 'Submit Documents'
                                             )
                                             ->color(
-                                                fn(Get $get, ?\Illuminate\Database\Eloquent\Model $record) => ($get('documents_submitted') || ($record && session()->has("customer_{$record->id}_docs_submitted")))
+                                                fn (Get $get, ?Model $record) => ($get('documents_submitted') || ($record && session()->has("customer_{$record->id}_docs_submitted")))
                                                     ? 'success'
                                                     : 'warning'
                                             )
                                             ->requiresConfirmation()
-                                            ->action(function (?\Illuminate\Database\Eloquent\Model $record, Set $set, Get $get) {
+                                            ->action(function (?Model $record, Set $set, Get $get) {
 
                                                 if (! $record) {
                                                     return;
@@ -1668,16 +1606,13 @@ class CustomerForm
                                                         ->title('Please upload the Disbursal PDF first.')
                                                         ->danger()
                                                         ->send();
+
                                                     return;
                                                 }
 
                                                 $alreadySubmitted = (bool) $record->documents_submitted;
 
-
-
                                                 $filesArray = is_array($uploadedFiles) ? $uploadedFiles : [$uploadedFiles];
-
-
 
                                                 $existingDocuments = CustomerDocument::where('customer_id', $record->id)
                                                     ->pluck('document_name')
@@ -1685,7 +1620,7 @@ class CustomerForm
 
                                                 foreach ($filesArray as $singlePath) {
 
-                                                    if ($singlePath instanceof \Livewire\Features\SupportFileUploads\TemporaryUploadedFile) {
+                                                    if ($singlePath instanceof TemporaryUploadedFile) {
 
                                                         $path = $singlePath->storePublicly(
                                                             'disbursal-documents',
@@ -1697,14 +1632,13 @@ class CustomerForm
                                                     }
 
                                                     CustomerDocument::create([
-                                                        'customer_id'   => $record->id,
+                                                        'customer_id' => $record->id,
                                                         'document_type' => 'Disbursal Letter',
                                                         'document_name' => basename($path),
                                                         'document_path' => $path,
-                                                        'uploaded_by'   => auth()->id(),
+                                                        'uploaded_by' => auth()->id(),
                                                     ]);
                                                 }
-
 
                                                 $record = CustomerJourneyService::finalize($record);
                                                 $set('documents_submitted', true);
@@ -1725,8 +1659,7 @@ class CustomerForm
                             ->live()
 
                             ->visible(
-                                fn(Get $get) =>
-                                in_array(
+                                fn (Get $get) => in_array(
                                     strtolower((string) $get('journey_status')),
                                     [
                                         'sanctioned',
@@ -1756,11 +1689,11 @@ class CustomerForm
                                     ->required(),
                             ])
                             ->columns(2)
-                            ->visible(fn(Get $get): bool => strtolower((string) $get('journey_status')) === 'not_approved'),
+                            ->visible(fn (Get $get): bool => strtolower((string) $get('journey_status')) === 'not_approved'),
                     ])
                     // ->columnSpan(1)
                     ->columnSpanFull()
-                    ->hidden(fn() => auth()->user()->hasRole('Employee')),
+                    ->hidden(fn () => auth()->user()->hasRole('Employee')),
             ]);
     }
 }

@@ -5,6 +5,7 @@ namespace App\Filament\Resources\LeadAssignmentReports;
 use App\Filament\Resources\LeadAssignmentReports\Pages\ListLeadAssignmentReports;
 use App\Filament\Resources\LeadAssignmentReports\Tables\LeadAssignmentReportsTable;
 use App\Models\Employee;
+use App\Support\HierarchyHelper;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
@@ -33,7 +34,19 @@ class LeadAssignmentReportResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->whereHas('assignmentsReceived');
+        $query = parent::getEloquentQuery()->whereHas('assignmentsReceived');
+
+        $user = auth()->user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if ($user->hasRole('Admin')) {
+            return $query;
+        }
+
+        return $query->whereIn('id', HierarchyHelper::visibleEmployeeIds($user));
     }
 
     public static function getPages(): array
@@ -45,7 +58,27 @@ class LeadAssignmentReportResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->user()?->hasRole('Admin') ?? false;
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->hasRole('Admin')) {
+            return true;
+        }
+
+        $employee = $user->employee;
+
+        if (! $employee) {
+            return false;
+        }
+
+        return in_array($employee->designation, [
+            Employee::DESIGNATION_CLUSTER,
+            Employee::DESIGNATION_MANAGER,
+            Employee::DESIGNATION_TEAM_LEADER,
+        ]);
     }
 
     public static function canCreate(): bool

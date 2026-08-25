@@ -16,7 +16,9 @@ return new class extends Migration
             $table->dropForeign(['customer_id']);
         });
 
-        DB::statement('ALTER TABLE customer_assignments MODIFY customer_id BIGINT UNSIGNED NULL');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE customer_assignments MODIFY customer_id BIGINT UNSIGNED NULL');
+        }
 
         Schema::table('customer_assignments', function (Blueprint $table) {
             $table->foreign('customer_id')->references('id')->on('customers')->cascadeOnDelete();
@@ -41,7 +43,9 @@ return new class extends Migration
             $table->dropForeign(['customer_id']);
         });
 
-        DB::statement('ALTER TABLE customer_assignments MODIFY customer_id BIGINT UNSIGNED NOT NULL');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE customer_assignments MODIFY customer_id BIGINT UNSIGNED NOT NULL');
+        }
 
         Schema::table('customer_assignments', function (Blueprint $table) {
             $table->foreign('customer_id')->references('id')->on('customers')->cascadeOnDelete();

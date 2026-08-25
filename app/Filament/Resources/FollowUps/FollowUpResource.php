@@ -8,12 +8,12 @@ use App\Filament\Resources\FollowUps\Pages\ListFollowUps;
 use App\Filament\Resources\FollowUps\Schemas\FollowUpForm;
 use App\Filament\Resources\FollowUps\Tables\FollowUpsTable;
 use App\Models\FollowUp;
+use App\Support\HierarchyHelper;
 use Filament\Facades\Filament;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
-use App\Support\HierarchyHelper;
 use Illuminate\Database\Eloquent\Builder;
 
 class FollowUpResource extends Resource
@@ -24,7 +24,15 @@ class FollowUpResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'name';
 
-    protected static ?int $navigationSort = 3;
+    protected static string|\UnitEnum|null $navigationGroup = 'Follow-ups';
+
+    protected static ?string $navigationLabel = 'My Customer Follow-ups';
+
+    protected static ?string $modelLabel = 'Customer Follow-up';
+
+    protected static ?string $pluralModelLabel = 'My Customer Follow-ups';
+
+    protected static ?int $navigationSort = 1;
 
     public static function form(Schema $schema): Schema
     {

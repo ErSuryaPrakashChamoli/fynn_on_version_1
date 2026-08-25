@@ -16,7 +16,9 @@ return new class extends Migration
             $table->dropForeign(['employee_id']);
         });
 
-        DB::statement('ALTER TABLE follow_ups MODIFY employee_id BIGINT UNSIGNED NULL');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE follow_ups MODIFY employee_id BIGINT UNSIGNED NULL');
+        }
 
         Schema::table('follow_ups', function (Blueprint $table) {
             $table->foreign('employee_id')->references('id')->on('employees')->nullOnDelete();
@@ -32,7 +34,9 @@ return new class extends Migration
             $table->dropForeign(['employee_id']);
         });
 
-        DB::statement('ALTER TABLE follow_ups MODIFY employee_id BIGINT UNSIGNED NOT NULL');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE follow_ups MODIFY employee_id BIGINT UNSIGNED NOT NULL');
+        }
 
         Schema::table('follow_ups', function (Blueprint $table) {
             $table->foreign('employee_id')->references('id')->on('employees')->cascadeOnDelete();

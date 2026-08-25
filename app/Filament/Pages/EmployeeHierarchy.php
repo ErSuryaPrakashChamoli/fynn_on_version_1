@@ -12,6 +12,7 @@ use Filament\Forms\Components\Select;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\Builder;
 use NumberFormatter;
 use UnitEnum;
 
@@ -41,7 +42,11 @@ class EmployeeHierarchy extends Page
         return [
             ExportAction::make()
                 ->label('Export Employees')
-                ->exporter(EmployeeHierarchyExporter::class),
+                ->exporter(EmployeeHierarchyExporter::class)
+                ->modifyQueryUsing(fn (Builder $query) => $query->whereIn(
+                    'id',
+                    HierarchyHelper::ownHierarchyIds(auth()->user())
+                )),
         ];
     }
 
@@ -67,6 +72,7 @@ class EmployeeHierarchy extends Page
     protected function searchOptions(string $search): array
     {
         return Employee::query()
+            ->whereIn('id', HierarchyHelper::ownHierarchyIds(auth()->user()))
             ->where(function ($query) use ($search) {
                 $query->where('emp_id', 'like', "%{$search}%")
                     ->orWhere('emp_name', 'like', "%{$search}%");
@@ -82,7 +88,9 @@ class EmployeeHierarchy extends Page
 
     protected function optionLabel(mixed $value): ?string
     {
-        $employee = Employee::find($value);
+        $employee = Employee::query()
+            ->whereIn('id', HierarchyHelper::ownHierarchyIds(auth()->user()))
+            ->find($value);
 
         return $employee ? $this->formatLabel($employee) : null;
     }
@@ -101,6 +109,7 @@ class EmployeeHierarchy extends Page
     {
         $this->employee = $employeeId
             ? Employee::query()
+                ->whereIn('id', HierarchyHelper::ownHierarchyIds(auth()->user()))
                 ->with(['superviser', 'manager', 'clusterManager'])
                 ->find($employeeId)
             : null;
@@ -189,6 +198,7 @@ class EmployeeHierarchy extends Page
             Employee::DESIGNATION_CLUSTER,
             Employee::DESIGNATION_MANAGER,
             Employee::DESIGNATION_TEAM_LEADER,
+            Employee::DESIGNATION_CALLER,
         ]);
     }
 

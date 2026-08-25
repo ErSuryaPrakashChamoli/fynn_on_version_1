@@ -2,23 +2,25 @@
 
 namespace App\Filament\Resources\AiCustomerRecords\Tables;
 
-use App\Models\AiCustomerRecord;
-use App\Models\AiDocumentSchema;
+use App\Filament\Actions\AssignCustomersToUserBulkAction;
+use App\Filament\Imports\AiCustomerRecordImporter;
 // use Filament\Actions\BulkActionGroup;
 // use Filament\Actions\DeleteBulkAction;
-use Filament\Actions\EditAction;
-use Filament\Actions\ViewAction;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Table;
-use Throwable;
-
-use App\Filament\Actions\AssignCustomersToUserBulkAction;
+use App\Models\AiCustomerRecord;
+use App\Models\AiDocumentSchema;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\ImportAction;
+use Filament\Actions\ViewAction;
+use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
 use Illuminate\Support\Collection;
+use Throwable;
 
 class AiCustomerRecordsTable
 {
@@ -28,8 +30,8 @@ class AiCustomerRecordsTable
 
         try {
             $fields = AiDocumentSchema::query()->get()
-                ->flatMap(fn(AiDocumentSchema $schema) => $schema->getFieldDefinitions())
-                ->filter(fn($field) => filled($field['key'] ?? null))
+                ->flatMap(fn (AiDocumentSchema $schema) => $schema->getFieldDefinitions())
+                ->filter(fn ($field) => filled($field['key'] ?? null))
                 ->unique('key')
                 ->values();
 
@@ -52,7 +54,7 @@ class AiCustomerRecordsTable
                 TextColumn::make('schema.name')->label('Configuration')->searchable()->sortable(),
                 TextColumn::make('customer.customer_name')->label('Customer')->searchable()->sortable()->default('-'),
                 TextColumn::make('document.original_name')->label('Source Document')->limit(30),
-                TextColumn::make('status')->badge()->color(fn(string $state): string => match ($state) {
+                TextColumn::make('status')->badge()->color(fn (string $state): string => match ($state) {
                     'approved' => 'success',
                     'review' => 'warning',
                     'rejected' => 'danger',
@@ -60,7 +62,7 @@ class AiCustomerRecordsTable
                 }),
                 TextColumn::make('confidence_score')
                     ->label('Confidence')
-                    ->formatStateUsing(fn($state) => $state === null ? '-' : number_format((float) $state * 100, 1) . '%'),
+                    ->formatStateUsing(fn ($state) => $state === null ? '-' : number_format((float) $state * 100, 1).'%'),
             ], $dynamicColumns))
             ->filters([
                 SelectFilter::make('schema_id')->label('Configuration')->relationship('schema', 'name')->searchable()->preload(),
@@ -75,6 +77,13 @@ class AiCustomerRecordsTable
                 ViewAction::make(),
                 EditAction::make(),
             ])
+            ->headerActions([
+                ImportAction::make()
+                    ->label('Import Customer Data')
+                    ->icon('heroicon-o-arrow-up-tray')
+                    ->color('primary')
+                    ->importer(AiCustomerRecordImporter::class),
+            ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     BulkAction::make('approve')
@@ -84,7 +93,7 @@ class AiCustomerRecordsTable
                         ->requiresConfirmation()
                         ->action(function (Collection $records): void {
                             $records = $records->filter(
-                                fn(AiCustomerRecord $record) => $record->status === 'review'
+                                fn (AiCustomerRecord $record) => $record->status === 'review'
                             );
 
                             if ($records->isEmpty()) {
@@ -119,7 +128,7 @@ class AiCustomerRecordsTable
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
                         ->form([
-                            \Filament\Forms\Components\Textarea::make('reason')
+                            Textarea::make('reason')
                                 ->label('Rejection Reason')
                                 ->required()
                                 ->minLength(5)
@@ -127,7 +136,7 @@ class AiCustomerRecordsTable
                         ])
                         ->action(function (Collection $records, array $data): void {
                             $records = $records->filter(
-                                fn(AiCustomerRecord $record) => $record->status === 'review'
+                                fn (AiCustomerRecord $record) => $record->status === 'review'
                             );
 
                             if ($records->isEmpty()) {

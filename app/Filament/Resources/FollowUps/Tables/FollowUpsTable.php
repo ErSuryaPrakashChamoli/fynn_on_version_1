@@ -2,19 +2,14 @@
 
 namespace App\Filament\Resources\FollowUps\Tables;
 
+use App\Filament\Resources\FollowUps\FollowUpResource;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Tables\Table;
-use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
-
-use App\Filament\Resources\FollowUps\FollowUpResource;
-
-
-use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
-
+use Filament\Tables\Table;
+use Illuminate\Support\Carbon;
 
 class FollowUpsTable
 {
@@ -24,15 +19,12 @@ class FollowUpsTable
             ->defaultSort('next_follow_up_date', 'asc')
             ->columns([
 
-
                 TextColumn::make('display_name')
                     ->label('Customer'),
 
                 TextColumn::make('customer.mobile_no')
                     ->label('Mobile')
                     ->placeholder('-'),
-
-
 
                 TextColumn::make('follow_up_date')
                     ->date(),
@@ -46,7 +38,14 @@ class FollowUpsTable
                     ->badge(),
 
                 TextColumn::make('status')
-                    ->badge(),
+                    ->badge()
+                    ->color(fn (?string $state): string => match ($state) {
+                        'Interested' => 'success',
+                        'Pending' => 'warning',
+                        'Eligible for Other Bank' => 'info',
+                        'Not Interested', 'Not Eligible' => 'danger',
+                        default => 'gray',
+                    }),
 
                 TextColumn::make('bank.bank_name')
                     ->label('Bank')
@@ -66,7 +65,7 @@ class FollowUpsTable
                             return 'gray';
                         }
 
-                        $date = \Illuminate\Support\Carbon::parse($state);
+                        $date = Carbon::parse($state);
 
                         if ($date->isPast() && ! $date->isToday()) {
                             return 'danger';
@@ -117,7 +116,7 @@ class FollowUpsTable
                     ->label('Follow Up')
                     ->icon('heroicon-o-phone')
                     ->color('warning')
-                    ->url(fn($record) => FollowUpResource::getUrl('create', filled($record->customer_id)
+                    ->url(fn ($record) => FollowUpResource::getUrl('create', filled($record->customer_id)
                         ? ['customer' => $record->customer_id]
                         : ['ai_customer_record' => $record->ai_customer_record_id])),
             ])

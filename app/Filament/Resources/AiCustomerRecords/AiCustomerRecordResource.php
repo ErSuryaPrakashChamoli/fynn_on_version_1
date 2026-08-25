@@ -19,11 +19,17 @@ use UnitEnum;
 class AiCustomerRecordResource extends Resource
 {
     protected static ?string $model = AiCustomerRecord::class;
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedTableCells;
+
     protected static string|UnitEnum|null $navigationGroup = 'Documents';
+
     protected static ?string $navigationLabel = 'Customer Data';
+
     protected static ?string $modelLabel = 'Customer Data Row';
+
     protected static ?string $pluralModelLabel = 'Customer Data';
+
     protected static ?int $navigationSort = 2;
 
     public static function form(Schema $schema): Schema
@@ -51,6 +57,11 @@ class AiCustomerRecordResource extends Resource
     }
 
     public static function canDelete(Model $record): bool
+    {
+        return auth()->user()?->hasRole('Admin') ?? false;
+    }
+
+    public static function canAccess(): bool
     {
         return auth()->user()?->hasRole('Admin') ?? false;
     }

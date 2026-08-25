@@ -6,11 +6,34 @@
         'Eligible for Other Bank' => 'bg-info-50 text-info-700 dark:bg-info-400/10 dark:text-info-400',
         default => 'bg-gray-100 text-gray-700 dark:bg-gray-500/10 dark:text-gray-300',
     };
+
+    // Every follow-up here is tied to either a Customer or an AI-extracted
+    // customer record (never a raw Lead — CustomerAssignment has no
+    // relationship to the Lead model), so "open the record" always means
+    // one of these two existing pages.
+    $recordUrl = function ($followUp) {
+        if ($followUp->customer_id) {
+            return \App\Filament\Resources\Customers\CustomerResource::getUrl('view', ['record' => $followUp->customer_id]);
+        }
+
+        if ($followUp->ai_customer_record_id) {
+            return \App\Filament\Resources\AiCustomerRecords\AiCustomerRecordResource::getUrl('view', ['record' => $followUp->ai_customer_record_id]);
+        }
+
+        return null;
+    };
 @endphp
 
 <div class="grid grid-cols-1 gap-3">
     @forelse ($followUps as $followUp)
-        <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+        @php($url = $recordUrl($followUp))
+        <{{ $url ? 'a' : 'div' }}
+            @if ($url) href="{{ $url }}" @endif
+            @class([
+                'block rounded-lg border border-gray-200 p-3 dark:border-gray-700',
+                'transition-colors hover:border-primary-400 hover:bg-primary-50/50 dark:hover:border-primary-500 dark:hover:bg-primary-500/5' => $url,
+            ])
+        >
             <div class="flex items-start justify-between gap-2">
                 <p class="text-sm font-medium text-gray-900 dark:text-gray-100">
                     {{ $followUp->display_name }}
@@ -42,7 +65,7 @@
                     {{ $followUp->remarks }}
                 </p>
             @endif
-        </div>
+        </{{ $url ? 'a' : 'div' }}>
     @empty
         <div class="col-span-full rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
             No follow-ups found for this day.

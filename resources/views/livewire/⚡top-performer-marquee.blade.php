@@ -183,7 +183,8 @@ new class extends Component
                 animation: marquee 25s linear infinite;
                 font-weight: 900;
                 font-size: 1rem;
-                color: #ae2012;
+                color: #ffffff;
+                text-shadow: 0 0 10px rgb(45 212 191 / 60%), 0 1px 2px rgb(0 0 0 / 50%);
             }
 
             .marquee-text:hover {

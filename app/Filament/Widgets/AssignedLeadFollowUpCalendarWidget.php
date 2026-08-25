@@ -40,10 +40,25 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
     {
         return [
             'firstDay' => 1,
+            // Lets the calendar grow to fit its rows instead of being
+            // squeezed into an aspect-ratio-derived height, which was
+            // forcing FullCalendar's internal scroller to kick in once the
+            // "has-followups" day styling made rows taller than that.
+            'height' => 'auto',
             'headerToolbar' => [
                 'left' => 'dayGridMonth,dayGridWeek,dayGridDay',
                 'center' => 'title',
                 'right' => 'prev,next today',
+            ],
+            'titleFormat' => [
+                'year' => 'numeric',
+                'month' => 'long',
+            ],
+            'buttonText' => [
+                'today' => 'Today',
+                'month' => 'Month',
+                'week' => 'Week',
+                'day' => 'Day',
             ],
         ];
     }
@@ -137,8 +152,8 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
                 $count = $followUpsForDay->count();
 
                 return EventData::make()
-                    ->id('day-' . $date)
-                    ->title($count . ' Follow-up' . ($count === 1 ? '' : 's'))
+                    ->id('day-'.$date)
+                    ->title($count.' Follow-up'.($count === 1 ? '' : 's'))
                     ->start($date)
                     ->allDay(true)
                     ->backgroundColor('#4f46e5')
@@ -178,7 +193,7 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
         [$customerIds, $aiRecordIds] = $this->visibleLeadIds();
 
         if (empty($customerIds) && empty($aiRecordIds)) {
-            return new Collection();
+            return new Collection;
         }
 
         return FollowUp::query()
