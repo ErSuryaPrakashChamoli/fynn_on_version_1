@@ -907,28 +907,42 @@
     pointer-events: none;
 }
 
+/* Sized by height alone (auto width) -- and .fynn-auth-banner--custom
+   below lets the *column* shrink-wrap to that width -- instead of being
+   forced into a fixed 50% box (`cover` cropped the top/bottom, `contain`
+   letterboxed the sides trying to fit one). This way the whole image
+   always shows with zero cropping and zero empty space around it.
+   `max-width` only guards against a pathologically wide upload crushing
+   the sign-in panel; `object-fit: contain` keeps the aspect ratio correct
+   (instead of stretching) on the rare occasion that cap engages. */
 .fynn-auth-banner-image {
-    position: absolute;
-    inset: 0;
-    width: 100%;
+    display: block;
     height: 100%;
-    object-fit: cover;
+    width: auto;
+    max-width: 70vw;
+    object-fit: contain;
 }
 
-.fynn-auth-banner-logo-overlay {
-    position: absolute;
-    z-index: 2;
-    top: 2.5rem;
-    left: 50%;
-    width: 60%;
-    max-width: 14rem;
-    transform: translateX(-50%);
+.fynn-auth-banner--custom {
+    flex: 0 1 auto;
+    /* Explicit, not inherited via flex stretch -- .fynn-auth only sets
+       `min-height: 100dvh` (indefinite), so a percentage/stretched height
+       on a descendant several flex levels down doesn't reliably resolve
+       and silently falls back to the image's raw intrinsic pixel size. */
+    height: 100dvh;
+    padding: 0;
 }
 
-.fynn-auth-banner-logo-overlay .fynn-auth-banner-logo {
-    width: 100%;
-    height: auto;
-    filter: drop-shadow(0 6px 14px rgb(0 0 0 / 45%));
+/* The FYNN-ON logo -- placed via .fynn-auth-logo-position below,
+   admin-configurable to sit in either the left banner or right panel,
+   at any of a 3x3 grid of positions. */
+.fynn-auth-brand-logo {
+    display: block;
+    height: 4.5rem;
+    width: auto;
+    max-width: 12rem;
+    object-fit: contain;
+    filter: drop-shadow(0 6px 14px rgb(0 0 0 / 30%));
 }
 
 .fynn-auth-banner-content {
@@ -972,40 +986,86 @@
 }
 
 .fynn-auth-panel {
+    position: relative;
     display: flex;
     flex: 1 1 50%;
     align-items: center;
     justify-content: center;
-    padding: 3vh 1.5rem;
+    padding: 8vh 3rem;
     background-color: rgb(255 255 255);
 }
 
 .fynn-auth-panel-inner {
     width: 100%;
-    max-width: 29rem;
+    max-width: 33rem;
 }
 
-.fynn-auth-panel-logo {
+/* The company (Fynnedge Advisory) logo -- placed via .fynn-auth-logo-position
+   below, admin-configurable to sit in either the left banner or this right
+   panel, at any of a 3x3 grid of positions. */
+.fynn-auth-company-logo {
     display: block;
-    height: 5.5rem;
+    height: 8.5rem;
     width: auto;
+    max-width: 19rem;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 10px rgb(0 0 0 / 20%));
+}
+
+/* The classic (top, centered) placement -- rendered in-flow, right above
+   the tagline, instead of floating via .fynn-auth-logo-position. */
+.fynn-auth-panel-logo-inline {
     margin-inline: auto;
-    margin-bottom: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.fynn-auth-logo-position {
+    position: absolute;
+    z-index: 3;
+    --fynn-logo-tx: 0;
+    --fynn-logo-ty: 0;
+    transform: translate(var(--fynn-logo-tx), var(--fynn-logo-ty));
+}
+
+.fynn-auth-logo-position--v-top {
+    top: 2rem;
+}
+
+.fynn-auth-logo-position--v-middle {
+    top: 50%;
+    --fynn-logo-ty: -50%;
+}
+
+.fynn-auth-logo-position--v-bottom {
+    bottom: 2rem;
+}
+
+.fynn-auth-logo-position--h-left {
+    left: 2rem;
+}
+
+.fynn-auth-logo-position--h-center {
+    left: 50%;
+    --fynn-logo-tx: -50%;
+}
+
+.fynn-auth-logo-position--h-right {
+    right: 2rem;
 }
 
 .fynn-auth-panel-tagline {
     text-align: center;
-    font-size: 1.05rem;
+    font-size: 1.25rem;
     font-style: italic;
     color: rgb(100 116 139);
 }
 
 .fynn-auth-panel-divider {
-    width: 3.5rem;
-    height: 2px;
-    margin: 1.75rem auto 2.25rem;
-    border-radius: 9999px;
-    background: color-mix(in oklab, var(--primary-500) 60%, transparent);
+    display: block;
+    width: 65%;
+    height: 1.25rem;
+    margin: 0.75rem auto 2.25rem;
+    fill: var(--primary-600);
 }
 
 .fynn-auth-panel-heading {
@@ -1018,7 +1078,7 @@
 .fynn-auth-panel-subheading {
     margin-top: 0.5rem;
     margin-bottom: 3rem;
-    font-size: 1.05rem;
+    font-size: 1.2rem;
     color: rgb(100 116 139);
 }
 
@@ -1029,24 +1089,39 @@
 
 /* ---- Configurable heading size/alignment (Login Page Banner settings) ---- */
 
-.fynn-auth-banner-heading--sm,
-.fynn-auth-panel-heading--sm {
+.fynn-auth-banner-heading--sm {
     font-size: 1.5rem;
 }
 
-.fynn-auth-banner-heading--md,
-.fynn-auth-panel-heading--md {
+.fynn-auth-banner-heading--md {
     font-size: 1.875rem;
 }
 
-.fynn-auth-banner-heading--lg,
-.fynn-auth-panel-heading--lg {
+.fynn-auth-banner-heading--lg {
     font-size: 2.25rem;
 }
 
-.fynn-auth-banner-heading--xl,
-.fynn-auth-panel-heading--xl {
+.fynn-auth-banner-heading--xl {
     font-size: 2.75rem;
+}
+
+/* Sized up a step further than the banner side -- the right panel has
+   grown wider since the banner column started shrink-wrapping to its
+   image, so its own text scales up to use that extra space. */
+.fynn-auth-panel-heading--sm {
+    font-size: 1.75rem;
+}
+
+.fynn-auth-panel-heading--md {
+    font-size: 2.25rem;
+}
+
+.fynn-auth-panel-heading--lg {
+    font-size: 2.75rem;
+}
+
+.fynn-auth-panel-heading--xl {
+    font-size: 3.25rem;
 }
 
 .fynn-auth-text-left {
@@ -1064,7 +1139,7 @@
 .fynn-auth-panel-footer {
     margin-top: 3rem;
     text-align: center;
-    font-size: 0.8rem;
+    font-size: 0.875rem;
     color: rgb(148 163 184);
 }
 

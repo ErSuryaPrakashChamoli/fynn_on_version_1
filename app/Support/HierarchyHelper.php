@@ -5,7 +5,6 @@ namespace App\Support;
 use App\Filament\Resources\Teams\TeamResource;
 use App\Models\Employee;
 use App\Models\User;
-use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -381,97 +380,6 @@ class HierarchyHelper
 
             default => collect([$employee->id]),
         };
-    }
-
-    private function getCallerTarget(Employee $employee): float
-    {
-        $today = Carbon::today();
-
-        $currentMonth = $today->month;
-        $currentYear = $today->year;
-        $monthEnd = $today->copy()->endOfMonth();
-
-        /*
-        |--------------------------------------------------------------------------
-        | Employee must have DOJ
-        |--------------------------------------------------------------------------
-        */
-
-        if (empty($employee->doj)) {
-            return 0;
-        }
-
-        $joiningDate = Carbon::parse($employee->doj);
-
-        /*
-        |--------------------------------------------------------------------------
-        | EXIT EMPLOYEE
-        |--------------------------------------------------------------------------
-        |
-        | If employee exited in current month,
-        | calculate target based on actual working days.
-        |
-        */
-
-        if (
-            $employee->exit_status === 'yes' &&
-            ! empty($employee->exit_date)
-        ) {
-
-            $exitDate = Carbon::parse($employee->exit_date);
-
-            if (
-                $exitDate->month == $currentMonth &&
-                $exitDate->year == $currentYear
-            ) {
-
-                if ($exitDate->lt($joiningDate)) {
-                    return 0;
-                }
-
-                $workedDays = $joiningDate->diffInDays($exitDate) + 1;
-
-                return $workedDays >= 10
-                    ? 1500000
-                    : 0;
-            }
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | NEW JOINER
-        |--------------------------------------------------------------------------
-        |
-        | Only DOJ determines whether employee is a new joiner.
-        | Reporting date is ignored.
-        |
-        */
-
-        if (
-            $joiningDate->month == $currentMonth &&
-            $joiningDate->year == $currentYear
-        ) {
-
-            $remainingDays = $joiningDate->diffInDays($monthEnd) + 1;
-
-            return $remainingDays >= 10
-                ? 1500000
-                : 0;
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | EXISTING EMPLOYEE
-        |--------------------------------------------------------------------------
-        |
-        | Existing employees always carry full target,
-        | even if reporting manager/TL changes.
-        |
-        */
-
-        return is_numeric($employee->category)
-            ? (float) $employee->category
-            : 2500000;
     }
 
     /**

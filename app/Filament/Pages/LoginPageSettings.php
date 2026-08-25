@@ -11,6 +11,7 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 
@@ -51,6 +52,32 @@ class LoginPageSettings extends Page
         'right' => 'Right',
     ];
 
+    /**
+     * @var array<string, string>
+     */
+    protected static array $logoSideOptions = [
+        'left' => 'Left banner',
+        'right' => 'Right panel',
+    ];
+
+    /**
+     * @var array<string, string>
+     */
+    protected static array $logoVerticalAlignOptions = [
+        'top' => 'Top',
+        'middle' => 'Middle',
+        'bottom' => 'Bottom',
+    ];
+
+    /**
+     * @var array<string, string>
+     */
+    protected static array $logoHorizontalAlignOptions = [
+        'left' => 'Left',
+        'center' => 'Center',
+        'right' => 'Right',
+    ];
+
     public function mount(): void
     {
         $this->form->fill(LoginPageSetting::current()->toArray());
@@ -65,7 +92,7 @@ class LoginPageSettings extends Page
                     ->schema([
                         FileUpload::make('left_banner_path')
                             ->label('Custom banner image (optional)')
-                            ->helperText('Upload a complete, ready-made banner and it replaces this whole panel exactly as provided (the logo below is still shown as a small overlay on top of it). Recommended size: 1080 × 1350px (portrait) or taller; it\'s cropped to fill the panel. Leave empty to use the logo/heading/tagline composition below instead.')
+                            ->helperText('Upload a complete, ready-made banner and it replaces this whole panel exactly as provided (the logo below is still shown as a small overlay on top of it, but the heading/tagline/typography fields below stop applying — they\'re only used when no custom banner is set). Recommended size: 1080 × 1350px (portrait) or taller; it\'s cropped to fill the panel.')
                             ->image()
                             ->imageEditor()
                             ->imageEditorAspectRatios(['3:4', '9:16', null])
@@ -77,13 +104,32 @@ class LoginPageSettings extends Page
 
                         FileUpload::make('left_logo_path')
                             ->label('Logo')
-                            ->helperText('Shown at the top of the panel — over the custom banner above if one is set, or over the default composition otherwise. Leave empty to keep using the default FYNN-ON logo. Recommended size: 480 × 220px.')
+                            ->helperText('Shown over the custom banner above if one is set, or over the default composition otherwise. Leave empty to keep using the default FYNN-ON logo. Recommended size: 480 × 220px.')
                             ->image()
                             ->imageEditor()
                             ->imageEditorAspectRatios(['16:9', '4:3', null])
                             ->disk('public')
                             ->directory('login-page')
                             ->visibility('public')
+                            ->columnSpanFull(),
+
+                        Grid::make(3)
+                            ->schema([
+                                Select::make('left_logo_side')
+                                    ->label('Logo placement')
+                                    ->options(self::$logoSideOptions)
+                                    ->required(),
+
+                                Select::make('left_logo_vertical_align')
+                                    ->label('Vertical alignment')
+                                    ->options(self::$logoVerticalAlignOptions)
+                                    ->required(),
+
+                                Select::make('left_logo_horizontal_align')
+                                    ->label('Horizontal alignment')
+                                    ->options(self::$logoHorizontalAlignOptions)
+                                    ->required(),
+                            ])
                             ->columnSpanFull(),
 
                         Grid::make(2)
@@ -95,7 +141,8 @@ class LoginPageSettings extends Page
                                 TextInput::make('left_tagline')
                                     ->label('Tagline')
                                     ->required(),
-                            ]),
+                            ])
+                            ->visible(fn (Get $get): bool => blank($get('left_banner_path'))),
 
                         Grid::make(2)
                             ->schema([
@@ -108,14 +155,11 @@ class LoginPageSettings extends Page
                                     ->label('Heading alignment')
                                     ->options(self::$headingAlignOptions)
                                     ->required(),
-                            ]),
-                    ]),
+                            ])
+                            ->visible(fn (Get $get): bool => blank($get('left_banner_path'))),
 
-                Section::make('Right panel')
-                    ->description('Shown above the sign-in form itself.')
-                    ->schema([
                         FileUpload::make('right_logo_path')
-                            ->label('Logo')
+                            ->label('Company logo')
                             ->helperText('Leave empty to keep using the default Fynnedge Advisory logo. Recommended size: 480 × 480px.')
                             ->image()
                             ->imageEditor()
@@ -125,6 +169,29 @@ class LoginPageSettings extends Page
                             ->visibility('public')
                             ->columnSpanFull(),
 
+                        Grid::make(3)
+                            ->schema([
+                                Select::make('right_logo_side')
+                                    ->label('Logo placement')
+                                    ->options(self::$logoSideOptions)
+                                    ->required(),
+
+                                Select::make('right_logo_vertical_align')
+                                    ->label('Vertical alignment')
+                                    ->options(self::$logoVerticalAlignOptions)
+                                    ->required(),
+
+                                Select::make('right_logo_horizontal_align')
+                                    ->label('Horizontal alignment')
+                                    ->options(self::$logoHorizontalAlignOptions)
+                                    ->required(),
+                            ])
+                            ->columnSpanFull(),
+                    ]),
+
+                Section::make('Right panel')
+                    ->description('Shown above the sign-in form itself.')
+                    ->schema([
                         TextInput::make('right_tagline')
                             ->label('Tagline')
                             ->required()
@@ -179,6 +246,8 @@ class LoginPageSettings extends Page
             ->title('Login page banner updated')
             ->success()
             ->send();
+
+        $this->redirect(Dashboard::getUrl());
     }
 
     public static function shouldRegisterNavigation(): bool

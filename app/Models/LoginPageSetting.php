@@ -15,12 +15,18 @@ class LoginPageSetting extends Model
 {
     protected $fillable = [
         'left_logo_path',
+        'left_logo_side',
+        'left_logo_vertical_align',
+        'left_logo_horizontal_align',
         'left_banner_path',
         'left_heading',
         'left_heading_size',
         'left_heading_align',
         'left_tagline',
         'right_logo_path',
+        'right_logo_side',
+        'right_logo_vertical_align',
+        'right_logo_horizontal_align',
         'right_tagline',
         'welcome_heading',
         'welcome_heading_size',
@@ -34,11 +40,16 @@ class LoginPageSetting extends Model
         return static::query()->firstOrFail();
     }
 
+    /**
+     * Unlike the company logo, this has no built-in fallback asset: a
+     * null value means "no logo uploaded", and the login page simply
+     * omits it rather than showing a default FYNN-ON mark.
+     */
     protected function leftLogoUrl(): Attribute
     {
-        return Attribute::get(fn (): string => $this->left_logo_path
+        return Attribute::get(fn (): ?string => $this->left_logo_path
             ? Storage::disk('public')->url($this->left_logo_path)
-            : asset('images/fynn-on-logo.png'));
+            : null);
     }
 
     /**

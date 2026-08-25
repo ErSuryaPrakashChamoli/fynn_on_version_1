@@ -4,15 +4,11 @@ namespace App\Services;
 
 use App\Models\Customer;
 use App\Models\Employee;
-use Carbon\Carbon;
-use App\Services\HierarchyService;
 use App\Support\HierarchyHelper;
-use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class AchievementCalculatorService
 {
-
-
     public function getCountAchievement(Employee $employee): float
     {
         if ($employee->designation === Employee::DESIGNATION_ADMIN) {
@@ -35,12 +31,12 @@ class AchievementCalculatorService
                 $join->on('cs.customer_id', '=', 'customers.id')
                     ->where('cs.version', 1);
             })
-            ->selectRaw("
+            ->selectRaw('
                 SUM(CASE WHEN cs.mis_disbursal_amount IS NOT NULL THEN cs.mis_disbursal_amount ELSE customers.sanctioned_loan_amount END) as actual,
                 SUM(CASE WHEN cs.mis_cashback IS NOT NULL THEN cs.mis_cashback ELSE customers.cashback END) as cashback,
                 SUM(CASE WHEN cs.mis_subvention IS NOT NULL THEN cs.mis_subvention ELSE customers.subvention END) as subvention,
                 SUM(CASE WHEN cs.mis_docking IS NOT NULL THEN cs.mis_docking ELSE customers.docking END) as docking
-            ")
+            ')
             ->first();
 
         $achievement = (float) ($totals->actual ?? 0);
@@ -51,9 +47,6 @@ class AchievementCalculatorService
         return $achievement
             - ((($cashback + $subvention + $docking) / 2) * 100);
     }
-
-
-
 
     public function getTarget(Employee $employee): float
     {
@@ -80,8 +73,7 @@ class AchievementCalculatorService
             $target = Employee::whereIn('id', $callerIds)
                 ->get()
                 ->sum(
-                    fn(Employee $caller) =>
-                    $this->getHierarchyCallerTarget($caller)
+                    fn (Employee $caller) => $this->getHierarchyCallerTarget($caller)
                 );
             // ->sum(fn(Employee $caller) => $this->getCallerTarget($caller));
 
@@ -105,11 +97,12 @@ class AchievementCalculatorService
                 HierarchyHelper::callerIds($employee)
             )
                 ->get()
-                ->sum(fn(Employee $caller) => $this->getHierarchyCallerTarget($caller));
+                ->sum(fn (Employee $caller) => $this->getHierarchyCallerTarget($caller));
             // ->sum(fn(Employee $caller) => $this->getCallerTarget($caller));
 
             $teamLeaderIds = Employee::where('manager_id', $employee->id)
                 ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+                ->where('exit_status', '!=', 'yes')
                 ->pluck('id');
 
             foreach ($teamLeaderIds as $tlId) {
@@ -140,17 +133,18 @@ class AchievementCalculatorService
             )
                 ->get()
                 ->sum(
-                    fn(Employee $caller) =>
-                    $this->getHierarchyCallerTarget($caller)
+                    fn (Employee $caller) => $this->getHierarchyCallerTarget($caller)
                 );
             // ->sum(fn(Employee $caller) => $this->getCallerTarget($caller));
 
             $managerIds = Employee::where('cluster_id', $employee->id)
                 ->where('designation', Employee::DESIGNATION_MANAGER)
+                ->where('exit_status', '!=', 'yes')
                 ->pluck('id');
 
             $teamLeaderIds = Employee::whereIn('manager_id', $managerIds)
                 ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+                ->where('exit_status', '!=', 'yes')
                 ->pluck('id');
 
             foreach ($teamLeaderIds as $tlId) {
@@ -177,7 +171,7 @@ class AchievementCalculatorService
 
             return Employee::where('designation', Employee::DESIGNATION_CALLER)
                 ->get()
-                ->sum(fn(Employee $caller) => $this->getCallerTarget($caller));
+                ->sum(fn (Employee $caller) => $this->getCallerTarget($caller));
         }
 
         return 0;
@@ -196,7 +190,6 @@ class AchievementCalculatorService
             2
         );
     }
-
 
     public function getEligibleCallerCount(Employee $manager): int
     {
@@ -225,7 +218,7 @@ class AchievementCalculatorService
     */
 
         return $callers
-            ->filter(fn(Employee $caller) => $this->getCallerTarget($caller) > 0)
+            ->filter(fn (Employee $caller) => $this->getCallerTarget($caller) > 0)
             ->count();
     }
 
@@ -303,12 +296,12 @@ class AchievementCalculatorService
                 $join->on('cs.customer_id', '=', 'customers.id')
                     ->where('cs.version', 1);
             })
-            ->selectRaw("
+            ->selectRaw('
             SUM(CASE WHEN cs.mis_disbursal_amount IS NOT NULL THEN cs.mis_disbursal_amount ELSE customers.sanctioned_loan_amount END) as actual,
             SUM(CASE WHEN cs.mis_cashback IS NOT NULL THEN cs.mis_cashback ELSE customers.cashback END) as cashback,
             SUM(CASE WHEN cs.mis_subvention IS NOT NULL THEN cs.mis_subvention ELSE customers.subvention END) as subvention,
             SUM(CASE WHEN cs.mis_docking IS NOT NULL THEN cs.mis_docking ELSE customers.docking END) as docking
-        ")
+        ')
             ->first();
 
         $actual = (float) ($totals->actual ?? 0);
@@ -344,8 +337,7 @@ class AchievementCalculatorService
                 )
                 ->get()
                 ->sum(
-                    fn(Employee $caller) =>
-                    $this->getCallerTarget($caller)
+                    fn (Employee $caller) => $this->getCallerTarget($caller)
                 );
         } else {
 
@@ -374,21 +366,19 @@ class AchievementCalculatorService
     */
 
         return [
-            'target_category'   => $employee?->category,
-            'target'            => (float) $target,
-            'actual'            => $actual,
-            'cashback'          => $cashback,
-            'subvention'        => $subvention,
-            'docking'           => $docking,
+            'target_category' => $employee?->category,
+            'target' => (float) $target,
+            'actual' => $actual,
+            'cashback' => $cashback,
+            'subvention' => $subvention,
+            'docking' => $docking,
             'count_achievement' => $countAchievement,
-            'percentage'        => $percentage,
-            'incentive'         => $this->getIncentive(
+            'percentage' => $percentage,
+            'incentive' => $this->getIncentive(
                 $countAchievement
             ),
         ];
     }
-
-
 
     public function getIncentive(float $countAchievement): float
     {
@@ -404,25 +394,24 @@ class AchievementCalculatorService
         return $incentive;
     }
 
-
     public function getIncentiveSlabs(): array
     {
         return [
-            2500000  => 4000,
-            3000000  => 5500,
-            3500000  => 7000,
-            4000000  => 9000,
-            4500000  => 12000,
-            5000000  => 15000,
-            5500000  => 18000,
-            6000000  => 22000,
-            6500000  => 26000,
-            7000000  => 30000,
-            7500000  => 35000,
-            8000000  => 40000,
-            8500000  => 45000,
-            9000000  => 50000,
-            9500000  => 55000,
+            2500000 => 4000,
+            3000000 => 5500,
+            3500000 => 7000,
+            4000000 => 9000,
+            4500000 => 12000,
+            5000000 => 15000,
+            5500000 => 18000,
+            6000000 => 22000,
+            6500000 => 26000,
+            7000000 => 30000,
+            7500000 => 35000,
+            8000000 => 40000,
+            8500000 => 45000,
+            9000000 => 50000,
+            9500000 => 55000,
             10000000 => 60000,
             10500000 => 65000,
             11000000 => 70000,
@@ -435,7 +424,7 @@ class AchievementCalculatorService
 
             if ($countAchievement < $target) {
                 return [
-                    'target'    => (float) $target,
+                    'target' => (float) $target,
                     'incentive' => (float) $incentive,
                     'remaining' => max($target - $countAchievement, 0),
                 ];
@@ -444,7 +433,6 @@ class AchievementCalculatorService
 
         return null;
     }
-
 
     private function getCallerTarget(Employee $employee): float
     {
@@ -466,7 +454,6 @@ class AchievementCalculatorService
             : 2500000;
     }
 
-
     public function getHierarchyCallerTarget(Employee $employee): float
     {
         $today = Carbon::today();
@@ -479,7 +466,7 @@ class AchievementCalculatorService
 
         if (
             strtolower((string) $employee->exit_status) === 'yes'
-            && !empty($employee->exit_date)
+            && ! empty($employee->exit_date)
         ) {
             $exitDate = Carbon::parse($employee->exit_date);
 
