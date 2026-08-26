@@ -14,7 +14,7 @@ class TopPerformerService
     public function getTopPerformers(?Employee $loggedInEmployee): array
     {
         // If Admin (no employee record), show Top 5 Callers
-        if (!$loggedInEmployee) {
+        if (! $loggedInEmployee) {
             $designation = Employee::DESIGNATION_CALLER;
             $limit = 5;
         } else {
@@ -42,9 +42,7 @@ class TopPerformerService
                 foreach ($employees as $employee) {
                     $target = $this->calculator->getTarget($employee);
                     $achievement = $this->calculator->getCountAchievement($employee);
-                    $percentage = $target > 0
-                        ? round(($achievement / $target) * 100, 2)
-                        : 0;
+                    $percentage = $this->calculator->percentageFromAmounts($achievement, $target);
 
                     $performers[] = [
                         'name' => $employee->emp_name,

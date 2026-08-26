@@ -6,10 +6,20 @@ use App\Models\CustomerSettlement;
 use App\Models\CustomerSettlementHistory;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
-use App\Services\Settlement\SalesImpactService;
 
 class MisSettlementService
 {
+    /**
+     * NOT NULL DEFAULT 0 at the database level — unlike
+     * mis_disbursal_amount/cashback/subvention/docking, which are
+     * genuinely nullable. A blank/absent value for one of these fields
+     * therefore can never mean "the bank explicitly reported zero"; it can
+     * only mean "not reported in this update", and must never be persisted
+     * as NULL (the database would reject it) or silently coerced to zero
+     * (which would discard a previously-confirmed bank value).
+     */
+    private const NOT_NULLABLE_MIS_FIELDS = ['mis_tds', 'mis_gst', 'actual_payable_amount'];
+
     public function updateFromMis(
         CustomerSettlement $settlement,
         array $data,
@@ -33,13 +43,29 @@ class MisSettlementService
 
             $changed = [];
 
+            // Fields the bank actually reported a value for in this update
+            // — including an explicit zero — as opposed to fields simply
+            // absent/blank this time. Only meaningful for the NOT NULL
+            // fields above; used by SettlementReconciliationService to
+            // treat an explicit zero as bank-authoritative rather than
+            // "not yet reported".
+            $suppliedMisFields = array_values(array_filter(
+                self::NOT_NULLABLE_MIS_FIELDS,
+                fn (string $field) => array_key_exists($field, $data) && $data[$field] !== null
+            ));
+
             foreach ($fields as $field) {
                 if (! array_key_exists($field, $data)) {
                     continue;
                 }
 
-                $oldValue = $settlement->{$field};
                 $newValue = $data[$field];
+
+                if ($newValue === null && in_array($field, self::NOT_NULLABLE_MIS_FIELDS, true)) {
+                    continue;
+                }
+
+                $oldValue = $settlement->{$field};
 
                 if ((string) $oldValue === (string) $newValue) {
                     continue;
@@ -86,7 +112,7 @@ class MisSettlementService
 
             $settlement->save();
 
-            app(SettlementReconciliationService::class)->calculate($settlement);
+            app(SettlementReconciliationService::class)->calculate($settlement, $suppliedMisFields);
 
             $settlement->refresh();
             $salesImpact->captureAfter($settlement);

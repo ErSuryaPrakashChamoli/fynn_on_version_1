@@ -6,8 +6,6 @@ use App\Models\Employee;
 use App\Models\EmployeeReportingHistory;
 use App\Models\HierarchyTransferLog;
 use Carbon\Carbon;
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -126,10 +124,13 @@ class HierarchyReassignmentService
                 $oldClusterId = $employee->cluster_id;
 
                 // Only the cluster assignment changes. The existing manager
-                // and team-leader relationships remain intact.
+                // and team-leader relationships remain intact. reporting_date
+                // is deliberately left untouched: a hierarchy transfer moves
+                // an existing, active employee — it must not make
+                // AchievementCalculatorService's "new joiner" worked-days
+                // rule treat them as newly hired for the transfer month.
                 $employee->forceFill([
                     'cluster_id' => $targetId,
-                    'reporting_date' => $effectiveDate->toDateString(),
                     'updated_at' => $now,
                 ])->save();
 
@@ -173,7 +174,7 @@ class HierarchyReassignmentService
      * different destination, so one manager's team can be split across several
      * managers without changing the overall hierarchy architecture.
      *
-     * @param array<int, array{employee_id:int|string,target_id:int|string}> $assignments
+     * @param  array<int, array{employee_id:int|string,target_id:int|string}>  $assignments
      */
     public function reassign(array $assignments, int $performedBy, ?string $effectiveDate = null, ?string $remarks = null): HierarchyTransferLog
     {
@@ -288,11 +289,15 @@ class HierarchyReassignmentService
                     $newManagerId = $target->id;
                 }
 
+                // reporting_date is deliberately left untouched: a flexible
+                // reassignment moves an existing, active employee — it must
+                // not make AchievementCalculatorService's "new joiner"
+                // worked-days rule treat them as newly hired for the
+                // reassignment month.
                 $employee->forceFill([
                     'superviser_id' => $newSupervisorId,
                     'manager_id' => $newManagerId,
                     'cluster_id' => $target->cluster_id,
-                    'reporting_date' => $effective->toDateString(),
                     'updated_at' => $now,
                 ])->save();
 

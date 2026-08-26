@@ -5,17 +5,41 @@ namespace App\Services\Ocr;
 use App\Models\AiDocumentSchema;
 use Illuminate\Process\Pool;
 use Illuminate\Process\ProcessPoolResults;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
 
 class OcrTableExtractionService
 {
+    /**
+     * The PSM Tesseract runs first for every column crop. The remaining
+     * general-pass PSMs only fire when this pass's own output looks
+     * uncertain (see columnNeedsEscalation()) — 6 (uniform block of text)
+     * is the most reliable general-purpose mode for a narrow table column.
+     */
+    private const COLUMN_PRIMARY_PSM = 6;
+
+    /**
+     * Extra general-pass PSMs, run only on columns flagged by
+     * columnNeedsEscalation(). Matches the full PSM set every column used
+     * to run unconditionally, so a low-confidence column still gets
+     * exactly the same passes (and therefore the same accuracy) as before.
+     */
+    private const COLUMN_ESCALATION_PSMS = [4, 11];
+
+    /**
+     * Below this mean word confidence (Tesseract's 0-100 scale), a
+     * column's primary pass is treated as unreliable and the escalation
+     * PSMs above are run for that column. Deliberately conservative (high)
+     * so escalation errs toward running the extra passes whenever there is
+     * genuine doubt — the cost of an unnecessary escalation is a few more
+     * seconds; the cost of a missed one is wrong customer data.
+     */
+    private const COLUMN_CONFIDENCE_ESCALATION_THRESHOLD = 80.0;
+
     public function extract(string $path, AiDocumentSchema $schema): array
     {
 
         $definitions = array_values($schema->getFieldDefinitions());
-
-
 
         /*
          * The Enquiry PDF is a scanned multi-page table with exactly:
@@ -29,13 +53,10 @@ class OcrTableExtractionService
         // if ($this->isThreeColumnContactTable($definitions)) {
         //     $multiPage = $this->extractMultiPageTable($path, $definitions);
 
-
-
         //     if ($multiPage !== []) {
         //         return $multiPage;
         //     }
         // }
-
 
         $coordinateFields = $this->identifyCoordinateTableFields($definitions);
 
@@ -56,11 +77,10 @@ class OcrTableExtractionService
             'save_to_database' => false,
         ]);
 
-
         $rawText = (string) ($result['text'] ?? '');
         $lines = array_values(array_filter(
             preg_split('/\R/u', $rawText) ?: [],
-            fn($line) => trim((string) $line) !== '',
+            fn ($line) => trim((string) $line) !== '',
         ));
 
         $enquiry = $this->extractEnquiryRows($lines, $definitions);
@@ -75,8 +95,6 @@ class OcrTableExtractionService
                     : [],
             ];
         }
-
-
 
         // OCR engines can return a visually tabular document column-by-column:
         // all dates first, then all names, then all mobiles, etc. Detect that
@@ -111,7 +129,7 @@ class OcrTableExtractionService
 
             $present = count(array_filter(
                 $data,
-                fn($value) => $value !== null && trim((string) $value) !== ''
+                fn ($value) => $value !== null && trim((string) $value) !== ''
             ));
             $expected = count($definitions);
 
@@ -179,6 +197,7 @@ class OcrTableExtractionService
 
             if ($dateField === null && ($type === 'date' || str_contains($key, 'created') || str_contains($label, 'created'))) {
                 $dateField = $definition;
+
                 continue;
             }
 
@@ -193,6 +212,7 @@ class OcrTableExtractionService
                 )
             ) {
                 $mobileField = $definition;
+
                 continue;
             }
 
@@ -228,7 +248,7 @@ class OcrTableExtractionService
         }
 
         $pagePaths = [];
-        $temporaryDirectory = storage_path('app/ocr-pages-' . uniqid('', true));
+        $temporaryDirectory = storage_path('app/ocr-pages-'.uniqid('', true));
         $layout = null;
         $allRows = [];
         $allRawText = [];
@@ -315,6 +335,7 @@ class OcrTableExtractionService
 
             $allRows = array_map(function (array $row): array {
                 unset($row['page'], $row['_top']);
+
                 return $row;
             }, $allRows);
 
@@ -453,9 +474,16 @@ class OcrTableExtractionService
     /**
      * Render every PDF page into an image.
      *
-     * Imagick is preferred because it is already used by the OCR module. A
-     * pdftoppm fallback is included so the multi-page extractor does not fail
-     * merely because the PHP Imagick extension is unavailable in a worker.
+     * pdftoppm is tried first: it decodes the source PDF exactly once and
+     * rasterizes every page in that single process. The previous default
+     * path opened a brand new Imagick/PDF context per page (`new Imagick();
+     * readImage($pdfPath . '[n]')`), which re-parses the *entire* source
+     * file from page 0 on every iteration — on a 300-400MB, 100+ page scan
+     * that repeated full-file decode was the single largest cost in the
+     * whole pipeline. Imagick remains a fallback for environments where
+     * poppler-utils isn't installed. Both paths render at 200 DPI (the
+     * Imagick path previously used 120 DPI); the higher resolution also
+     * improves Tesseract's read accuracy, not just page-rendering speed.
      */
     private function renderPdfPages(string $pdfPath, string $temporaryDirectory): array
     {
@@ -463,56 +491,76 @@ class OcrTableExtractionService
             throw new \RuntimeException('Unable to create temporary OCR directory.');
         }
 
-        $paths = [];
+        $pdftoppmPaths = $this->renderPdfPagesWithPdftoppm($pdfPath, $temporaryDirectory);
 
-        if (class_exists(\Imagick::class)) {
-            $probe = new \Imagick();
-            $probe->setResolution(200, 200);
-            $probe->pingImage($pdfPath);
-            $pageCount = $probe->getNumberImages();
-            $probe->clear();
-            $probe->destroy();
-
-            for ($pageIndex = 0; $pageIndex < $pageCount; $pageIndex++) {
-                $page = new \Imagick();
-                $page->setResolution(120, 120);
-                $page->readImage($pdfPath . '[' . $pageIndex . ']');
-                $page->setIteratorIndex(0);
-                $page->setImageFormat('png');
-                $page->setImageColorspace(\Imagick::COLORSPACE_GRAY);
-                $page->setImageCompressionQuality(95);
-                $page->sharpenImage(0, 1);
-
-                $output = $temporaryDirectory . '/page-' . str_pad((string) ($pageIndex + 1), 4, '0', STR_PAD_LEFT) . '.png';
-                $page->writeImage($output);
-                $page->clear();
-                $page->destroy();
-
-                $paths[] = $output;
-            }
-
-            return $paths;
+        if ($pdftoppmPaths !== null) {
+            return $pdftoppmPaths;
         }
 
-        $prefix = $temporaryDirectory . '/page';
+        if (! class_exists(\Imagick::class)) {
+            throw new \RuntimeException('Unable to render PDF pages. Install poppler-utils (pdftoppm) or the PHP Imagick extension.');
+        }
 
-        $process = Process::timeout(300)->run([
+        $paths = [];
+
+        $probe = new \Imagick;
+        $probe->setResolution(200, 200);
+        $probe->pingImage($pdfPath);
+        $pageCount = $probe->getNumberImages();
+        $probe->clear();
+        $probe->destroy();
+
+        for ($pageIndex = 0; $pageIndex < $pageCount; $pageIndex++) {
+            $page = new \Imagick;
+            $page->setResolution(200, 200);
+            $page->readImage($pdfPath.'['.$pageIndex.']');
+            $page->setIteratorIndex(0);
+            $page->setImageFormat('png');
+            $page->setImageColorspace(\Imagick::COLORSPACE_GRAY);
+            $page->setImageCompressionQuality(95);
+            $page->sharpenImage(0, 1);
+
+            $output = $temporaryDirectory.'/page-'.str_pad((string) ($pageIndex + 1), 4, '0', STR_PAD_LEFT).'.png';
+            $page->writeImage($output);
+            $page->clear();
+            $page->destroy();
+
+            $paths[] = $output;
+        }
+
+        return $paths;
+    }
+
+    /**
+     * Renders every page of $pdfPath with a single pdftoppm invocation.
+     * Returns null (rather than throwing) when poppler-utils isn't
+     * available or the render fails, so the caller can fall back to
+     * Imagick instead of failing the whole document.
+     */
+    private function renderPdfPagesWithPdftoppm(string $pdfPath, string $temporaryDirectory): ?array
+    {
+        $prefix = $temporaryDirectory.'/page';
+
+        $process = Process::timeout(600)->run([
             'pdftoppm',
             '-r',
             '200',
+            '-gray',
             '-png',
             $pdfPath,
             $prefix,
         ]);
 
         if ($process->failed()) {
-            throw new \RuntimeException(
-                'Unable to render PDF pages. Install PHP Imagick or pdftoppm. ' .
-                    trim($process->errorOutput())
-            );
+            return null;
         }
 
-        $paths = glob($prefix . '-*.png') ?: [];
+        $paths = glob($prefix.'-*.png') ?: [];
+
+        if ($paths === []) {
+            return null;
+        }
+
         natsort($paths);
 
         return array_values($paths);
@@ -595,7 +643,7 @@ class OcrTableExtractionService
             return '';
         }
 
-        $header = str_getcsv(array_shift($lines), "\t", '"', "\\");
+        $header = str_getcsv(array_shift($lines), "\t", '"', '\\');
         $indexes = array_flip($header);
 
         if (! isset($indexes['text'])) {
@@ -608,7 +656,7 @@ class OcrTableExtractionService
                 continue;
             }
 
-            $columns = str_getcsv($line, "\t", '"', "\\");
+            $columns = str_getcsv($line, "\t", '"', '\\');
             $text = trim((string) ($columns[$indexes['text']] ?? ''));
             if ($text !== '') {
                 $words[] = $text;
@@ -625,7 +673,7 @@ class OcrTableExtractionService
             return [];
         }
 
-        $header = str_getcsv(array_shift($lines), "\t", '"', "\\");
+        $header = str_getcsv(array_shift($lines), "\t", '"', '\\');
         $indexes = array_flip($header);
 
         foreach (['left', 'top', 'width', 'height', 'conf', 'text'] as $required) {
@@ -641,7 +689,7 @@ class OcrTableExtractionService
                 continue;
             }
 
-            $columns = str_getcsv($line, "\t", '"', "\\");
+            $columns = str_getcsv($line, "\t", '"', '\\');
             $text = trim((string) ($columns[$indexes['text']] ?? ''));
             if ($text === '') {
                 continue;
@@ -699,6 +747,7 @@ class OcrTableExtractionService
 
                 if ($bestIndex === null) {
                     $merged[] = $word;
+
                     continue;
                 }
 
@@ -711,8 +760,7 @@ class OcrTableExtractionService
 
         usort(
             $merged,
-            fn(array $a, array $b) =>
-            $a['center_y'] <=> $b['center_y'] ?: $a['left'] <=> $b['left']
+            fn (array $a, array $b) => $a['center_y'] <=> $b['center_y'] ?: $a['left'] <=> $b['left']
         );
 
         return $merged;
@@ -1015,7 +1063,7 @@ class OcrTableExtractionService
                 $pageHeight,
             );
             $rowCenters = array_values(array_map(
-                fn(array $anchor): float => (float) $anchor['top'],
+                fn (array $anchor): float => (float) $anchor['top'],
                 $anchors,
             ));
         }
@@ -1048,15 +1096,14 @@ class OcrTableExtractionService
             if ($dateText === '') {
                 $dateText = $this->joinWords(array_values(array_filter(
                     $fullRowWords,
-                    fn(array $word): bool => $word['left'] < $dateBoundary
+                    fn (array $word): bool => $word['left'] < $dateBoundary
                 )));
             }
 
             if ($nameText === '') {
                 $nameText = $this->joinWords(array_values(array_filter(
                     $fullRowWords,
-                    fn(array $word): bool =>
-                    $word['left'] >= $dateBoundary
+                    fn (array $word): bool => $word['left'] >= $dateBoundary
                         && $word['left'] < $mobileBoundary
                 )));
             }
@@ -1064,8 +1111,7 @@ class OcrTableExtractionService
             if ($mobileText === '') {
                 $mobileText = $this->joinWords(array_values(array_filter(
                     $fullRowWords,
-                    fn(array $word): bool =>
-                    $word['left'] >= $mobileBoundary
+                    fn (array $word): bool => $word['left'] >= $mobileBoundary
                         && ($extraBoundary === null || $word['left'] < $extraBoundary)
                 )));
             }
@@ -1073,7 +1119,7 @@ class OcrTableExtractionService
             if ($extraKey !== null && $extraText === '') {
                 $extraText = $this->joinWords(array_values(array_filter(
                     $fullRowWords,
-                    fn(array $word): bool => $word['left'] >= $extraBoundary
+                    fn (array $word): bool => $word['left'] >= $extraBoundary
                 )));
             }
 
@@ -1091,8 +1137,7 @@ class OcrTableExtractionService
             if ($name === null) {
                 $fallbackNameWords = array_values(array_filter(
                     $fullRowWords,
-                    fn(array $word): bool =>
-                    $word['left'] >= $dateBoundary
+                    fn (array $word): bool => $word['left'] >= $dateBoundary
                         && $word['left'] < $mobileBoundary
                 ));
                 $name = $this->cleanCoordinateName($fallbackNameWords);
@@ -1105,7 +1150,7 @@ class OcrTableExtractionService
                 ['key' => $nameKey, 'label' => 'Full Name/Entity', 'type' => 'text'],
                 ['key' => $mobileKey, 'label' => 'Mobile Number', 'type' => 'mobile'],
             ];
-            $headerCheckText = $dateText . ' ' . $nameText . ' ' . $mobileText;
+            $headerCheckText = $dateText.' '.$nameText.' '.$mobileText;
 
             if ($extraKey !== null) {
                 $headerCheckDefinitions[] = [
@@ -1113,7 +1158,7 @@ class OcrTableExtractionService
                     'label' => (string) ($extraField['label'] ?? 'Product Type'),
                     'type' => 'text',
                 ];
-                $headerCheckText .= ' ' . $extraText;
+                $headerCheckText .= ' '.$extraText;
             }
 
             // Ignore the header and completely empty/noise rows.
@@ -1139,7 +1184,7 @@ class OcrTableExtractionService
 
             $present = count(array_filter(
                 $data,
-                fn($value) => $value !== null && trim((string) $value) !== ''
+                fn ($value) => $value !== null && trim((string) $value) !== ''
             ));
 
             $rows[] = [
@@ -1167,8 +1212,8 @@ class OcrTableExtractionService
         foreach ($rows as $row) {
             $mobileValue = preg_replace('/\D+/', '', (string) ($row['data'][$mobileKey] ?? ''));
             $fingerprint = $mobileValue !== ''
-                ? 'm:' . $mobileValue . ':y:' . (int) ($row['_top'] ?? 0)
-                : 'y:' . (int) ($row['_top'] ?? 0) . ':r:' . md5((string) ($row['source_row'] ?? ''));
+                ? 'm:'.$mobileValue.':y:'.(int) ($row['_top'] ?? 0)
+                : 'y:'.(int) ($row['_top'] ?? 0).':r:'.md5((string) ($row['source_row'] ?? ''));
 
             if (isset($seen[$fingerprint])) {
                 continue;
@@ -1194,7 +1239,7 @@ class OcrTableExtractionService
         $x2 = max($x1 + 1, min($pageWidth, $x2));
         $cropWidth = $x2 - $x1;
 
-        $cropPath = $temporaryDirectory . '/crop-' . $column . '.png';
+        $cropPath = $temporaryDirectory.'/crop-'.$column.'.png';
 
         if (class_exists(\Imagick::class)) {
             $image = new \Imagick($imagePath);
@@ -1209,7 +1254,7 @@ class OcrTableExtractionService
                 'magick',
                 $imagePath,
                 '-crop',
-                $cropWidth . 'x' . $pageHeight . '+' . $x1 . '+0',
+                $cropWidth.'x'.$pageHeight.'+'.$x1.'+0',
                 '+repage',
                 $cropPath,
             ]);
@@ -1231,6 +1276,17 @@ class OcrTableExtractionService
      * into one pool turns a page's column OCR into roughly one pass'
      * worth of wall-clock time total, not one pass' worth *per column*.
      *
+     * Only the primary PSM (self::COLUMN_PRIMARY_PSM) runs per column in
+     * this first pool; the extra general-pass PSMs
+     * (self::COLUMN_ESCALATION_PSMS) are deferred to a second, smaller
+     * pool that only includes columns whose primary pass looks uncertain
+     * (see columnNeedsEscalation()). A typical clean scan never needs
+     * that second pool at all — most of a page's column fan-out
+     * (previously 3 general passes per column, every column, every page)
+     * is skipped — while a genuinely noisy column still ends up running
+     * the exact same PSM set as before, so accuracy on hard pages is
+     * unchanged.
+     *
      * $fullPagePath optionally folds the page's own full-page OCR passes
      * (normally run separately beforehand, via runTesseractTsv) into this
      * SAME pool. That's only safe once the table layout is already known:
@@ -1241,7 +1297,7 @@ class OcrTableExtractionService
      * removing a full sequential pool round-trip from every page after
      * the first, which is nearly the entire page count on a large scan.
      *
-     * @param array<string, array{x1: int, x2: int}> $columns
+     * @param  array<string, array{x1: int, x2: int}>  $columns
      * @return array{columns: array<string, array<int, array<string, mixed>>>, full_page_tsvs: array<int, string>}
      */
     private function runColumnsOcr(
@@ -1276,35 +1332,34 @@ class OcrTableExtractionService
             return ['columns' => $wordsByColumn, 'full_page_tsvs' => []];
         }
 
-        $generalPsms = [4, 6, 11];
         $digitPsms = [6, 4];
         $fullPagePsms = [6, 11];
 
-        $results = $this->runPoolTolerantly(function (Pool $pool) use ($crops, $generalPsms, $digitPsms, $fullPagePath, $fullPagePsms) {
+        $primaryResults = $this->runPoolTolerantly(function (Pool $pool) use ($crops, $digitPsms, $fullPagePath, $fullPagePsms) {
             foreach ($crops as $column => $crop) {
-                foreach ($generalPsms as $psm) {
-                    $pool->as($column . '::general-' . $psm)->timeout(120)->command([
-                        'tesseract',
-                        $crop['path'],
-                        'stdout',
-                        '--psm',
-                        (string) $psm,
-                        '-l',
-                        'eng',
-                        'tsv',
-                    ]);
-                }
+                $pool->as($column.'::general-'.self::COLUMN_PRIMARY_PSM)->timeout(120)->command([
+                    'tesseract',
+                    $crop['path'],
+                    'stdout',
+                    '--psm',
+                    (string) self::COLUMN_PRIMARY_PSM,
+                    '-l',
+                    'eng',
+                    'tsv',
+                ]);
 
                 /*
                  * Mobile numbers are pure digits, but the general "eng"
                  * pass reads the crop against a full alphanumeric
                  * alphabet and occasionally drifts onto a visually similar
                  * letter/digit (e.g. 8 -> 0, 3 -> 9). A digit-whitelisted
-                 * pass removes that ambiguity.
+                 * pass removes that ambiguity. Always run — cheap, and
+                 * mobile-number accuracy is the field this pipeline cares
+                 * about most.
                  */
                 if ($column === 'mobile') {
                     foreach ($digitPsms as $psm) {
-                        $pool->as($column . '::digit-' . $psm)->timeout(120)->command([
+                        $pool->as($column.'::digit-'.$psm)->timeout(120)->command([
                             'tesseract',
                             $crop['path'],
                             'stdout',
@@ -1322,7 +1377,7 @@ class OcrTableExtractionService
 
             if ($fullPagePath !== null) {
                 foreach ($fullPagePsms as $psm) {
-                    $pool->as('__fullpage__::' . $psm)->timeout(180)->command([
+                    $pool->as('__fullpage__::'.$psm)->timeout(180)->command([
                         'tesseract',
                         $fullPagePath,
                         'stdout',
@@ -1336,7 +1391,7 @@ class OcrTableExtractionService
             }
         });
 
-        if ($results === null) {
+        if ($primaryResults === null) {
             foreach ($crops as $crop) {
                 @unlink($crop['path']);
             }
@@ -1344,18 +1399,58 @@ class OcrTableExtractionService
             return ['columns' => $wordsByColumn, 'full_page_tsvs' => []];
         }
 
+        $generalOutputsByColumn = [];
+        $columnsToEscalate = [];
+
+        foreach ($crops as $column => $crop) {
+            $result = $primaryResults[$column.'::general-'.self::COLUMN_PRIMARY_PSM];
+            $output = ! $result->failed() ? $result->output() : '';
+            $generalOutputsByColumn[$column] = $output !== '' ? [$output] : [];
+
+            if ($this->columnNeedsEscalation($output)) {
+                $columnsToEscalate[] = $column;
+            }
+        }
+
+        if ($columnsToEscalate !== []) {
+            $escalationResults = $this->runPoolTolerantly(function (Pool $pool) use ($crops, $columnsToEscalate) {
+                foreach ($columnsToEscalate as $column) {
+                    $crop = $crops[$column];
+
+                    foreach (self::COLUMN_ESCALATION_PSMS as $psm) {
+                        $pool->as($column.'::general-'.$psm)->timeout(120)->command([
+                            'tesseract',
+                            $crop['path'],
+                            'stdout',
+                            '--psm',
+                            (string) $psm,
+                            '-l',
+                            'eng',
+                            'tsv',
+                        ]);
+                    }
+                }
+            });
+
+            if ($escalationResults !== null) {
+                foreach ($columnsToEscalate as $column) {
+                    foreach (self::COLUMN_ESCALATION_PSMS as $psm) {
+                        $result = $escalationResults[$column.'::general-'.$psm];
+
+                        if (! $result->failed()) {
+                            $generalOutputsByColumn[$column][] = $result->output();
+                        }
+                    }
+                }
+            }
+        }
+
         foreach ($crops as $column => $crop) {
             $x1 = $crop['x1'];
             $words = [];
 
-            foreach ($generalPsms as $psm) {
-                $result = $results[$column . '::general-' . $psm];
-
-                if ($result->failed()) {
-                    continue;
-                }
-
-                foreach ($this->parseTsvWords($result->output(), 0) as $word) {
+            foreach ($generalOutputsByColumn[$column] as $output) {
+                foreach ($this->parseTsvWords($output, 0) as $word) {
                     $word['left'] += $x1;
                     $word['right'] += $x1;
                     $words[] = $word;
@@ -1372,7 +1467,7 @@ class OcrTableExtractionService
                 $digitWords = [];
 
                 foreach ($digitPsms as $psm) {
-                    $result = $results[$column . '::digit-' . $psm];
+                    $result = $primaryResults[$column.'::digit-'.$psm];
 
                     if ($result->failed()) {
                         continue;
@@ -1397,7 +1492,7 @@ class OcrTableExtractionService
 
         if ($fullPagePath !== null) {
             foreach ($fullPagePsms as $psm) {
-                $result = $results['__fullpage__::' . $psm];
+                $result = $primaryResults['__fullpage__::'.$psm];
 
                 if (! $result->failed()) {
                     $fullPageTsvs[] = $result->output();
@@ -1406,6 +1501,35 @@ class OcrTableExtractionService
         }
 
         return ['columns' => $wordsByColumn, 'full_page_tsvs' => $fullPageTsvs];
+    }
+
+    /**
+     * Decides whether a column's primary OCR pass is uncertain enough to
+     * warrant re-running it under the extra PSM modes. Empty output (no
+     * words recognised at all) always escalates, since that is at least
+     * as likely to be the wrong PSM for this crop's layout as a genuinely
+     * blank column.
+     */
+    private function columnNeedsEscalation(string $tsvOutput): bool
+    {
+        $words = $this->parseTsvWords($tsvOutput, 0);
+
+        if ($words === []) {
+            return true;
+        }
+
+        $confidences = array_values(array_filter(
+            array_map(fn (array $word): float => (float) $word['confidence'], $words),
+            fn (float $confidence): bool => $confidence >= 0,
+        ));
+
+        if ($confidences === []) {
+            return true;
+        }
+
+        $mean = array_sum($confidences) / count($confidences);
+
+        return $mean < self::COLUMN_CONFIDENCE_ESCALATION_THRESHOLD;
     }
 
     /**
@@ -1491,8 +1615,7 @@ class OcrTableExtractionService
     {
         usort(
             $words,
-            fn(array $a, array $b) =>
-            $a['center_y'] <=> $b['center_y'] ?: $a['left'] <=> $b['left']
+            fn (array $a, array $b) => $a['center_y'] <=> $b['center_y'] ?: $a['left'] <=> $b['left']
         );
 
         $result = [];
@@ -1578,7 +1701,7 @@ class OcrTableExtractionService
         }
 
         $centers = array_map(
-            fn(array $cluster): float => array_sum($cluster) / count($cluster),
+            fn (array $cluster): float => array_sum($cluster) / count($cluster),
             $clusters,
         );
 
@@ -1668,7 +1791,7 @@ class OcrTableExtractionService
             }
         }
 
-        usort($anchors, fn(array $a, array $b) => $a['top'] <=> $b['top']);
+        usort($anchors, fn (array $a, array $b) => $a['top'] <=> $b['top']);
 
         return $anchors;
     }
@@ -1677,10 +1800,10 @@ class OcrTableExtractionService
     {
         $result = array_values(array_filter(
             $words,
-            fn(array $word): bool => abs((float) $word['center_y'] - $rowCenter) <= $tolerance
+            fn (array $word): bool => abs((float) $word['center_y'] - $rowCenter) <= $tolerance
         ));
 
-        usort($result, fn(array $a, array $b) => $a['left'] <=> $b['left']);
+        usort($result, fn (array $a, array $b) => $a['left'] <=> $b['left']);
 
         return $result;
     }
@@ -1691,10 +1814,10 @@ class OcrTableExtractionService
             return '';
         }
 
-        usort($words, fn(array $a, array $b) => $a['left'] <=> $b['left']);
+        usort($words, fn (array $a, array $b) => $a['left'] <=> $b['left']);
 
         return trim(preg_replace('/\s+/', ' ', implode(' ', array_map(
-            fn(array $word): string => trim((string) $word['text']),
+            fn (array $word): string => trim((string) $word['text']),
             $words,
         ))));
     }
@@ -1705,7 +1828,7 @@ class OcrTableExtractionService
             return null;
         }
 
-        usort($words, fn(array $a, array $b) => $a['left'] <=> $b['left']);
+        usort($words, fn (array $a, array $b) => $a['left'] <=> $b['left']);
 
         $parts = [];
         foreach ($words as $word) {
@@ -1838,6 +1961,7 @@ class OcrTableExtractionService
         }
 
         $letters = preg_replace('/[^A-Za-z]/', '', $name);
+
         return strlen($letters) < 2;
     }
 
@@ -2043,7 +2167,7 @@ class OcrTableExtractionService
 
             $present = count(array_filter(
                 $data,
-                fn($value) => $value !== null && trim((string) $value) !== ''
+                fn ($value) => $value !== null && trim((string) $value) !== ''
             ));
 
             $rows[] = [
@@ -2063,7 +2187,7 @@ class OcrTableExtractionService
 
         return [
             'headers' => array_map(
-                fn($definition) => (string) ($definition['label'] ?? $definition['key'] ?? ''),
+                fn ($definition) => (string) ($definition['label'] ?? $definition['key'] ?? ''),
                 $definitions
             ),
             'rows' => $rows,
@@ -2182,7 +2306,7 @@ class OcrTableExtractionService
 
             $expected = count(array_filter(
                 $definitions,
-                fn($definition) => filled($definition['key'] ?? null)
+                fn ($definition) => filled($definition['key'] ?? null)
             ));
 
             $rows[] = [
@@ -2251,7 +2375,6 @@ class OcrTableExtractionService
 
         return $best;
     }
-
 
     private function extractColumnValue(string $line, array $definition): ?string
     {
@@ -2445,7 +2568,7 @@ class OcrTableExtractionService
             ];
 
             foreach ($productPatterns as $pattern => $cleanValue) {
-                if (preg_match('/\b' . preg_quote($pattern, '/') . '\b/i', $value)) {
+                if (preg_match('/\b'.preg_quote($pattern, '/').'\b/i', $value)) {
                     return $cleanValue;
                 }
             }
@@ -2473,6 +2596,7 @@ class OcrTableExtractionService
 
         return $value !== '' ? $value : null;
     }
+
     private function detectHeaderLine(array $lines, array $definitions): ?int
     {
         $bestIndex = null;
@@ -2539,6 +2663,7 @@ class OcrTableExtractionService
     {
         if (preg_match($pattern, $value, $match)) {
             $raw = trim($match[0]);
+
             return [$raw, ltrim(substr($value, strlen($match[0])))];
         }
 
@@ -2603,6 +2728,7 @@ class OcrTableExtractionService
     private function normalize(string $value): string
     {
         $value = preg_replace('/[^a-z0-9]+/i', ' ', Str::lower(trim($value)));
+
         return trim(preg_replace('/\s+/', ' ', $value));
     }
 

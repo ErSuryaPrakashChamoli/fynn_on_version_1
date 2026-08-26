@@ -177,37 +177,23 @@ class EmployeePerformanceMetricsService
             return [$performance['target'], $performance['actual'], $performance['count_achievement']];
         }
 
-        // For any other historical/future period, generalize the same
-        // settlement-override formula to an arbitrary date range, and
-        // approximate the (inherently monthly) target by prorating each
-        // caller's category target across the number of months spanned.
-        $totals = Customer::query()
+        // For any other historical/future period, reuse the same
+        // authoritative engines AchievementCalculatorService uses for the
+        // current month — computeAchievementTotals() for the bank-aware
+        // deduction formula, and getTargetForPeriod() for the hierarchy
+        // target (joining/exit-date rules and the ₹30L top-up), so a given
+        // month never produces a different target depending on whether
+        // it's being viewed as "current" or as a historical period.
+        $customers = Customer::query()
             ->whereIn('employee_id', $employeeIds)
-            ->whereBetween('customers.created_at', [$start, $end])
-            ->leftJoin('customer_settlements as cs', function ($join) {
-                $join->on('cs.customer_id', '=', 'customers.id')->where('cs.version', 1);
-            })
-            ->selectRaw('
-                SUM(CASE WHEN cs.mis_disbursal_amount IS NOT NULL THEN cs.mis_disbursal_amount ELSE customers.sanctioned_loan_amount END) as actual,
-                SUM(CASE WHEN cs.mis_cashback IS NOT NULL THEN cs.mis_cashback ELSE customers.cashback END) as cashback,
-                SUM(CASE WHEN cs.mis_subvention IS NOT NULL THEN cs.mis_subvention ELSE customers.subvention END) as subvention,
-                SUM(CASE WHEN cs.mis_docking IS NOT NULL THEN cs.mis_docking ELSE customers.docking END) as docking
-            ')
-            ->first();
+            ->whereBetween('customers.created_at', [$start, $end]);
 
-        $actual = (float) ($totals->actual ?? 0);
-        $cashback = (float) ($totals->cashback ?? 0);
-        $subvention = (float) ($totals->subvention ?? 0);
-        $docking = (float) ($totals->docking ?? 0);
-        $countAchievement = $actual - ((($cashback + $subvention + $docking) / 2) * 100);
+        $totals = $this->achievementCalculator->computeAchievementTotals($customers);
 
-        $callerTargetSum = Employee::query()
-            ->whereIn('id', $employeeIds)
-            ->where('designation', Employee::DESIGNATION_CALLER)
-            ->get()
-            ->sum(fn (Employee $caller) => $caller->target_amount);
+        $actual = $totals['actual'];
+        $countAchievement = $totals['count_achievement'];
 
-        $target = $callerTargetSum * PerformancePeriod::monthSpan($start, $end);
+        $target = $this->achievementCalculator->getTargetForPeriod($employee, $start, $end);
 
         return [$target, $actual, $countAchievement];
     }

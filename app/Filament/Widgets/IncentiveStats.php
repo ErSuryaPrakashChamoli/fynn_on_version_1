@@ -33,6 +33,12 @@ class IncentiveStats extends StatsOverviewWidget
 
         $isAdmin = $user->hasRole('Admin');
 
+        $isHierarchyLead = ! $isAdmin && in_array($employee?->designation, [
+            Employee::DESIGNATION_TEAM_LEADER,
+            Employee::DESIGNATION_MANAGER,
+            Employee::DESIGNATION_CLUSTER,
+        ], true);
+
         /*
         |--------------------------------------------------------------------------
         | Calculate Incentive
@@ -129,10 +135,11 @@ class IncentiveStats extends StatsOverviewWidget
 
             $incentiveColor = 'success';
 
-            $incentiveDescription =
-                $isAdmin
-                ? 'Company incentive generated'
-                : 'Current incentive earned';
+            $incentiveDescription = match (true) {
+                $isAdmin => 'Company incentive generated',
+                $isHierarchyLead => 'Team incentive earned',
+                default => 'Current incentive earned',
+            };
         } elseif ($countAchievement > 0) {
 
             $incentiveBadge = '📈 IN PROGRESS';
@@ -211,9 +218,11 @@ class IncentiveStats extends StatsOverviewWidget
         |--------------------------------------------------------------------------
         */
 
-        $scopeBadge = $isAdmin
-            ? '🏢 COMPANY-WIDE'
-            : '👤 YOUR INCENTIVE';
+        $scopeBadge = match (true) {
+            $isAdmin => '🏢 COMPANY-WIDE',
+            $isHierarchyLead => '👥 YOUR TEAM',
+            default => '👤 YOUR INCENTIVE',
+        };
 
         /*
         |--------------------------------------------------------------------------
@@ -251,8 +260,7 @@ class IncentiveStats extends StatsOverviewWidget
                     'heroicon-o-currency-rupee'
                 )
                 ->extraAttributes([
-                    'class' =>
-                    'performance-card incentive-card-cashback',
+                    'class' => 'performance-card incentive-card-cashback',
                 ])
                 ->chart([
                     5,
@@ -292,8 +300,7 @@ class IncentiveStats extends StatsOverviewWidget
                     'heroicon-o-building-library'
                 )
                 ->extraAttributes([
-                    'class' =>
-                    'performance-card incentive-card-subvention',
+                    'class' => 'performance-card incentive-card-subvention',
                 ])
                 ->chart([
                     5,
@@ -333,8 +340,7 @@ class IncentiveStats extends StatsOverviewWidget
                     'heroicon-o-arrow-down-circle'
                 )
                 ->extraAttributes([
-                    'class' =>
-                    'performance-card incentive-card-docking',
+                    'class' => 'performance-card incentive-card-docking',
                 ])
                 ->chart([
                     3,
@@ -376,8 +382,7 @@ class IncentiveStats extends StatsOverviewWidget
                     'heroicon-o-trophy'
                 )
                 ->extraAttributes([
-                    'class' =>
-                    'performance-card incentive-card-earned',
+                    'class' => 'performance-card incentive-card-earned',
                 ])
                 ->chart([
                     5,
@@ -417,8 +422,7 @@ class IncentiveStats extends StatsOverviewWidget
                     'heroicon-o-calculator'
                 )
                 ->extraAttributes([
-                    'class' =>
-                    'performance-card incentive-card-deductions',
+                    'class' => 'performance-card incentive-card-deductions',
                 ]),
 
             /*
@@ -453,8 +457,7 @@ class IncentiveStats extends StatsOverviewWidget
                     'heroicon-o-chart-bar'
                 )
                 ->extraAttributes([
-                    'class' =>
-                    'performance-card incentive-card-achievement',
+                    'class' => 'performance-card incentive-card-achievement',
                 ])
                 ->chart([
                     10,
@@ -478,10 +481,19 @@ class IncentiveStats extends StatsOverviewWidget
     {
         $user = Filament::auth()->user();
 
-        return $user && (
-            $user->hasRole('Admin')
-            || $user->employee?->designation
-            === Employee::DESIGNATION_CALLER
-        );
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->hasRole('Admin')) {
+            return true;
+        }
+
+        return in_array($user->employee?->designation, [
+            Employee::DESIGNATION_CALLER,
+            Employee::DESIGNATION_TEAM_LEADER,
+            Employee::DESIGNATION_MANAGER,
+            Employee::DESIGNATION_CLUSTER,
+        ], true);
     }
 }

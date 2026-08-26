@@ -7,42 +7,27 @@ use Illuminate\Validation\ValidationException;
 
 class MisSettlementImporterService
 {
-    public function resolveByLan(string $lan): ?CustomerSettlement
+    public function resolveByLan(string $lan): CustomerSettlement
     {
         $lan = trim($lan);
 
-        $settlement = CustomerSettlement::query()
+        $settlements = CustomerSettlement::query()
             ->where('mis_lan_no', $lan)
-            ->orWhereHas('customer', fn($query) => $query->where('lan_no', $lan))
-            ->first();
+            ->orWhereHas('customer', fn ($query) => $query->where('lan_no', $lan))
+            ->get();
 
-        if (! $settlement) {
+        if ($settlements->isEmpty()) {
             throw ValidationException::withMessages([
                 'lan' => "No Customer Settlement found for LAN: {$lan}",
             ]);
         }
 
-        return $settlement;
-    }
-
-
-    public function resolveRecord(): ?CustomerSettlement
-    {
-        $lan = trim((string) ($this->data['mis_lan_no'] ?? ''));
-
-        if ($lan === '') {
-            throw new \RuntimeException('LAN is required.');
+        if ($settlements->count() > 1) {
+            throw ValidationException::withMessages([
+                'lan' => "LAN {$lan} is ambiguous: it matches {$settlements->count()} customer settlements. Resolve the duplicate LAN before importing.",
+            ]);
         }
 
-        $record = app(MisSettlementImporterService::class)
-            ->resolveByLan($lan);
-
-        if (! $record) {
-            throw new \RuntimeException(
-                "LAN {$lan} was not found in Customer Settlement."
-            );
-        }
-
-        return $record;
+        return $settlements->first();
     }
 }

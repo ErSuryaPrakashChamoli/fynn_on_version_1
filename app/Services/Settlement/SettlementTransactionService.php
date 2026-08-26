@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services;
+namespace App\Services\Settlement;
 
 use App\Models\CustomerSettlement;
 use Illuminate\Support\Facades\DB;
@@ -57,7 +57,13 @@ class SettlementTransactionService
             $settlement->surplus_amount = max(0, $payment - $netPayable);
             $settlement->outstanding_amount = max(0, $netPayable - $payment);
 
-            if ($settlement->status !== 'mis_review') {
+            // Never move a case out of MIS review/verification while MIS is
+            // working — mirrors the same guard in
+            // SettlementReconciliationService::calculate(). The role-gated
+            // block above is the one sanctioned way out of mis_verified
+            // (into accounts_review); once there, this block is free to
+            // refine the status further based on the transaction totals.
+            if (! in_array($settlement->status, ['mis_review', 'mis_verified'], true)) {
                 if ($recovery > 0 && $settlement->recovery_pending > 0) {
                     $settlement->status = 'recovery_pending';
                 } elseif ($payment <= 0) {

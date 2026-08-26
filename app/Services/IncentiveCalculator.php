@@ -28,18 +28,14 @@ class IncentiveCalculator
     {
         /*
         |--------------------------------------------------------------------------
-        | No employee
-        |--------------------------------------------------------------------------
-        */
-
-        if (! $employee) {
-            return self::emptyResult();
-        }
-
-        /*
-        |--------------------------------------------------------------------------
         | Use the central calculation engine
         |--------------------------------------------------------------------------
+        |
+        | A null $employee is a valid input meaning "company-wide view" —
+        | getPerformance() already handles it directly. Do not special-case
+        | it here; that previously short-circuited to an all-zero result
+        | instead of the true company-wide total.
+        |
         */
 
         $calculator = app(AchievementCalculatorService::class);
@@ -53,31 +49,14 @@ class IncentiveCalculator
         */
 
         return [
-            'target_category'   => $performance['target_category'] ?? null,
-            'target'            => (float) ($performance['target'] ?? 0),
-            'actual'            => (float) ($performance['actual'] ?? 0),
-            'cashback'          => (float) ($performance['cashback'] ?? 0),
-            'subvention'        => (float) ($performance['subvention'] ?? 0),
-            'docking'           => (float) ($performance['docking'] ?? 0),
+            'target_category' => $performance['target_category'] ?? null,
+            'target' => (float) ($performance['target'] ?? 0),
+            'actual' => (float) ($performance['actual'] ?? 0),
+            'cashback' => (float) ($performance['cashback'] ?? 0),
+            'subvention' => (float) ($performance['subvention'] ?? 0),
+            'docking' => (float) ($performance['docking'] ?? 0),
             'count_achievement' => (float) ($performance['count_achievement'] ?? 0),
-            'incentive'         => (float) ($performance['incentive'] ?? 0),
-        ];
-    }
-
-    /**
-     * Empty performance result.
-     */
-    protected static function emptyResult(): array
-    {
-        return [
-            'target_category'   => null,
-            'target'            => 0,
-            'actual'            => 0,
-            'cashback'          => 0,
-            'subvention'        => 0,
-            'docking'           => 0,
-            'count_achievement' => 0,
-            'incentive'         => 0,
+            'incentive' => (float) ($performance['incentive'] ?? 0),
         ];
     }
 }
