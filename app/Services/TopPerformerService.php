@@ -13,18 +13,30 @@ class TopPerformerService
 
     public function getTopPerformers(?Employee $loggedInEmployee): array
     {
-        // If Admin (no employee record), show Top 5 Callers
+        // Admin (no employee record) sees a combined leaderboard: Top 5
+        // Callers, Top 5 Team Leaders, and Top 2 Managers, in that order.
         if (! $loggedInEmployee) {
-            $designation = Employee::DESIGNATION_CALLER;
-            $limit = 5;
-        } else {
-            $designation = $loggedInEmployee->designation;
-
-            $limit = $designation == Employee::DESIGNATION_CALLER
-                ? 5
-                : 3;
+            return [
+                ...$this->getTopPerformersForDesignation(Employee::DESIGNATION_CALLER, 5),
+                ...$this->getTopPerformersForDesignation(Employee::DESIGNATION_TEAM_LEADER, 5),
+                ...$this->getTopPerformersForDesignation(Employee::DESIGNATION_MANAGER, 2),
+            ];
         }
 
+        $designation = $loggedInEmployee->designation;
+
+        $limit = $designation == Employee::DESIGNATION_CALLER
+            ? 5
+            : 3;
+
+        return $this->getTopPerformersForDesignation($designation, $limit);
+    }
+
+    /**
+     * @return array<int, array{name: string, designation: int, target: float, countAchievement: float, percentage: float}>
+     */
+    private function getTopPerformersForDesignation(int $designation, int $limit): array
+    {
         // This widget is rendered on every admin page (topbar render hook)
         // and polled every 60s per open tab. Computing it involves a
         // per-employee achievement query, so it's cached rather than
@@ -46,6 +58,7 @@ class TopPerformerService
 
                     $performers[] = [
                         'name' => $employee->emp_name,
+                        'designation' => $designation,
                         'target' => $target,
                         'countAchievement' => $achievement,
                         'percentage' => $percentage,

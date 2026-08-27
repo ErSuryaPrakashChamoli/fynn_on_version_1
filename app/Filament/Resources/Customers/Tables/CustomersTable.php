@@ -8,6 +8,7 @@ use App\Filament\Imports\CustomerImporter;
 use App\Filament\Resources\FollowUps\FollowUpResource;
 use App\Models\Employee;
 use App\Services\HierarchyService;
+use App\Support\SelectedMonth;
 use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -202,44 +203,6 @@ class CustomersTable
                         return $indicators;
                     }),
 
-                SelectFilter::make('month')
-                    ->label('Month')
-                    ->options([
-                        1 => 'January',
-                        2 => 'February',
-                        3 => 'March',
-                        4 => 'April',
-                        5 => 'May',
-                        6 => 'June',
-                        7 => 'July',
-                        8 => 'August',
-                        9 => 'September',
-                        10 => 'October',
-                        11 => 'November',
-                        12 => 'December',
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query->when(
-                            filled($data['value'] ?? null),
-                            fn (Builder $query) => $query->whereMonth('created_at', $data['value'])
-                        );
-                    }),
-
-                SelectFilter::make('year')
-                    ->label('Year')
-                    ->options([
-                        2025 => '2025',
-                        2026 => '2026',
-                        2027 => '2027',
-                        2028 => '2028',
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query->when(
-                            filled($data['value'] ?? null),
-                            fn (Builder $query) => $query->whereYear('created_at', $data['value'])
-                        );
-                    }),
-
                 SelectFilter::make('employee_id')
                     ->label('Employee')
                     ->options(
@@ -335,6 +298,9 @@ class CustomersTable
             ])
             ->defaultPaginationPageOption(5)
             ->paginated([5, 10, 25, 50, 100, 'all'])
+            ->modifyQueryUsing(
+                fn (Builder $query) => $query->whereBetween('created_at', SelectedMonth::range())
+            )
             ->recordActions([
                 ViewAction::make(),
                 // EditAction::make(),

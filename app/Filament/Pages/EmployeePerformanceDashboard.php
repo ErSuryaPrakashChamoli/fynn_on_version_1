@@ -8,6 +8,7 @@ use App\Services\Performance\EmployeePerformanceMetricsService;
 use App\Services\Performance\RatioCalculator;
 use App\Support\HierarchyHelper;
 use App\Support\Performance\PerformancePeriod;
+use App\Support\SelectedMonth;
 use BackedEnum;
 use Carbon\Carbon;
 use Filament\Facades\Filament;
@@ -44,7 +45,7 @@ class EmployeePerformanceDashboard extends Page
         $this->form->fill([
             'employee_id' => $defaultEmployeeId,
             'period_type' => PerformancePeriod::MONTHLY,
-            'reference' => now()->toDateString(),
+            'reference' => SelectedMonth::current()->toDateString(),
         ]);
 
         $this->selectEmployee($defaultEmployeeId);

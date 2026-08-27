@@ -3,12 +3,14 @@
 namespace App\Filament\Resources\FollowUps\Tables;
 
 use App\Filament\Resources\FollowUps\FollowUpResource;
+use App\Support\SelectedMonth;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 
 class FollowUpsTable
@@ -102,6 +104,9 @@ class FollowUpsTable
             ->filters([
                 //
             ])
+            ->modifyQueryUsing(
+                fn (Builder $query) => $query->whereBetween('follow_up_date', SelectedMonth::range())
+            )
             ->recordActions([
                 EditAction::make(),
                 //   Action::make('followup')

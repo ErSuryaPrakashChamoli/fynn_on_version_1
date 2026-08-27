@@ -4,6 +4,7 @@ namespace App\Filament\Resources\LeadAssignmentReports\Tables;
 
 use App\Filament\Exports\LeadAssignmentReportExporter;
 use App\Models\Employee;
+use App\Support\SelectedMonth;
 use Filament\Actions\ExportAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -12,22 +13,29 @@ use Illuminate\Database\Eloquent\Builder;
 
 class LeadAssignmentReportsTable
 {
+    /**
+     * Every funnel count is additionally constrained to assignments made
+     * during the globally selected month, so the whole funnel reflects
+     * "assignments in that month" rather than an all-time total.
+     */
     public static function funnelWithCount(): array
     {
+        $inSelectedMonth = fn (Builder $q) => $q->whereBetween('created_at', SelectedMonth::range());
+
         return [
-            'assignmentsReceived as assigned_count',
-            'assignmentsReceived as opened_count' => fn (Builder $q) => $q->where('opens_count', '>', 0),
-            'assignmentsReceived as contacted_count' => fn (Builder $q) => $q->whereHas('customer.followUps'),
-            'assignmentsReceived as eligible_count' => fn (Builder $q) => $q->whereHas('customer', fn (Builder $q2) => $q2->where('eligibility_status', 'eligible')),
-            'assignmentsReceived as not_eligible_count' => fn (Builder $q) => $q->whereHas('customer', fn (Builder $q2) => $q2->where('eligibility_status', 'not_eligible')),
-            'assignmentsReceived as sfl_count' => fn (Builder $q) => $q->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'sfl')),
-            'assignmentsReceived as underwriting_count' => fn (Builder $q) => $q->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'underwriting')),
-            'assignmentsReceived as approved_count' => fn (Builder $q) => $q->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'approved')),
-            'assignmentsReceived as disbursed_count' => fn (Builder $q) => $q->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'sanctioned')),
-            'assignmentsReceived as completed_count' => fn (Builder $q) => $q->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'completed')),
-            'assignmentsReceived as carry_forward_count' => fn (Builder $q) => $q->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'carry_forward')),
-            'assignmentsReceived as dropped_count' => fn (Builder $q) => $q->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'dropped')),
-            'assignmentsReceived as not_approved_count' => fn (Builder $q) => $q->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'not_approved')),
+            'assignmentsReceived as assigned_count' => $inSelectedMonth,
+            'assignmentsReceived as opened_count' => fn (Builder $q) => $inSelectedMonth($q)->where('opens_count', '>', 0),
+            'assignmentsReceived as contacted_count' => fn (Builder $q) => $inSelectedMonth($q)->whereHas('customer.followUps'),
+            'assignmentsReceived as eligible_count' => fn (Builder $q) => $inSelectedMonth($q)->whereHas('customer', fn (Builder $q2) => $q2->where('eligibility_status', 'eligible')),
+            'assignmentsReceived as not_eligible_count' => fn (Builder $q) => $inSelectedMonth($q)->whereHas('customer', fn (Builder $q2) => $q2->where('eligibility_status', 'not_eligible')),
+            'assignmentsReceived as sfl_count' => fn (Builder $q) => $inSelectedMonth($q)->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'sfl')),
+            'assignmentsReceived as underwriting_count' => fn (Builder $q) => $inSelectedMonth($q)->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'underwriting')),
+            'assignmentsReceived as approved_count' => fn (Builder $q) => $inSelectedMonth($q)->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'approved')),
+            'assignmentsReceived as disbursed_count' => fn (Builder $q) => $inSelectedMonth($q)->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'sanctioned')),
+            'assignmentsReceived as completed_count' => fn (Builder $q) => $inSelectedMonth($q)->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'completed')),
+            'assignmentsReceived as carry_forward_count' => fn (Builder $q) => $inSelectedMonth($q)->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'carry_forward')),
+            'assignmentsReceived as dropped_count' => fn (Builder $q) => $inSelectedMonth($q)->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'dropped')),
+            'assignmentsReceived as not_approved_count' => fn (Builder $q) => $inSelectedMonth($q)->whereHas('customer', fn (Builder $q2) => $q2->where('journey_status', 'not_approved')),
         ];
     }
 
@@ -38,7 +46,7 @@ class LeadAssignmentReportsTable
                 return '0%';
             }
 
-            return round(($record->{$count} / $record->assigned_count) * 100) . '%';
+            return round(($record->{$count} / $record->assigned_count) * 100).'%';
         };
     }
 
@@ -64,19 +72,19 @@ class LeadAssignmentReportsTable
 
                 TextColumn::make('opened_count')
                     ->label('Opened')
-                    ->formatStateUsing(fn ($state, Employee $record) => "{$state} (" . static::percentOf('opened_count')($record) . ')'),
+                    ->formatStateUsing(fn ($state, Employee $record) => "{$state} (".static::percentOf('opened_count')($record).')'),
 
                 TextColumn::make('contacted_count')
                     ->label('Contacted')
-                    ->formatStateUsing(fn ($state, Employee $record) => "{$state} (" . static::percentOf('contacted_count')($record) . ')'),
+                    ->formatStateUsing(fn ($state, Employee $record) => "{$state} (".static::percentOf('contacted_count')($record).')'),
 
                 TextColumn::make('approved_count')
                     ->label('Approved')
-                    ->formatStateUsing(fn ($state, Employee $record) => "{$state} (" . static::percentOf('approved_count')($record) . ')'),
+                    ->formatStateUsing(fn ($state, Employee $record) => "{$state} (".static::percentOf('approved_count')($record).')'),
 
                 TextColumn::make('disbursed_count')
                     ->label('Disbursed')
-                    ->formatStateUsing(fn ($state, Employee $record) => "{$state} (" . static::percentOf('disbursed_count')($record) . ')'),
+                    ->formatStateUsing(fn ($state, Employee $record) => "{$state} (".static::percentOf('disbursed_count')($record).')'),
 
                 TextColumn::make('eligible_count')
                     ->label('Eligible')

@@ -9,6 +9,7 @@ use App\Filament\Pages\CustomerFollowUpCalendar;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\EmployeeHierarchy;
 use App\Filament\Pages\EmployeePerformanceDashboard;
+use App\Filament\Pages\JourneyContinuityDashboard;
 use App\Filament\Pages\LoginPageSettings;
 use App\Filament\Pages\MyProfile;
 use App\Filament\Pages\TeamPerformance;
@@ -18,15 +19,21 @@ use App\Filament\Resources\AiCustomerRecords\AiCustomerRecordResource;
 use App\Filament\Resources\AiDocumentSchemas\AiDocumentSchemaResource;
 use App\Filament\Resources\AssignedLeads\AssignedLeadResource;
 use App\Filament\Resources\Cities\CityResource;
+use App\Filament\Resources\CustomerJourneyAudits\CustomerJourneyAuditResource;
+use App\Filament\Resources\CustomerJourneyDelegations\CustomerJourneyDelegationResource;
 use App\Filament\Resources\CustomerPanRequests\CustomerPanRequestResource;
+use App\Filament\Resources\CustomerReassignments\CustomerReassignmentResource;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Filament\Resources\CustomerSettlements\CustomerSettlementResource;
+use App\Filament\Resources\CustomerSlaBreaches\CustomerSlaBreachResource;
 use App\Filament\Resources\EmployeePerformanceReports\EmployeePerformanceReportResource;
 use App\Filament\Resources\Employees\EmployeeResource;
 use App\Filament\Resources\FollowUps\FollowUpResource;
+use App\Filament\Resources\JourneyTakeovers\JourneyTakeoverResource;
 use App\Filament\Resources\LeadAssignmentReports\LeadAssignmentReportResource;
 use App\Filament\Resources\Leads\LeadResource;
 use App\Filament\Resources\OcrDocuments\OcrDocumentResource;
+use App\Filament\Resources\PendingManagerCases\PendingManagerCaseResource;
 use App\Filament\Resources\PerformanceMetricRatios\PerformanceMetricRatioResource;
 use App\Filament\Resources\Teams\TeamResource;
 use App\Filament\Resources\UserLoginSessions\UserLoginSessionResource;
@@ -65,6 +72,7 @@ use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Saade\FilamentFullCalendar\FilamentFullCalendarPlugin;
+use App\Filament\Widgets\CustomerStats;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -131,6 +139,20 @@ class AdminPanelProvider extends PanelProvider
                 function () {
                     return Blade::render('@livewire("top-performer-marquee")');
                 }
+            )
+            // The global month selector (see App\Support\SelectedMonth):
+            // one topbar control that scopes every resource table and
+            // dashboard widget panel-wide to a single selected calendar
+            // month, persisted via a plain cookie the same way the theme
+            // switcher persists dashboard_theme. GLOBAL_SEARCH_AFTER sits
+            // inside .fi-topbar-end, right before the database
+            // notifications bell — placing this here (rather than
+            // TOPBAR_START, which sits ahead of the sidebar toggle and
+            // logo) keeps the logo in its original spot and puts the
+            // selector immediately to the bell's left.
+            ->renderHook(
+                PanelsRenderHook::GLOBAL_SEARCH_AFTER,
+                fn (): string => view('filament.components.global-month-selector')->render(),
             )
             // Swapping ->colors() (see buildColors()) already recolors every
             // Filament component that reads the --primary-*/--gray-* CSS
@@ -220,6 +242,7 @@ class AdminPanelProvider extends PanelProvider
                 IncentiveStats::class,
                 PerformanceStats::class,
                 ManagerPPPStats::class,
+                CustomerStats::class,
 
             ])
             ->middleware([
@@ -427,6 +450,22 @@ class AdminPanelProvider extends PanelProvider
                 ...$this->navigationItemsFor(CustomerResource::class),
                 ...$this->navigationItemsFor(FollowUpResource::class),
                 ...$this->navigationItemsFor(CustomerFollowUpCalendar::class),
+            ]),
+
+            // Administrative/operational layer around the existing Customer
+            // Journey above — never the journey itself. Manages continuity
+            // when the assigned Manager can't proceed (delegation, emergency
+            // takeover, SLA escalation, permanent reassignment) without ever
+            // touching Customer::assign_to except through an explicit,
+            // audited reassignment. See CustomerJourneyAccessService.
+            NavigationGroup::make('Customer Journey Continuity')->items([
+                ...$this->navigationItemsFor(JourneyContinuityDashboard::class),
+                ...$this->navigationItemsFor(CustomerJourneyDelegationResource::class),
+                ...$this->navigationItemsFor(JourneyTakeoverResource::class),
+                ...$this->navigationItemsFor(PendingManagerCaseResource::class),
+                ...$this->navigationItemsFor(CustomerSlaBreachResource::class),
+                ...$this->navigationItemsFor(CustomerReassignmentResource::class),
+                ...$this->navigationItemsFor(CustomerJourneyAuditResource::class),
             ]),
 
             NavigationGroup::make('Performance')->items([

@@ -7,6 +7,7 @@ use App\Models\CustomerAssignment;
 use App\Models\FollowUp;
 use App\Models\Lead;
 use App\Services\HierarchyService;
+use App\Support\SelectedMonth;
 use Carbon\Carbon;
 use Coolsam\Flatpickr\Forms\Components\Flatpickr;
 use Filament\Facades\Filament;
@@ -40,6 +41,9 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
     public function config(): array
     {
         return [
+            // Opens the calendar directly on the globally selected month —
+            // prev/next/today navigation from there is unaffected.
+            'initialDate' => SelectedMonth::current()->toDateString(),
             'firstDay' => 1,
             // Lets the calendar grow to fit its rows instead of being
             // squeezed into an aspect-ratio-derived height, which was

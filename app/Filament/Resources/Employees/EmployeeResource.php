@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Employees;
 
+use App\Filament\Imports\EmployeeImporter;
 use App\Filament\Resources\Employees\Pages\CreateEmployee;
 use App\Filament\Resources\Employees\Pages\EditEmployee;
 use App\Filament\Resources\Employees\Pages\ListEmployees;
@@ -10,44 +11,26 @@ use App\Filament\Resources\Employees\Schemas\EmployeeForm;
 use App\Filament\Resources\Employees\Schemas\EmployeeInfolist;
 use App\Filament\Resources\Employees\Tables\EmployeesTable;
 use App\Models\Employee;
+use App\Support\SelectedMonth;
 use BackedEnum;
-use Filament\Resources\Resource;
-use Filament\Schemas\Schema;
-use Filament\Support\Icons\Heroicon;
-use Filament\Tables\Table;
-
-use Filament\Schemas\Components\Section;
-use Filament\Schemas\Components\View;
-
-
+use Filament\Actions\DeleteAction;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
+use Filament\Actions\ImportAction;
+use Filament\Actions\ViewAction;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Textarea;
+use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
-use Filament\Tables;
-use Filament\Actions\DeleteAction;
-use Filament\Actions\EditAction;
-use Filament\Actions\DeleteBulkAction;
-use Filament\Actions\ViewAction;
-
-
-use Filament\Forms\Components\FileUpload;
-
-
-use Filament\Schemas\Components\Text;
-use Illuminate\Support\HtmlString;
-use Illuminate\Database\Eloquent\Builder;
-
-use Filament\Forms\Components\DatePicker;
-
-use Filament\Actions\ImportAction;
-use App\Filament\Imports\CustomerImporter;
-use App\Filament\Imports\EmployeeImporter;
-
-
-
 use Filament\Schemas\Components\Utilities\Set;
-
+use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
+use Filament\Tables;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class EmployeeResource extends Resource
 {
@@ -82,7 +65,6 @@ class EmployeeResource extends Resource
                         ->label('Designation')
                         ->required(),
 
-
                     Select::make('designation')
                         ->label('Position')
                         ->options(Employee::designationOptions())
@@ -111,8 +93,6 @@ class EmployeeResource extends Resource
                         })
                         ->native(false),
 
-
-
                     Select::make('category')
                         ->label('Target Category')
                         ->options([
@@ -125,8 +105,6 @@ class EmployeeResource extends Resource
                         ])
                         ->required()
                         ->native(false),
-
-
 
                     Select::make('superviser_id')
                         ->label('Superviser')
@@ -146,6 +124,7 @@ class EmployeeResource extends Resource
                             if (! $state) {
                                 $set('manager_id', null);
                                 $set('cluster_id', null);
+
                                 return;
                             }
 
@@ -204,6 +183,7 @@ class EmployeeResource extends Resource
                         ->afterStateUpdated(function (Set $set, $state): void {
                             if (! $state) {
                                 $set('cluster_id', null);
+
                                 return;
                             }
 
@@ -211,8 +191,7 @@ class EmployeeResource extends Resource
                                 ->whereKey($state)
                                 ->value('cluster_id'));
                         })
-                        ->disabled(fn (Get $get) =>
-                            $get('designation') === Employee::DESIGNATION_CALLER && ! $get('superviser_id')
+                        ->disabled(fn (Get $get) => $get('designation') === Employee::DESIGNATION_CALLER && ! $get('superviser_id')
                         )
                         ->preload(),
 
@@ -287,14 +266,14 @@ class EmployeeResource extends Resource
                         ->label('Cost Center')
                         ->options([
                             'anuj_singh_thakur' => 'Anuj Singh Thakur',
-                            'bhupendra_singh'   => 'Bhupendra Singh',
+                            'bhupendra_singh' => 'Bhupendra Singh',
                             'chanchal_chaudhary' => 'Chanchal Chaudhary',
-                            'deepak_singh'      => 'Deepak Singh',
-                            'kanak_kumar'       => 'Kanak Kumar',
-                            'manoj_sajwan'      => 'Manoj Sajwan',
-                            'nitin_thakur'      => 'Nitin Thakur',
-                            'prabhat_tyagi'     => 'Prabhat Tyagi',
-                            'rohit_sharma'      => 'Rohit Sharma',
+                            'deepak_singh' => 'Deepak Singh',
+                            'kanak_kumar' => 'Kanak Kumar',
+                            'manoj_sajwan' => 'Manoj Sajwan',
+                            'nitin_thakur' => 'Nitin Thakur',
+                            'prabhat_tyagi' => 'Prabhat Tyagi',
+                            'rohit_sharma' => 'Rohit Sharma',
                         ])
                         ->required()
                         ->native(false),
@@ -334,8 +313,8 @@ class EmployeeResource extends Resource
                         ->displayFormat('d F Y')
                         ->suffixIcon('heroicon-m-calendar')
                         ->maxDate(now())
-                        ->visible(fn(Get $get) => $get('exit_status') === 'yes')
-                        ->required(fn(Get $get) => $get('exit_status') === 'yes'),
+                        ->visible(fn (Get $get) => $get('exit_status') === 'yes')
+                        ->required(fn (Get $get) => $get('exit_status') === 'yes'),
 
                 ])
                 ->columns(2)
@@ -365,9 +344,9 @@ class EmployeeResource extends Resource
 
                 // Tables\Columns\TextColumn::make('designation'),
                 Tables\Columns\TextColumn::make('designation')
-                ->label('Designation')
-                ->formatStateUsing(fn ($state) => Employee::designationOptions()[$state] ?? '-')
-                ->sortable(),
+                    ->label('Designation')
+                    ->formatStateUsing(fn ($state) => Employee::designationOptions()[$state] ?? '-')
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('email'),
 
@@ -393,6 +372,18 @@ class EmployeeResource extends Resource
             ])
             ->defaultPaginationPageOption(5)
             ->paginated([5, 10, 25, 50, 100, 'all'])
+            ->deferFilters(false)
+            ->filters([
+                Filter::make('active_in_selected_month')
+                    ->label('Only employees active this month')
+                    ->toggle()
+                    ->default(true)
+                    ->query(function (Builder $query) {
+                        [$start, $end] = SelectedMonth::range();
+
+                        return $query->activeDuring($start, $end);
+                    }),
+            ])
             ->recordActions([
                 EditAction::make(),
                 DeleteAction::make(),
@@ -403,12 +394,11 @@ class EmployeeResource extends Resource
                     ->label('Import Employees')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('primary')
-                    ->importer(EmployeeImporter::class)
+                    ->importer(EmployeeImporter::class),
             ])
             ->toolbarActions([
                 DeleteBulkAction::make(),
             ]);
-
 
         // return EmployeesTable::configure($table);
     }

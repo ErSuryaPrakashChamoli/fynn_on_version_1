@@ -2,29 +2,22 @@
 
 namespace App\Filament\Resources\Teams;
 
-use App\Filament\Resources\Teams\Pages\CreateTeam;
-use App\Filament\Resources\Teams\Pages\EditTeam;
 use App\Filament\Resources\Teams\Pages\ListTeams;
 use App\Filament\Resources\Teams\Schemas\TeamForm;
 use App\Filament\Resources\Teams\Tables\TeamsTable;
+use App\Models\Employee;
+use App\Services\AchievementCalculatorService;
+use App\Support\HierarchyHelper;
+use App\Support\SelectedMonth;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
-
-
-use App\Models\Employee;
-use App\Support\HierarchyHelper;
 use Illuminate\Database\Eloquent\Builder;
-use App\Services\AchievementCalculatorService;
-
-
-
 
 class TeamResource extends Resource
 {
-
     protected static ?string $model = Employee::class;
 
     protected static ?string $navigationLabel = 'Teams';
@@ -34,7 +27,6 @@ class TeamResource extends Resource
     protected static ?string $pluralModelLabel = 'Teams';
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUserGroup;
-
 
     public static function form(Schema $schema): Schema
     {
@@ -59,12 +51,12 @@ class TeamResource extends Resource
         ];
     }
 
-
-
     public static function getEloquentQuery(): Builder
     {
+        [$start, $end] = SelectedMonth::range();
+
         // dd("called");
-        return HierarchyHelper::directReportees(auth()->user());
+        return HierarchyHelper::directReportees(auth()->user())->activeDuring($start, $end);
     }
 
     public static function getPages(): array
@@ -81,7 +73,6 @@ class TeamResource extends Resource
     {
         return 'Administration';
     }
-
 
     public static function canAccess(): bool
     {

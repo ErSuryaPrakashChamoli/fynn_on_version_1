@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Customer;
 use App\Models\Employee;
 use App\Support\HierarchyHelper;
+use App\Support\SelectedMonth;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -37,7 +38,7 @@ class AchievementCalculatorService
         return strtoupper(trim(str_replace('-', ' ', $bankName)));
     }
 
-    public function getCountAchievement(Employee $employee): float
+    public function getCountAchievement(Employee $employee, ?Carbon $referenceMonth = null): float
     {
         if ($employee->designation === Employee::DESIGNATION_ADMIN) {
 
@@ -50,9 +51,12 @@ class AchievementCalculatorService
                 ->whereIn('employee_id', $employeeIds);
         }
 
-        $customers
-            ->whereMonth('customers.created_at', now()->month)
-            ->whereYear('customers.created_at', now()->year);
+        $referenceMonth ??= SelectedMonth::current();
+
+        $customers->whereBetween('customers.created_at', [
+            $referenceMonth->copy()->startOfMonth(),
+            $referenceMonth->copy()->endOfMonth(),
+        ]);
 
         return $this->computeAchievementTotals($customers)['count_achievement'];
     }
@@ -104,14 +108,14 @@ class AchievementCalculatorService
         ];
     }
 
-    public function getTarget(Employee $employee): float
+    public function getTarget(Employee $employee, ?Carbon $referenceMonth = null): float
     {
-        $today = Carbon::today();
+        $referenceMonth ??= SelectedMonth::current();
 
         return $this->getTargetForPeriod(
             $employee,
-            $today->copy()->startOfMonth(),
-            $today->copy()->endOfMonth()
+            $referenceMonth->copy()->startOfMonth(),
+            $referenceMonth->copy()->endOfMonth()
         );
     }
 
@@ -276,7 +280,7 @@ class AchievementCalculatorService
         return round(($achievement / $target) * 100, 2);
     }
 
-    public function getEligibleCallerCount(Employee $manager): int
+    public function getEligibleCallerCount(Employee $manager, ?Carbon $referenceMonth = null): int
     {
         /*
     |--------------------------------------------------------------------------
@@ -297,13 +301,18 @@ class AchievementCalculatorService
     | Eligible Caller
     |--------------------------------------------------------------------------
     |
-    | A caller is eligible if his/her target for the
-    | current month is greater than zero.
+    | A caller is eligible if his/her target for the current month is
+    | greater than zero. This must use the same reporting-date/exit-status
+    | aware target (getHierarchyCallerTarget) as the rest of this service —
+    | getCallerTarget() only returns the caller's static category value (or
+    | a 2,500,000 default) and is never zero, so it would count a
+    | not-yet-eligible new joiner (<10 days into the month) or an
+    | already-exited caller as "eligible", inflating the PPP denominator.
     |
     */
 
         return $callers
-            ->filter(fn (Employee $caller) => $this->getCallerTarget($caller) > 0)
+            ->filter(fn (Employee $caller) => $this->getHierarchyCallerTarget($caller, $referenceMonth) > 0)
             ->count();
     }
 
@@ -325,8 +334,178 @@ class AchievementCalculatorService
         };
     }
 
-    public function getPerformance(?Employee $employee): array
+    /**
+     * Single authoritative Manager incentive engine.
+     *
+     * A Manager's incentive is governed ENTIRELY by the PPP multiplier
+     * system (team achievement spread evenly across eligible callers,
+     * matched against the PPP bands in getPPPMultiplier()) — it does NOT
+     * use the flat per-caller slab table from getIncentiveSlabs(). That
+     * table's highest bracket tops out at 11,000,000, but a Manager's team
+     * achievement routinely exceeds that, which would otherwise always
+     * return the flat capped slab incentive regardless of the team's
+     * actual PPP — including when PPP is below the 2,300,000 floor, where
+     * a Manager must earn NO incentive at all.
+     *
+     * @return array{eligible_callers: int, count_achievement: float, ppp: float, multiplier: float, incentive: float}
+     */
+    public function getManagerIncentiveBreakdown(Employee $manager, ?Carbon $referenceMonth = null): array
     {
+        $countAchievement = $this->getCountAchievement($manager, $referenceMonth);
+
+        $eligibleCallers = $this->getEligibleCallerCount($manager, $referenceMonth);
+
+        $ppp = $eligibleCallers > 0
+            ? $countAchievement / $eligibleCallers
+            : 0;
+
+        $multiplier = $this->getPPPMultiplier($ppp);
+
+        return [
+            'eligible_callers' => $eligibleCallers,
+            'count_achievement' => $countAchievement,
+            'ppp' => $ppp,
+            'multiplier' => $multiplier,
+            'incentive' => $countAchievement * $multiplier,
+        ];
+    }
+
+    /**
+     * Single authoritative Team Leader incentive engine.
+     *
+     * A Team Leader's incentive is a revenue-share formula over their own
+     * caller team, distinct from both the flat caller slab table and the
+     * Manager PPP formula:
+     *
+     * - Team target/achievement reuse the same canonical engines as
+     *   everywhere else (getHierarchyCallerTarget() per caller,
+     *   computeAchievementTotals() for net bank-aware/MIS-aware
+     *   achievement) rather than a separate reimplementation.
+     * - Gate: team achievement must reach 90% of team target once the team
+     *   has more than 4 callers, otherwise (4 or fewer callers) it must
+     *   reach 100% — below the gate, incentive is 0.
+     * - Below the gate aside, an understaffed team (< 3 callers) is NOT
+     *   separately zeroed here — the existing ₹30L target top-up for
+     *   understaffed teams (see getTargetForPeriod()'s Team Leader branch)
+     *   is what makes an understaffed team's target harder to hit; this
+     *   method does not duplicate that as a second, independent gate. The
+     *   ONE exception is a single eligible caller (see below), which IS a
+     *   hard zero.
+     * - Hard zero: a Team Leader with exactly one eligible caller (current
+     *   month target > 0, via getEligibleCallerCount()) earns no incentive
+     *   at all, regardless of achievement — checked before, and
+     *   independently of, the achievement gate below.
+     * - Revenue share: 2% of team achievement, minus a ₹30,000-per-caller
+     *   cost, taken at 6/7/8% depending on team size (3/4/5+ callers), plus
+     *   5% of achievement in excess of team target; a further 10% bonus
+     *   applies when every caller individually met their own target.
+     *
+     * @return array{caller_count: int, eligible_callers: int, team_target: float, team_achievement: float, achievement_percentage: float, required_percentage: float, meets_gate: bool, all_callers_achieved: bool, incentive: float}
+     */
+    public function getTeamLeaderIncentiveBreakdown(Employee $teamLeader, ?Carbon $referenceMonth = null): array
+    {
+        $referenceMonth ??= SelectedMonth::current();
+
+        $callerIds = HierarchyHelper::callerIds($teamLeader);
+
+        $callerCount = $callerIds->count();
+
+        $eligibleCallers = $this->getEligibleCallerCount($teamLeader, $referenceMonth);
+
+        $callers = Employee::whereIn('id', $callerIds)->get();
+
+        $teamTarget = $callers->sum(
+            fn (Employee $caller) => $this->getHierarchyCallerTarget($caller, $referenceMonth)
+        );
+
+        $teamCustomers = Customer::query()->whereIn('employee_id', $callerIds);
+
+        $teamCustomers->whereBetween('customers.created_at', [
+            $referenceMonth->copy()->startOfMonth(),
+            $referenceMonth->copy()->endOfMonth(),
+        ]);
+
+        $teamAchievement = $this->computeAchievementTotals($teamCustomers)['count_achievement'];
+
+        $achievementPercentage = $teamTarget > 0
+            ? ($teamAchievement / $teamTarget) * 100
+            : 0.0;
+
+        $requiredPercentage = $callerCount > 4 ? 90.0 : 100.0;
+
+        $meetsGate = $achievementPercentage >= $requiredPercentage;
+
+        if ($eligibleCallers === 1) {
+            return [
+                'caller_count' => $callerCount,
+                'eligible_callers' => $eligibleCallers,
+                'team_target' => $teamTarget,
+                'team_achievement' => $teamAchievement,
+                'achievement_percentage' => round($achievementPercentage, 2),
+                'required_percentage' => $requiredPercentage,
+                'meets_gate' => false,
+                'all_callers_achieved' => false,
+                'incentive' => 0.0,
+            ];
+        }
+
+        if (! $meetsGate) {
+            return [
+                'caller_count' => $callerCount,
+                'eligible_callers' => $eligibleCallers,
+                'team_target' => $teamTarget,
+                'team_achievement' => $teamAchievement,
+                'achievement_percentage' => round($achievementPercentage, 2),
+                'required_percentage' => $requiredPercentage,
+                'meets_gate' => false,
+                'all_callers_achieved' => false,
+                'incentive' => 0.0,
+            ];
+        }
+
+        $revenue = $teamAchievement * 0.02;
+
+        $targetRevenue = $teamTarget * 0.02;
+
+        $grossRevenue = max(0, $revenue - ($callerCount * 30000));
+
+        $extraRevenue = max(0, $revenue - $targetRevenue);
+
+        $grossRevenuePercent = match (true) {
+            $callerCount === 3 => 0.06,
+            $callerCount === 4 => 0.07,
+            $callerCount >= 5 => 0.08,
+            default => 0.0,
+        };
+
+        $baseIncentive = ($grossRevenue * $grossRevenuePercent) + ($extraRevenue * 0.05);
+
+        $allCallersAchieved = $callers->every(
+            fn (Employee $caller) => $this->getCountAchievement($caller, $referenceMonth)
+                >= $this->getHierarchyCallerTarget($caller, $referenceMonth)
+        );
+
+        if ($callerCount >= 3 && $allCallersAchieved) {
+            $baseIncentive *= 1.10;
+        }
+
+        return [
+            'caller_count' => $callerCount,
+            'eligible_callers' => $eligibleCallers,
+            'team_target' => $teamTarget,
+            'team_achievement' => $teamAchievement,
+            'achievement_percentage' => round($achievementPercentage, 2),
+            'required_percentage' => $requiredPercentage,
+            'meets_gate' => true,
+            'all_callers_achieved' => $allCallersAchieved,
+            'incentive' => round(max($baseIncentive, 0)),
+        ];
+    }
+
+    public function getPerformance(?Employee $employee, ?Carbon $referenceMonth = null): array
+    {
+        $referenceMonth ??= SelectedMonth::current();
+
         /*
     |--------------------------------------------------------------------------
     | COMPANY VIEW
@@ -368,13 +547,14 @@ class AchievementCalculatorService
 
         /*
     |--------------------------------------------------------------------------
-    | Current Month
+    | Reference Month
     |--------------------------------------------------------------------------
     */
 
-        $customers
-            ->whereMonth('customers.created_at', now()->month)
-            ->whereYear('customers.created_at', now()->year);
+        $customers->whereBetween('customers.created_at', [
+            $referenceMonth->copy()->startOfMonth(),
+            $referenceMonth->copy()->endOfMonth(),
+        ]);
 
         /*
     |--------------------------------------------------------------------------
@@ -411,13 +591,13 @@ class AchievementCalculatorService
                 )
                 ->get()
                 ->sum(
-                    fn (Employee $caller) => $this->getHierarchyCallerTarget($caller)
+                    fn (Employee $caller) => $this->getHierarchyCallerTarget($caller, $referenceMonth)
                 );
         } else {
 
             // Teams table / employee dashboard:
             // target belongs to the employee being evaluated
-            $target = $this->getTarget($employee);
+            $target = $this->getTarget($employee, $referenceMonth);
         }
 
         /*
@@ -448,9 +628,11 @@ class AchievementCalculatorService
             'docking' => $docking,
             'count_achievement' => $countAchievement,
             'percentage' => $percentage,
-            'incentive' => $this->getIncentive(
-                $countAchievement
-            ),
+            'incentive' => match ($employee?->designation) {
+                Employee::DESIGNATION_MANAGER => $this->getManagerIncentiveBreakdown($employee, $referenceMonth)['incentive'],
+                Employee::DESIGNATION_TEAM_LEADER => $this->getTeamLeaderIncentiveBreakdown($employee, $referenceMonth)['incentive'],
+                default => $this->getIncentive($countAchievement),
+            },
         ];
     }
 
@@ -528,14 +710,14 @@ class AchievementCalculatorService
             : 2500000;
     }
 
-    public function getHierarchyCallerTarget(Employee $employee): float
+    public function getHierarchyCallerTarget(Employee $employee, ?Carbon $referenceMonth = null): float
     {
-        $today = Carbon::today();
+        $referenceMonth ??= SelectedMonth::current();
 
         return $this->getHierarchyCallerTargetForPeriod(
             $employee,
-            $today->copy()->startOfMonth(),
-            $today->copy()->endOfMonth()
+            $referenceMonth->copy()->startOfMonth(),
+            $referenceMonth->copy()->endOfMonth()
         );
     }
 

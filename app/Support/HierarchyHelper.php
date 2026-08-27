@@ -169,6 +169,60 @@ class HierarchyHelper
         return $downward->merge($upward)->unique()->values();
     }
 
+    /**
+     * The eligible-backup pool for Team Continuity: every employee within
+     * the SAME top-level branch (cluster) as $employee — i.e. the whole
+     * subordinate tree of $employee's own Cluster Manager (or of
+     * $employee themselves if they have no cluster/manager/supervisor
+     * above them, e.g. a Cluster Manager). This deliberately includes
+     * sibling Managers/Team Leaders under the same cluster (a legitimate
+     * backup per spec section 12's own example — "eligible Manager",
+     * "another eligible employee within the permitted hierarchy"), while
+     * excluding anyone in a different Cluster. Reuses subordinateIds() for
+     * the actual tree walk rather than inventing a second hierarchy engine.
+     */
+    public static function employeeHierarchyIds(Employee $employee): Collection
+    {
+        return self::subordinateIds(self::topAncestor($employee));
+    }
+
+    /**
+     * Walks up cluster_id → manager_id → superviser_id repeatedly until
+     * reaching an actual Cluster Manager (or running out of links). A
+     * single hop isn't enough: some existing data has a Manager's
+     * cluster_id pointing at another Manager rather than the real Cluster
+     * Manager (denormalized data drift, not this method's concern to fix),
+     * and stopping at that first hop would silently shrink the eligible
+     * backup pool to that intermediate Manager's own small branch instead
+     * of the intended full cluster. Bounded to 10 hops and tracks visited
+     * ids so a cyclic/corrupted chain can never loop forever. Falls back
+     * to $employee itself once there's nowhere further to go (e.g. the
+     * Cluster Manager already, or an orphaned row with no links at all —
+     * Admin's Organisation-wide Handover exists for that latter case).
+     */
+    private static function topAncestor(Employee $employee): Employee
+    {
+        $current = $employee;
+        $visited = [$employee->id];
+
+        for ($hop = 0; $hop < 10; $hop++) {
+            if ($current->designation === Employee::DESIGNATION_CLUSTER) {
+                break;
+            }
+
+            $next = $current->cluster ?? $current->manager ?? $current->superviser;
+
+            if (! $next || in_array($next->id, $visited, true)) {
+                break;
+            }
+
+            $current = $next;
+            $visited[] = $next->id;
+        }
+
+        return $current;
+    }
+
     private static function ids(string $column, int $id): Collection
     {
         return Employee::query()

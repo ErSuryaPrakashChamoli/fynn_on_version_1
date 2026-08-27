@@ -10,8 +10,8 @@ use App\Filament\Resources\AssignedLeads\Schemas\AssignedLeadInfolist;
 use App\Filament\Resources\AssignedLeads\Tables\AssignedLeadsTable;
 use App\Models\CustomerAssignment;
 use App\Services\HierarchyService;
+use App\Services\Journey\CustomerJourneyAccessService;
 use BackedEnum;
-use Filament\Facades\Filament;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -63,7 +63,28 @@ class AssignedLeadResource extends Resource
             return $query;
         }
 
-        return $query->whereIn('employee_id', HierarchyService::visibleEmployeeIds($user));
+        $employee = $user->employee;
+        $visibleIds = HierarchyService::visibleEmployeeIds($user);
+
+        if (! $employee) {
+            return $query->whereIn('employee_id', $visibleIds);
+        }
+
+        // Backup Routing Engine integration point: AssignCustomersToUserBulkAction
+        // is the one place in this app where a batch of leads/AI records is
+        // assigned to someone other than themselves. Ownership (employee_id)
+        // is never rewritten here — a backup with an active continuity rule
+        // simply becomes operationally visible for whichever employee(s) that
+        // rule covers, the same non-invasive pattern used for CustomerResource.
+        $delegatedOriginalIds = app(CustomerJourneyAccessService::class)->coveredEmployeeIdsForBackup($employee);
+
+        return $query->where(function (Builder $query) use ($visibleIds, $delegatedOriginalIds) {
+            $query->whereIn('employee_id', $visibleIds);
+
+            if ($delegatedOriginalIds->isNotEmpty()) {
+                $query->orWhereIn('employee_id', $delegatedOriginalIds);
+            }
+        });
     }
 
     public static function getPages(): array

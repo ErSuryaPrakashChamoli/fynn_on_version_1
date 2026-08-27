@@ -2,32 +2,34 @@
 
 namespace App\Filament\Resources\AccountVerifications;
 
-use App\Filament\Imports\MisSettlementImporter;
 use App\Filament\Resources\AccountVerifications\Pages\CreateAccountVerification;
 use App\Filament\Resources\AccountVerifications\Pages\EditAccountVerification;
 use App\Filament\Resources\AccountVerifications\Pages\ListAccountVerifications;
 use App\Filament\Resources\AccountVerifications\Schemas\AccountVerificationForm;
 use App\Filament\Resources\AccountVerifications\Tables\AccountVerificationsTable;
 use App\Models\Customer;
+use App\Support\SelectedMonth;
+use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use BackedEnum;
 use UnitEnum;
-use Filament\Support\Icons\Heroicon;
-use Filament\Navigation\NavigationGroup;
-
 
 class AccountVerificationResource extends Resource
 {
     protected static ?string $model = Customer::class;
+
     protected static ?string $navigationLabel = 'MIS Verification';
+
     protected static ?string $recordTitleAttribute = 'customer_name';
+
     protected static ?int $navigationSort = 1;
 
-    protected static string | UnitEnum | null $navigationGroup = 'Accounts';
-    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedBanknotes;
+    protected static string|UnitEnum|null $navigationGroup = 'Accounts';
+
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBanknotes;
 
     public static function form(Schema $schema): Schema
     {
@@ -57,6 +59,7 @@ class AccountVerificationResource extends Resource
     {
         return parent::getEloquentQuery()
             ->where('journey_status', 'disbursed')
+            ->whereBetween('updated_at', SelectedMonth::range())
             ->with(['employee', 'settlement']);
     }
 

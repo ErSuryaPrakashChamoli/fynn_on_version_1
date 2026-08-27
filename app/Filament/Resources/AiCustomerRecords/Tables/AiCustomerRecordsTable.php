@@ -8,6 +8,7 @@ use App\Filament\Imports\AiCustomerRecordImporter;
 // use Filament\Actions\DeleteBulkAction;
 use App\Models\AiCustomerRecord;
 use App\Models\AiDocumentSchema;
+use App\Support\SelectedMonth;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -19,6 +20,7 @@ use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Throwable;
 
@@ -73,6 +75,9 @@ class AiCustomerRecordsTable
                     'pending' => 'Pending',
                 ]),
             ])
+            ->modifyQueryUsing(
+                fn (Builder $query) => $query->whereBetween('created_at', SelectedMonth::range())
+            )
             ->recordActions([
                 ViewAction::make(),
                 EditAction::make(),

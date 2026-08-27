@@ -6,6 +6,7 @@ use App\Filament\Resources\LeadAssignmentReports\Pages\ListLeadAssignmentReports
 use App\Filament\Resources\LeadAssignmentReports\Tables\LeadAssignmentReportsTable;
 use App\Models\Employee;
 use App\Support\HierarchyHelper;
+use App\Support\SelectedMonth;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
@@ -34,7 +35,14 @@ class LeadAssignmentReportResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()->whereHas('assignmentsReceived');
+        [$start, $end] = SelectedMonth::range();
+
+        $query = parent::getEloquentQuery()
+            ->activeDuring($start, $end)
+            ->whereHas(
+                'assignmentsReceived',
+                fn (Builder $q) => $q->whereBetween('created_at', [$start, $end])
+            );
 
         $user = auth()->user();
 

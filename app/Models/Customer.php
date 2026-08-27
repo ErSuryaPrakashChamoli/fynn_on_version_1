@@ -2,19 +2,19 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Support\Str;
-
+use App\Enums\JourneyModule;
+use App\Services\Journey\CustomerJourneyAccessService;
 // use Spatie\Activitylog\Traits\LogsActivity;
 // use Spatie\Activitylog\LogOptions;
 
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
+use Spatie\Activitylog\Models\Activity;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
-use Spatie\Activitylog\Models\Activity;
-use App\Models\ActivityLog;
-use App\Models\CustomerStageHistory;
-use App\Models\CustomerPanRequest;
+use Throwable;
 
 /**
  * @property int $id
@@ -65,21 +65,22 @@ use App\Models\CustomerPanRequest;
  * @property string|null $bank_condition
  * @property string|null $attachment_required
  * @property string|null $attachment_file
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  * @property int|null $employee_id
  * @property int|null $assign_to
- * @property-read \Illuminate\Database\Eloquent\Collection<int, ActivityLog> $activities
+ * @property-read Collection<int, ActivityLog> $activities
  * @property-read int|null $activities_count
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Activity> $activitiesAsSubject
+ * @property-read Collection<int, Activity> $activitiesAsSubject
  * @property-read int|null $activities_as_subject_count
- * @property-read \App\Models\Employee|null $assignedTo
- * @property-read \App\Models\Employee|null $createdBy
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\CustomerDocument> $documents
+ * @property-read Employee|null $assignedTo
+ * @property-read Employee|null $createdBy
+ * @property-read Collection<int, CustomerDocument> $documents
  * @property-read int|null $documents_count
- * @property-read \App\Models\Employee|null $employee
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\FollowUp> $followUps
+ * @property-read Employee|null $employee
+ * @property-read Collection<int, FollowUp> $followUps
  * @property-read int|null $follow_ups_count
+ *
  * @method static \Database\Factories\CustomerFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer newQuery()
@@ -136,11 +137,13 @@ use App\Models\CustomerPanRequest;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereUnderwritingRemarks($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereUnderwritingStatus($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereUpdatedAt($value)
+ *
  * @mixin \Eloquent
  */
 class Customer extends Model
 {
     use HasFactory, LogsActivity;
+
     //
     protected $fillable = [
         'customer_name',
@@ -196,10 +199,9 @@ class Customer extends Model
         'incentive_calculated',
         'approval_date',
         'other_sanctioned_bank',
-        'direct'
+        'direct',
 
     ];
-
 
     protected $casts = [
         'pending_document' => 'array',
@@ -215,7 +217,6 @@ class Customer extends Model
     {
         return $this->belongsTo(Bank::class, 'requested_bank_id');
     }
-
 
     protected static function booted(): void
     {
@@ -251,12 +252,57 @@ class Customer extends Model
             }
 
             CustomerStageHistory::create([
-                'customer_id'  => $customer->id,
-                'stage_name'   => ucfirst(str_replace('_', ' ', $customer->getOriginal('journey_status'))) . ' Stage',
-                'status_value' => 'Moved to ' . ucfirst(str_replace('_', ' ', $customer->journey_status)),
-                'user_id'      => auth()->id(),
+                'customer_id' => $customer->id,
+                'stage_name' => ucfirst(str_replace('_', ' ', $customer->getOriginal('journey_status'))).' Stage',
+                'status_value' => 'Moved to '.ucfirst(str_replace('_', ' ', $customer->journey_status)),
+                'user_id' => auth()->id(),
             ]);
+
+            self::recordJourneyAuditForStageChange($customer);
         });
+    }
+
+    /**
+     * Extends the existing journey_status-change hook above to also write
+     * an immutable CustomerJourneyAudit row capturing who actually acted
+     * (original owner vs acting employee) and under what access type
+     * (normal / delegated / takeover). Best-effort: never blocks the save.
+     */
+    private static function recordJourneyAuditForStageChange(Customer $customer): void
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return;
+        }
+
+        try {
+            $accessService = app(CustomerJourneyAccessService::class);
+
+            // Resolve the module from the stage being exited, not the stage
+            // just entered — the action was performed under the origin
+            // stage's module (e.g. an Approval-stage decision that results
+            // in journey_status becoming "approved" is still an Approval
+            // action, not the Bank Processing stage it lands in).
+            $stageBeforeChange = clone $customer;
+            $stageBeforeChange->journey_status = $customer->getOriginal('journey_status');
+            $module = JourneyModule::forCustomer($stageBeforeChange);
+
+            $decision = $accessService->decide($user, $customer, $module);
+
+            $accessService->recordAudit(
+                customer: $customer,
+                action: 'Moved to '.ucfirst(str_replace('_', ' ', (string) $customer->journey_status)),
+                accessType: $decision->accessType,
+                performedByUserId: $user->id,
+                actingEmployeeId: $decision->actingEmployeeId ?? $user->employee?->id,
+                module: $module,
+                delegationId: $decision->delegationId,
+                takeoverId: $decision->takeoverId,
+            );
+        } catch (Throwable) {
+            // Journey audit logging must never block a stage change save.
+        }
     }
 
     public function assignedTo()
@@ -304,7 +350,6 @@ class Customer extends Model
         return $this->hasMany(CustomerDocument::class);
     }
 
-
     public function employee()
     {
         return $this->belongsTo(Employee::class, 'employee_id');
@@ -334,5 +379,20 @@ class Customer extends Model
     public function assignments()
     {
         return $this->hasMany(CustomerAssignment::class);
+    }
+
+    public function journeyTakeovers()
+    {
+        return $this->hasMany(JourneyTakeover::class);
+    }
+
+    public function reassignmentHistory()
+    {
+        return $this->hasMany(CustomerReassignment::class);
+    }
+
+    public function journeyAudits()
+    {
+        return $this->hasMany(CustomerJourneyAudit::class);
     }
 }

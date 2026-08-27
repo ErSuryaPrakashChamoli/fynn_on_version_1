@@ -25,6 +25,7 @@ class ManagerPPPStats extends StatsOverviewWidget
 
     protected function getStats(): array
     {
+
         $user = Filament::auth()->user();
 
         $employee = $user?->employee;
@@ -52,41 +53,22 @@ class ManagerPPPStats extends StatsOverviewWidget
 
         /*
         |--------------------------------------------------------------------------
-        | Count Achievement
+        | PPP Breakdown (count achievement, eligible callers, PPP, multiplier,
+        | incentive) — single authoritative source, shared with the
+        | performance-dashboard "Earned Incentive" figure for Managers so the
+        | two never disagree.
         |--------------------------------------------------------------------------
         */
 
-        $countAchievement = $calculator->getCountAchievement(
-            $employee
-        );
+        $breakdown = $calculator->getManagerIncentiveBreakdown($employee);
 
-        /*
-        |--------------------------------------------------------------------------
-        | Eligible Callers
-        |--------------------------------------------------------------------------
-        */
+        $countAchievement = $breakdown['count_achievement'];
 
-        $eligibleCallers = $calculator->getEligibleCallerCount(
-            $employee
-        );
+        $eligibleCallers = $breakdown['eligible_callers'];
 
-        /*
-        |--------------------------------------------------------------------------
-        | PPP
-        |--------------------------------------------------------------------------
-        */
+        $ppp = $breakdown['ppp'];
 
-        $ppp = $eligibleCallers > 0
-            ? $countAchievement / $eligibleCallers
-            : 0;
-
-        /*
-        |--------------------------------------------------------------------------
-        | PPP Multiplier
-        |--------------------------------------------------------------------------
-        */
-
-        $multiplier = $calculator->getPPPMultiplier($ppp);
+        $multiplier = $breakdown['multiplier'];
 
         /*
         |--------------------------------------------------------------------------
@@ -94,7 +76,7 @@ class ManagerPPPStats extends StatsOverviewWidget
         |--------------------------------------------------------------------------
         */
 
-        $managerIncentive = $countAchievement * $multiplier;
+        $managerIncentive = $breakdown['incentive'];
 
         /*
         |--------------------------------------------------------------------------
@@ -121,7 +103,7 @@ class ManagerPPPStats extends StatsOverviewWidget
         $multiplierPercentage = number_format(
             $multiplier * 100,
             3
-        ) . '%';
+        ).'%';
 
         /*
         |--------------------------------------------------------------------------

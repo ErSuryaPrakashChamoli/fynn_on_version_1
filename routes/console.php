@@ -17,3 +17,6 @@ Schedule::command('queue:monitor database:default --max=20')
 
 Schedule::command('ocr:check-stuck')
     ->everyThirtyMinutes();
+
+Schedule::command('journey:check-sla-breaches')
+    ->everyFiveMinutes();

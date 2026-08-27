@@ -2,6 +2,10 @@
 
 namespace App\Filament\Resources\Customers\Schemas;
 
+use App\Enums\JourneyAccessType;
+use App\Enums\JourneyModule;
+use App\Models\Customer;
+use App\Services\Journey\CustomerJourneyAccessService;
 use Carbon\Carbon;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -19,6 +23,46 @@ class CustomerInfolist
     {
         return $schema
             ->components([
+
+                // Only rendered when access is not the normal hierarchy path,
+                // so the normal Manager workflow stays visually unchanged
+                // when no delegation/takeover exists — see spec item 13.
+                Section::make('Journey Access')
+                    ->columnSpanFull()
+                    ->visible(function (Customer $record): bool {
+                        $user = auth()->user();
+
+                        if (! $user || $user->hasRole('Admin')) {
+                            return false;
+                        }
+
+                        $decision = app(CustomerJourneyAccessService::class)
+                            ->decide($user, $record, JourneyModule::forCustomer($record));
+
+                        return $decision->accessType !== JourneyAccessType::Normal;
+                    })
+                    ->schema([
+                        Grid::make(3)
+                            ->schema([
+                                TextEntry::make('assignedTo.emp_name')
+                                    ->label('Owner'),
+
+                                TextEntry::make('acting_manager_display')
+                                    ->label('Acting Manager')
+                                    ->state(fn (): string => auth()->user()->employee?->emp_name ?? '—'),
+
+                                TextEntry::make('access_type_display')
+                                    ->label('Access')
+                                    ->badge()
+                                    ->state(function (Customer $record): string {
+                                        $user = auth()->user();
+                                        $decision = app(CustomerJourneyAccessService::class)
+                                            ->decide($user, $record, JourneyModule::forCustomer($record));
+
+                                        return $decision->accessType->label();
+                                    }),
+                            ]),
+                    ]),
 
                 Section::make('👤 Customer Overview')
                     ->columnSpanFull()

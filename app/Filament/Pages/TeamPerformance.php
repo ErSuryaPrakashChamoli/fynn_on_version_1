@@ -6,6 +6,7 @@ use App\Models\Employee;
 use App\Services\Performance\TeamPerformanceService;
 use App\Support\HierarchyHelper;
 use App\Support\Performance\PerformancePeriod;
+use App\Support\SelectedMonth;
 use BackedEnum;
 use Carbon\Carbon;
 use Filament\Facades\Filament;
@@ -42,7 +43,7 @@ class TeamPerformance extends Page
         $this->form->fill([
             'team_lead_id' => $defaultId,
             'period_type' => PerformancePeriod::MONTHLY,
-            'reference' => now()->toDateString(),
+            'reference' => SelectedMonth::current()->toDateString(),
         ]);
 
         $this->selectTeamLead($defaultId);

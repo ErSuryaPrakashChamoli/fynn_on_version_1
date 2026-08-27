@@ -2,16 +2,20 @@
 
 namespace App\Providers;
 
-use Illuminate\Support\ServiceProvider;
+use App\Enums\JourneyModule;
 use App\Listeners\EndLoginSession;
 use App\Listeners\StartLoginSession;
+use App\Models\Customer;
+use App\Models\User;
+use App\Observers\CustomerObserver;
+use App\Services\Journey\CustomerJourneyAccessService;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Queue\Events\QueueBusy;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
-use App\Models\Customer;
-use App\Observers\CustomerObserver;
+use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -41,6 +45,19 @@ class AppServiceProvider extends ServiceProvider
         );
 
         Customer::observe(CustomerObserver::class);
+
+        /*
+         * Server-side authority for Manager-stage journey actions. Delegates
+         * entirely to CustomerJourneyAccessService so there is a single
+         * source of truth shared by canEdit()/getEloquentQuery() checks and
+         * any explicit $user->can() call in an action handler.
+         */
+        Gate::define(
+            'perform-journey-action',
+            fn (User $user, Customer $customer, JourneyModule $module) => app(CustomerJourneyAccessService::class)
+                ->decide($user, $customer, $module)
+                ->allowed
+        );
 
         /*
          * Fired by the scheduled `queue:monitor` check in routes/console.php

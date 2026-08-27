@@ -4,6 +4,7 @@ namespace App\Filament\Resources\OcrDocuments\Tables;
 
 use App\Jobs\ProcessOcrDocument;
 use App\Models\OcrDocument;
+use App\Support\SelectedMonth;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -13,6 +14,7 @@ use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class OcrDocumentsTable
 {
@@ -25,7 +27,7 @@ class OcrDocumentsTable
                 TextColumn::make('customer.customer_name')->label('Customer')->searchable()->sortable(),
                 TextColumn::make('original_name')->label('Document')->searchable()->limit(35),
                 TextColumn::make('document_type')->label('Type')->badge(),
-                TextColumn::make('status')->badge()->color(fn(string $state): string => match ($state) {
+                TextColumn::make('status')->badge()->color(fn (string $state): string => match ($state) {
                     'completed' => 'success',
                     'processing' => 'warning',
                     'failed' => 'danger',
@@ -34,8 +36,8 @@ class OcrDocumentsTable
                 TextColumn::make('page_count')->label('Pages')->sortable(),
                 TextColumn::make('formatted_confidence')->label('Confidence'),
                 TextColumn::make('is_verified')->label('Verified')->badge()
-                    ->formatStateUsing(fn(bool $state): string => $state ? 'Yes' : 'No')
-                    ->color(fn(bool $state): string => $state ? 'success' : 'gray'),
+                    ->formatStateUsing(fn (bool $state): string => $state ? 'Yes' : 'No')
+                    ->color(fn (bool $state): string => $state ? 'success' : 'gray'),
                 TextColumn::make('created_at')->dateTime('d M Y h:i A')->sortable(),
             ])
             ->filters([
@@ -56,21 +58,23 @@ class OcrDocumentsTable
                     'other' => 'Other',
                 ]),
             ])
+            ->modifyQueryUsing(
+                fn (Builder $query) => $query->whereBetween('created_at', SelectedMonth::range())
+            )
             ->recordActions([
                 ViewAction::make(),
                 EditAction::make(),
                 Action::make('process')
                     // ->label('Process OCR')
                     ->label(
-                        fn(OcrDocument $record): string =>
-                        $record->status === 'completed'
+                        fn (OcrDocument $record): string => $record->status === 'completed'
                             ? 'Re-process OCR'
                             : 'Process OCR'
                     )
                     ->icon('heroicon-o-sparkles')
                     ->color('warning')
                     // ->visible(fn (OcrDocument $record): bool => in_array($record->status, ['pending', 'failed'], true))
-                    ->visible(fn(OcrDocument $record): bool => in_array($record->status, ['pending', 'failed', 'completed'], true))
+                    ->visible(fn (OcrDocument $record): bool => in_array($record->status, ['pending', 'failed', 'completed'], true))
                     ->requiresConfirmation()
                     ->action(function (OcrDocument $record): void {
                         $record->update(['status' => 'pending', 'error_message' => null]);

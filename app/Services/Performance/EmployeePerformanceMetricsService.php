@@ -166,24 +166,28 @@ class EmployeePerformanceMetricsService
      */
     private function achievement(Employee $employee, Collection $employeeIds, Carbon $start, Carbon $end): array
     {
-        $isCurrentCalendarMonth = $start->isSameDay(now()->copy()->startOfMonth())
-            && $end->isSameDay(now()->copy()->endOfMonth());
+        $isSingleCalendarMonth = $start->isSameDay($start->copy()->startOfMonth())
+            && $end->isSameDay($start->copy()->endOfMonth());
 
-        // For the current month, defer entirely to AchievementCalculatorService
-        // so this module's numbers always match the existing dashboards.
-        if ($isCurrentCalendarMonth) {
-            $performance = $this->achievementCalculator->getPerformance($employee);
+        // For a single calendar month, defer entirely to
+        // AchievementCalculatorService — passing THIS report's own $start
+        // as the reference month explicitly, never the ambient global month
+        // selector — so this module's numbers always match the existing
+        // dashboards for that exact month, even when the report's own
+        // period and the global selector currently disagree.
+        if ($isSingleCalendarMonth) {
+            $performance = $this->achievementCalculator->getPerformance($employee, $start);
 
             return [$performance['target'], $performance['actual'], $performance['count_achievement']];
         }
 
-        // For any other historical/future period, reuse the same
-        // authoritative engines AchievementCalculatorService uses for the
-        // current month — computeAchievementTotals() for the bank-aware
+        // For any other (multi-month/partial-month) period, reuse the same
+        // authoritative engines AchievementCalculatorService uses for a
+        // single month — computeAchievementTotals() for the bank-aware
         // deduction formula, and getTargetForPeriod() for the hierarchy
         // target (joining/exit-date rules and the ₹30L top-up), so a given
-        // month never produces a different target depending on whether
-        // it's being viewed as "current" or as a historical period.
+        // period never produces a different target depending on how it's
+        // framed.
         $customers = Customer::query()
             ->whereIn('employee_id', $employeeIds)
             ->whereBetween('customers.created_at', [$start, $end]);

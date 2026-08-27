@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Models\Customer;
 use App\Support\HierarchyHelper;
+use App\Support\SelectedMonth;
 use Filament\Facades\Filament;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
@@ -11,10 +12,9 @@ use Illuminate\Support\Carbon;
 
 class CustomerStats extends StatsOverviewWidget
 {
-    protected static ?int $sort = 4;
+    protected static ?int $sort = 5;
 
     protected ?string $pollingInterval = '60s';
-
 
     protected function getHeading(): ?string
     {
@@ -23,7 +23,7 @@ class CustomerStats extends StatsOverviewWidget
 
     protected function getDescription(): ?string
     {
-         return 'Monitor customer acquisition, journey progress, and completion across your hierarchy.';
+        return 'Monitor customer acquisition, journey progress, and completion across your hierarchy.';
     }
 
     protected function getStats(): array
@@ -65,6 +65,8 @@ class CustomerStats extends StatsOverviewWidget
         |--------------------------------------------------------------------------
         */
 
+        [$monthStart, $monthEnd] = SelectedMonth::range();
+
         if ($isAdmin) {
 
             // Admin sees absolutely ALL customers,
@@ -87,6 +89,13 @@ class CustomerStats extends StatsOverviewWidget
 
             $scopeBadge = '👥 Your Portfolio';
         }
+
+        // Scoping the base query to the globally selected month means
+        // every sub-metric cloned from it below (today/yesterday/this
+        // week/this month) naturally resolves within that month too — e.g.
+        // "Today" correctly reads 0 while browsing a past month, with no
+        // extra branching needed.
+        $query->whereBetween('created_at', [$monthStart, $monthEnd]);
 
         /*
         |--------------------------------------------------------------------------
@@ -121,16 +130,8 @@ class CustomerStats extends StatsOverviewWidget
         $totalCustomers = (clone $query)
             ->count();
 
-        $thisMonth = (clone $query)
-            ->whereMonth(
-                'created_at',
-                now()->month
-            )
-            ->whereYear(
-                'created_at',
-                now()->year
-            )
-            ->count();
+        // $query is already scoped to the selected month.
+        $thisMonth = (clone $query)->count();
 
         $thisWeek = (clone $query)
             ->whereBetween(
@@ -142,20 +143,14 @@ class CustomerStats extends StatsOverviewWidget
             )
             ->count();
 
-        $pendingJourney = (clone $query)
+        $completedJourney = (clone $query)
             ->where(
-                'journey_status',
-                '!=',
-                'finalized'
+                'disbursal_finalized',
+                true
             )
             ->count();
 
-        $completedJourney = (clone $query)
-            ->where(
-                'journey_status',
-                'finalized'
-            )
-            ->count();
+        $pendingJourney = $totalCustomers - $completedJourney;
 
         /*
         |--------------------------------------------------------------------------
@@ -212,10 +207,9 @@ class CustomerStats extends StatsOverviewWidget
         |--------------------------------------------------------------------------
         */
 
-        $daysPassed = max(
-            now()->day,
-            1
-        );
+        $daysPassed = SelectedMonth::isCurrentCalendarMonth()
+            ? max(now()->day, 1)
+            : max($monthStart->daysInMonth, 1);
 
         $monthlyAverage = round(
             $thisMonth / $daysPassed,
@@ -382,8 +376,7 @@ class CustomerStats extends StatsOverviewWidget
                     'heroicon-o-user-plus'
                 )
                 ->extraAttributes([
-                    'class' =>
-                        'performance-card customer-card-today',
+                    'class' => 'performance-card customer-card-today',
                 ])
                 ->chart(
                     $trend
@@ -416,8 +409,7 @@ class CustomerStats extends StatsOverviewWidget
                     'heroicon-o-users'
                 )
                 ->extraAttributes([
-                    'class' =>
-                        'performance-card customer-card-total',
+                    'class' => 'performance-card customer-card-total',
                 ])
                 ->chart([
                     max($thisMonth - 10, 0),
@@ -452,8 +444,7 @@ class CustomerStats extends StatsOverviewWidget
                     'heroicon-o-calendar-days'
                 )
                 ->extraAttributes([
-                    'class' =>
-                        'performance-card customer-card-yesterday',
+                    'class' => 'performance-card customer-card-yesterday',
                 ]),
 
             /*
@@ -463,7 +454,7 @@ class CustomerStats extends StatsOverviewWidget
             */
 
             Stat::make(
-                '📊 This Month',
+                '📊 '.SelectedMonth::label(),
                 number_format(
                     $thisMonth
                 )
@@ -479,8 +470,7 @@ class CustomerStats extends StatsOverviewWidget
                     'heroicon-o-chart-bar'
                 )
                 ->extraAttributes([
-                    'class' =>
-                        'performance-card customer-card-month',
+                    'class' => 'performance-card customer-card-month',
                 ])
                 ->chart([
                     max($thisMonth - 12, 0),
@@ -520,8 +510,7 @@ class CustomerStats extends StatsOverviewWidget
                     'heroicon-o-calendar'
                 )
                 ->extraAttributes([
-                    'class' =>
-                        'performance-card customer-card-week',
+                    'class' => 'performance-card customer-card-week',
                 ]),
 
             /*
@@ -549,8 +538,7 @@ class CustomerStats extends StatsOverviewWidget
                     'heroicon-o-clock'
                 )
                 ->extraAttributes([
-                    'class' =>
-                        'performance-card customer-card-pending',
+                    'class' => 'performance-card customer-card-pending',
                 ]),
 
             /*
@@ -578,8 +566,7 @@ class CustomerStats extends StatsOverviewWidget
                     'heroicon-o-check-circle'
                 )
                 ->extraAttributes([
-                    'class' =>
-                        'performance-card customer-card-completed',
+                    'class' => 'performance-card customer-card-completed',
                 ])
                 ->chart([
                     10,

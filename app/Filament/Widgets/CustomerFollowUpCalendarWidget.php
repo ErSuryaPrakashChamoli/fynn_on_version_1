@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Filament\Resources\FollowUps\FollowUpResource;
 use App\Models\FollowUp;
+use App\Support\SelectedMonth;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -33,6 +34,7 @@ class CustomerFollowUpCalendarWidget extends FullCalendarWidget
     public function config(): array
     {
         return [
+            'initialDate' => SelectedMonth::current()->toDateString(),
             'firstDay' => 1,
             'height' => 'auto',
             'headerToolbar' => [

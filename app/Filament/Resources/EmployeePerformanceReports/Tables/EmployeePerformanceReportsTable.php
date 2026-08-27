@@ -9,6 +9,7 @@ use App\Models\PerformanceMetricRatio;
 use App\Services\Performance\EmployeePerformanceMetricsService;
 use App\Services\Performance\RatioCalculator;
 use App\Support\Performance\PerformancePeriod;
+use App\Support\SelectedMonth;
 use Carbon\Carbon;
 use Filament\Actions\ExportAction;
 use Filament\Forms\Components\DatePicker;
@@ -101,7 +102,7 @@ class EmployeePerformanceReportsTable
 
                         DatePicker::make('reference')
                             ->label('Reference Date')
-                            ->default(now())
+                            ->default(SelectedMonth::current())
                             ->native(false)
                             ->displayFormat('d M Y')
                             ->visible(fn (Get $get) => $get('type') !== PerformancePeriod::CUSTOM),
@@ -125,7 +126,7 @@ class EmployeePerformanceReportsTable
                     ->columnSpanFull()
                     ->query(function (Builder $query, array $data): Builder {
                         $periodType = $data['type'] ?? PerformancePeriod::MONTHLY;
-                        $reference = filled($data['reference'] ?? null) ? Carbon::parse($data['reference']) : now();
+                        $reference = filled($data['reference'] ?? null) ? Carbon::parse($data['reference']) : SelectedMonth::current();
                         $customStart = filled($data['custom_from'] ?? null) ? Carbon::parse($data['custom_from']) : null;
                         $customEnd = filled($data['custom_to'] ?? null) ? Carbon::parse($data['custom_to']) : null;
 

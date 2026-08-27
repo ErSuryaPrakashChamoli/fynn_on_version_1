@@ -7,6 +7,7 @@ use App\Filament\Widgets\DashboardFollowUpCalendarWidget;
 use App\Filament\Widgets\IncentiveStats;
 use App\Filament\Widgets\ManagerPPPStats;
 use App\Filament\Widgets\PerformanceStats;
+use App\Filament\Widgets\CustomerStats;
 use Filament\Pages\Dashboard as BaseDashboard;
 
 /**
@@ -35,6 +36,7 @@ class Dashboard extends BaseDashboard
             DailyCommitmentStats::class,
             IncentiveStats::class,
             ManagerPPPStats::class,
+            CustomerStats::class,
         ];
     }
 }

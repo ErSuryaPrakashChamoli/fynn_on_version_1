@@ -2,24 +2,22 @@
 
 namespace App\Filament\Resources\Leads\Tables;
 
+use App\Filament\Imports\LeadImporter;
+use App\Filament\Resources\Customers\CustomerResource;
+use App\Models\Employee;
+use App\Models\Lead;
+use App\Support\SelectedMonth;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Tables\Table;
-use App\Models\Lead;
-use Filament\Tables\Columns\TextColumn;
-
-use Filament\Actions\Action;
-use App\Filament\Resources\Customers\CustomerResource;
-
-use App\Filament\Imports\LeadImporter;
 use Filament\Actions\ImportAction;
-use Filament\Notifications\Notification;
 use Filament\Actions\ViewAction;
+use Filament\Notifications\Notification;
+use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
-use App\Models\Employee;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Filament\Facades\Filament;
 
 class LeadsTable
 {
@@ -37,7 +35,7 @@ class LeadsTable
                             return $state ?? '-';
                         }
 
-                        return 'XXXXXX' . substr($state, -4);
+                        return 'XXXXXX'.substr($state, -4);
                     })
                     ->searchable(),
                 TextColumn::make('current_location')->label('Location'),
@@ -47,7 +45,6 @@ class LeadsTable
                     ->label('Bank')
                     ->searchable()
                     ->sortable(),
-
 
                 TextColumn::make('follow_up_date')
                     ->label('Follow Up Created')
@@ -74,7 +71,7 @@ class LeadsTable
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
                     // Show button only when lead status is marked 'Interested'
-                    ->visible(fn(Lead $record) => $record->status === 'Interested' && ! $record->is_converted)
+                    ->visible(fn (Lead $record) => $record->status === 'Interested' && ! $record->is_converted)
                     ->requiresConfirmation()
                     ->modalHeading('Convert Lead to Customer Profile?')
                     ->modalDescription('This will check the PAN number for duplicates and take you to the Customer creation form. If the PAN already belongs to an existing customer, you will need to request admin approval before proceeding.')
@@ -109,7 +106,7 @@ class LeadsTable
                         if (! empty($missingFields)) {
                             Notification::make()
                                 ->title('Lead cannot be converted')
-                                ->body('Please fill the following field(s): ' . implode(', ', $missingFields))
+                                ->body('Please fill the following field(s): '.implode(', ', $missingFields))
                                 ->danger()
                                 ->persistent()
                                 ->send();
@@ -143,12 +140,11 @@ class LeadsTable
                             ->pluck('emp_name', 'id')
                     )
                     ->query(
-                        fn(Builder $query, array $data) =>
-                        $query->when(
+                        fn (Builder $query, array $data) => $query->when(
                             filled($data['values'] ?? null),
-                            fn(Builder $query) => $query->whereHas(
+                            fn (Builder $query) => $query->whereHas(
                                 'employee',
-                                fn(Builder $q) => $q->whereIn('manager_id', $data['values'])
+                                fn (Builder $q) => $q->whereIn('manager_id', $data['values'])
                             )
                         )
                     ),
@@ -162,12 +158,11 @@ class LeadsTable
                             ->pluck('emp_name', 'id')
                     )
                     ->query(
-                        fn(Builder $query, array $data) =>
-                        $query->when(
+                        fn (Builder $query, array $data) => $query->when(
                             filled($data['values'] ?? null),
-                            fn(Builder $query) => $query->whereHas(
+                            fn (Builder $query) => $query->whereHas(
                                 'employee',
-                                fn(Builder $q) => $q->whereIn('superviser_id', $data['values'])
+                                fn (Builder $q) => $q->whereIn('superviser_id', $data['values'])
                             )
                         )
                     ),
@@ -181,14 +176,16 @@ class LeadsTable
                             ->pluck('emp_name', 'id')
                     )
                     ->query(
-                        fn(Builder $query, array $data) =>
-                        $query->when(
+                        fn (Builder $query, array $data) => $query->when(
                             filled($data['values'] ?? null),
-                            fn(Builder $query) => $query->whereIn('employee_id', $data['values'])
+                            fn (Builder $query) => $query->whereIn('employee_id', $data['values'])
                         )
                     ),
 
             ])
+            ->modifyQueryUsing(
+                fn (Builder $query) => $query->whereBetween('created_at', SelectedMonth::range())
+            )
             ->headerActions([
 
                 // ImportAction::make()

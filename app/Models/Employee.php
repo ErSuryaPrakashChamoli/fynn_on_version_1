@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -266,5 +267,40 @@ class Employee extends Model
     public function assignmentsReceived()
     {
         return $this->hasMany(CustomerAssignment::class, 'employee_id');
+    }
+
+    public function delegationsGiven()
+    {
+        return $this->hasMany(CustomerJourneyDelegation::class, 'delegating_manager_id');
+    }
+
+    public function delegationsReceived()
+    {
+        return $this->hasMany(CustomerJourneyDelegation::class, 'acting_manager_id');
+    }
+
+    public function journeyTakeovers()
+    {
+        return $this->hasMany(JourneyTakeover::class, 'takeover_by_id');
+    }
+
+    /**
+     * Employees who were active at any point during [$start, $end] — joined
+     * on or before the period ends, and (if exited) not exited before the
+     * period starts. Used by the global month selector to answer "who was
+     * active in that month" for the Employees/Teams lists, rather than the
+     * meaningless "created that month".
+     */
+    public function scopeActiveDuring(Builder $query, Carbon $start, Carbon $end): Builder
+    {
+        return $query
+            ->where(function (Builder $query) use ($end) {
+                $query->whereNull('doj')->orWhere('doj', '<=', $end);
+            })
+            ->where(function (Builder $query) use ($start) {
+                $query->where('exit_status', '!=', 'yes')
+                    ->orWhereNull('exit_date')
+                    ->orWhere('exit_date', '>=', $start);
+            });
     }
 }
