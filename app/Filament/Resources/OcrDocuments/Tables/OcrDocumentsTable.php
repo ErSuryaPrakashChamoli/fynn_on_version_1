@@ -15,6 +15,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Str;
 
 class OcrDocumentsTable
 {
@@ -32,7 +33,10 @@ class OcrDocumentsTable
                     'processing' => 'warning',
                     'failed' => 'danger',
                     default => 'gray',
-                }),
+                })
+                    ->description(fn (OcrDocument $record): ?string => in_array($record->status, ['failed', 'pending'], true) && filled($record->error_message)
+                        ? Str::limit($record->error_message, 80)
+                        : null),
                 TextColumn::make('page_count')->label('Pages')->sortable(),
                 TextColumn::make('formatted_confidence')->label('Confidence'),
                 TextColumn::make('is_verified')->label('Verified')->badge()

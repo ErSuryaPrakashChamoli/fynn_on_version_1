@@ -3,6 +3,39 @@
 return [
     /*
     |--------------------------------------------------------------------------
+    | OCR Engine
+    |--------------------------------------------------------------------------
+    |
+    | Which engine App\Services\Ocr\OcrDocumentProcessor and
+    | OcrTableExtractionService use to read documents:
+    |
+    | - "python": the PaddleOCR-based engine in python/ocr/ocr_engine.py,
+    |   invoked per document via App\Services\Ocr\PythonOcrService.
+    | - "tesseract": the original in-app Tesseract/laravel-ocr pipeline.
+    |   Kept fully intact for rollback — set OCR_ENGINE=tesseract and
+    |   restart queue workers to revert without a code change.
+    |
+    */
+    'engine' => env('OCR_ENGINE', 'python'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Python OCR Engine
+    |--------------------------------------------------------------------------
+    |
+    | "binary" should point at the python3 interpreter inside the
+    | dedicated virtualenv created for python/ocr/requirements.txt, not
+    | the system python3 (see python/ocr/requirements.txt for why).
+    |
+    */
+    'python' => [
+        'binary' => env('PYTHON_OCR_BINARY', '/usr/bin/python3'),
+        'script' => env('PYTHON_OCR_SCRIPT', base_path('python/ocr/ocr_engine.py')),
+        'timeout' => (int) env('PYTHON_OCR_TIMEOUT', 1800),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Default OCR Driver
     |--------------------------------------------------------------------------
     |
@@ -246,7 +279,7 @@ return [
                 ['type' => 'required_fields', 'fields' => ['invoice_number', 'total']],
             ],
         ],
-        
+
         'receipt' => [
             'options' => [
                 'use_ai_cleanup' => true,

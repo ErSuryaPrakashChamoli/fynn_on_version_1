@@ -15,6 +15,7 @@ class OcrDocumentProcessor
         private readonly OcrFieldExtractionService $fieldExtractor,
         private readonly AiDocumentMappingService $mappingService,
         private readonly OcrTableExtractionService $tableExtractor,
+        private readonly PythonOcrService $pythonOcr,
     ) {}
 
     public function process(OcrDocument $document): void
@@ -30,34 +31,50 @@ class OcrDocumentProcessor
             if (! $disk->exists($document->original_path)) {
                 throw new \RuntimeException(
                     'Original document was not found on the local disk: '
-                        . $document->original_path
+                        .$document->original_path
                 );
             }
 
             $path = $disk->path($document->original_path);
 
-            $result = app('laravel-ocr.parser')->parse($path, [
-                'document_type' => $document->document_type ?: 'general',
-                'use_ai_cleanup' => (bool) env(
-                    'LARAVEL_OCR_AI_CLEANUP',
-                    false
-                ),
-                'save_to_database' => false,
-            ]);
+            $pythonFields = [];
 
-            $text = (string) ($result->text ?? '');
-            $confidence = $result->confidence ?? null;
-            $metadata = is_array($result->metadata ?? null)
-                ? $result->metadata
-                : [];
+            if (PythonOcrService::isEnabled()) {
+                $result = $this->pythonOcr->extractText($path, $document->document_type);
 
-            $pageCount = $metadata['pdf_pages']
-                ?? $metadata['page_count']
-                ?? null;
+                $text = (string) ($result['text'] ?? '');
+                $confidence = $result['confidence'] ?? null;
+                $pageCount = $result['document']['page_count'] ?? null;
+                $pageData = is_array($result['pages'] ?? null)
+                    ? $result['pages']
+                    : [];
+                $pythonFields = is_array($result['fields'] ?? null)
+                    ? $result['fields']
+                    : [];
+            } else {
+                $result = app('laravel-ocr.parser')->parse($path, [
+                    'document_type' => $document->document_type ?: 'general',
+                    'use_ai_cleanup' => (bool) env(
+                        'LARAVEL_OCR_AI_CLEANUP',
+                        false
+                    ),
+                    'save_to_database' => false,
+                ]);
 
-            $pageData = is_array($metadata['pages'] ?? null)
-                ? $metadata['pages']
-                : [];
+                $text = (string) ($result->text ?? '');
+                $confidence = $result->confidence ?? null;
+                $metadata = is_array($result->metadata ?? null)
+                    ? $result->metadata
+                    : [];
+
+                $pageCount = $metadata['pdf_pages']
+                    ?? $metadata['page_count']
+                    ?? null;
+
+                $pageData = is_array($metadata['pages'] ?? null)
+                    ? $metadata['pages']
+                    : [];
+            }
 
             /*
              * This general pass is fast, but it is not the real work for a
@@ -130,7 +147,8 @@ class OcrDocumentProcessor
 
                 $fields = $this->fieldExtractor->extract(
                     $text,
-                    $document->document_type
+                    $document->document_type,
+                    $pythonFields,
                 );
 
                 $this->mappingService->mapAndSave(
@@ -160,7 +178,7 @@ class OcrDocumentProcessor
 
                 Notification::make()
                     ->title('OCR processing completed')
-                    ->body($document->original_name . ' finished processing' . (is_array($rows) ? ' — ' . count($rows) . ' row(s) extracted.' : '.'))
+                    ->body($document->original_name.' finished processing'.(is_array($rows) ? ' — '.count($rows).' row(s) extracted.' : '.'))
                     ->success()
                     ->sendToDatabase($document->uploader);
             }

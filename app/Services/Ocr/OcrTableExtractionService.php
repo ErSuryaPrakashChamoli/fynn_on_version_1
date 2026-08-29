@@ -36,10 +36,39 @@ class OcrTableExtractionService
      */
     private const COLUMN_CONFIDENCE_ESCALATION_THRESHOLD = 80.0;
 
+    public function __construct(private readonly ?PythonOcrService $pythonOcr = null) {}
+
     public function extract(string $path, AiDocumentSchema $schema): array
     {
-
         $definitions = array_values($schema->getFieldDefinitions());
+
+        if (PythonOcrService::isEnabled()) {
+            return $this->extractViaPython($path, $definitions);
+        }
+
+        return $this->extractViaTesseract($path, $definitions);
+    }
+
+    /**
+     * @param  array<int, array{key?: string, label?: string, type?: string}>  $definitions
+     */
+    private function extractViaPython(string $path, array $definitions): array
+    {
+        $result = ($this->pythonOcr ?? app(PythonOcrService::class))->extractTable($path, $definitions);
+
+        return [
+            'headers' => is_array($result['headers'] ?? null) ? $result['headers'] : [],
+            'rows' => is_array($result['rows'] ?? null) ? $result['rows'] : [],
+            'raw_text' => (string) ($result['text'] ?? ''),
+            'metadata' => is_array($result['processing'] ?? null) ? $result['processing'] : [],
+        ];
+    }
+
+    /**
+     * @param  array<int, array{key?: string, label?: string, type?: string}>  $definitions
+     */
+    private function extractViaTesseract(string $path, array $definitions): array
+    {
 
         /*
          * The Enquiry PDF is a scanned multi-page table with exactly:

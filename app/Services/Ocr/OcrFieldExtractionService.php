@@ -47,9 +47,38 @@ class OcrFieldExtractionService
         'bank_name' => 'sanctioned_bank',
     ];
 
-    public function extract(string $text, ?string $documentType = null): array
+    /**
+     * @param  array<string, array{value?: mixed, confidence?: mixed, source?: string}>  $pythonFields
+     *                                                                                                  Layout-aware candidates from the Python OCR engine (see
+     *                                                                                                  python/ocr/extraction.py::extract_fields), keyed by the same
+     *                                                                                                  customer field names this method produces. Only used when
+     *                                                                                                  present (PythonOcrService::isEnabled()) — trusted first,
+     *                                                                                                  since they were selected using OCR coordinates and format
+     *                                                                                                  validation Laravel has no access to here; regex-on-text
+     *                                                                                                  below still runs for every field Python did not resolve.
+     */
+    public function extract(string $text, ?string $documentType = null, array $pythonFields = []): array
     {
         $result = [];
+        $allowedFields = $this->allowedCustomerFields();
+
+        foreach ($pythonFields as $key => $field) {
+            if (! is_array($field) || ! in_array($key, $allowedFields, true)) {
+                continue;
+            }
+
+            $value = $field['value'] ?? null;
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            $result[$key] = [
+                'value' => $value,
+                'confidence' => is_numeric($field['confidence'] ?? null) ? (float) $field['confidence'] : null,
+                'source_label' => 'ocr_engine:'.($field['source'] ?? 'layout'),
+            ];
+        }
+
         $lines = preg_split('/\R/u', $text) ?: [];
 
         foreach ($lines as $line) {
@@ -66,7 +95,7 @@ class OcrFieldExtractionService
             $normalized = $this->normalizeLabel($label);
             $customerField = self::CUSTOMER_FIELD_MAP[$normalized] ?? null;
 
-            if (! $customerField || $value === '') {
+            if (! $customerField || $value === '' || isset($result[$customerField])) {
                 continue;
             }
 
@@ -140,6 +169,7 @@ class OcrFieldExtractionService
     private function numericValue(string $value): ?string
     {
         $value = preg_replace('/[^0-9.]/', '', $value);
+
         return $value !== '' ? $value : null;
     }
 }
