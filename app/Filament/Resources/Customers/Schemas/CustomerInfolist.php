@@ -288,6 +288,10 @@ class CustomerInfolist
                                         'on_hold' => 'On Hold',
                                         default => '-',
                                     }),
+                                TextEntry::make('disbursal_date')
+                                    ->label('Disbursal Date')
+                                    ->date('d F Y'),
+
                                 TextEntry::make('channel'),
 
                                 TextEntry::make('sanctioned_bank'),

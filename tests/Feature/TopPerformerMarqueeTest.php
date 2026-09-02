@@ -96,6 +96,7 @@ class TopPerformerMarqueeTest extends TestCase
             'cashback' => 0,
             'subvention' => 0,
             'docking' => '0',
+            'disbursal_date' => now(),
         ]);
     }
 
@@ -190,6 +191,7 @@ class TopPerformerMarqueeTest extends TestCase
         $this->actingAs($user);
 
         Livewire::test('top-performer-marquee')
+            ->call('loadPerformers')
             ->assertSee('Top 3 Managers')
             ->assertSee($manager->emp_name)
             ->assertDontSee('Top 5 Callers');

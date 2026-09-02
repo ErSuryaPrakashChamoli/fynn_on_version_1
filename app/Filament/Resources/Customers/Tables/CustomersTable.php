@@ -299,7 +299,14 @@ class CustomersTable
             ->defaultPaginationPageOption(5)
             ->paginated([5, 10, 25, 50, 100, 'all'])
             ->modifyQueryUsing(
-                fn (Builder $query) => $query->whereBetween('created_at', SelectedMonth::range())
+                // Customers whose journey is still incomplete/not yet
+                // disbursed stay visible under every month (they have no
+                // disbursal_date to match); only disbursed customers are
+                // filtered to the month they were actually disbursed in.
+                fn (Builder $query) => $query->where(
+                    fn (Builder $q) => $q->whereNull('disbursal_date')
+                        ->orWhereBetween('disbursal_date', SelectedMonth::range())
+                )
             )
             ->recordActions([
                 ViewAction::make(),

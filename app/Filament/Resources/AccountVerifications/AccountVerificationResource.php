@@ -58,8 +58,8 @@ class AccountVerificationResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->where('journey_status', 'disbursed')
-            ->whereBetween('updated_at', SelectedMonth::range())
+            ->where('disbursal_status', 'disbursed')
+            ->whereBetween('disbursal_date', SelectedMonth::range())
             ->with(['employee', 'settlement']);
     }
 

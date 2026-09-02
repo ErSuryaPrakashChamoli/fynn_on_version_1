@@ -40,7 +40,8 @@ class EmployeePerformanceMetricsServiceMonthScopeTest extends TestCase
             'cashback' => 0,
             'subvention' => 0,
             'docking' => '0',
-            'created_at' => Carbon::create(2026, 6, 15),
+            'disbursal_status' => 'disbursed',
+            'disbursal_date' => Carbon::create(2026, 6, 15),
         ]);
 
         // August achievement — this call's own requested period.
@@ -51,7 +52,8 @@ class EmployeePerformanceMetricsServiceMonthScopeTest extends TestCase
             'cashback' => 0,
             'subvention' => 0,
             'docking' => '0',
-            'created_at' => Carbon::create(2026, 8, 10),
+            'disbursal_status' => 'disbursed',
+            'disbursal_date' => Carbon::create(2026, 8, 10),
         ]);
 
         // Global month selector parked on a different month than the

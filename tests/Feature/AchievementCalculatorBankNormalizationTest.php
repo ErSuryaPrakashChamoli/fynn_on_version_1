@@ -36,6 +36,7 @@ class AchievementCalculatorBankNormalizationTest extends TestCase
             'cashback' => 10000,
             'subvention' => 0,
             'docking' => '0',
+            'disbursal_date' => now(),
         ]);
 
         return $caller;
@@ -169,6 +170,7 @@ class AchievementCalculatorBankNormalizationTest extends TestCase
             'cashback' => 0,
             'subvention' => 0,
             'docking' => '0',
+            'disbursal_date' => now(),
         ]);
 
         Customer::factory()->create([
@@ -178,6 +180,7 @@ class AchievementCalculatorBankNormalizationTest extends TestCase
             'cashback' => 0,
             'subvention' => 0,
             'docking' => '0',
+            'disbursal_date' => now(),
         ]);
 
         // Neither loan has any cashback/subvention/docking, so the
@@ -203,6 +206,7 @@ class AchievementCalculatorBankNormalizationTest extends TestCase
             'cashback' => 10000,
             'subvention' => 0,
             'docking' => '0',
+            'disbursal_date' => now(),
         ]);
         // net = 2,000,000 - (10000/2)*100 = 1,500,000
 
@@ -214,6 +218,7 @@ class AchievementCalculatorBankNormalizationTest extends TestCase
             'cashback' => 4000,
             'subvention' => 0,
             'docking' => '0',
+            'disbursal_date' => now(),
         ]);
         // net = 1,000,000 - (4000/2)*100 = 800,000
 
@@ -225,6 +230,7 @@ class AchievementCalculatorBankNormalizationTest extends TestCase
             'cashback' => 2000,
             'subvention' => 0,
             'docking' => '0',
+            'disbursal_date' => now(),
         ]);
         // net = 1,000,000 - (2000)*100 = 800,000
 

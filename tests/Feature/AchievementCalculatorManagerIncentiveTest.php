@@ -37,6 +37,7 @@ class AchievementCalculatorManagerIncentiveTest extends TestCase
                 'cashback' => 0,
                 'subvention' => 0,
                 'docking' => '0',
+                'disbursal_date' => now(),
             ]);
         });
 

@@ -19,10 +19,10 @@ class CustomerJourneyService
     ): void {
 
         CustomerStageHistory::create([
-            'customer_id'  => $customer->id,
-            'stage_name'   => $stage,
+            'customer_id' => $customer->id,
+            'stage_name' => $stage,
             'status_value' => $message,
-            'user_id'      => auth()->id(),
+            'user_id' => auth()->id(),
         ]);
     }
 
@@ -60,8 +60,6 @@ class CustomerJourneyService
     public static function approve(Customer $customer, array $data): Customer
     {
 
-
-
         if ($customer->journey_status !== 'underwriting') {
             throw ValidationException::withMessages([
                 'journey_status' => 'Customer is not in Underwriting stage.',
@@ -70,20 +68,19 @@ class CustomerJourneyService
 
         DB::transaction(function () use ($customer, $data) {
 
-
             $customer->update([
-                'journey_status'        => 'approved',
-                'underwriting_status'   => 'approved',
+                'journey_status' => 'approved',
+                'underwriting_status' => 'approved',
 
-                'approved_loan_amount'  => isset($data['approved_loan_amount'])
+                'approved_loan_amount' => isset($data['approved_loan_amount'])
                     ? preg_replace('/[^0-9]/', '', $data['approved_loan_amount'])
                     : null,
 
-                'sanctioned_bank'       => $data['sanctioned_bank'] ?? null,
+                'sanctioned_bank' => $data['sanctioned_bank'] ?? null,
                 'other_sanctioned_bank' => $data['other_sanctioned_bank'] ?? null,
-                'approved_remarks'      => $data['approved_remarks'] ?? null,
-                'approval_date'         => $data['approval_date'] ?? null,
-                'underwriting_remarks'         => $data['underwriting_remarks'] ?? null,
+                'approved_remarks' => $data['approved_remarks'] ?? null,
+                'approval_date' => $data['approval_date'] ?? null,
+                'underwriting_remarks' => $data['underwriting_remarks'] ?? null,
             ]);
 
             // $customer->refresh();
@@ -121,9 +118,6 @@ class CustomerJourneyService
         return $customer->fresh();
     }
 
-
-
-
     public static function sanction(Customer $customer, array $data): Customer
     {
         if ($customer->journey_status !== 'approved') {
@@ -135,30 +129,33 @@ class CustomerJourneyService
         DB::transaction(function () use ($customer, $data) {
 
             $journeyStatus = match ($data['disbursal_status']) {
-                'disbursed'      => 'sanctioned',
-                'carry_forward'  => 'carry_forward',
-                'dropped'        => 'dropped',
-                default          => 'approved',
+                'disbursed' => 'sanctioned',
+                'carry_forward' => 'carry_forward',
+                'dropped' => 'dropped',
+                default => 'approved',
             };
 
             $customer->update([
-                'journey_status'         => $journeyStatus,
-                'disbursal_status'       => $data['disbursal_status'] ?? null,
-                'channel'                => $data['channel'] ?? null,
+                'journey_status' => $journeyStatus,
+                'disbursal_status' => $data['disbursal_status'] ?? null,
+                'disbursal_date' => ($data['disbursal_status'] ?? null) === 'disbursed'
+                    ? ($data['disbursal_date'] ?? null)
+                    : null,
+                'channel' => $data['channel'] ?? null,
                 'sanctioned_loan_amount' => filled($data['sanctioned_loan_amount'] ?? null)
                     ? preg_replace('/[^0-9]/', '', $data['sanctioned_loan_amount'])
                     : null,
-                'cashback'               => filled($data['cashback'] ?? null)
+                'cashback' => filled($data['cashback'] ?? null)
                     ? preg_replace('/[^0-9]/', '', $data['cashback'])
                     : null,
-                'subvention'             => filled($data['subvention'] ?? null)
+                'subvention' => filled($data['subvention'] ?? null)
                     ? preg_replace('/[^0-9]/', '', $data['subvention'])
                     : null,
-                'docking'                => filled($data['docking'] ?? null)
+                'docking' => filled($data['docking'] ?? null)
                     ? preg_replace('/[^0-9]/', '', $data['docking'])
                     : null,
-                'carry_forward_date'     => $data['carry_forward_date'] ?? null,
-                'sanctioned_remarks'     => $data['sanctioned_remarks'] ?? null,
+                'carry_forward_date' => $data['carry_forward_date'] ?? null,
+                'sanctioned_remarks' => $data['sanctioned_remarks'] ?? null,
                 'disbursal_finalized' => true,
             ]);
 

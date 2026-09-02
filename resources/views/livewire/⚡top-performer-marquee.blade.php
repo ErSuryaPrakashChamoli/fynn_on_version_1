@@ -24,14 +24,22 @@ new class extends Component
 
         $performers = $service->getTopPerformers($employee);
 
+        // Labeled explicitly because this can be the prior month rather
+        // than the real current one — see
+        // AchievementCalculatorService::resolveReferenceMonth() — a new
+        // calendar month starts with zero disbursals until loans already
+        // in the pipeline actually clear, so figures fall back to the last
+        // month that has data instead of showing a wall of 0%.
+        $monthLabel = '📅 '.$service->getReferenceMonth()->format('F Y');
+
         if (empty($performers)) {
-            $this->message = '🏆 No Top Performers Found';
+            $this->message = "{$monthLabel}     •     🏆 No Top Performers Found";
             return;
         }
 
         if (!$employee) {
 
-            $this->message = $this->buildAdminMessage($performers);
+            $this->message = "{$monthLabel}     •     ".$this->buildAdminMessage($performers);
 
             return;
         }
@@ -49,7 +57,7 @@ new class extends Component
             default => '🏆 Top Performers',
         };
 
-        $this->message = implode('     •     ', [$title, ...$this->formatPerformers($performers)]);
+        $this->message = implode('     •     ', [$monthLabel, $title, ...$this->formatPerformers($performers)]);
     }
 
     /**
@@ -199,9 +207,9 @@ new class extends Component
             .marquee-text {
                 display: inline-flex;
                 white-space: nowrap;
-                animation: marquee 80s linear infinite;
+                animation: marquee 160s linear infinite;
                 font-weight: 900;
-                font-size: 1rem;
+                font-size: 0.8rem;
                 color: #ffffff;
                 text-shadow: 0 0 10px rgb(45 212 191 / 60%), 0 1px 2px rgb(0 0 0 / 50%);
             }

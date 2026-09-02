@@ -34,6 +34,7 @@ class AchievementCalculatorTeamLeaderIncentiveTest extends TestCase
                 'cashback' => 0,
                 'subvention' => 0,
                 'docking' => '0',
+                'disbursal_date' => now(),
             ]);
         }
 
@@ -138,6 +139,7 @@ class AchievementCalculatorTeamLeaderIncentiveTest extends TestCase
             'cashback' => 10000,
             'subvention' => 5000,
             'docking' => '5000',
+            'disbursal_date' => now(),
         ]);
 
         $breakdown = (new AchievementCalculatorService)->getTeamLeaderIncentiveBreakdown($teamLeader);
@@ -198,6 +200,7 @@ class AchievementCalculatorTeamLeaderIncentiveTest extends TestCase
             'cashback' => 0,
             'subvention' => 0,
             'docking' => '0',
+            'disbursal_date' => now(),
         ]);
 
         Employee::factory()->create([

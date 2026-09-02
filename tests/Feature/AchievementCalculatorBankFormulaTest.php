@@ -63,6 +63,7 @@ class AchievementCalculatorBankFormulaTest extends TestCase
             'cashback' => 10000,
             'subvention' => 0,
             'docking' => '0',
+            'disbursal_date' => now(),
         ]);
         // net = 2,000,000 - ((10000 + 0 + 0) / 2) * 100 = 1,500,000
 
@@ -73,6 +74,7 @@ class AchievementCalculatorBankFormulaTest extends TestCase
             'cashback' => 2000,
             'subvention' => 0,
             'docking' => '0',
+            'disbursal_date' => now(),
         ]);
         // net = 1,000,000 - (2000 + 0 + 0) * 100 = 800,000
 
@@ -111,6 +113,7 @@ class AchievementCalculatorBankFormulaTest extends TestCase
             'cashback' => $cashback,
             'subvention' => $subvention,
             'docking' => $docking,
+            'disbursal_date' => now(),
         ]);
 
         return $caller;

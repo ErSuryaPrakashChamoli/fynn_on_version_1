@@ -74,7 +74,10 @@ class CustomerSettlementResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()
-            ->whereBetween('mis_disbursal_date', SelectedMonth::range());
+            ->whereHas(
+                'customer',
+                fn (Builder $q) => $q->whereBetween('disbursal_date', SelectedMonth::range())
+            );
 
         if (auth()->user()?->hasRole('Admin')) {
             return $query;
