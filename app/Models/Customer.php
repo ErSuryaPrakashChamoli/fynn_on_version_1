@@ -45,6 +45,7 @@ use Throwable;
  * @property string|null $disbursal_status
  * @property string|null $carry_forward_date
  * @property int $disbursal_finalized
+ * @property string|null $disbursal_date
  * @property array<array-key, mixed>|null $disbursal_pdf
  * @property bool $documents_submitted
  * @property string|null $underwriting_status
@@ -102,6 +103,7 @@ use Throwable;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereCreditApprovalCompleted($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereCurrentLocation($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereCustomerName($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereDisbursalDate($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereDisbursalFinalized($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereDisbursalPdf($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Customer whereDisbursalStatus($value)
@@ -186,6 +188,7 @@ class Customer extends Model
         'underwriting_status',
         'approved_loan_amount',
         'disbursal_status',
+        'disbursal_date',
         'carry_forward_date',
         'channel',
         'disbursal_pdf',
@@ -206,6 +209,7 @@ class Customer extends Model
     protected $casts = [
         'pending_document' => 'array',
         'disbursal_pdf' => 'array',
+        'disbursal_date' => 'date',
         'documents_submitted' => 'boolean',
         'direct' => 'boolean',
         'account_verified' => 'boolean',

@@ -40,6 +40,7 @@ class AchievementCalculatorNullDeductionFieldsTest extends TestCase
 
         Customer::factory()->create(array_merge([
             'employee_id' => $caller->id,
+            'disbursal_date' => now(),
         ], $customerAttributes));
 
         return $caller;

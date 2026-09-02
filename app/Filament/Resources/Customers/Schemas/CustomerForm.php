@@ -1345,6 +1345,17 @@ class CustomerForm
                                     ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
                                     ->required(),
 
+                                DatePicker::make('disbursal_date')
+                                    ->label('Disbursal Date')
+                                    ->displayFormat('d F Y')
+                                    ->native(false)
+                                    ->dehydrated(true)
+                                    ->suffixIcon('heroicon-m-calendar')
+                                    ->maxDate(today())
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
+                                    ->visible(fn (Get $get) => $get('disbursal_status') === 'disbursed')
+                                    ->required(fn (Get $get) => $get('disbursal_status') === 'disbursed'),
+
                                 Select::make('channel')
                                     ->label('Channel Name')
                                     ->options([
@@ -1484,6 +1495,7 @@ class CustomerForm
 
                                                 $data = [
                                                     'disbursal_status' => $get('disbursal_status'),
+                                                    'disbursal_date' => $get('disbursal_date'),
                                                     'channel' => $get('channel'),
                                                     'sanctioned_loan_amount' => $get('sanctioned_loan_amount'),
                                                     'cashback' => $get('cashback'),

@@ -8,6 +8,7 @@ use App\Support\HierarchyHelper;
 use App\Support\SelectedMonth;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 class AchievementCalculatorService
 {
@@ -38,6 +39,57 @@ class AchievementCalculatorService
         return strtoupper(trim(str_replace('-', ' ', $bankName)));
     }
 
+    /**
+     * Memoized per resolved input month, keyed by "Y-m" — every top-level
+     * getter below (getCountAchievement, getTarget, etc.) resolves through
+     * here, and several of them (e.g. TopPerformerService's per-employee
+     * loop) call it dozens of times per request with the same null/current
+     * input, so this avoids re-running the existence check on every call.
+     *
+     * @var array<string, Carbon>
+     */
+    private array $resolvedMonths = [];
+
+    /**
+     * Achievement is disbursal-date based, but a brand-new calendar month
+     * starts with zero disbursals until loans already in the pipeline
+     * actually clear — that's not "no achievement yet", it's "the month
+     * hasn't produced any data yet". Rather than show every dashboard/
+     * leaderboard as a wall of zeros for the first several days of each
+     * month, fall back to the last month that actually has disbursal data
+     * once the real current month has none at all. Only applies when the
+     * requested month IS the real current month — an explicitly requested
+     * historical month is never overridden.
+     */
+    public function resolveReferenceMonth(?Carbon $referenceMonth = null): Carbon
+    {
+        $referenceMonth ??= SelectedMonth::current();
+
+        $key = $referenceMonth->format('Y-m');
+
+        if (array_key_exists($key, $this->resolvedMonths)) {
+            return $this->resolvedMonths[$key];
+        }
+
+        $resolved = $referenceMonth;
+
+        if ($referenceMonth->isSameMonth(now())) {
+
+            $hasAnyDisbursalThisMonth = Customer::query()
+                ->whereBetween('disbursal_date', [
+                    $referenceMonth->copy()->startOfMonth(),
+                    $referenceMonth->copy()->endOfMonth(),
+                ])
+                ->exists();
+
+            if (! $hasAnyDisbursalThisMonth) {
+                $resolved = $referenceMonth->copy()->subMonthNoOverflow()->startOfMonth();
+            }
+        }
+
+        return $this->resolvedMonths[$key] = $resolved;
+    }
+
     public function getCountAchievement(Employee $employee, ?Carbon $referenceMonth = null): float
     {
         if ($employee->designation === Employee::DESIGNATION_ADMIN) {
@@ -51,9 +103,9 @@ class AchievementCalculatorService
                 ->whereIn('employee_id', $employeeIds);
         }
 
-        $referenceMonth ??= SelectedMonth::current();
+        $referenceMonth = $this->resolveReferenceMonth($referenceMonth);
 
-        $customers->whereBetween('customers.created_at', [
+        $customers->whereBetween('customers.disbursal_date', [
             $referenceMonth->copy()->startOfMonth(),
             $referenceMonth->copy()->endOfMonth(),
         ]);
@@ -75,7 +127,60 @@ class AchievementCalculatorService
      */
     public function computeAchievementTotals(Builder $customers): array
     {
-        $totals = $customers
+        $totals = $this->achievementQuery($customers)->first();
+
+        return [
+            'actual' => (float) ($totals->actual ?? 0),
+            'cashback' => (float) ($totals->cashback ?? 0),
+            'subvention' => (float) ($totals->subvention ?? 0),
+            'docking' => (float) ($totals->docking ?? 0),
+            'count_achievement' => (float) ($totals->count_achievement ?? 0),
+        ];
+    }
+
+    /**
+     * Same per-loan bank-aware formula as computeAchievementTotals(), but
+     * grouped by employee in a single query instead of one query per
+     * employee — used where a flat (non-hierarchical) group's achievement
+     * is needed per-member, e.g. TopPerformerService ranking every Caller.
+     * Only valid for a flat group: a Team Leader/Manager/Cluster's
+     * achievement is their whole subordinate tree's customers rolled up
+     * under THEIR OWN id, which a plain GROUP BY customers.employee_id
+     * cannot produce — those still go through getCountAchievement() per
+     * employee.
+     *
+     * @param  Collection<int, int>  $employeeIds
+     * @return array<int, float> employee_id => count_achievement
+     */
+    public function countAchievementByEmployeeId(Collection $employeeIds, ?Carbon $referenceMonth = null): array
+    {
+        if ($employeeIds->isEmpty()) {
+            return [];
+        }
+
+        $referenceMonth = $this->resolveReferenceMonth($referenceMonth);
+
+        $customers = Customer::query()
+            ->whereIn('customers.employee_id', $employeeIds)
+            ->whereBetween('customers.disbursal_date', [
+                $referenceMonth->copy()->startOfMonth(),
+                $referenceMonth->copy()->endOfMonth(),
+            ]);
+
+        $rows = $this->achievementQuery($customers)
+            ->addSelect('customers.employee_id as employee_id')
+            ->groupBy('customers.employee_id')
+            ->get();
+
+        return $rows
+            ->pluck('count_achievement', 'employee_id')
+            ->map(fn ($value) => (float) $value)
+            ->all();
+    }
+
+    private function achievementQuery(Builder $customers): Builder
+    {
+        return $customers
             ->leftJoin('customer_settlements as cs', function ($join) {
                 $join->on('cs.customer_id', '=', 'customers.id')
                     ->where('cs.version', 1);
@@ -96,20 +201,17 @@ class AchievementCalculatorService
                         * (CASE WHEN UPPER(TRIM(REPLACE(customers.sanctioned_bank, \'-\', \' \'))) IN (?, ?) THEN 50 ELSE 100 END)
                     )
                 ) as count_achievement
-            ', array_map($this->canonicalBankName(...), self::HALF_DEDUCTION_BANKS))
-            ->first();
-
-        return [
-            'actual' => (float) ($totals->actual ?? 0),
-            'cashback' => (float) ($totals->cashback ?? 0),
-            'subvention' => (float) ($totals->subvention ?? 0),
-            'docking' => (float) ($totals->docking ?? 0),
-            'count_achievement' => (float) ($totals->count_achievement ?? 0),
-        ];
+            ', array_map($this->canonicalBankName(...), self::HALF_DEDUCTION_BANKS));
     }
 
     public function getTarget(Employee $employee, ?Carbon $referenceMonth = null): float
     {
+        // Deliberately NOT resolveReferenceMonth() here: target is
+        // joining/exit-date boundary logic anchored to a real calendar
+        // month, not achievement data — it must never silently shift just
+        // because the month has no disbursals yet. Callers that need
+        // target paired with a (possibly-shifted) achievement month
+        // resolve once and pass it in explicitly (see getPerformance()).
         $referenceMonth ??= SelectedMonth::current();
 
         return $this->getTargetForPeriod(
@@ -351,6 +453,11 @@ class AchievementCalculatorService
      */
     public function getManagerIncentiveBreakdown(Employee $manager, ?Carbon $referenceMonth = null): array
     {
+        // Resolved once so achievement and eligible-caller-count (which
+        // feeds PPP) are paired to the same month even when this falls
+        // back to the last month with disbursal data.
+        $referenceMonth = $this->resolveReferenceMonth($referenceMonth);
+
         $countAchievement = $this->getCountAchievement($manager, $referenceMonth);
 
         $eligibleCallers = $this->getEligibleCallerCount($manager, $referenceMonth);
@@ -404,7 +511,7 @@ class AchievementCalculatorService
      */
     public function getTeamLeaderIncentiveBreakdown(Employee $teamLeader, ?Carbon $referenceMonth = null): array
     {
-        $referenceMonth ??= SelectedMonth::current();
+        $referenceMonth = $this->resolveReferenceMonth($referenceMonth);
 
         $callerIds = HierarchyHelper::callerIds($teamLeader);
 
@@ -420,7 +527,7 @@ class AchievementCalculatorService
 
         $teamCustomers = Customer::query()->whereIn('employee_id', $callerIds);
 
-        $teamCustomers->whereBetween('customers.created_at', [
+        $teamCustomers->whereBetween('customers.disbursal_date', [
             $referenceMonth->copy()->startOfMonth(),
             $referenceMonth->copy()->endOfMonth(),
         ]);
@@ -504,7 +611,7 @@ class AchievementCalculatorService
 
     public function getPerformance(?Employee $employee, ?Carbon $referenceMonth = null): array
     {
-        $referenceMonth ??= SelectedMonth::current();
+        $referenceMonth = $this->resolveReferenceMonth($referenceMonth);
 
         /*
     |--------------------------------------------------------------------------
@@ -551,7 +658,7 @@ class AchievementCalculatorService
     |--------------------------------------------------------------------------
     */
 
-        $customers->whereBetween('customers.created_at', [
+        $customers->whereBetween('customers.disbursal_date', [
             $referenceMonth->copy()->startOfMonth(),
             $referenceMonth->copy()->endOfMonth(),
         ]);
@@ -712,6 +819,8 @@ class AchievementCalculatorService
 
     public function getHierarchyCallerTarget(Employee $employee, ?Carbon $referenceMonth = null): float
     {
+        // See getTarget() above — target boundary logic must anchor to the
+        // real requested month, never the achievement-driven fallback.
         $referenceMonth ??= SelectedMonth::current();
 
         return $this->getHierarchyCallerTargetForPeriod(
