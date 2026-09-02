@@ -12,6 +12,8 @@ class CustomerPanRequest extends Model
 
 
         'customer_id',
+        'ai_customer_record_id',
+        'lead_id',
 
         'requested_by',
         'requested_by_emp_id',
@@ -67,6 +69,16 @@ class CustomerPanRequest extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function aiCustomerRecord(): BelongsTo
+    {
+        return $this->belongsTo(AiCustomerRecord::class);
+    }
+
+    public function lead(): BelongsTo
+    {
+        return $this->belongsTo(Lead::class);
     }
 
     /**

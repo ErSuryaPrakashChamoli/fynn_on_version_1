@@ -4,10 +4,10 @@ namespace App\Filament\Widgets;
 
 use App\Models\Customer;
 use App\Support\HierarchyHelper;
+use App\Support\SelectedMonth;
 use Filament\Facades\Filament;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
-use Illuminate\Support\Carbon;
 
 class DailyCommitmentStats extends StatsOverviewWidget
 {
@@ -24,7 +24,6 @@ class DailyCommitmentStats extends StatsOverviewWidget
     {
         return 'Monitor eligible leads, rejected cases, logins, and documentation status.';
     }
-
 
     protected function getStats(): array
     {
@@ -83,19 +82,14 @@ class DailyCommitmentStats extends StatsOverviewWidget
 
         /*
         |--------------------------------------------------------------------------
-        | Current Month
+        | Selected Month
         |--------------------------------------------------------------------------
         */
 
-        $customersQuery
-            ->whereMonth(
-                'created_at',
-                Carbon::now()->month
-            )
-            ->whereYear(
-                'created_at',
-                Carbon::now()->year
-            );
+        $customersQuery->whereBetween(
+            'created_at',
+            SelectedMonth::range()
+        );
 
         /*
         |--------------------------------------------------------------------------
@@ -354,8 +348,7 @@ class DailyCommitmentStats extends StatsOverviewWidget
                     'heroicon-o-users'
                 )
                 ->extraAttributes([
-                    'class' =>
-                    'performance-card commitment-card-total',
+                    'class' => 'performance-card commitment-card-total',
                 ])
                 ->chart(
                     $otpTrend
@@ -388,8 +381,7 @@ class DailyCommitmentStats extends StatsOverviewWidget
                     'heroicon-o-check-circle'
                 )
                 ->extraAttributes([
-                    'class' =>
-                    'performance-card commitment-card-eligible',
+                    'class' => 'performance-card commitment-card-eligible',
                 ])
                 ->chart(
                     $eligibleTrend
@@ -424,8 +416,7 @@ class DailyCommitmentStats extends StatsOverviewWidget
                     'heroicon-o-x-circle'
                 )
                 ->extraAttributes([
-                    'class' =>
-                    'performance-card commitment-card-not-eligible',
+                    'class' => 'performance-card commitment-card-not-eligible',
                 ]),
 
             /*
@@ -455,8 +446,7 @@ class DailyCommitmentStats extends StatsOverviewWidget
                     'heroicon-o-building-library'
                 )
                 ->extraAttributes([
-                    'class' =>
-                    'performance-card commitment-card-login',
+                    'class' => 'performance-card commitment-card-login',
                 ]),
 
             /*
@@ -484,8 +474,7 @@ class DailyCommitmentStats extends StatsOverviewWidget
                     'heroicon-o-document-text'
                 )
                 ->extraAttributes([
-                    'class' =>
-                    'performance-card commitment-card-documentation',
+                    'class' => 'performance-card commitment-card-documentation',
                 ]),
         ];
     }

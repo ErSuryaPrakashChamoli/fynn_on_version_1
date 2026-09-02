@@ -10,23 +10,27 @@ use App\Filament\Resources\CustomerSettlements\RelationManagers\TransactionsRela
 use App\Filament\Resources\CustomerSettlements\Schemas\CustomerSettlementForm;
 use App\Filament\Resources\CustomerSettlements\Tables\CustomerSettlementsTable;
 use App\Models\CustomerSettlement;
+use App\Support\SelectedMonth;
+use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use BackedEnum;
-use Filament\Support\Icons\Heroicon;
-use Filament\Navigation\NavigationGroup;
 use UnitEnum;
 
 class CustomerSettlementResource extends Resource
 {
     protected static ?string $model = CustomerSettlement::class;
+
     protected static ?string $navigationLabel = 'Customer Settlement';
+
     protected static ?string $recordTitleAttribute = 'settlement_no';
-    protected static string | UnitEnum | null $navigationGroup = 'Accounts';
-    protected static string | BackedEnum | null $navigationIcon = Heroicon::OutlinedBanknotes;
+
+    protected static string|UnitEnum|null $navigationGroup = 'Accounts';
+
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBanknotes;
 
     private const ACCOUNTS_STATUSES = [
         'mis_verified',
@@ -69,7 +73,8 @@ class CustomerSettlementResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery();
+        $query = parent::getEloquentQuery()
+            ->whereBetween('mis_disbursal_date', SelectedMonth::range());
 
         if (auth()->user()?->hasRole('Admin')) {
             return $query;

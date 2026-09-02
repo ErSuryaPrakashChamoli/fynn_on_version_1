@@ -3,12 +3,12 @@
 namespace App\Filament\Resources\AccountVerifications\Pages;
 
 use App\Filament\Resources\AccountVerifications\AccountVerificationResource;
-use App\Models\Customer;
 use App\Models\CustomerSettlementHistory;
 use App\Services\Settlement\MisSettlementService;
 use App\Services\Settlement\SettlementService;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class EditAccountVerification extends EditRecord
 {
@@ -66,71 +66,73 @@ class EditAccountVerification extends EditRecord
     {
         abort_unless(auth()->user()?->hasAnyRole(['Admin', 'MIS']), 403);
 
-        $settlement = $record->settlement ?: app(SettlementService::class)->createSalesSnapshot($record);
+        return DB::transaction(function () use ($record, $data) {
+            $settlement = $record->settlement ?: app(SettlementService::class)->createSalesSnapshot($record);
 
-        $misData = collect($data)->only([
-            'mis_lan_no', 'mis_loan_type', 'mis_disbursal_amount', 'mis_roi', 'mis_cashback',
-            'mis_subvention', 'mis_docking', 'mis_processing_fee', 'mis_disbursal_date', 'cancellation_status',
-            'cancellation_date', 'cancellation_recovery', 'mis_payment',
-            'bank_commission_percentage', 'bank_commission_amount', 'mis_tds', 'mis_gst',
-            'actual_payable_amount',
-        ])->toArray();
+            $misData = collect($data)->only([
+                'mis_lan_no', 'mis_loan_type', 'mis_disbursal_amount', 'mis_roi', 'mis_cashback',
+                'mis_subvention', 'mis_docking', 'mis_processing_fee', 'mis_disbursal_date', 'cancellation_status',
+                'cancellation_date', 'cancellation_recovery', 'mis_payment',
+                'bank_commission_percentage', 'bank_commission_amount', 'mis_tds', 'mis_gst',
+                'actual_payable_amount',
+            ])->toArray();
 
-        $settlement = app(MisSettlementService::class)->updateFromMis(
-            settlement: $settlement,
-            data: $misData,
-            userId: auth()->id(),
-            source: 'bank_mis',
-            reason: 'MIS entered/revised bank values manually.',
-        );
-
-        $record->update([
-            'account_remark' => $data['account_remark'] ?? null,
-            'incentive_calculated' => false,
-        ]);
-
-        if (! empty($data['mis_verified'])) {
-            $oldStatus = $settlement->status;
-            $settlement->update([
-                'status' => 'mis_verified',
-                'verified_by' => auth()->id(),
-                'verified_at' => now(),
-            ]);
-
-            CustomerSettlementHistory::create([
-                'customer_settlement_id' => $settlement->id,
-                'customer_id' => $record->id,
-                'action' => 'mis_verified',
-                'old_value' => $oldStatus,
-                'new_value' => 'mis_verified',
-                'source' => 'mis',
-                'reason' => $data['account_remark'] ?? 'MIS verification completed.',
-                'performed_by' => auth()->id(),
-                'mis_batch_id' => $settlement->mis_batch_id,
-            ]);
+            $settlement = app(MisSettlementService::class)->updateFromMis(
+                settlement: $settlement,
+                data: $misData,
+                userId: auth()->id(),
+                source: 'bank_mis',
+                reason: 'MIS entered/revised bank values manually.',
+            );
 
             $record->update([
-                'account_verified' => true,
-                'account_verified_by' => auth()->id(),
-                'account_verified_at' => now(),
+                'account_remark' => $data['account_remark'] ?? null,
                 'incentive_calculated' => false,
             ]);
-        } else {
-            $settlement->update([
-                'status' => 'mis_review',
-                'verified_by' => null,
-                'verified_at' => null,
-            ]);
 
-            $record->update([
-                'account_verified' => false,
-                'account_verified_by' => null,
-                'account_verified_at' => null,
-                'incentive_calculated' => false,
-            ]);
-        }
+            if (! empty($data['mis_verified'])) {
+                $oldStatus = $settlement->status;
+                $settlement->update([
+                    'status' => 'mis_verified',
+                    'verified_by' => auth()->id(),
+                    'verified_at' => now(),
+                ]);
 
-        return $record->refresh();
+                CustomerSettlementHistory::create([
+                    'customer_settlement_id' => $settlement->id,
+                    'customer_id' => $record->id,
+                    'action' => 'mis_verified',
+                    'old_value' => $oldStatus,
+                    'new_value' => 'mis_verified',
+                    'source' => 'mis',
+                    'reason' => $data['account_remark'] ?? 'MIS verification completed.',
+                    'performed_by' => auth()->id(),
+                    'mis_batch_id' => $settlement->mis_batch_id,
+                ]);
+
+                $record->update([
+                    'account_verified' => true,
+                    'account_verified_by' => auth()->id(),
+                    'account_verified_at' => now(),
+                    'incentive_calculated' => false,
+                ]);
+            } else {
+                $settlement->update([
+                    'status' => 'mis_review',
+                    'verified_by' => null,
+                    'verified_at' => null,
+                ]);
+
+                $record->update([
+                    'account_verified' => false,
+                    'account_verified_by' => null,
+                    'account_verified_at' => null,
+                    'incentive_calculated' => false,
+                ]);
+            }
+
+            return $record->refresh();
+        });
     }
 
     public static function canCreate(): bool

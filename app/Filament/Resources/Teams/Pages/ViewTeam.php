@@ -3,22 +3,16 @@
 namespace App\Filament\Resources\Teams\Pages;
 
 use App\Filament\Resources\Teams\TeamResource;
-use Filament\Resources\Pages\Page;
 use App\Models\Employee;
-use Illuminate\Database\Eloquent\Collection;
-use App\Support\HierarchyHelper;
-
-use Filament\Tables\Table;
-use Filament\Tables;
-use Illuminate\Database\Eloquent\Builde;
-
-use Filament\Tables\Contracts\HasTable;
-use Filament\Tables\Concerns\InteractsWithTable;
-use Filament\Actions\Action;
 use App\Services\AchievementCalculatorService;
-
-
-
+use App\Support\HierarchyHelper;
+use Filament\Actions\Action;
+use Filament\Resources\Pages\Page;
+use Filament\Tables;
+use Filament\Tables\Concerns\InteractsWithTable;
+use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Collection;
 
 class ViewTeam extends Page implements HasTable
 {
@@ -30,7 +24,6 @@ class ViewTeam extends Page implements HasTable
 
     protected string $view = 'filament.resources.teams.pages.view-team';
 
-
     public Employee $record;
 
     public array $performance = [];
@@ -39,7 +32,7 @@ class ViewTeam extends Page implements HasTable
     {
         $this->record = $record;
 
-        $calculator = app(\App\Services\AchievementCalculatorService::class);
+        $calculator = app(AchievementCalculatorService::class);
 
         $this->performance = $calculator->getPerformance($record);
     }
@@ -48,6 +41,7 @@ class ViewTeam extends Page implements HasTable
     {
         $calculator = app(AchievementCalculatorService::class);
         $performanceCache = [];
+        $eligibleCallerCache = [];
 
         return $table
             // ->query(
@@ -60,15 +54,14 @@ class ViewTeam extends Page implements HasTable
                     ->label('Employee')
                     ->searchable(),
 
-
                 Tables\Columns\TextColumn::make('designation')
                     ->label('Position')
                     ->badge()
                     ->sortable()
                     ->formatStateUsing(
-                        fn($state) => Employee::designationOptions()[$state] ?? 'Unknown'
+                        fn ($state) => Employee::designationOptions()[$state] ?? 'Unknown'
                     )
-                    ->color(fn($state) => match ((int) $state) {
+                    ->color(fn ($state) => match ((int) $state) {
                         Employee::DESIGNATION_CLUSTER => 'primary',
                         Employee::DESIGNATION_MANAGER => 'success',
                         Employee::DESIGNATION_TEAM_LEADER => 'warning',
@@ -79,70 +72,27 @@ class ViewTeam extends Page implements HasTable
                     ->label('Target')
                     ->alignEnd()
                     ->sortable()
-                    // ->state(function (Employee $record) use ($calculator, &$performanceCache) {
-
-                    //     $performanceCache[$record->id] ??= $calculator->getPerformance($record);
-
-                    //     return $performanceCache[$record->id]['target'];
-                    // })
                     ->state(function (Employee $record) use ($calculator, &$performanceCache) {
-
 
                         /*
                         |--------------------------------------------------------------------------
                         | Caller
                         |--------------------------------------------------------------------------
                         |
-                        | If the logged-in viewer is the Caller himself,
-                        | he sees his category target.
+                        | The Caller himself sees his flat category target. Anyone
+                        | above him in the hierarchy sees the entry/exit-adjusted
+                        | target instead, via the canonical engine — which already
+                        | applies the exit/new-joiner rules and respects the global
+                        | month selector (a hand-rolled date check here previously
+                        | compared against real "today" instead, silently producing
+                        | wrong results whenever a past month was selected).
                         |
                         */
-
-                        if (
-                            auth()->user()?->employee?->id === $record->id
-                            && $record->designation === Employee::DESIGNATION_CALLER
-                        ) {
-                            return $calculator->getTarget($record);
-                        }
-
-                        /*
-                        |--------------------------------------------------------------------------
-                        | Team Leader / Manager / Cluster viewing Caller
-                        |--------------------------------------------------------------------------
-                        |
-                        | Above hierarchy must see the caller's hierarchy target,
-                        | based on reporting_date conditions.
-                        |
-                        */
-
-                        // if ($record->designation === Employee::DESIGNATION_CALLER) {
-
-                        //     return $calculator->getHierarchyCallerTarget($record);
-                        // }
 
                         if ($record->designation === Employee::DESIGNATION_CALLER) {
 
-                            // Inactive caller who exited in current month
-                            if (
-                                strtolower((string) $record->exit_status) === 'yes'
-                                && filled($record->exit_date)
-                            ) {
-                                $exitDate = \Carbon\Carbon::parse($record->exit_date);
-                                $today = \Carbon\Carbon::today();
-
-                                if (
-                                    $exitDate->year === $today->year
-                                    && $exitDate->month === $today->month
-                                ) {
-                                    return $exitDate->day >= 10
-                                        ? 1500000
-                                        : 0;
-                                }
-
-                                // Employee exited before current month
-                                if ($exitDate->lt($today->copy()->startOfMonth())) {
-                                    return 0;
-                                }
+                            if (auth()->user()?->employee?->id === $record->id) {
+                                return $calculator->getTarget($record);
                             }
 
                             return $calculator->getHierarchyCallerTarget($record);
@@ -161,9 +111,7 @@ class ViewTeam extends Page implements HasTable
 
                         return $performanceCache[$record->id]['target'];
                     })
-                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
-
-
+                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
 
                 Tables\Columns\TextColumn::make('actual')
                     ->label('Actual')
@@ -176,8 +124,7 @@ class ViewTeam extends Page implements HasTable
 
                         return $performanceCache[$record->id]['actual'];
                     })
-                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
-
+                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
 
                 Tables\Columns\TextColumn::make('cashback')
                     ->label('Cashback')
@@ -189,7 +136,7 @@ class ViewTeam extends Page implements HasTable
 
                         return $performanceCache[$record->id]['cashback'];
                     })
-                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
+                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
 
                 Tables\Columns\TextColumn::make('subvention')
                     ->label('Subvention')
@@ -201,7 +148,7 @@ class ViewTeam extends Page implements HasTable
 
                         return $performanceCache[$record->id]['subvention'];
                     })
-                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
+                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
 
                 Tables\Columns\TextColumn::make('docking')
                     ->label('Docking')
@@ -213,7 +160,7 @@ class ViewTeam extends Page implements HasTable
 
                         return $performanceCache[$record->id]['docking'];
                     })
-                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
+                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
 
                 Tables\Columns\TextColumn::make('count_achievement')
                     ->label('Count Achievement')
@@ -226,7 +173,7 @@ class ViewTeam extends Page implements HasTable
 
                         return $performanceCache[$record->id]['count_achievement'];
                     })
-                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
+                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
 
                 Tables\Columns\TextColumn::make('percentage')
                     ->label('Achievement')
@@ -239,8 +186,45 @@ class ViewTeam extends Page implements HasTable
                         return round($performanceCache[$record->id]['percentage'], 2);
                     })
                     ->suffix('%')
-                    ->color(fn($state) => $state >= 100 ? 'success' : ($state >= 80 ? 'warning' : 'danger')),
+                    ->color(fn ($state) => $state >= 100 ? 'success' : ($state >= 80 ? 'warning' : 'danger')),
 
+                Tables\Columns\TextColumn::make('eligible_callers')
+                    ->label('Eligible Callers')
+                    ->alignCenter()
+                    ->toggleable()
+                    ->state(function (Employee $record) use ($calculator, &$eligibleCallerCache) {
+
+                        if ($record->designation === Employee::DESIGNATION_CALLER) {
+                            return null;
+                        }
+
+                        $eligibleCallerCache[$record->id] ??= $calculator->getEligibleCallerCount($record);
+
+                        return $eligibleCallerCache[$record->id];
+                    })
+                    ->placeholder('-'),
+
+                Tables\Columns\TextColumn::make('ppp')
+                    ->label('PPP')
+                    ->alignEnd()
+                    ->toggleable()
+                    ->state(function (Employee $record) use ($calculator, &$performanceCache, &$eligibleCallerCache) {
+
+                        if ($record->designation === Employee::DESIGNATION_CALLER) {
+                            return null;
+                        }
+
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+
+                        $eligibleCallerCache[$record->id] ??= $calculator->getEligibleCallerCount($record);
+
+                        $eligibleCallers = $eligibleCallerCache[$record->id];
+
+                        return $eligibleCallers > 0
+                            ? $performanceCache[$record->id]['count_achievement'] / $eligibleCallers
+                            : 0;
+                    })
+                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
 
                 Tables\Columns\TextColumn::make('incentive')
                     ->label('Incentive')
@@ -255,7 +239,7 @@ class ViewTeam extends Page implements HasTable
 
                         return $performanceCache[$record->id]['incentive'];
                     })
-                    ->formatStateUsing(fn($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
+                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
 
                 Tables\Columns\TextColumn::make('mobile'),
 
@@ -266,8 +250,8 @@ class ViewTeam extends Page implements HasTable
                 Action::make('viewTeam')
                     ->label('View Team')
                     ->icon('heroicon-o-users')
-                    ->visible(fn(Employee $record) => $record->designation !== Employee::DESIGNATION_CALLER)
-                    ->url(fn(Employee $record) => TeamResource::getUrl('view-team', [
+                    ->visible(fn (Employee $record) => $record->designation !== Employee::DESIGNATION_CALLER)
+                    ->url(fn (Employee $record) => TeamResource::getUrl('view-team', [
                         'record' => $record,
                     ])),
 
@@ -275,12 +259,11 @@ class ViewTeam extends Page implements HasTable
                     ->label('Customers')
                     ->icon('heroicon-o-user-group')
                     ->color('success')
-                    ->url(fn(Employee $record) => TeamResource::getUrl('view-customers', [
+                    ->url(fn (Employee $record) => TeamResource::getUrl('view-customers', [
                         'record' => $record,
                     ])),
             ]);
     }
-
 
     public function getBreadcrumbs(): array
     {

@@ -9,15 +9,13 @@ class CreateFollowUp extends CreateRecord
 {
     protected static string $resource = FollowUpResource::class;
 
-        protected function mutateFormDataBeforeCreate(array $data): array
-            {
-                // dd(auth()->id);
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        // Accounts without a linked employee profile (e.g. the Admin
+        // login) can still log a follow-up; it's just not attributed
+        // to a specific employee.
+        $data['employee_id'] = auth()->user()?->employee?->id;
 
-                $customerId = $data['customer_id']; 
-                $user = auth()->user();
-                $data['employee_id'] = $user->employee_id;
-                $data['customer_id'] = $customerId;
-               
-                return $data;
-            }
+        return $data;
+    }
 }

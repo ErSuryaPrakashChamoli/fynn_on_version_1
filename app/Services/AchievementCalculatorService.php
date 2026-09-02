@@ -4,16 +4,41 @@ namespace App\Services;
 
 use App\Models\Customer;
 use App\Models\Employee;
-use Carbon\Carbon;
-use App\Services\HierarchyService;
 use App\Support\HierarchyHelper;
-use Illuminate\Support\Facades\DB;
+use App\Support\SelectedMonth;
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 
 class AchievementCalculatorService
 {
+    /**
+     * Banks whose count-achievement deduction is halved.
+     *
+     * Every other bank (including no bank recorded) is deducted in full.
+     * This is the only authoritative bank field on the sale — Customer has
+     * no FK to the `banks` table, and Bank MIS never overrides it.
+     */
+    private const HALF_DEDUCTION_BANKS = ['BFL Prime', 'BFL Growth'];
 
+    /**
+     * customers.sanctioned_bank is a free-text column, not an FK — the UI
+     * form constrains it to a fixed Select, but CustomerImporter's CSV
+     * import column (only ->rules(['max:255']), no `in:` constraint) and
+     * OcrFieldExtractionService's OCR-extracted value both write to it
+     * without going through that Select, so a variant like "bfl prime",
+     * "BFL PRIME", or "BFL-Prime" can genuinely reach this column. The
+     * comparison below normalizes case/surrounding whitespace/hyphens on
+     * both sides so those variants still match their canonical bank —
+     * without merging two genuinely different banks (BFL Prime and BFL
+     * Growth are normalized independently and remain distinct), and
+     * without any database/schema change.
+     */
+    private function canonicalBankName(string $bankName): string
+    {
+        return strtoupper(trim(str_replace('-', ' ', $bankName)));
+    }
 
-    public function getCountAchievement(Employee $employee): float
+    public function getCountAchievement(Employee $employee, ?Carbon $referenceMonth = null): float
     {
         if ($employee->designation === Employee::DESIGNATION_ADMIN) {
 
@@ -26,36 +51,86 @@ class AchievementCalculatorService
                 ->whereIn('employee_id', $employeeIds);
         }
 
-        $customers
-            ->whereMonth('customers.created_at', now()->month)
-            ->whereYear('customers.created_at', now()->year);
+        $referenceMonth ??= SelectedMonth::current();
 
+        $customers->whereBetween('customers.created_at', [
+            $referenceMonth->copy()->startOfMonth(),
+            $referenceMonth->copy()->endOfMonth(),
+        ]);
+
+        return $this->computeAchievementTotals($customers)['count_achievement'];
+    }
+
+    /**
+     * Single authoritative achievement query.
+     *
+     * Computes actual/cashback/subvention/docking totals, and the
+     * bank-aware count achievement, in one pass. The deduction is applied
+     * per customer (bank varies per loan) and summed, not derived from the
+     * aggregate totals afterward — a loan's bank determines whether its own
+     * cashback+subvention+docking is halved or deducted in full before it's
+     * added to the total.
+     *
+     * @return array{actual: float, cashback: float, subvention: float, docking: float, count_achievement: float}
+     */
+    public function computeAchievementTotals(Builder $customers): array
+    {
         $totals = $customers
             ->leftJoin('customer_settlements as cs', function ($join) {
                 $join->on('cs.customer_id', '=', 'customers.id')
                     ->where('cs.version', 1);
             })
-            ->selectRaw("
+            ->selectRaw('
                 SUM(CASE WHEN cs.mis_disbursal_amount IS NOT NULL THEN cs.mis_disbursal_amount ELSE customers.sanctioned_loan_amount END) as actual,
                 SUM(CASE WHEN cs.mis_cashback IS NOT NULL THEN cs.mis_cashback ELSE customers.cashback END) as cashback,
                 SUM(CASE WHEN cs.mis_subvention IS NOT NULL THEN cs.mis_subvention ELSE customers.subvention END) as subvention,
-                SUM(CASE WHEN cs.mis_docking IS NOT NULL THEN cs.mis_docking ELSE customers.docking END) as docking
-            ")
+                SUM(CASE WHEN cs.mis_docking IS NOT NULL THEN cs.mis_docking ELSE CAST(customers.docking AS DECIMAL(15,2)) END) as docking,
+                SUM(
+                    COALESCE(CASE WHEN cs.mis_disbursal_amount IS NOT NULL THEN cs.mis_disbursal_amount ELSE customers.sanctioned_loan_amount END, 0)
+                    - (
+                        (
+                            COALESCE(CASE WHEN cs.mis_cashback IS NOT NULL THEN cs.mis_cashback ELSE customers.cashback END, 0)
+                            + COALESCE(CASE WHEN cs.mis_subvention IS NOT NULL THEN cs.mis_subvention ELSE customers.subvention END, 0)
+                            + COALESCE(CASE WHEN cs.mis_docking IS NOT NULL THEN cs.mis_docking ELSE CAST(customers.docking AS DECIMAL(15,2)) END, 0)
+                        )
+                        * (CASE WHEN UPPER(TRIM(REPLACE(customers.sanctioned_bank, \'-\', \' \'))) IN (?, ?) THEN 50 ELSE 100 END)
+                    )
+                ) as count_achievement
+            ', array_map($this->canonicalBankName(...), self::HALF_DEDUCTION_BANKS))
             ->first();
 
-        $achievement = (float) ($totals->actual ?? 0);
-        $cashback = (float) ($totals->cashback ?? 0);
-        $subvention = (float) ($totals->subvention ?? 0);
-        $docking = (float) ($totals->docking ?? 0);
-
-        return $achievement
-            - ((($cashback + $subvention + $docking) / 2) * 100);
+        return [
+            'actual' => (float) ($totals->actual ?? 0),
+            'cashback' => (float) ($totals->cashback ?? 0),
+            'subvention' => (float) ($totals->subvention ?? 0),
+            'docking' => (float) ($totals->docking ?? 0),
+            'count_achievement' => (float) ($totals->count_achievement ?? 0),
+        ];
     }
 
+    public function getTarget(Employee $employee, ?Carbon $referenceMonth = null): float
+    {
+        $referenceMonth ??= SelectedMonth::current();
 
+        return $this->getTargetForPeriod(
+            $employee,
+            $referenceMonth->copy()->startOfMonth(),
+            $referenceMonth->copy()->endOfMonth()
+        );
+    }
 
-
-    public function getTarget(Employee $employee): float
+    /**
+     * Single authoritative target engine, for an arbitrary period.
+     *
+     * getTarget() (current month) is a thin wrapper around this method —
+     * both current-month and historical-period target calculations go
+     * through the exact same business rules. The ₹30L understaffed-team
+     * top-up structure (thresholds, which callers/TLs are counted) is
+     * unchanged from the original current-month-only implementation; only
+     * the per-caller target value now comes from
+     * getHierarchyCallerTargetForPeriod() instead of a "today"-only calc.
+     */
+    public function getTargetForPeriod(Employee $employee, Carbon $start, Carbon $end): float
     {
         /*
     |--------------------------------------------------------------------------
@@ -80,10 +155,8 @@ class AchievementCalculatorService
             $target = Employee::whereIn('id', $callerIds)
                 ->get()
                 ->sum(
-                    fn(Employee $caller) =>
-                    $this->getHierarchyCallerTarget($caller)
+                    fn (Employee $caller) => $this->getHierarchyCallerTargetForPeriod($caller, $start, $end)
                 );
-            // ->sum(fn(Employee $caller) => $this->getCallerTarget($caller));
 
             if ($callerIds->count() < 3) {
                 $target += 3000000;
@@ -105,11 +178,11 @@ class AchievementCalculatorService
                 HierarchyHelper::callerIds($employee)
             )
                 ->get()
-                ->sum(fn(Employee $caller) => $this->getHierarchyCallerTarget($caller));
-            // ->sum(fn(Employee $caller) => $this->getCallerTarget($caller));
+                ->sum(fn (Employee $caller) => $this->getHierarchyCallerTargetForPeriod($caller, $start, $end));
 
             $teamLeaderIds = Employee::where('manager_id', $employee->id)
                 ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+                ->where('exit_status', '!=', 'yes')
                 ->pluck('id');
 
             foreach ($teamLeaderIds as $tlId) {
@@ -140,17 +213,17 @@ class AchievementCalculatorService
             )
                 ->get()
                 ->sum(
-                    fn(Employee $caller) =>
-                    $this->getHierarchyCallerTarget($caller)
+                    fn (Employee $caller) => $this->getHierarchyCallerTargetForPeriod($caller, $start, $end)
                 );
-            // ->sum(fn(Employee $caller) => $this->getCallerTarget($caller));
 
             $managerIds = Employee::where('cluster_id', $employee->id)
                 ->where('designation', Employee::DESIGNATION_MANAGER)
+                ->where('exit_status', '!=', 'yes')
                 ->pluck('id');
 
             $teamLeaderIds = Employee::whereIn('manager_id', $managerIds)
                 ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+                ->where('exit_status', '!=', 'yes')
                 ->pluck('id');
 
             foreach ($teamLeaderIds as $tlId) {
@@ -177,7 +250,7 @@ class AchievementCalculatorService
 
             return Employee::where('designation', Employee::DESIGNATION_CALLER)
                 ->get()
-                ->sum(fn(Employee $caller) => $this->getCallerTarget($caller));
+                ->sum(fn (Employee $caller) => $this->getHierarchyCallerTargetForPeriod($caller, $start, $end));
         }
 
         return 0;
@@ -185,20 +258,29 @@ class AchievementCalculatorService
 
     public function getPercentage(Employee $employee): float
     {
-        $target = $this->getTarget($employee);
+        return $this->percentageFromAmounts(
+            $this->getCountAchievement($employee),
+            $this->getTarget($employee)
+        );
+    }
 
+    /**
+     * Single authoritative achievement-percentage formula, for callers
+     * that already have the achievement/target amounts on hand (e.g. from
+     * a prior getTarget()/getCountAchievement() or getPerformance() call)
+     * and would otherwise have to either duplicate this formula or pay for
+     * a second, redundant query round-trip by calling getPercentage().
+     */
+    public function percentageFromAmounts(float $achievement, float $target): float
+    {
         if ($target <= 0) {
             return 0;
         }
 
-        return round(
-            ($this->getCountAchievement($employee) / $target) * 100,
-            2
-        );
+        return round(($achievement / $target) * 100, 2);
     }
 
-
-    public function getEligibleCallerCount(Employee $manager): int
+    public function getEligibleCallerCount(Employee $manager, ?Carbon $referenceMonth = null): int
     {
         /*
     |--------------------------------------------------------------------------
@@ -219,13 +301,18 @@ class AchievementCalculatorService
     | Eligible Caller
     |--------------------------------------------------------------------------
     |
-    | A caller is eligible if his/her target for the
-    | current month is greater than zero.
+    | A caller is eligible if his/her target for the current month is
+    | greater than zero. This must use the same reporting-date/exit-status
+    | aware target (getHierarchyCallerTarget) as the rest of this service —
+    | getCallerTarget() only returns the caller's static category value (or
+    | a 2,500,000 default) and is never zero, so it would count a
+    | not-yet-eligible new joiner (<10 days into the month) or an
+    | already-exited caller as "eligible", inflating the PPP denominator.
     |
     */
 
         return $callers
-            ->filter(fn(Employee $caller) => $this->getCallerTarget($caller) > 0)
+            ->filter(fn (Employee $caller) => $this->getHierarchyCallerTarget($caller, $referenceMonth) > 0)
             ->count();
     }
 
@@ -247,21 +334,197 @@ class AchievementCalculatorService
         };
     }
 
-    public function getPerformance(?Employee $employee): array
+    /**
+     * Single authoritative Manager incentive engine.
+     *
+     * A Manager's incentive is governed ENTIRELY by the PPP multiplier
+     * system (team achievement spread evenly across eligible callers,
+     * matched against the PPP bands in getPPPMultiplier()) — it does NOT
+     * use the flat per-caller slab table from getIncentiveSlabs(). That
+     * table's highest bracket tops out at 11,000,000, but a Manager's team
+     * achievement routinely exceeds that, which would otherwise always
+     * return the flat capped slab incentive regardless of the team's
+     * actual PPP — including when PPP is below the 2,300,000 floor, where
+     * a Manager must earn NO incentive at all.
+     *
+     * @return array{eligible_callers: int, count_achievement: float, ppp: float, multiplier: float, incentive: float}
+     */
+    public function getManagerIncentiveBreakdown(Employee $manager, ?Carbon $referenceMonth = null): array
     {
+        $countAchievement = $this->getCountAchievement($manager, $referenceMonth);
+
+        $eligibleCallers = $this->getEligibleCallerCount($manager, $referenceMonth);
+
+        $ppp = $eligibleCallers > 0
+            ? $countAchievement / $eligibleCallers
+            : 0;
+
+        $multiplier = $this->getPPPMultiplier($ppp);
+
+        return [
+            'eligible_callers' => $eligibleCallers,
+            'count_achievement' => $countAchievement,
+            'ppp' => $ppp,
+            'multiplier' => $multiplier,
+            'incentive' => $countAchievement * $multiplier,
+        ];
+    }
+
+    /**
+     * Single authoritative Team Leader incentive engine.
+     *
+     * A Team Leader's incentive is a revenue-share formula over their own
+     * caller team, distinct from both the flat caller slab table and the
+     * Manager PPP formula:
+     *
+     * - Team target/achievement reuse the same canonical engines as
+     *   everywhere else (getHierarchyCallerTarget() per caller,
+     *   computeAchievementTotals() for net bank-aware/MIS-aware
+     *   achievement) rather than a separate reimplementation.
+     * - Gate: team achievement must reach 90% of team target once the team
+     *   has more than 4 callers, otherwise (4 or fewer callers) it must
+     *   reach 100% — below the gate, incentive is 0.
+     * - Below the gate aside, an understaffed team (< 3 callers) is NOT
+     *   separately zeroed here — the existing ₹30L target top-up for
+     *   understaffed teams (see getTargetForPeriod()'s Team Leader branch)
+     *   is what makes an understaffed team's target harder to hit; this
+     *   method does not duplicate that as a second, independent gate. The
+     *   ONE exception is a single eligible caller (see below), which IS a
+     *   hard zero.
+     * - Hard zero: a Team Leader with exactly one eligible caller (current
+     *   month target > 0, via getEligibleCallerCount()) earns no incentive
+     *   at all, regardless of achievement — checked before, and
+     *   independently of, the achievement gate below.
+     * - Revenue share: 2% of team achievement, minus a ₹30,000-per-caller
+     *   cost, taken at 6/7/8% depending on team size (3/4/5+ callers), plus
+     *   5% of achievement in excess of team target; a further 10% bonus
+     *   applies when every caller individually met their own target.
+     *
+     * @return array{caller_count: int, eligible_callers: int, team_target: float, team_achievement: float, achievement_percentage: float, required_percentage: float, meets_gate: bool, all_callers_achieved: bool, incentive: float}
+     */
+    public function getTeamLeaderIncentiveBreakdown(Employee $teamLeader, ?Carbon $referenceMonth = null): array
+    {
+        $referenceMonth ??= SelectedMonth::current();
+
+        $callerIds = HierarchyHelper::callerIds($teamLeader);
+
+        $callerCount = $callerIds->count();
+
+        $eligibleCallers = $this->getEligibleCallerCount($teamLeader, $referenceMonth);
+
+        $callers = Employee::whereIn('id', $callerIds)->get();
+
+        $teamTarget = $callers->sum(
+            fn (Employee $caller) => $this->getHierarchyCallerTarget($caller, $referenceMonth)
+        );
+
+        $teamCustomers = Customer::query()->whereIn('employee_id', $callerIds);
+
+        $teamCustomers->whereBetween('customers.created_at', [
+            $referenceMonth->copy()->startOfMonth(),
+            $referenceMonth->copy()->endOfMonth(),
+        ]);
+
+        $teamAchievement = $this->computeAchievementTotals($teamCustomers)['count_achievement'];
+
+        $achievementPercentage = $teamTarget > 0
+            ? ($teamAchievement / $teamTarget) * 100
+            : 0.0;
+
+        $requiredPercentage = $callerCount > 4 ? 90.0 : 100.0;
+
+        $meetsGate = $achievementPercentage >= $requiredPercentage;
+
+        if ($eligibleCallers === 1) {
+            return [
+                'caller_count' => $callerCount,
+                'eligible_callers' => $eligibleCallers,
+                'team_target' => $teamTarget,
+                'team_achievement' => $teamAchievement,
+                'achievement_percentage' => round($achievementPercentage, 2),
+                'required_percentage' => $requiredPercentage,
+                'meets_gate' => false,
+                'all_callers_achieved' => false,
+                'incentive' => 0.0,
+            ];
+        }
+
+        if (! $meetsGate) {
+            return [
+                'caller_count' => $callerCount,
+                'eligible_callers' => $eligibleCallers,
+                'team_target' => $teamTarget,
+                'team_achievement' => $teamAchievement,
+                'achievement_percentage' => round($achievementPercentage, 2),
+                'required_percentage' => $requiredPercentage,
+                'meets_gate' => false,
+                'all_callers_achieved' => false,
+                'incentive' => 0.0,
+            ];
+        }
+
+        $revenue = $teamAchievement * 0.02;
+
+        $targetRevenue = $teamTarget * 0.02;
+
+        $grossRevenue = max(0, $revenue - ($callerCount * 30000));
+
+        $extraRevenue = max(0, $revenue - $targetRevenue);
+
+        $grossRevenuePercent = match (true) {
+            $callerCount === 3 => 0.06,
+            $callerCount === 4 => 0.07,
+            $callerCount >= 5 => 0.08,
+            default => 0.0,
+        };
+
+        $baseIncentive = ($grossRevenue * $grossRevenuePercent) + ($extraRevenue * 0.05);
+
+        $allCallersAchieved = $callers->every(
+            fn (Employee $caller) => $this->getCountAchievement($caller, $referenceMonth)
+                >= $this->getHierarchyCallerTarget($caller, $referenceMonth)
+        );
+
+        if ($callerCount >= 3 && $allCallersAchieved) {
+            $baseIncentive *= 1.10;
+        }
+
+        return [
+            'caller_count' => $callerCount,
+            'eligible_callers' => $eligibleCallers,
+            'team_target' => $teamTarget,
+            'team_achievement' => $teamAchievement,
+            'achievement_percentage' => round($achievementPercentage, 2),
+            'required_percentage' => $requiredPercentage,
+            'meets_gate' => true,
+            'all_callers_achieved' => $allCallersAchieved,
+            'incentive' => round(max($baseIncentive, 0)),
+        ];
+    }
+
+    public function getPerformance(?Employee $employee, ?Carbon $referenceMonth = null): array
+    {
+        $referenceMonth ??= SelectedMonth::current();
+
         /*
     |--------------------------------------------------------------------------
     | COMPANY VIEW
     |--------------------------------------------------------------------------
     |
-    | $employee === null means this is the Admin dashboard/company view.
+    | Company-wide view is triggered by either $employee === null, or an
+    | Employee record whose own designation is Admin — matching
+    | getCountAchievement()/getTargetForPeriod(), which already treat
+    | DESIGNATION_ADMIN as company-wide. Without this, an Admin user
+    | modeled as a linked Employee record (rather than no employee at all)
+    | would incorrectly fall through to the individual-employee branch.
     |
-    | When an Employee is passed, ALWAYS calculate for that employee,
-    | even when the logged-in user is Admin.
+    | When any other Employee is passed, ALWAYS calculate for that
+    | employee, even when the logged-in user is Admin.
     |
     */
 
-        $isCompanyView = $employee === null;
+        $isCompanyView = $employee === null
+            || $employee->designation === Employee::DESIGNATION_ADMIN;
 
         /*
     |--------------------------------------------------------------------------
@@ -284,49 +547,32 @@ class AchievementCalculatorService
 
         /*
     |--------------------------------------------------------------------------
-    | Current Month
+    | Reference Month
     |--------------------------------------------------------------------------
     */
 
-        $customers
-            ->whereMonth('customers.created_at', now()->month)
-            ->whereYear('customers.created_at', now()->year);
+        $customers->whereBetween('customers.created_at', [
+            $referenceMonth->copy()->startOfMonth(),
+            $referenceMonth->copy()->endOfMonth(),
+        ]);
 
         /*
     |--------------------------------------------------------------------------
-    | Actual / Deductions
+    | Actual / Deductions / Count Achievement
     |--------------------------------------------------------------------------
     */
 
-        $totals = $customers
-            ->leftJoin('customer_settlements as cs', function ($join) {
-                $join->on('cs.customer_id', '=', 'customers.id')
-                    ->where('cs.version', 1);
-            })
-            ->selectRaw("
-            SUM(CASE WHEN cs.mis_disbursal_amount IS NOT NULL THEN cs.mis_disbursal_amount ELSE customers.sanctioned_loan_amount END) as actual,
-            SUM(CASE WHEN cs.mis_cashback IS NOT NULL THEN cs.mis_cashback ELSE customers.cashback END) as cashback,
-            SUM(CASE WHEN cs.mis_subvention IS NOT NULL THEN cs.mis_subvention ELSE customers.subvention END) as subvention,
-            SUM(CASE WHEN cs.mis_docking IS NOT NULL THEN cs.mis_docking ELSE customers.docking END) as docking
-        ")
-            ->first();
+        $totals = $this->computeAchievementTotals($customers);
 
-        $actual = (float) ($totals->actual ?? 0);
+        $actual = $totals['actual'];
 
-        $cashback = (float) ($totals->cashback ?? 0);
+        $cashback = $totals['cashback'];
 
-        $subvention = (float) ($totals->subvention ?? 0);
+        $subvention = $totals['subvention'];
 
-        $docking = (float) ($totals->docking ?? 0);
+        $docking = $totals['docking'];
 
-        /*
-    |--------------------------------------------------------------------------
-    | Count Achievement
-    |--------------------------------------------------------------------------
-    */
-
-        $countAchievement = $actual
-            - ((($cashback + $subvention + $docking) / 2) * 100);
+        $countAchievement = $totals['count_achievement'];
 
         /*
     |--------------------------------------------------------------------------
@@ -336,7 +582,8 @@ class AchievementCalculatorService
 
         if ($isCompanyView) {
 
-            // Admin dashboard: sum of all caller category targets
+            // Admin dashboard: sum of all caller targets, hierarchy-adjusted
+            // for new joiners/exits so it matches the drill-down totals.
             $target = Employee::query()
                 ->where(
                     'designation',
@@ -344,14 +591,13 @@ class AchievementCalculatorService
                 )
                 ->get()
                 ->sum(
-                    fn(Employee $caller) =>
-                    $this->getCallerTarget($caller)
+                    fn (Employee $caller) => $this->getHierarchyCallerTarget($caller, $referenceMonth)
                 );
         } else {
 
             // Teams table / employee dashboard:
             // target belongs to the employee being evaluated
-            $target = $this->getTarget($employee);
+            $target = $this->getTarget($employee, $referenceMonth);
         }
 
         /*
@@ -374,21 +620,21 @@ class AchievementCalculatorService
     */
 
         return [
-            'target_category'   => $employee?->category,
-            'target'            => (float) $target,
-            'actual'            => $actual,
-            'cashback'          => $cashback,
-            'subvention'        => $subvention,
-            'docking'           => $docking,
+            'target_category' => $employee?->category,
+            'target' => (float) $target,
+            'actual' => $actual,
+            'cashback' => $cashback,
+            'subvention' => $subvention,
+            'docking' => $docking,
             'count_achievement' => $countAchievement,
-            'percentage'        => $percentage,
-            'incentive'         => $this->getIncentive(
-                $countAchievement
-            ),
+            'percentage' => $percentage,
+            'incentive' => match ($employee?->designation) {
+                Employee::DESIGNATION_MANAGER => $this->getManagerIncentiveBreakdown($employee, $referenceMonth)['incentive'],
+                Employee::DESIGNATION_TEAM_LEADER => $this->getTeamLeaderIncentiveBreakdown($employee, $referenceMonth)['incentive'],
+                default => $this->getIncentive($countAchievement),
+            },
         ];
     }
-
-
 
     public function getIncentive(float $countAchievement): float
     {
@@ -404,25 +650,24 @@ class AchievementCalculatorService
         return $incentive;
     }
 
-
     public function getIncentiveSlabs(): array
     {
         return [
-            2500000  => 4000,
-            3000000  => 5500,
-            3500000  => 7000,
-            4000000  => 9000,
-            4500000  => 12000,
-            5000000  => 15000,
-            5500000  => 18000,
-            6000000  => 22000,
-            6500000  => 26000,
-            7000000  => 30000,
-            7500000  => 35000,
-            8000000  => 40000,
-            8500000  => 45000,
-            9000000  => 50000,
-            9500000  => 55000,
+            2500000 => 4000,
+            3000000 => 5500,
+            3500000 => 7000,
+            4000000 => 9000,
+            4500000 => 12000,
+            5000000 => 15000,
+            5500000 => 18000,
+            6000000 => 22000,
+            6500000 => 26000,
+            7000000 => 30000,
+            7500000 => 35000,
+            8000000 => 40000,
+            8500000 => 45000,
+            9000000 => 50000,
+            9500000 => 55000,
             10000000 => 60000,
             10500000 => 65000,
             11000000 => 70000,
@@ -435,7 +680,7 @@ class AchievementCalculatorService
 
             if ($countAchievement < $target) {
                 return [
-                    'target'    => (float) $target,
+                    'target' => (float) $target,
                     'incentive' => (float) $incentive,
                     'remaining' => max($target - $countAchievement, 0),
                 ];
@@ -444,7 +689,6 @@ class AchievementCalculatorService
 
         return null;
     }
-
 
     private function getCallerTarget(Employee $employee): float
     {
@@ -466,8 +710,58 @@ class AchievementCalculatorService
             : 2500000;
     }
 
+    public function getHierarchyCallerTarget(Employee $employee, ?Carbon $referenceMonth = null): float
+    {
+        $referenceMonth ??= SelectedMonth::current();
 
-    public function getHierarchyCallerTarget(Employee $employee): float
+        return $this->getHierarchyCallerTargetForPeriod(
+            $employee,
+            $referenceMonth->copy()->startOfMonth(),
+            $referenceMonth->copy()->endOfMonth()
+        );
+    }
+
+    /**
+     * Single authoritative per-caller hierarchy target engine, for an
+     * arbitrary period. getHierarchyCallerTarget() (current month) is a
+     * thin wrapper around this — decomposes the period into full calendar
+     * months and evaluates each with the identical joining/exit business
+     * rules, so a month never produces a different target depending on
+     * whether it's viewed as "the current month" or as a historical period.
+     */
+    public function getHierarchyCallerTargetForPeriod(Employee $employee, Carbon $start, Carbon $end): float
+    {
+        $total = 0.0;
+        $cursor = $start->copy()->startOfMonth();
+        $periodEnd = $end->copy();
+
+        while ($cursor->lte($periodEnd)) {
+            $total += $this->hierarchyCallerTargetForMonth(
+                $employee,
+                $cursor->copy()->startOfMonth(),
+                $cursor->copy()->endOfMonth()
+            );
+
+            $cursor = $cursor->copy()->addMonthNoOverflow()->startOfMonth();
+        }
+
+        return $total;
+    }
+
+    /**
+     * Evaluates one caller's hierarchy target for a single full calendar
+     * month [$monthStart, $monthEnd].
+     *
+     * $today is used only to cap "worked days" counting at the present day
+     * for a month that is still ongoing (the current month) — for a month
+     * that has already fully elapsed, the count runs to the month's own
+     * end. This single substitution (today vs. month-end) is what makes
+     * current-month and historical evaluation share one formula: when
+     * $monthEnd is in the future (the current month), it behaves exactly
+     * like the original today-only implementation; when $monthEnd is in
+     * the past, it behaves like a closed historical month.
+     */
+    private function hierarchyCallerTargetForMonth(Employee $employee, Carbon $monthStart, Carbon $monthEnd): float
     {
         $today = Carbon::today();
 
@@ -479,22 +773,19 @@ class AchievementCalculatorService
 
         if (
             strtolower((string) $employee->exit_status) === 'yes'
-            && !empty($employee->exit_date)
+            && ! empty($employee->exit_date)
         ) {
             $exitDate = Carbon::parse($employee->exit_date);
 
-            // Exited during current month
-            if (
-                $exitDate->year === $today->year &&
-                $exitDate->month === $today->month
-            ) {
+            // Exited during this month
+            if ($exitDate->between($monthStart, $monthEnd)) {
                 return $exitDate->day >= 10
                     ? 1500000
                     : 0;
             }
 
-            // Exited before current month
-            if ($exitDate->lt($today->copy()->startOfMonth())) {
+            // Exited before this month
+            if ($exitDate->lt($monthStart)) {
                 return 0;
             }
         }
@@ -523,15 +814,31 @@ class AchievementCalculatorService
 
         /*
     |--------------------------------------------------------------------------
-    | REPORTING STARTED IN CURRENT MONTH
+    | NOT YET JOINED AS OF THIS MONTH
+    |--------------------------------------------------------------------------
+    |
+    | Only meaningful for a month that has already fully elapsed — for the
+    | still-ongoing current month this can't be distinguished from a
+    | future-dated data-entry anomaly, so behavior there is unchanged from
+    | the original current-month-only logic (falls through to category
+    | target, exactly as before).
+    |
+    */
+
+        if ($reportingDate->gt($monthEnd) && $monthEnd->lt($today)) {
+            return 0;
+        }
+
+        /*
+    |--------------------------------------------------------------------------
+    | REPORTING STARTED DURING THIS MONTH
     |--------------------------------------------------------------------------
     */
 
-        if (
-            $reportingDate->month === $today->month &&
-            $reportingDate->year === $today->year
-        ) {
-            $workedDays = $reportingDate->diffInDays($today) + 1;
+        if ($reportingDate->between($monthStart, $monthEnd)) {
+            $effectiveEnd = $monthEnd->lt($today) ? $monthEnd : $today;
+
+            $workedDays = $reportingDate->diffInDays($effectiveEnd) + 1;
 
             return $workedDays >= 10
                 ? 1500000

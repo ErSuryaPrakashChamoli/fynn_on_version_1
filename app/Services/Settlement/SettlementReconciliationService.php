@@ -7,9 +7,18 @@ use Illuminate\Support\Facades\DB;
 
 class SettlementReconciliationService
 {
-    public function calculate(CustomerSettlement $settlement): CustomerSettlement
+    /**
+     * @param  array<int, string>  $suppliedMisFields  Which of mis_gst /
+     *                                                 mis_tds / actual_payable_amount the bank explicitly reported a
+     *                                                 value for in the update that triggered this recalculation
+     *                                                 (including an explicit zero). Only the caller with fresh import/
+     *                                                 edit data (MisSettlementService) can supply this; other callers
+     *                                                 (e.g. the Accounts-side settlement edit) pass none, which
+     *                                                 preserves the original ">0" heuristic below unchanged.
+     */
+    public function calculate(CustomerSettlement $settlement, array $suppliedMisFields = []): CustomerSettlement
     {
-        return DB::transaction(function () use ($settlement) {
+        return DB::transaction(function () use ($settlement, $suppliedMisFields) {
             $salesLoan = (float) ($settlement->sales_disbursal_amount ?? 0);
             $bankLoan = (float) ($settlement->mis_disbursal_amount ?? 0);
             $salesCashback = (float) ($settlement->sales_cashback ?? 0);
@@ -49,10 +58,21 @@ class SettlementReconciliationService
             $settlement->variance_tds = $bankTds - $expectedTds;
             $settlement->variance_payable_amount = $bankActualPayable - $expectedPayable;
 
-            // Bank MIS is authoritative for actual GST/TDS/payable whenever supplied.
-            $settlement->gst_amount = $bankGst > 0 ? $bankGst : $expectedGst;
-            $settlement->tds_amount = $bankTds > 0 ? $bankTds : $expectedTds;
-            $settlement->net_payable_amount = $bankActualPayable > 0
+            // Bank MIS is authoritative for actual GST/TDS/payable whenever
+            // supplied — either explicitly in this update (even an
+            // explicit zero, which ">0" alone cannot distinguish from
+            // "never reported"), or previously (a persisted value > 0
+            // already proves the bank reported it at some point; these
+            // columns are NOT NULL DEFAULT 0, so a value that has never
+            // been reported is indistinguishable from zero except via the
+            // freshly-supplied signal above).
+            $gstSupplied = in_array('mis_gst', $suppliedMisFields, true) || $bankGst > 0;
+            $tdsSupplied = in_array('mis_tds', $suppliedMisFields, true) || $bankTds > 0;
+            $payableSupplied = in_array('actual_payable_amount', $suppliedMisFields, true) || $bankActualPayable > 0;
+
+            $settlement->gst_amount = $gstSupplied ? $bankGst : $expectedGst;
+            $settlement->tds_amount = $tdsSupplied ? $bankTds : $expectedTds;
+            $settlement->net_payable_amount = $payableSupplied
                 ? $bankActualPayable
                 : $expectedPayable;
 
@@ -103,10 +123,10 @@ class SettlementReconciliationService
                 if ($settlement->status === 'paid' && $settlement->recovery_pending <= 0) {
                     $settlement->status = 'settled';
                 }
-            }
 
-            if ($settlement->payment_status === 'paid' && $settlement->recovery_pending > 0) {
-                $settlement->status = 'recovery_pending';
+                if ($settlement->payment_status === 'paid' && $settlement->recovery_pending > 0) {
+                    $settlement->status = 'recovery_pending';
+                }
             }
 
             $settlement->save();

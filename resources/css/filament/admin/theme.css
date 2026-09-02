@@ -1,10 +1,61 @@
 @import '../../../../vendor/filament/filament/resources/css/theme.css';
+@import '../../../../vendor/saade/filament-fullcalendar/resources/css/filament-fullcalendar.css';
 
 @source '../../../../app/Filament/**/*';
 @source '../../../../resources/views/filament/**/*';
 
 @source '../../../../resources/views/components';
 @source '../../../../resources/views/livewire';
+
+@source '../../../../vendor/saade/filament-fullcalendar/resources/views/**/*.blade.php';
+
+/* =========================================================
+   GLOBAL APP SHELL — isolated main-content scroll region
+   Filament's own default layout has no inner scroll container:
+   .fi-body/.fi-layout/.fi-main-ctn all just size to their content
+   (min-height, no overflow-y), so the DOCUMENT scrolls and the
+   topbar/sidebar rely on position:sticky/fixed to stay visually
+   anchored as that happens. That works, but it means anything
+   inside the page content that ALSO uses position:sticky (e.g.
+   the customer journey tracker) has no real containing scroll
+   region to stick within — and its position gets corrupted
+   whenever an ancestor receives a CSS transform (see the page
+   transition rule below), which is what caused it to render
+   under the topbar.
+   Turning .fi-body into a fixed-height flex column with the
+   topbar as a non-shrinking row and the content area as the only
+   scrolling region gives every page (present and future) the
+   same bounded workspace, with zero per-page changes. Scoped to
+   .fi-body-has-navigation so the login page's own centered
+   layout (a different structure entirely) is untouched.
+   ========================================================= */
+
+.fi-body.fi-body-has-navigation {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
+}
+
+.fi-body.fi-body-has-navigation > .fi-topbar-ctn {
+    flex-shrink: 0;
+}
+
+.fi-body.fi-body-has-navigation > .fi-layout {
+    flex: 1 1 auto;
+    /* The classic flexbox trap: a flex child's default min-height
+       is `auto`, which lets it grow to fit its content instead of
+       respecting the parent's bounded height — pushing the scroll
+       back up to <body>. Zeroing it is what makes the height
+       constraint actually propagate down to .fi-main-ctn below. */
+    min-height: 0;
+}
+
+.fi-body.fi-body-has-navigation .fi-main-ctn {
+    min-height: 0;
+    overflow-x: clip;
+    overflow-y: auto;
+}
 
 /* =========================================
    Custom Filament Styles
@@ -22,21 +73,1080 @@
 }
 
 
-/* Entire section */
+/* =========================================================
+   GLOBAL CORPORATE THEME
+   A single, cohesive design language applied at the component
+   level (sections, sidebar, topbar, buttons, badges, tables,
+   pagination, login) so every resource, form and widget in the
+   app inherits it automatically — no per-page changes needed.
+   Palette: deep indigo (primary) + electric teal (accent) on a
+   crisp light surface / near-black corporate dark surface.
+   ========================================================= */
+
+/* ---- Cards & sections ---- */
+
 .fi-section {
-    background-color: #dbeafe !important;
-    border: 2px solid #3b82f6 !important;
-    border-radius: 12px;
+    background-color: rgb(255 255 255);
+    border: 1px solid rgb(15 23 42 / 8%);
+    border-radius: 0.85rem;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 4%), 0 8px 20px -12px rgb(15 23 42 / 10%);
+    transition: box-shadow 150ms ease;
 }
 
-/* Section body */
-.fi-section-content {
-    background-color: #dbeafe !important;
-}
-
-/* Section header */
 .fi-section-header {
-    background-color: #bfdbfe !important;
+    border-radius: 0.85rem 0.85rem 0 0;
+    border-bottom: 1px solid rgb(15 23 42 / 6%);
+}
+
+.dark .fi-section {
+    background-color: rgb(15 23 42);
+    border-color: rgb(255 255 255 / 8%);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 20%), 0 8px 24px -12px rgb(0 0 0 / 45%);
+}
+
+.dark .fi-section-header {
+    border-bottom-color: rgb(255 255 255 / 6%);
+}
+
+/* ---- Sidebar ---- */
+
+.fi-main-sidebar {
+    background: linear-gradient(180deg, rgb(30 27 75), rgb(15 23 42) 55%, rgb(2 6 23));
+    border-inline-end: none !important;
+}
+
+.fi-main-sidebar .fi-sidebar-group-label {
+    background: linear-gradient(180deg, rgb(255 255 255), var(--teal-300) 130%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent !important;
+    -webkit-text-fill-color: transparent;
+    font-weight: 900 !important;
+    font-size: 0.925rem;
+    letter-spacing: 0.06em;
+    text-shadow: 0 1px 1px rgb(0 0 0 / 40%);
+    opacity: 1 !important;
+}
+
+.fi-main-sidebar .fi-sidebar-item-btn {
+    border-radius: 0.6rem;
+    transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.fi-main-sidebar .fi-sidebar-item-btn,
+.fi-main-sidebar .fi-sidebar-item-label {
+    color: rgb(248 250 252) !important;
+    font-weight: 600 !important;
+    text-shadow: 0 1px 2px rgb(0 0 0 / 35%);
+}
+
+.fi-main-sidebar .fi-sidebar-item-icon {
+    color: rgb(203 213 225) !important;
+}
+
+.fi-main-sidebar .fi-sidebar-item-btn:hover {
+    background-color: rgb(255 255 255 / 6%);
+    color: rgb(255 255 255);
+}
+
+.fi-main-sidebar .fi-sidebar-item.fi-active > .fi-sidebar-item-btn {
+    position: relative;
+    background: linear-gradient(135deg, var(--primary-500), var(--primary-700)) !important;
+    color: rgb(255 255 255) !important;
+    font-weight: 700 !important;
+    box-shadow: 0 2px 10px color-mix(in oklab, var(--primary-600) 55%, transparent),
+        inset 0 1px 0 rgb(255 255 255 / 25%);
+}
+
+.fi-main-sidebar .fi-sidebar-item.fi-active > .fi-sidebar-item-btn::before {
+    content: '';
+    position: absolute;
+    inset-block: 0.3rem;
+    inset-inline-start: -0.75rem;
+    width: 4px;
+    border-radius: 3px;
+    background: var(--teal-300);
+    box-shadow: 0 0 10px 1px var(--teal-300);
+}
+
+.fi-main-sidebar .fi-sidebar-item.fi-active .fi-sidebar-item-icon {
+    color: rgb(255 255 255) !important;
+}
+
+/* ---- Sidebar nav scrollbar ----
+   .fi-sidebar-nav (Filament core) is `overflow-y: auto` with no
+   scrollbar styling, so browsers that render a visible scrollbar
+   (Android/mobile Chrome, non-WebKit desktop) paint their default
+   light-gray thumb directly on the dark navy sidebar, looking like a
+   stray gray pill. Thin it out and tint it to match the theme. */
+
+.fi-main-sidebar .fi-sidebar-nav {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 20%) transparent;
+}
+
+.fi-main-sidebar .fi-sidebar-nav::-webkit-scrollbar {
+    width: 6px;
+}
+
+.fi-main-sidebar .fi-sidebar-nav::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.fi-main-sidebar .fi-sidebar-nav::-webkit-scrollbar-thumb {
+    background-color: rgb(255 255 255 / 20%);
+    border-radius: 9999px;
+}
+
+.fi-main-sidebar .fi-sidebar-nav::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(255 255 255 / 32%);
+}
+
+/* ---- Sidebar nav scroll control ----
+   A sticky chip pinned inside .fi-sidebar-nav itself (the panel's own
+   scroll container — no second scroller is introduced). It sits as the
+   last child of that flex column, so `position: sticky` keeps it glued
+   to the bottom of the visible nav viewport as it scrolls, without
+   covering the topbar or main content. Visibility/scroll amount is
+   handled by Alpine in the sidebar-nav-scroll-up partial. */
+
+.fynn-sidebar-nav-scroll {
+    position: sticky;
+    z-index: 10;
+    display: flex;
+    justify-content: center;
+}
+
+.fynn-sidebar-nav-scroll-up {
+    bottom: 0;
+    padding-top: 0.5rem;
+    background: linear-gradient(0deg, rgb(2 6 23) 60%, rgb(2 6 23 / 0%));
+}
+
+.fynn-sidebar-nav-scroll-btn.fi-icon-btn {
+    width: 1.75rem;
+    height: 1.75rem;
+    margin: 0;
+    border-radius: 9999px;
+    background-color: rgb(255 255 255 / 6%);
+    color: rgb(203 213 225) !important;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 10%);
+    transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 100ms ease;
+}
+
+.fynn-sidebar-nav-scroll-btn.fi-icon-btn:hover {
+    background-color: rgb(255 255 255 / 12%);
+    color: rgb(255 255 255) !important;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 18%), 0 0 0 3px color-mix(in oklab, var(--teal-400) 12%, transparent);
+}
+
+.fynn-sidebar-nav-scroll-btn.fi-icon-btn:active {
+    transform: scale(0.94);
+    background-color: rgb(255 255 255 / 16%);
+}
+
+.fynn-sidebar-nav-scroll-btn.fi-icon-btn:focus-visible {
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 10%), 0 0 0 2px var(--teal-400);
+}
+
+/* ---- Topbar ----
+   The brand logo actually renders inside .fi-topbar (not
+   .fi-sidebar-header, which sidebarFullyCollapsibleOnDesktop()
+   leaves empty) — so the topbar is styled to match the dark
+   sidebar tone, giving one continuous corporate chrome band
+   across the top and left instead of a mismatched white strip
+   next to a dark rail. */
+
+.fi-topbar {
+    background: linear-gradient(180deg, rgb(30 27 75), rgb(30 27 75) 60%, rgb(15 23 42));
+    border-bottom: 1px solid rgb(255 255 255 / 8%);
+    box-shadow: 0 1px 0 color-mix(in oklab, var(--teal-400) 30%, transparent);
+    /* Kept at Filament's default min-h-16 (4rem) so the brand logo has
+       room to be sized for clear visibility (see .fi-logo below)
+       without cramping against the bar's edges. Since this matches
+       core's default height, the desktop sidebar's own default
+       top-[4rem]/h-[calc(100dvh-4rem)] pin already lines up — no
+       re-pin override needed here. */
+    padding-block: 0.5rem;
+}
+
+.fi-logo {
+    max-width: 100%;
+    width: auto;
+    /* Sized up from core's 1.5rem default (set via brandLogoHeight in
+       AdminPanelProvider) and given a soft shadow so the mark reads
+       clearly against the dark topbar instead of flattening into it. */
+    filter: drop-shadow(0 2px 5px rgb(0 0 0 / 45%));
+}
+
+.fi-topbar .fi-icon-btn {
+    color: rgb(226 232 240) !important;
+}
+
+.fi-topbar .fi-icon-btn:hover {
+    background-color: rgb(255 255 255 / 8%) !important;
+    color: rgb(255 255 255) !important;
+}
+
+/* .fi-topbar-end already has a gap-x-4 between its children, but the
+   notifications bell sits inside its own lazy-load wrapper div rather
+   than being a bare icon button, which read as sitting flush against
+   the profile avatar next to it. Giving the bell its own end margin
+   guarantees breathing room regardless of that wrapper. */
+.fi-topbar-database-notifications-btn {
+    margin-inline-end: 0.75rem;
+}
+
+/* ---- User menu ordering ----
+   Filament always renders the theme switcher as the *middle* block
+   between "before" items (negative sort — just the profile link) and
+   "after" items (change password + sign out), so those two land below
+   the switcher. Reordering that in PHP is fragile: the profile/logout
+   entries build their label, icon and URL inside Filament's private
+   per-item builders, and any MenuItem override that doesn't restate
+   all three silently wipes them. Each group already renders as its
+   own .fi-dropdown-list block, so the three blocks are turned into
+   flex items and reordered visually instead — profile, then change
+   password / sign out, then the theme switcher last. */
+.fi-user-menu .fi-dropdown-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+.fi-user-menu .fi-dropdown-panel > .fi-dropdown-list:nth-of-type(2) {
+    order: 3;
+}
+
+.fi-user-menu .fi-dropdown-panel > .fi-dropdown-list:nth-of-type(3) {
+    order: 2;
+}
+
+/* ---- Theme swatches ----
+   The Indigo + Teal / Emerald + Charcoal / FYNN-ON buttons
+   (theme-switcher/index view override) render this dot instead of a
+   plain icon so each theme's actual colors are visible at a glance,
+   rather than an icon that's only tinted with whichever theme currently
+   happens to be active. The ring only shows on the option that's
+   currently selected — Filament's own .fi-active background tint is too
+   subtle once the icon is replaced with a colored dot. */
+.fynn-theme-swatch {
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 9999px;
+    border: 1px solid rgb(0 0 0 / 12%);
+    box-shadow: inset 0 1px 1px rgb(255 255 255 / 35%);
+}
+
+.fynn-theme-swatch--classic {
+    background: linear-gradient(135deg, rgb(79 70 229), rgb(45 212 191));
+}
+
+.fynn-theme-swatch--emerald {
+    background: linear-gradient(135deg, rgb(16 185 129), rgb(38 38 43));
+}
+
+.fynn-theme-swatch--fynnon {
+    background: linear-gradient(135deg, rgb(21 21 21), rgb(166 217 0));
+}
+
+.fi-theme-switcher-btn.fi-active .fynn-theme-swatch {
+    outline: 2px solid rgb(99 102 241 / 70%);
+    outline-offset: 2px;
+}
+
+/* ---- Buttons ---- */
+
+.fi-btn.fi-color-primary:not(.fi-outlined) {
+    background: linear-gradient(135deg, var(--primary-500), var(--primary-700));
+    box-shadow: 0 2px 8px color-mix(in oklab, var(--primary-600) 40%, transparent);
+    transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.fi-btn.fi-color-primary:not(.fi-outlined):hover {
+    box-shadow: 0 4px 14px color-mix(in oklab, var(--primary-600) 50%, transparent);
+    transform: translateY(-1px);
+}
+
+/* ---- Badges: bold pill + status dot so states are distinguishable at a glance ---- */
+
+.fi-badge {
+    border-radius: 9999px;
+    font-weight: 700;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+}
+
+.fi-badge:not(:has(svg)) {
+    padding-inline-start: 1.375em;
+    position: relative;
+}
+
+.fi-badge:not(:has(svg))::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: 0.65em;
+    top: 50%;
+    width: 0.4em;
+    height: 0.4em;
+    border-radius: 9999px;
+    transform: translateY(-50%);
+    background: currentColor;
+}
+
+/* ---- Tables ---- */
+
+.fi-ta-record:hover {
+    background-color: color-mix(in oklab, var(--primary-500) 4%, transparent);
+}
+
+/* ---- Sticky table header ----
+   Bounds Filament's own table wrapper (.fi-ta-content-ctn -- already
+   overflow-x:auto for the horizontal-scroll-nav feature below) with a
+   max-height so it becomes a real, bounded vertical scroll container too,
+   not just a horizontal one. thead th sticky top:0 then resolves against
+   that container correctly -- .fi-ta-content-ctn is the table's actual
+   DOM wrapper (a plain div), so the table element itself stays untouched
+   (still `display:table`), which is what keeps header/body column widths
+   in sync automatically via normal table layout; nothing here relies on
+   re-deriving column widths by hand.
+   This is Filament's own shared table Blade partial, so every resource
+   list, relation manager, and widget table gets this globally -- no
+   per-page changes needed. Pagination and the toolbar/filters bar sit
+   OUTSIDE .fi-ta-content-ctn in the DOM, so they stay always visible;
+   only the header + rows scroll internally within the bounded box.
+   Scoped away from `.fi-ta-table-stacked-on-mobile` (an opt-in mobile
+   layout not currently used anywhere in this app) since that variant
+   already handles its own header visibility per breakpoint and doesn't
+   need this treatment.
+   Making .fi-ta-content-ctn genuinely scroll vertically (not just
+   horizontally) means the horizontal-scroll-nav arrow clusters below --
+   which are absolutely positioned descendants of this same container --
+   would otherwise drift vertically as rows scroll, exactly like they
+   already drift horizontally; table-scroll-nav.js compensates for both
+   axes in its `compensation` transform now, not just scrollLeft. */
+
+.fi-ta-content-ctn {
+    max-height: 65dvh;
+    overflow-y: auto;
+}
+
+.fi-ta-table:not(.fi-ta-table-stacked-on-mobile) > thead > tr > th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    /* Opaque, not the translucent tint a non-sticky header cell could get
+       away with -- rows scrolling underneath a sticky header must not
+       show through it. Composited over the same base surface the tint
+       used to sit on top of, so it reads identically to before. */
+    background-color: color-mix(in oklab, rgb(30 27 75) 4%, white);
+}
+
+.dark .fi-ta-table:not(.fi-ta-table-stacked-on-mobile) > thead > tr > th {
+    background-color: color-mix(in oklab, white 4%, rgb(15 23 42));
+}
+
+/* ---- Table row contextual actions ----
+   Every resource table's right-side Actions column is replaced by a
+   single-click contextual action area that EXPANDS the selected row open
+   (double-click still opens the record). The exact same Filament-rendered
+   `<td class="fi-ta-cell"><div class="fi-ta-actions">` node used to render
+   that column is left exactly where Blade puts it -- same wire:click/href
+   bindings, same visibility conditions, same tab order -- only its CSS
+   position changes: it's taken out of the table's column-width
+   calculation entirely (Filament's own vendor CSS already relies on this
+   same `:has(.fi-ta-actions)` selector, so no new browser-support
+   assumption is introduced), which is what makes the Actions column
+   disappear and gives its width back to data.
+
+   Rather than a floating popover (which, anchored either beside or below
+   a row, ends up covering -- and stealing clicks from -- whatever's
+   underneath it), `resources/js/table-row-actions.js` reserves real space
+   for it: activating a row sets a `--fynn-row-expand` custom property
+   (inherited by the row's own `<td>` cells) to the actions bar's actual
+   measured height, and `padding-bottom` on those cells grows to match --
+   genuinely pushing every row below it further down the page, like an
+   accordion. The actions `<td>` itself is `position: absolute` within the
+   row (`.fi-ta-row-active` is the positioned ancestor), docked to the
+   bottom-left corner of that newly opened space, so it never overlaps
+   neighbouring rows and needs no scroll-position bookkeeping -- it moves
+   with the row naturally as the page scrolls. */
+
+.fi-ta-table td:has(> .fi-ta-actions),
+.fi-ta-actions-header-cell {
+    display: none !important;
+}
+
+.fi-ta-row.fi-ta-row-active td:has(> .fi-ta-actions) {
+    display: block !important;
+    position: absolute;
+    z-index: 5;
+    padding: 0 !important;
+}
+
+.fi-ta-row .fi-ta-actions {
+    background-color: rgb(255 255 255);
+    border: 1px solid rgb(15 23 42 / 8%);
+    border-radius: 0.85rem;
+    box-shadow: 0 6px 16px -6px rgb(15 23 42 / 18%), 0 1px 2px rgb(15 23 42 / 8%);
+    padding: 0.5rem 0.625rem;
+    max-width: min(92vw, 32rem);
+}
+
+.dark .fi-ta-row .fi-ta-actions {
+    background-color: rgb(15 23 42);
+    border-color: rgb(255 255 255 / 10%);
+    box-shadow: 0 8px 20px -6px rgb(0 0 0 / 50%), 0 1px 2px rgb(0 0 0 / 30%);
+}
+
+.fi-ta-row {
+    cursor: pointer;
+    outline: none;
+}
+
+.fi-ta-row > td {
+    transition: padding-bottom 150ms ease;
+}
+
+.fi-ta-row.fi-ta-row-active > td {
+    padding-bottom: var(--fynn-row-expand, 0px) !important;
+}
+
+@media (hover: hover) {
+    .fi-ta-row:hover {
+        background-color: color-mix(in oklab, var(--primary-500) 5%, transparent);
+    }
+
+    .dark .fi-ta-row:hover {
+        background-color: rgb(255 255 255 / 4%);
+    }
+}
+
+.fi-ta-row.fi-ta-row-active {
+    position: relative;
+    z-index: 1;
+    background-color: color-mix(in oklab, var(--primary-500) 8%, transparent) !important;
+}
+
+.fi-ta-row.fi-ta-row-active > td:first-child {
+    box-shadow: inset 3px 0 0 0 var(--primary-500);
+}
+
+.fi-ta-row:focus-visible {
+    outline: 2px solid var(--teal-400);
+    outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fi-ta-row > td {
+        transition: none;
+    }
+}
+
+/* =========================================================
+   TABLE HORIZONTAL SCROLL NAVIGATION
+   Floating left/right arrow controls for any horizontally
+   scrollable listing. Targets are Filament's own table wrapper
+   (.fi-ta-content-ctn -- already `overflow-x: auto` per
+   vendor/filament/tables/resources/css/content.css, so this is the
+   exact element the arrows scroll, not a new one) and any custom
+   `overflow-x-auto` wrapper around a raw <table> (OCR extracted
+   data, employee lifecycle history, team attendance). Injected and
+   driven by resources/js/table-scroll-nav.js, which also computes
+   visibility per container -- so multiple tables on one page (e.g.
+   relation managers) get independent controls.
+
+   Both `position: absolute` AND `position: sticky` were tried and
+   measured (via getBoundingClientRect before/after a scroll) to
+   confirm this before landing on the fix below:
+   - `position: absolute` alone drifts with the content -- an
+     absolutely positioned descendant of the scrolling element is
+     still part of what gets scrolled, and its rendered position
+     shifts by exactly the scroll delta, same as any row would.
+   - `position: sticky; right: 0` never engages at all here: a sticky
+     element's un-stuck position is its normal-flow static position,
+     which for a block box is always flush with its containing
+     block's LEFT edge regardless of the `right` offset -- there's no
+     scroll direction that pushes a left-flush box toward a `right`
+     threshold, so it just drifts like plain `absolute` did. (`left:
+     0` sticky *did* work, confirming this is a `right`-specific
+     asymmetry, not a general sticky failure.)
+   The fix: `position: absolute` for correct, simple vertical
+   placement (top: 4.5rem / 50% / calc(100% - 4.5rem) for the three
+   clusters below, translateY(-50%) to centre), plus a JS-applied
+   `translateX(container.scrollLeft px)` on every scroll tick that
+   exactly cancels the horizontal drift measured above, keeping each
+   cluster visually pinned to its edge regardless of scroll position.
+
+   Each side gets up to three vertically-anchored clusters (top /
+   middle / bottom of the listing's own box, sized against
+   .fi-ta-content-ctn's own height rather than the viewport). Top/bottom
+   clusters only render for tables tall enough that a single centred
+   arrow would be hard to reach. Each cluster stacks a primary "step"
+   arrow over a smaller "jump to opposite edge" arrow, so a user who has
+   scrolled away from an edge always has a one-click way back to the far
+   side.
+
+   .fi-ta-content-ctn is ALSO now bounded (see the STICKY TABLE HEADER
+   block above) and therefore genuinely scrolls vertically as well as
+   horizontally, for the sticky header to have a real scroll container
+   to resolve against. Since these clusters are absolutely positioned
+   descendants of that same container, they drift vertically on a row
+   scroll exactly like they already drift horizontally on a column
+   scroll (same mechanism, same fix) -- table-scroll-nav.js's
+   `compensation` transform cancels both `scrollLeft` and `scrollTop`
+   now, not just `scrollLeft`.
+   ========================================================= */
+
+.fynn-table-scroll-nav {
+    display: none;
+    position: absolute;
+    z-index: 5;
+    pointer-events: none;
+    /* Neutralise Tailwind's `divide-y` on .fi-ta-content-ctn, which would
+       otherwise draw a stray top border across this injected sibling. */
+    border-top: 0 !important;
+}
+
+.fynn-table-scroll-nav.is-visible {
+    display: block;
+}
+
+.fynn-table-scroll-nav--left {
+    left: 0;
+}
+
+.fynn-table-scroll-nav--right {
+    right: 0;
+}
+
+.fynn-table-scroll-nav[data-fynn-pos='top'] {
+    top: 4.5rem;
+}
+
+.fynn-table-scroll-nav[data-fynn-pos='middle'] {
+    top: 50%;
+}
+
+.fynn-table-scroll-nav[data-fynn-pos='bottom'] {
+    top: calc(100% - 4.5rem);
+}
+
+.fynn-table-scroll-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.625rem;
+    border-radius: 9999px;
+}
+
+.fynn-table-scroll-nav--left .fynn-table-scroll-stack {
+    padding-inline-start: 0.5rem;
+    background: linear-gradient(to right, rgb(255 255 255 / 90%), rgb(255 255 255 / 55%) 65%, transparent);
+}
+
+.fynn-table-scroll-nav--right .fynn-table-scroll-stack {
+    padding-inline-end: 0.5rem;
+    background: linear-gradient(to left, rgb(255 255 255 / 90%), rgb(255 255 255 / 55%) 65%, transparent);
+}
+
+.dark .fynn-table-scroll-nav--left .fynn-table-scroll-stack {
+    background: linear-gradient(to right, rgb(17 24 39 / 90%), rgb(17 24 39 / 55%) 65%, transparent);
+}
+
+.dark .fynn-table-scroll-nav--right .fynn-table-scroll-stack {
+    background: linear-gradient(to left, rgb(17 24 39 / 90%), rgb(17 24 39 / 55%) 65%, transparent);
+}
+
+.fynn-table-scroll-arrow-btn {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 9999px;
+    border: none;
+    background-color: rgb(255 255 255 / 97%);
+    color: rgb(51 65 85);
+    box-shadow: 0 2px 6px rgb(15 23 42 / 16%), 0 0 0 1px rgb(15 23 42 / 10%);
+    opacity: 0.88;
+    cursor: pointer;
+    transition: opacity 150ms ease, background-color 150ms ease, box-shadow 150ms ease, transform 100ms ease;
+}
+
+.fynn-table-scroll-arrow-btn svg {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.fynn-table-scroll-nav:hover .fynn-table-scroll-arrow-btn,
+.fynn-table-scroll-arrow-btn:hover,
+.fynn-table-scroll-arrow-btn:focus-visible {
+    opacity: 1;
+    background-color: rgb(255 255 255);
+    box-shadow: 0 6px 16px rgb(15 23 42 / 22%), 0 0 0 1px rgb(15 23 42 / 12%);
+    transform: translateY(-1px);
+}
+
+.fynn-table-scroll-arrow-btn:active {
+    background-color: rgb(248 250 252);
+    transform: translateY(0) scale(0.94);
+}
+
+.fynn-table-scroll-arrow-btn:focus-visible {
+    outline: 2px solid var(--teal-400);
+    outline-offset: 2px;
+}
+
+.dark .fynn-table-scroll-arrow-btn {
+    background-color: rgb(30 41 59 / 97%);
+    color: rgb(226 232 240);
+    box-shadow: 0 2px 6px rgb(0 0 0 / 45%), 0 0 0 1px rgb(255 255 255 / 12%);
+}
+
+.dark .fynn-table-scroll-arrow-btn:hover,
+.dark .fynn-table-scroll-arrow-btn:focus-visible {
+    background-color: rgb(30 41 59);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 60%), 0 0 0 1px rgb(255 255 255 / 18%);
+}
+
+.dark .fynn-table-scroll-arrow-btn:active {
+    background-color: rgb(15 23 42);
+}
+
+/* The smaller "jump to opposite edge" arrow beneath the primary one --
+   only shown once (JS) there's meaningfully more than one click's worth
+   of scrolling left, so short tables never see it. */
+.fynn-table-scroll-arrow-btn--jump {
+    display: none;
+    width: 2.125rem;
+    height: 2.125rem;
+    opacity: 0.65;
+}
+
+.fynn-table-scroll-arrow-btn--jump.is-visible {
+    display: inline-flex;
+}
+
+.fynn-table-scroll-arrow-btn--jump svg {
+    width: 1.125rem;
+    height: 1.125rem;
+}
+
+.fynn-table-scroll-arrow-btn--jump:hover,
+.fynn-table-scroll-arrow-btn--jump:focus-visible {
+    opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fynn-table-scroll-arrow-btn {
+        transition: none;
+    }
+}
+
+/* ---- Pagination ----
+   Filament's default puts the records-per-page select in the middle
+   column and the "Showing X to Y of Z results" summary in the same
+   column as the (usually hidden) previous button, which visually reads
+   as "left". Reassigning the three items to explicit grid columns
+   moves the per-page select to the left and the summary to the right,
+   with the page-number pills keeping the centre — applies to every
+   table's bottom pagination bar globally, no per-page overrides. */
+
+.fi-pagination-item.fi-active .fi-pagination-item-btn {
+    background: linear-gradient(135deg, var(--primary-500), var(--primary-700));
+    box-shadow: 0 2px 6px color-mix(in oklab, var(--primary-600) 40%, transparent);
+}
+
+.fi-pagination-records-per-page-select-ctn {
+    grid-column: 1;
+    /* Without an explicit row, this and .fi-pagination-items get
+       auto-placed onto an implicit second grid row — the DOM order
+       has .fi-pagination-overview claim column 3 on row 1 first, and
+       grid's auto-placement cursor doesn't backtrack to fill column 1
+       on that same row afterwards. Pinning row 1 keeps all three in
+       one row so `align-items: center` actually aligns them together. */
+    grid-row: 1;
+    justify-self: start;
+}
+
+.fi-pagination-items {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: center;
+}
+
+.fi-pagination-overview {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+}
+
+/* ---- "Back to top" control at the bottom of listing pages ---- */
+
+.fynn-table-scroll-to-top-ctn {
+    display: flex;
+    justify-content: center;
+    margin-top: 1.5rem;
+}
+
+/* ---- Stat widgets (native StatsOverviewWidget) ---- */
+
+.fi-wi-stats-overview-stat {
+    border-radius: 0.85rem;
+    border-top: 3px solid var(--primary-500);
+    box-shadow: 0 1px 2px rgb(15 23 42 / 4%), 0 8px 20px -12px rgb(15 23 42 / 10%);
+    transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.fi-wi-stats-overview-stat:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px -6px color-mix(in oklab, var(--primary-600) 35%, transparent);
+}
+
+/* ---- Login / auth pages ---- */
+
+.fi-simple-layout {
+    background: radial-gradient(circle at top, color-mix(in oklab, var(--primary-500) 8%, transparent), transparent 60%),
+        rgb(248 250 252);
+}
+
+.dark .fi-simple-layout {
+    background: radial-gradient(circle at top, color-mix(in oklab, var(--primary-500) 14%, transparent), transparent 60%),
+        rgb(2 6 23);
+}
+
+.fi-simple-main {
+    border: 1px solid rgb(15 23 42 / 8%);
+    box-shadow: 0 1px 2px rgb(15 23 42 / 4%), 0 20px 40px -16px rgb(15 23 42 / 18%);
+}
+
+.dark .fi-simple-main {
+    border-color: rgb(255 255 255 / 8%);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 20px 40px -16px rgb(0 0 0 / 55%);
+}
+
+/* ---- Login page banner (App\Filament\Pages\Auth\Login) ----
+   Full-bleed two-column layout, only for the login page itself -- other
+   "simple" auth pages (password reset, etc.) keep Filament's default
+   centered-card layout above, since only Login's `$layout` is overridden.
+   See resources/views/filament/auth/login-layout.blade.php; the left
+   banner's copy/logo and the right panel's logo/tagline/headings/footer
+   all come from App\Models\LoginPageSetting, editable via the "Login
+   Page" settings page (Setting nav group). */
+
+.fynn-auth {
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+}
+
+@media (min-width: 1024px) {
+    .fynn-auth {
+        flex-direction: row;
+    }
+}
+
+.fynn-auth-banner {
+    display: none;
+    position: relative;
+    flex: 1 1 50%;
+    overflow: hidden;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+    background: radial-gradient(circle at 20% 15%, rgb(30 41 20 / 60%), transparent 55%),
+        linear-gradient(160deg, rgb(10 10 10), rgb(0 0 0) 60%);
+}
+
+@media (min-width: 1024px) {
+    .fynn-auth-banner {
+        display: flex;
+    }
+}
+
+.fynn-auth-banner-glow {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(90px);
+    pointer-events: none;
+}
+
+.fynn-auth-banner-glow-a {
+    top: -10%;
+    left: -10%;
+    width: 26rem;
+    height: 26rem;
+    background: rgb(163 230 53 / 18%);
+}
+
+.fynn-auth-banner-glow-b {
+    bottom: -15%;
+    right: -10%;
+    width: 22rem;
+    height: 22rem;
+    background: rgb(59 130 246 / 14%);
+}
+
+.fynn-auth-banner-dots {
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgb(255 255 255 / 8%) 1px, transparent 1px);
+    background-size: 24px 24px;
+    mask-image: radial-gradient(circle at 50% 40%, black, transparent 75%);
+    pointer-events: none;
+}
+
+.fynn-auth-banner-wave {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 6%;
+    width: 100%;
+    height: auto;
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+/* Sized by height alone (auto width) -- and .fynn-auth-banner--custom
+   below lets the *column* shrink-wrap to that width -- instead of being
+   forced into a fixed 50% box (`cover` cropped the top/bottom, `contain`
+   letterboxed the sides trying to fit one). This way the whole image
+   always shows with zero cropping and zero empty space around it.
+   `max-width` only guards against a pathologically wide upload crushing
+   the sign-in panel; `object-fit: contain` keeps the aspect ratio correct
+   (instead of stretching) on the rare occasion that cap engages. */
+.fynn-auth-banner-image {
+    display: block;
+    height: 100%;
+    width: auto;
+    max-width: 70vw;
+    object-fit: contain;
+}
+
+.fynn-auth-banner--custom {
+    flex: 0 1 auto;
+    /* Explicit, not inherited via flex stretch -- .fynn-auth only sets
+       `min-height: 100dvh` (indefinite), so a percentage/stretched height
+       on a descendant several flex levels down doesn't reliably resolve
+       and silently falls back to the image's raw intrinsic pixel size. */
+    height: 100dvh;
+    padding: 0;
+}
+
+/* The FYNN-ON logo -- placed via .fynn-auth-logo-position below,
+   admin-configurable to sit in either the left banner or right panel,
+   at any of a 3x3 grid of positions. */
+.fynn-auth-brand-logo {
+    display: block;
+    height: 4.5rem;
+    width: auto;
+    max-width: 12rem;
+    object-fit: contain;
+    filter: drop-shadow(0 6px 14px rgb(0 0 0 / 30%));
+}
+
+.fynn-auth-banner-content {
+    position: relative;
+    z-index: 1;
+    max-width: 28rem;
+    text-align: center;
+}
+
+.fynn-auth-banner-kicker {
+    font-size: 0.875rem;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: rgb(163 230 53);
+    margin-bottom: 1.5rem;
+}
+
+.fynn-auth-banner-heading {
+    line-height: 1.25;
+    font-weight: 800;
+    color: rgb(255 255 255);
+    text-wrap: balance;
+}
+
+.fynn-auth-banner-accent-line {
+    width: 4rem;
+    height: 3px;
+    margin-top: 2rem;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, rgb(163 230 53), rgb(59 130 246));
+    box-shadow: 0 0 12px rgb(163 230 53 / 60%);
+}
+
+.fynn-auth-banner-accent-line--center {
+    margin-inline: auto;
+}
+
+.fynn-auth-banner-accent-line--right {
+    margin-inline-start: auto;
+}
+
+.fynn-auth-panel {
+    position: relative;
+    display: flex;
+    flex: 1 1 50%;
+    align-items: center;
+    justify-content: center;
+    padding: 8vh 3rem;
+    background-color: rgb(255 255 255);
+}
+
+.fynn-auth-panel-inner {
+    width: 100%;
+    max-width: 33rem;
+}
+
+/* The company (Fynnedge Advisory) logo -- placed via .fynn-auth-logo-position
+   below, admin-configurable to sit in either the left banner or this right
+   panel, at any of a 3x3 grid of positions. */
+.fynn-auth-company-logo {
+    display: block;
+    height: 8.5rem;
+    width: auto;
+    max-width: 19rem;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 10px rgb(0 0 0 / 20%));
+}
+
+/* The classic (top, centered) placement -- rendered in-flow, right above
+   the tagline, instead of floating via .fynn-auth-logo-position. */
+.fynn-auth-panel-logo-inline {
+    margin-inline: auto;
+    margin-bottom: 2rem;
+}
+
+.fynn-auth-logo-position {
+    position: absolute;
+    z-index: 3;
+    --fynn-logo-tx: 0;
+    --fynn-logo-ty: 0;
+    transform: translate(var(--fynn-logo-tx), var(--fynn-logo-ty));
+}
+
+.fynn-auth-logo-position--v-top {
+    top: 2rem;
+}
+
+.fynn-auth-logo-position--v-middle {
+    top: 50%;
+    --fynn-logo-ty: -50%;
+}
+
+.fynn-auth-logo-position--v-bottom {
+    bottom: 2rem;
+}
+
+.fynn-auth-logo-position--h-left {
+    left: 2rem;
+}
+
+.fynn-auth-logo-position--h-center {
+    left: 50%;
+    --fynn-logo-tx: -50%;
+}
+
+.fynn-auth-logo-position--h-right {
+    right: 2rem;
+}
+
+.fynn-auth-panel-tagline {
+    text-align: center;
+    font-size: 1.25rem;
+    font-style: italic;
+    color: rgb(100 116 139);
+}
+
+.fynn-auth-panel-divider {
+    display: block;
+    width: 65%;
+    height: 1.25rem;
+    margin: 0.75rem auto 2.25rem;
+    fill: var(--primary-600);
+}
+
+.fynn-auth-panel-heading {
+    font-weight: 800;
+    line-height: 1.25;
+    color: rgb(15 23 42);
+    text-wrap: balance;
+}
+
+.fynn-auth-panel-subheading {
+    margin-top: 0.5rem;
+    margin-bottom: 3rem;
+    font-size: 1.2rem;
+    color: rgb(100 116 139);
+}
+
+.fynn-auth-panel-subheading-accent {
+    font-weight: 700;
+    color: var(--primary-600);
+}
+
+/* ---- Configurable heading size/alignment (Login Page Banner settings) ---- */
+
+.fynn-auth-banner-heading--sm {
+    font-size: 1.5rem;
+}
+
+.fynn-auth-banner-heading--md {
+    font-size: 1.875rem;
+}
+
+.fynn-auth-banner-heading--lg {
+    font-size: 2.25rem;
+}
+
+.fynn-auth-banner-heading--xl {
+    font-size: 2.75rem;
+}
+
+/* Sized up a step further than the banner side -- the right panel has
+   grown wider since the banner column started shrink-wrapping to its
+   image, so its own text scales up to use that extra space. */
+.fynn-auth-panel-heading--sm {
+    font-size: 1.75rem;
+}
+
+.fynn-auth-panel-heading--md {
+    font-size: 2.25rem;
+}
+
+.fynn-auth-panel-heading--lg {
+    font-size: 2.75rem;
+}
+
+.fynn-auth-panel-heading--xl {
+    font-size: 3.25rem;
+}
+
+.fynn-auth-text-left {
+    text-align: left;
+}
+
+.fynn-auth-text-center {
+    text-align: center;
+}
+
+.fynn-auth-text-right {
+    text-align: right;
+}
+
+.fynn-auth-panel-footer {
+    margin-top: 3rem;
+    text-align: center;
+    font-size: 0.875rem;
+    color: rgb(148 163 184);
+}
+
+/* ---- Focus rings: teal accent instead of the default primary ring ---- */
+
+.fi-input:focus {
+    --tw-ring-color: var(--teal-500) !important;
 }
 
 
@@ -829,6 +1939,500 @@
 
     border-color:
         rgb(59 130 246 / 40%) !important;
+}
+
+/* =========================================================
+   EMPLOYEE REPORTING HIERARCHY — ORG CHART
+   Plain corporate-style flow chart: no filled node boxes,
+   just names/titles connected by thin lines.
+   ========================================================= */
+
+/* Vertical "reports to" chain */
+.eh-chain {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.eh-chain-connector {
+    width: 1.5px;
+    height: 22px;
+    background-color: rgb(148 163 184);
+}
+
+.dark .eh-chain-connector {
+    background-color: rgb(71 85 105);
+}
+
+/* Vertical indented "reportees" tree — no horizontal scrolling */
+.eh-vtree {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.eh-vtree > li {
+    padding: 8px 0;
+}
+
+ul.eh-vtree ul.eh-vtree {
+    margin-top: 4px;
+    margin-left: 8px;
+    padding-left: 22px;
+    border-left: 1.5px solid rgb(148 163 184);
+}
+
+ul.eh-vtree ul.eh-vtree > li {
+    position: relative;
+}
+
+ul.eh-vtree ul.eh-vtree > li::before {
+    content: '';
+    position: absolute;
+    top: 20px;
+    left: -22px;
+    width: 18px;
+    height: 1.5px;
+    background-color: rgb(148 163 184);
+}
+
+.dark ul.eh-vtree ul.eh-vtree {
+    border-left-color: rgb(71 85 105);
+}
+
+.dark ul.eh-vtree ul.eh-vtree > li::before {
+    background-color: rgb(71 85 105);
+}
+
+.eh-node {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 6px 2px;
+    white-space: nowrap;
+}
+
+.eh-node-inline {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 12px;
+    row-gap: 4px;
+}
+
+/* =========================================================
+   LEAD FOLLOW-UP CALENDAR
+   A vibrant, corporate "real wall calendar" treatment: a bold
+   navy-and-amber toolbar, a tactile day grid with hover lift and
+   a distinct "today" marker, and a glowing amber day-summary chip
+   so a day with follow-ups reads clearly at a glance. `height:
+   'auto'` is set in the widget's config() so the grid grows to fit
+   its rows instead of FullCalendar imposing its own aspect-ratio
+   height — that mismatch is what was causing an internal scrollbar.
+   ========================================================= */
+
+.lead-followup-calendar-card__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 0.5rem;
+    background: linear-gradient(135deg, var(--primary-400), var(--primary-600));
+    color: rgb(15 23 42);
+    box-shadow: 0 2px 6px color-mix(in oklab, var(--primary-600) 45%, transparent);
+}
+
+.lead-followup-calendar-card__icon svg {
+    width: 1rem;
+    height: 1rem;
+}
+
+.lead-followup-calendar-card__legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: rgb(100 116 139);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.dark .lead-followup-calendar-card__legend {
+    color: rgb(148 163 184);
+}
+
+.lead-followup-calendar-card__legend-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+    background: linear-gradient(135deg, var(--primary-400), var(--primary-600));
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary-500) 20%, transparent);
+}
+
+/* Prevent any internal FullCalendar scroller from ever engaging —
+   belt-and-braces alongside config()'s height: 'auto'. */
+.filament-fullcalendar .fc-scroller,
+.filament-fullcalendar .fc-daygrid-body,
+.filament-fullcalendar .fc-scrollgrid-sync-table {
+    overflow: visible !important;
+    height: auto !important;
+}
+
+.filament-fullcalendar .fc-toolbar-title {
+    font-size: 1.125rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: rgb(15 23 42);
+}
+
+.dark .filament-fullcalendar .fc-toolbar-title {
+    color: rgb(241 245 249);
+}
+
+.filament-fullcalendar .fc-col-header-cell {
+    background: linear-gradient(180deg, rgb(30 41 59), rgb(15 23 42));
+    border-color: rgb(15 23 42) !important;
+}
+
+.filament-fullcalendar .fc-col-header-cell-cushion {
+    padding: 0.6rem 0;
+    color: rgb(226 232 240) !important;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.filament-fullcalendar .fc-daygrid-day-frame {
+    min-height: 6.5rem;
+    padding: 2px;
+    transition: background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.filament-fullcalendar .fc-daygrid-day:hover .fc-daygrid-day-frame {
+    background-color: color-mix(in oklab, var(--primary-500) 6%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary-500) 25%, transparent);
+}
+
+.filament-fullcalendar .fc-daygrid-day-top {
+    padding: 0.35rem 0.4rem 0;
+}
+
+.filament-fullcalendar .fc-daygrid-day-number {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgb(71 85 105);
+}
+
+.dark .filament-fullcalendar .fc-daygrid-day-number {
+    color: rgb(148 163 184);
+}
+
+/* Weekend columns get a faint tint, like a printed corporate planner. */
+.filament-fullcalendar .fc-day-sat .fc-daygrid-day-frame,
+.filament-fullcalendar .fc-day-sun .fc-daygrid-day-frame {
+    background-color: rgb(100 116 139 / 4%);
+}
+
+.dark .filament-fullcalendar .fc-day-sat .fc-daygrid-day-frame,
+.dark .filament-fullcalendar .fc-day-sun .fc-daygrid-day-frame {
+    background-color: rgb(148 163 184 / 4%);
+}
+
+/* "Today" reads as a stamped, circled date — the real-calendar cue. */
+.filament-fullcalendar .fc-day-today {
+    background-color: color-mix(in oklab, var(--primary-500) 8%, transparent) !important;
+}
+
+.filament-fullcalendar .fc-day-today .fc-daygrid-day-frame {
+    box-shadow: inset 0 0 0 1.5px var(--primary-500);
+}
+
+.filament-fullcalendar .fc-day-today .fc-daygrid-day-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.375rem;
+    height: 1.375rem;
+    padding: 0 0.3rem;
+    border-radius: 9999px;
+    background: linear-gradient(135deg, var(--primary-400), var(--primary-600));
+    color: rgb(15 23 42);
+    font-weight: 800;
+    box-shadow: 0 1px 4px color-mix(in oklab, var(--primary-600) 50%, transparent);
+}
+
+.filament-fullcalendar .fc-daygrid-day.has-followups .fc-daygrid-day-frame {
+    background-color: color-mix(in oklab, var(--primary-500) 7%, transparent);
+    position: relative;
+}
+
+.filament-fullcalendar .fc-daygrid-day.has-followups .fc-daygrid-day-frame::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary-400), var(--primary-600));
+    border-radius: 3px 3px 0 0;
+}
+
+.filament-fullcalendar .fc-daygrid-day.has-followups .fc-daygrid-day-number {
+    font-weight: 700;
+    color: rgb(30 41 59);
+}
+
+.dark .filament-fullcalendar .fc-daygrid-day.has-followups .fc-daygrid-day-frame {
+    background-color: color-mix(in oklab, var(--primary-400) 10%, transparent);
+}
+
+.dark .filament-fullcalendar .fc-daygrid-day.has-followups .fc-daygrid-day-number {
+    color: rgb(226 232 240);
+}
+
+.filament-fullcalendar .fc-daygrid-event.lead-followup-day-chip {
+    margin: 3px 4px 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    cursor: pointer;
+}
+
+.lead-followup-day-chip__inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 5px 9px;
+    border-radius: 9999px;
+    background: linear-gradient(135deg, var(--primary-400), var(--primary-600));
+    color: rgb(15 23 42);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    line-height: 1;
+    white-space: nowrap;
+    box-shadow: 0 2px 6px color-mix(in oklab, var(--primary-600) 45%, transparent);
+    transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.filament-fullcalendar .fc-daygrid-event.lead-followup-day-chip:hover .lead-followup-day-chip__inner {
+    transform: translateY(-1px) scale(1.03);
+    box-shadow: 0 4px 10px color-mix(in oklab, var(--primary-600) 55%, transparent);
+}
+
+.lead-followup-day-chip__icon {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    color: rgb(15 23 42);
+}
+
+.dark .lead-followup-day-chip__inner {
+    color: rgb(15 23 42);
+}
+
+/* =========================================================
+   PAGE TRANSITIONS
+   Panel-wide `->spa()` mode (Livewire wire:navigate) is what
+   keeps the sidebar/topbar stationary and removes the white
+   flash between pages — this section only adds the subtle
+   motion on top of it. Replayed on `#fi-main-content` by
+   resources/js/page-transitions.js on every livewire:navigated.
+   Opacity-only: a `transform` here (even a resting translateY(0))
+   makes #fi-main-content a new containing block for any
+   position:fixed/sticky descendant — which is exactly what was
+   corrupting the customer journey tracker's sticky position on
+   every navigation. Fixed layout, not a subtler transform value.
+   ========================================================= */
+
+@keyframes fynn-page-enter {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.fynn-page-enter {
+    animation: fynn-page-enter 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fynn-page-enter {
+        animation: none;
+    }
+}
+
+/* Dropdown panels: opacity is already animated by Filament's own
+   `.fi-dropdown-panel` transition (150ms) — this only adds the
+   4px vertical settle to match it. */
+.fi-dropdown-panel {
+    transform: translateY(0);
+}
+
+.fi-dropdown-panel.fi-opacity-0 {
+    transform: translateY(-4px);
+}
+
+/* Modals: keep Filament's existing opacity fade, just make the
+   scale subtler (0.98 instead of 0.95) and snappier (200ms). */
+.fi-modal-window.fi-transition-enter,
+.fi-modal-window.fi-transition-leave {
+    transition-duration: 200ms;
+}
+
+.fi-modal-window.fi-transition-enter-start,
+.fi-modal-window.fi-transition-leave-end {
+    transform: scale(0.98);
+}
+
+/* Tabs: smooth out the active-tab background/label color shift. */
+.fi-tabs-item,
+.fi-tabs-item-label,
+.fi-tabs-item > .fi-icon {
+    transition-duration: 150ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fi-dropdown-panel,
+    .fi-modal-window.fi-transition-enter,
+    .fi-modal-window.fi-transition-leave,
+    .fi-tabs-item,
+    .fi-tabs-item-label,
+    .fi-tabs-item > .fi-icon {
+        transition: none !important;
+        animation: none !important;
+    }
+}
+
+/* =========================================================
+   DASHBOARD GREETING
+   Rendered on PanelsRenderHook::PAGE_START, scoped to the Dashboard
+   page only (see AdminPanelProvider). Uses the --primary- variables
+   so it automatically matches whichever theme (Classic/Emerald/FYNN-ON)
+   is currently active.
+   ========================================================= */
+
+.fynn-dashboard-greeting {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    margin-bottom: 1.25rem;
+    padding: 1rem 1.25rem;
+    border-radius: 0.85rem;
+    border: 1px solid color-mix(in oklab, var(--primary-500) 25%, transparent);
+    background: linear-gradient(135deg, color-mix(in oklab, var(--primary-500) 12%, transparent), transparent);
+}
+
+/* The icon sits right at the end of the tagline sentence (inside
+   .fynn-dashboard-greeting-sub-line below), not floated off to the
+   banner's edge. It's admin-selectable (see DashboardGreetingSettings) and
+   not fixed to the rocket any more, so there's no forced rotation here —
+   just a gentle float for the "dashing" feel; reduced-motion users get it
+   static. A Heroicon reads `currentColor`, so tying that to the --primary-
+   variables recolors it automatically whenever the active theme
+   (Classic/Emerald/FYNN-ON) changes; an emoji glyph keeps its own built-in
+   color regardless (browsers don't let CSS `color` repaint color emoji),
+   so only its circular badge background themes itself. */
+.fynn-dashboard-greeting-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0.375rem;
+    border-radius: 9999px;
+    color: var(--primary-700);
+    background-color: color-mix(in oklab, var(--primary-500) 18%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary-500) 30%, transparent);
+    animation: fynn-dashboard-greeting-icon-float 2.4s ease-in-out infinite;
+}
+
+.dark .fynn-dashboard-greeting-icon {
+    color: var(--primary-300);
+    background-color: color-mix(in oklab, var(--primary-500) 25%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary-500) 40%, transparent);
+}
+
+.fynn-dashboard-greeting-icon--emoji {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+@keyframes fynn-dashboard-greeting-icon-float {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-4px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fynn-dashboard-greeting-icon {
+        animation: none;
+    }
+}
+
+.fynn-dashboard-greeting-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.fynn-dashboard-greeting-sub-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+/* Gradient text (same background-clip technique as the sidebar group
+   label) rather than a flat color, so the headline visibly re-colors
+   itself whenever the primary theme (Classic/Emerald/FYNN-ON) changes. */
+.fynn-dashboard-greeting-headline {
+    font-weight: 800;
+    font-style: italic;
+    font-size: 1.375rem;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+    background: linear-gradient(120deg, var(--primary-700), var(--primary-500) 60%, var(--primary-300));
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+}
+
+.dark .fynn-dashboard-greeting-headline {
+    background: linear-gradient(120deg, var(--primary-300), var(--primary-400) 60%, var(--primary-200));
+    background-clip: text;
+    -webkit-background-clip: text;
+}
+
+.fynn-dashboard-greeting-dash {
+    display: block;
+    width: 2.5rem;
+    height: 3px;
+    margin-block: 0.15rem;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, var(--primary-500), var(--primary-300));
+}
+
+.fynn-dashboard-greeting-sub {
+    font-size: 0.8125rem;
+    font-style: italic;
+    font-weight: 500;
+    color: rgb(100 116 139);
+}
+
+.dark .fynn-dashboard-greeting-sub {
+    color: rgb(148 163 184);
 }
 
 

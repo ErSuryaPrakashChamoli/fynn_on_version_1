@@ -2,25 +2,23 @@
 
 namespace App\Filament\Resources\CustomerPanRequests\Tables;
 
+use App\Filament\Resources\Customers\CustomerResource;
+use App\Models\CustomerPanRequest;
+use App\Support\SelectedMonth;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Tables\Table;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\SelectFilter;
-
-use Filament\Actions\Action;
+use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
-use Filament\Notifications\Notification;
-use App\Models\CustomerPanRequest;
-use App\Filament\Resources\Customers\CustomerResource;
-use Filament\Actions\ViewAction;
-
-use Filament\Tables\Filters\Filter;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-
 
 class CustomerPanRequestsTable
 {
@@ -81,22 +79,23 @@ class CustomerPanRequestsTable
                             ->placeholder('ABCDE1234F')
                             ->maxLength(10)
                             ->dehydrateStateUsing(
-                                fn(?string $state): ?string =>
-                                filled($state) ? strtoupper($state) : null
+                                fn (?string $state): ?string => filled($state) ? strtoupper($state) : null
                             ),
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when(
                             filled($data['pan_number'] ?? null),
-                            fn(Builder $query) =>
-                            $query->where(
+                            fn (Builder $query) => $query->where(
                                 'pan_number',
                                 'like',
-                                '%' . strtoupper($data['pan_number']) . '%'
+                                '%'.strtoupper($data['pan_number']).'%'
                             )
                         );
                     }),
             ])
+            ->modifyQueryUsing(
+                fn (Builder $query) => $query->whereBetween('created_at', SelectedMonth::range())
+            )
             ->recordActions([
                 // EditAction::make(),
                 ViewAction::make(),
@@ -106,8 +105,7 @@ class CustomerPanRequestsTable
                     ->icon('heroicon-o-check-circle')
                     ->color('warning')
                     ->visible(
-                        fn(CustomerPanRequest $record): bool =>
-                        $record->status === CustomerPanRequest::STATUS_PENDING
+                        fn (CustomerPanRequest $record): bool => $record->status === CustomerPanRequest::STATUS_PENDING
                             && auth()->user()->hasRole('Admin')
                     )
                     ->form([
@@ -128,8 +126,8 @@ class CustomerPanRequestsTable
                         $employee = auth()->user()->employee;
 
                         $record->update([
-                            'status'      => $data['status'],
-                            'remarks'     => $data['remarks'] ?? null,
+                            'status' => $data['status'],
+                            'remarks' => $data['remarks'] ?? null,
                             'approved_by' => $employee?->id,
                             'approved_at' => now(),
                         ]);
@@ -199,7 +197,7 @@ class CustomerPanRequestsTable
                                 ->title('Duplicate PAN Request Rejected')
                                 ->body(
                                     filled($record->remarks)
-                                        ? 'Reason: ' . $record->remarks
+                                        ? 'Reason: '.$record->remarks
                                         : 'Your duplicate PAN request has been rejected.'
                                 )
                                 ->danger()
@@ -233,19 +231,15 @@ class CustomerPanRequestsTable
                     //         && blank($record->application_id)
                     // )
                     ->visible(
-                        fn(CustomerPanRequest $record): bool =>
-                        $record->status === CustomerPanRequest::STATUS_APPROVED
+                        fn (CustomerPanRequest $record): bool => $record->status === CustomerPanRequest::STATUS_APPROVED
                             && blank($record->application_id)
                             && ! auth()->user()->hasRole('Admin')
                     )
                     ->url(
-                        fn(CustomerPanRequest $record) =>
-                        CustomerResource::getUrl('create', [
+                        fn (CustomerPanRequest $record) => CustomerResource::getUrl('create', [
                             'pan_request' => $record->id,
                         ])
                     ),
-
-
 
             ])
             ->toolbarActions([

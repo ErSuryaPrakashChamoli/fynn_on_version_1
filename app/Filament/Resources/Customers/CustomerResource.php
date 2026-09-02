@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Customers;
 
+use App\Enums\JourneyModule;
+use App\Filament\Resources\Customers\Pages\ContinuePanRequest;
 use App\Filament\Resources\Customers\Pages\CreateCustomer;
 use App\Filament\Resources\Customers\Pages\EditCustomer;
 use App\Filament\Resources\Customers\Pages\ListCustomers;
@@ -11,34 +13,18 @@ use App\Filament\Resources\Customers\Schemas\CustomerInfolist;
 use App\Filament\Resources\Customers\Tables\CustomersTable;
 use App\Models\Customer;
 use App\Models\Employee;
+use App\Models\User;
+use App\Services\Journey\CustomerJourneyAccessService;
+use App\Support\HierarchyHelper;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
-use App\Models\User;
-use Filament\Actions\DeleteAction;
-use Filament\Actions\EditAction;
-use Filament\Actions\DeleteBulkAction;
-use Filament\Actions\ViewAction;
-
-
-use Filament\Tables;
-use App\Filament\Resources\FollowUps\FollowUpResource;
-use Filament\Actions\Action;
-use Filament\Actions\ImportAction;
-use App\Filament\Imports\CustomerImporter;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Auth;
-use App\Filament\Exports\CustomerExporter;
-use Filament\Actions\ExportAction;
-use Filament\Actions\ExportBulkAction;
-use App\Support\HierarchyHelper;
 use Illuminate\Database\Eloquent\Model;
-use Filament\Tables\Filters\SelectFilter;
-use App\Filament\Resources\Customers\Pages\ContinuePanRequest;
-
-
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 
 class CustomerResource extends Resource
 {
@@ -46,8 +32,17 @@ class CustomerResource extends Resource
 
     // protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedIdentification;
+
     protected static ?string $recordTitleAttribute = 'customer_name';
+
+    protected static ?string $navigationLabel = 'My Customers';
+
+    protected static ?string $modelLabel = 'My Customer';
+
+    protected static ?string $pluralModelLabel = 'My Customers';
+
     protected static ?int $navigationSort = 2;
+
     public static function form(Schema $schema): Schema
     {
         return CustomerForm::configure($schema);
@@ -78,7 +73,7 @@ class CustomerResource extends Resource
             'create' => CreateCustomer::route('/create'),
             'view' => ViewCustomer::route('/{record}'),
             'edit' => EditCustomer::route('/{record}/edit'),
-            'continue-pan-request' => Pages\ContinuePanRequest::route(
+            'continue-pan-request' => ContinuePanRequest::route(
                 '/continue-pan-request/{request}'
             ),
         ];
@@ -87,7 +82,6 @@ class CustomerResource extends Resource
     // public static function getEloquentQuery(): Builder
     // {
     //     $query = parent::getEloquentQuery();
-
 
     //     $employee = auth()->user()->employee;
 
@@ -121,12 +115,18 @@ class CustomerResource extends Resource
             return $query->whereRaw('1 = 0');
         }
 
+        $accessService = app(CustomerJourneyAccessService::class);
+        $extraIds = $accessService->visibleCustomerIdsForDelegatee($employee)
+            ->merge($accessService->visibleCustomerIdsForTakeover($employee))
+            ->unique();
 
+        return $query->where(function (Builder $query) use ($employee, $extraIds) {
+            $query->whereIn('assign_to', HierarchyHelper::subordinateIds($employee));
 
-        return $query->whereIn(
-            'assign_to',
-            HierarchyHelper::subordinateIds($employee)
-        );
+            if ($extraIds->isNotEmpty()) {
+                $query->orWhereIn('id', $extraIds);
+            }
+        });
     }
 
     // public static function canEdit(Model $record): bool
@@ -139,7 +139,8 @@ class CustomerResource extends Resource
 
     public static function canEdit(Model $record): bool
     {
-        $employee = auth()->user()->employee;
+        $user = auth()->user();
+        $employee = $user->employee;
 
         if (
             $employee?->designation === Employee::DESIGNATION_CALLER
@@ -159,7 +160,18 @@ class CustomerResource extends Resource
         //     return false;
         // }
 
-        return true;
+        if ($user->hasRole('Admin')) {
+            return true;
+        }
+
+        if ($employee && app(CustomerJourneyAccessService::class)->hasNormalAccess($employee, $record)) {
+            return true;
+        }
+
+        // Not normally accessible under today's hierarchy rule — allow only
+        // when a valid delegation or emergency takeover currently grants
+        // access to whichever Manager-stage module this customer is in.
+        return Gate::forUser($user)->allows('perform-journey-action', [$record, JourneyModule::forCustomer($record)]);
     }
 
     public static function canDelete(Model $record): bool

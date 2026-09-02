@@ -2,39 +2,47 @@
 
 namespace App\Filament\Resources\FollowUps\Schemas;
 
+use App\Models\AiCustomerRecord;
 use App\Models\Bank;
 use App\Models\Customer;
-use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\Hidden;
-use Filament\Schemas\Components\Section;
-use Filament\Schemas\Schema;
-use Filament\Forms\Components\DateTimePicker;
 use Coolsam\Flatpickr\Forms\Components\Flatpickr;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Schema;
 
 class FollowUpForm
 {
     public static function configure(Schema $schema): Schema
     {
         $customer = Customer::find(request('customer'));
+        $aiRecord = $customer ? null : AiCustomerRecord::find(request('ai_customer_record'));
 
         return $schema
             ->schema([
 
                 Section::make('Customer Details')
+                    ->description(
+                        $aiRecord
+                            ? 'This lead has not been converted into a customer profile yet — details below come from the AI-extracted document.'
+                            : null
+                    )
                     ->schema([
 
                         TextInput::make('customer_name')
                             ->label('Customer Name')
-                            ->default($customer?->customer_name)
+                            ->default($customer?->customer_name ?? $aiRecord?->value('customer_name'))
                             ->disabled()
                             ->dehydrated(false),
 
                         TextInput::make('mobile_no')
                             ->label('Phone')
-                            ->default($customer?->mobile_no)
+                            ->default($customer?->mobile_no ?? $aiRecord?->value('mobile_number'))
                             ->disabled()
                             ->dehydrated(false),
 
@@ -66,7 +74,7 @@ class FollowUpForm
                             ->label('Salary')
                             ->default(
                                 $customer?->salary
-                                    ? '₹' . number_format($customer->salary)
+                                    ? '₹'.number_format($customer->salary)
                                     : ''
                             )
                             ->disabled()
@@ -106,34 +114,57 @@ class FollowUpForm
                         //     ->live()
                         //     ->required(),
 
+                        // Select::make('status')
+                        //     ->label('Status')
+                        //     ->options([
+                        //         'Pending' => 'Pending',
+                        //         'Interested' => 'Interested',
+                        //         'Not Interested' => 'Not Interested',
+                        //         'Busy' => 'Busy',
+                        //         'No Response' => 'No Response',
+                        //         'Not Eligible' => 'Not Eligible',
+                        //         'Eligible for Other Bank' => 'Eligible for Other Bank',
+                        //     ])
+                        //     ->default('Pending')
+                        //     ->live()
+                        //     ->required()
+                        //     ->afterStateUpdated(function ($state, $set) {
+                        //         if (in_array($state, ['Not Interested', 'Not Eligible'])) {
+                        //             $set('next_follow_up_date', null);
+                        //         }
+
+                        //         if ($state !== 'Eligible for Other Bank') {
+                        //             $set('bank_id', null);
+                        //         }
+                        //     }),
+
                         Select::make('status')
                             ->label('Status')
                             ->options([
-                                'Pending' => 'Pending',
-                                'Interested' => 'Interested',
-                                'Not Interested' => 'Not Interested',
-                                'Busy' => 'Busy',
-                                'No Response' => 'No Response',
-                                'Not Eligible' => 'Not Eligible',
-                                'Eligible for Other Bank' => 'Eligible for Other Bank',
+                                'Awaiting Low ROI' => 'Awaiting Low ROI',
+                                'Awaiting PF Waiver' => 'Awaiting PF Waiver',
+                                'Converted' => 'Converted',
+                                'Delay Multifunding' => 'Delay Multifunding',
+                                'Journey Started' => 'Journey Started',
+                                'Lost' => 'Lost',
+                                'On Hold' => 'On Hold',
+                                'Out of Station' => 'Out of Station',
                             ])
-                            ->default('Pending')
+                            ->default('Awaiting Low ROI')
                             ->live()
                             ->required()
                             ->afterStateUpdated(function ($state, $set) {
-                                if (in_array($state, ['Not Interested', 'Not Eligible'])) {
+                                // Clear follow-up date for statuses where follow-up
+                                // is not applicable.
+                                if (in_array($state, ['Converted', 'Lost'])) {
                                     $set('next_follow_up_date', null);
-                                }
-
-                                if ($state !== 'Eligible for Other Bank') {
-                                    $set('bank_id', null);
                                 }
                             }),
 
                         Select::make('bank_id')
                             ->label('Bank Name')
                             ->options(
-                                fn() => Bank::query()
+                                fn () => Bank::query()
                                     ->where('is_active', 1)
                                     ->orderBy('bank_name')
                                     ->pluck('bank_name', 'id')
@@ -142,12 +173,11 @@ class FollowUpForm
                             ->searchable()
                             ->preload()
                             ->required(
-                                fn($get) =>
-                                $get('status') === 'Eligible for Other Bank'
+                                fn ($get) => $get('status') === 'Eligible for Other Bank'
+
                             )
                             ->visible(
-                                fn($get) =>
-                                $get('status') === 'Eligible for Other Bank'
+                                fn ($get) => $get('status') === 'Eligible for Other Bank'
                             )
                             ->live()
                             ->afterStateUpdated(function ($state, $set, $get) {
@@ -186,24 +216,33 @@ class FollowUpForm
                             ->format('Y-m-d H:i')
                             ->displayFormat('d M Y h:i K')
                             ->minDate(today())
+                            // ->required(
+                            //     fn($get) => ! in_array($get('status'), [
+                            //         'Not Interested',
+                            //         'Not Eligible',
+                            //     ])
+                            // )
+                            // ->visible(
+                            //     fn($get) => ! in_array($get('status'), [
+                            //         'Not Interested',
+                            //         'Not Eligible',
+                            //     ])
+                            // )
                             ->required(
-                                fn($get) => ! in_array($get('status'), [
-                                    'Not Interested',
-                                    'Not Eligible',
+                                fn ($get) => ! in_array($get('status'), [
+                                    'Converted',
+                                    'Lost',
                                 ])
                             )
                             ->visible(
-                                fn($get) => ! in_array($get('status'), [
-                                    'Not Interested',
-                                    'Not Eligible',
+                                fn ($get) => ! in_array($get('status'), [
+                                    'Converted',
+                                    'Lost',
                                 ])
                             )
                             ->placeholder('Select date & time')
                             ->suffixIcon('heroicon-m-calendar')
                             ->helperText('Select date and time for the next follow-up.'),
-
-
-
 
                         Textarea::make('remarks')
                             ->rows(5)
@@ -211,14 +250,18 @@ class FollowUpForm
                             ->columnSpanFull(),
 
                         Hidden::make('customer_id')
-                            ->default(fn() => request()->query('customer'))
+                            ->default(fn () => request()->query('customer'))
                             ->dehydrated(true)
-                            ->required(),
+                            ->required(fn (Get $get) => blank($get('ai_customer_record_id'))),
+
+                        Hidden::make('ai_customer_record_id')
+                            ->default(fn () => request()->query('ai_customer_record'))
+                            ->dehydrated(true)
+                            ->required(fn (Get $get) => blank($get('customer_id'))),
 
                         Hidden::make('employee_id')
-                            ->default(fn() => auth()->user()?->employee?->id)
-                            ->dehydrated(true)
-                            ->required(),
+                            ->default(fn () => auth()->user()?->employee?->id)
+                            ->dehydrated(true),
 
                     ])
                     ->columns(2),

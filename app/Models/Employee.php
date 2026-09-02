@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use App\Models\UserLoginSession;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -23,28 +25,29 @@ use App\Models\UserLoginSession;
  * @property string $exit_status
  * @property string|null $exit_date
  * @property string|null $position
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Employee> $callers
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Collection<int, Employee> $callers
  * @property-read int|null $callers_count
  * @property-read Employee|null $cluster
  * @property-read Employee|null $clusterManager
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Customer> $customers
+ * @property-read Collection<int, Customer> $customers
  * @property-read int|null $customers_count
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\FollowUp> $followUps
+ * @property-read Collection<int, FollowUp> $followUps
  * @property-read int|null $follow_ups_count
  * @property-read int $target_amount
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Lead> $leads
+ * @property-read Collection<int, Lead> $leads
  * @property-read int|null $leads_count
  * @property-read Employee|null $manager
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Employee> $managers
+ * @property-read Collection<int, Employee> $managers
  * @property-read int|null $managers_count
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\EmployeeReportingHistory> $reportingHistories
+ * @property-read Collection<int, EmployeeReportingHistory> $reportingHistories
  * @property-read int|null $reporting_histories_count
  * @property-read Employee|null $superviser
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Employee> $teamLeaders
+ * @property-read Collection<int, Employee> $teamLeaders
  * @property-read int|null $team_leaders_count
- * @property-read \App\Models\User|null $user
+ * @property-read User|null $user
+ *
  * @method static \Database\Factories\EmployeeFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Employee newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Employee newQuery()
@@ -67,6 +70,7 @@ use App\Models\UserLoginSession;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Employee whereSuperviserId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Employee whereUnitName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Employee whereUpdatedAt($value)
+ *
  * @mixin \Eloquent
  */
 class Employee extends Model
@@ -98,14 +102,15 @@ class Employee extends Model
         });
     }
 
-
-
     public const DESIGNATION_ADMIN = 1;
-    public const DESIGNATION_MANAGER = 2;
-    public const DESIGNATION_TEAM_LEADER = 3;
-    public const DESIGNATION_CLUSTER = 5;
-    public const DESIGNATION_CALLER = 7;
 
+    public const DESIGNATION_MANAGER = 2;
+
+    public const DESIGNATION_TEAM_LEADER = 3;
+
+    public const DESIGNATION_CLUSTER = 5;
+
+    public const DESIGNATION_CALLER = 7;
 
     //
     protected $fillable = [
@@ -147,7 +152,6 @@ class Employee extends Model
             ->where('designation', self::DESIGNATION_TEAM_LEADER);
     }
 
-
     // public function managers()
     // {
     //     return $this->hasMany(Employee::class, 'cluster_id')
@@ -160,7 +164,6 @@ class Employee extends Model
             ->where('designation', self::DESIGNATION_MANAGER);
     }
 
-
     public function manager()
     {
         return $this->belongsTo(Employee::class, 'manager_id');
@@ -172,7 +175,6 @@ class Employee extends Model
         return $this->belongsTo(Employee::class, 'cluster_id');
     }
 
-
     public function cluster()
     {
         return $this->belongsTo(Employee::class, 'cluster_id');
@@ -182,7 +184,6 @@ class Employee extends Model
     //         return $this->hasMany(Employee::class, 'superviser_id')
     //         ->where('designation', 'Caller');
     // }
-
 
     public function callers()
     {
@@ -200,24 +201,26 @@ class Employee extends Model
         return $this->hasMany(FollowUp::class);
     }
 
+    public function getInitialsAttribute(): string
+    {
+        $initials = collect(preg_split('/\s+/', trim((string) $this->emp_name)))
+            ->filter()
+            ->map(fn (string $part) => mb_substr($part, 0, 1))
+            ->take(2)
+            ->implode('');
+
+        return $initials !== '' ? mb_strtoupper($initials) : '?';
+    }
+
     public function getTargetAmountAttribute(): int
     {
-        $categoryTargets = [
-            'platinum' => 3500000,
-            'gold'     => 3000000,
-            'silver'   => 2500000,
-        ];
-
-        $category = strtolower($this->category ?? 'silver');
-
-        return $categoryTargets[$category] ?? 2500000;
+        return is_numeric($this->category) ? (int) $this->category : 2500000;
     }
 
     public function reportingHistories()
     {
         return $this->hasMany(EmployeeReportingHistory::class);
     }
-
 
     public function leads()
     {
@@ -228,7 +231,6 @@ class Employee extends Model
     {
         return $this->hasMany(Customer::class);
     }
-
 
     public static function designationOptions(): array
     {
@@ -241,8 +243,64 @@ class Employee extends Model
         ];
     }
 
+    public static function designationColorClass(?int $designation): string
+    {
+        return match ($designation) {
+            self::DESIGNATION_CLUSTER => 'text-violet-600 dark:text-violet-400',
+            self::DESIGNATION_MANAGER => 'text-blue-600 dark:text-blue-400',
+            self::DESIGNATION_TEAM_LEADER => 'text-teal-600 dark:text-teal-400',
+            self::DESIGNATION_CALLER => 'text-slate-500 dark:text-slate-400',
+            default => 'text-gray-500 dark:text-gray-400',
+        };
+    }
+
     public function loginSessions()
     {
         return $this->hasMany(UserLoginSession::class);
+    }
+
+    public function assignmentBatchesCreated()
+    {
+        return $this->hasMany(CustomerAssignmentBatch::class, 'assigned_by');
+    }
+
+    public function assignmentsReceived()
+    {
+        return $this->hasMany(CustomerAssignment::class, 'employee_id');
+    }
+
+    public function delegationsGiven()
+    {
+        return $this->hasMany(CustomerJourneyDelegation::class, 'delegating_manager_id');
+    }
+
+    public function delegationsReceived()
+    {
+        return $this->hasMany(CustomerJourneyDelegation::class, 'acting_manager_id');
+    }
+
+    public function journeyTakeovers()
+    {
+        return $this->hasMany(JourneyTakeover::class, 'takeover_by_id');
+    }
+
+    /**
+     * Employees who were active at any point during [$start, $end] — joined
+     * on or before the period ends, and (if exited) not exited before the
+     * period starts. Used by the global month selector to answer "who was
+     * active in that month" for the Employees/Teams lists, rather than the
+     * meaningless "created that month".
+     */
+    public function scopeActiveDuring(Builder $query, Carbon $start, Carbon $end): Builder
+    {
+        return $query
+            ->where(function (Builder $query) use ($end) {
+                $query->whereNull('doj')->orWhere('doj', '<=', $end);
+            })
+            ->where(function (Builder $query) use ($start) {
+                $query->where('exit_status', '!=', 'yes')
+                    ->orWhereNull('exit_date')
+                    ->orWhere('exit_date', '>=', $start);
+            });
     }
 }

@@ -2,19 +2,17 @@
 
 namespace App\Support;
 
+use App\Filament\Resources\Teams\TeamResource;
 use App\Models\Employee;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
-use Carbon\Carbon;
 
 class HierarchyHelper
 {
     /**
      * Get all visible employee IDs for the logged-in user.
      */
-
-
     public static function visibleEmployeeIds(User $user): Collection
     {
         /*
@@ -33,7 +31,7 @@ class HierarchyHelper
                                 Employee::DESIGNATION_MANAGER,
                                 Employee::DESIGNATION_TEAM_LEADER,
                             ])
-                            ->where('exit_status', '!=', 'yes');
+                                ->where('exit_status', '!=', 'yes');
                         });
                 })
                 ->pluck('id');
@@ -53,7 +51,6 @@ class HierarchyHelper
 
         if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
 
-
             return self::ids('cluster_id', $employee->id);
         }
 
@@ -65,7 +62,6 @@ class HierarchyHelper
 
         if ($employee->designation === Employee::DESIGNATION_MANAGER) {
 
-
             return self::ids('manager_id', $employee->id);
         }
 
@@ -76,7 +72,6 @@ class HierarchyHelper
         */
 
         if ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
-
 
             return self::ids('superviser_id', $employee->id);
         }
@@ -126,6 +121,7 @@ class HierarchyHelper
         if ($viewer->hasRole('Admin')) {
             return true;
         }
+
         return self::canViewEmployee($viewer, $employee);
     }
 
@@ -137,11 +133,94 @@ class HierarchyHelper
         // We will implement this in the next step.
         // return [];
         return [
-            'caller'       => $employee,
-            'team_leader'  => $employee->supervisor,
-            'manager'      => $employee->manager,
-            'cluster'      => $employee->cluster,
+            'caller' => $employee,
+            'team_leader' => $employee->supervisor,
+            'manager' => $employee->manager,
+            'cluster' => $employee->cluster,
         ];
+    }
+
+    /**
+     * Employee IDs the user is allowed to look up in the Reporting Hierarchy
+     * page: their own downward team (self + subordinates) plus their upward
+     * chain of superiors (team leader, manager, cluster manager). Admin
+     * sees everyone. Nobody sees another team's hierarchy.
+     */
+    public static function ownHierarchyIds(User $user): Collection
+    {
+        if ($user->hasRole('Admin')) {
+            return Employee::query()->pluck('id');
+        }
+
+        $employee = $user->employee;
+
+        if (! $employee) {
+            return collect();
+        }
+
+        $downward = self::subordinateIds($employee);
+
+        $upward = collect([
+            $employee->superviser_id,
+            $employee->manager_id,
+            $employee->cluster_id,
+        ])->filter();
+
+        return $downward->merge($upward)->unique()->values();
+    }
+
+    /**
+     * The eligible-backup pool for Team Continuity: every employee within
+     * the SAME top-level branch (cluster) as $employee — i.e. the whole
+     * subordinate tree of $employee's own Cluster Manager (or of
+     * $employee themselves if they have no cluster/manager/supervisor
+     * above them, e.g. a Cluster Manager). This deliberately includes
+     * sibling Managers/Team Leaders under the same cluster (a legitimate
+     * backup per spec section 12's own example — "eligible Manager",
+     * "another eligible employee within the permitted hierarchy"), while
+     * excluding anyone in a different Cluster. Reuses subordinateIds() for
+     * the actual tree walk rather than inventing a second hierarchy engine.
+     */
+    public static function employeeHierarchyIds(Employee $employee): Collection
+    {
+        return self::subordinateIds(self::topAncestor($employee));
+    }
+
+    /**
+     * Walks up cluster_id → manager_id → superviser_id repeatedly until
+     * reaching an actual Cluster Manager (or running out of links). A
+     * single hop isn't enough: some existing data has a Manager's
+     * cluster_id pointing at another Manager rather than the real Cluster
+     * Manager (denormalized data drift, not this method's concern to fix),
+     * and stopping at that first hop would silently shrink the eligible
+     * backup pool to that intermediate Manager's own small branch instead
+     * of the intended full cluster. Bounded to 10 hops and tracks visited
+     * ids so a cyclic/corrupted chain can never loop forever. Falls back
+     * to $employee itself once there's nowhere further to go (e.g. the
+     * Cluster Manager already, or an orphaned row with no links at all —
+     * Admin's Organisation-wide Handover exists for that latter case).
+     */
+    private static function topAncestor(Employee $employee): Employee
+    {
+        $current = $employee;
+        $visited = [$employee->id];
+
+        for ($hop = 0; $hop < 10; $hop++) {
+            if ($current->designation === Employee::DESIGNATION_CLUSTER) {
+                break;
+            }
+
+            $next = $current->cluster ?? $current->manager ?? $current->superviser;
+
+            if (! $next || in_array($next->id, $visited, true)) {
+                break;
+            }
+
+            $current = $next;
+            $visited[] = $next->id;
+        }
+
+        return $current;
     }
 
     private static function ids(string $column, int $id): Collection
@@ -156,10 +235,8 @@ class HierarchyHelper
             ->values();
     }
 
-
     public static function directReportees(User $user): Builder
     {
-
 
         // Admin sees Cluster Managers
         if ($user->hasRole('Admin')) {
@@ -171,7 +248,6 @@ class HierarchyHelper
         $employee = $user->employee;
         // dd($user);
         // dd($employee->designation);
-
 
         if (! $employee) {
             return Employee::query()->whereRaw('1 = 0');
@@ -205,11 +281,8 @@ class HierarchyHelper
         return Employee::query()->whereRaw('1 = 0');
     }
 
-
-
     public static function children(Employee $employee): Builder
     {
-
 
         if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
 
@@ -236,8 +309,6 @@ class HierarchyHelper
 
         return Employee::query()->whereRaw('1=0');
     }
-
-
 
     public static function callerIds(Employee $employee): Collection
     {
@@ -283,7 +354,6 @@ class HierarchyHelper
         return collect();
     }
 
-
     public static function breadcrumb(Employee $employee): array
     {
         $items = [];
@@ -291,7 +361,7 @@ class HierarchyHelper
         if ($employee->cluster) {
             $items[] = [
                 'label' => $employee->cluster->emp_name,
-                'url' => \App\Filament\Resources\Teams\TeamResource::getUrl('view-team', [
+                'url' => TeamResource::getUrl('view-team', [
                     'record' => $employee->cluster,
                 ]),
             ];
@@ -300,7 +370,7 @@ class HierarchyHelper
         if ($employee->manager) {
             $items[] = [
                 'label' => $employee->manager->emp_name,
-                'url' => \App\Filament\Resources\Teams\TeamResource::getUrl('view-team', [
+                'url' => TeamResource::getUrl('view-team', [
                     'record' => $employee->manager,
                 ]),
             ];
@@ -309,7 +379,7 @@ class HierarchyHelper
         if ($employee->superviser) {
             $items[] = [
                 'label' => $employee->superviser->emp_name,
-                'url' => \App\Filament\Resources\Teams\TeamResource::getUrl('view-team', [
+                'url' => TeamResource::getUrl('view-team', [
                     'record' => $employee->superviser,
                 ]),
             ];
@@ -322,7 +392,6 @@ class HierarchyHelper
 
         return $items;
     }
-
 
     public static function subordinateIds(Employee $employee): Collection
     {
@@ -367,97 +436,6 @@ class HierarchyHelper
         };
     }
 
-    private function getCallerTarget(Employee $employee): float
-    {
-        $today = Carbon::today();
-
-        $currentMonth = $today->month;
-        $currentYear  = $today->year;
-        $monthEnd     = $today->copy()->endOfMonth();
-
-        /*
-        |--------------------------------------------------------------------------
-        | Employee must have DOJ
-        |--------------------------------------------------------------------------
-        */
-
-        if (empty($employee->doj)) {
-            return 0;
-        }
-
-        $joiningDate = Carbon::parse($employee->doj);
-
-        /*
-        |--------------------------------------------------------------------------
-        | EXIT EMPLOYEE
-        |--------------------------------------------------------------------------
-        |
-        | If employee exited in current month,
-        | calculate target based on actual working days.
-        |
-        */
-
-        if (
-            $employee->exit_status === 'yes' &&
-            !empty($employee->exit_date)
-        ) {
-
-            $exitDate = Carbon::parse($employee->exit_date);
-
-            if (
-                $exitDate->month == $currentMonth &&
-                $exitDate->year == $currentYear
-            ) {
-
-                if ($exitDate->lt($joiningDate)) {
-                    return 0;
-                }
-
-                $workedDays = $joiningDate->diffInDays($exitDate) + 1;
-
-                return $workedDays >= 10
-                    ? 1500000
-                    : 0;
-            }
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | NEW JOINER
-        |--------------------------------------------------------------------------
-        |
-        | Only DOJ determines whether employee is a new joiner.
-        | Reporting date is ignored.
-        |
-        */
-
-        if (
-            $joiningDate->month == $currentMonth &&
-            $joiningDate->year == $currentYear
-        ) {
-
-            $remainingDays = $joiningDate->diffInDays($monthEnd) + 1;
-
-            return $remainingDays >= 10
-                ? 1500000
-                : 0;
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | EXISTING EMPLOYEE
-        |--------------------------------------------------------------------------
-        |
-        | Existing employees always carry full target,
-        | even if reporting manager/TL changes.
-        |
-        */
-
-        return is_numeric($employee->category)
-            ? (float) $employee->category
-            : 2500000;
-    }
-
     /**
      * Get employee IDs visible in Login & Screen Time module.
      *
@@ -496,7 +474,7 @@ class HierarchyHelper
                                 Employee::DESIGNATION_MANAGER,
                                 Employee::DESIGNATION_TEAM_LEADER,
                             ])
-                            ->where('exit_status', '!=', 'yes');
+                                ->where('exit_status', '!=', 'yes');
                         });
                 })
                 ->pluck('id')

@@ -5,6 +5,7 @@ namespace App\Filament\Widgets;
 use App\Models\Customer;
 use App\Services\AchievementCalculatorService;
 use App\Support\HierarchyHelper;
+use App\Support\SelectedMonth;
 use Filament\Facades\Filament;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
@@ -73,7 +74,6 @@ class PerformanceStats extends BaseWidget
             $employee
         );
 
-
         /*
         |--------------------------------------------------------------------------
         | Performance Values
@@ -107,11 +107,21 @@ class PerformanceStats extends BaseWidget
         |--------------------------------------------------------------------------
         | Remaining Days
         |--------------------------------------------------------------------------
+        |
+        | "Remaining" only makes sense while the selected month is still in
+        | progress: a past month has none left, a future month hasn't
+        | started deducting from its full count yet.
         */
 
-        $remainingDays = now()->daysInMonth
-            - now()->day
-            + 1;
+        $selectedMonth = SelectedMonth::current();
+
+        if (SelectedMonth::isCurrentCalendarMonth()) {
+            $remainingDays = now()->daysInMonth - now()->day + 1;
+        } elseif ($selectedMonth->lt(now()->startOfMonth())) {
+            $remainingDays = 0;
+        } else {
+            $remainingDays = $selectedMonth->daysInMonth;
+        }
 
         /*
         |--------------------------------------------------------------------------
@@ -129,16 +139,14 @@ class PerformanceStats extends BaseWidget
         |--------------------------------------------------------------------------
         */
 
+        [$monthStart, $monthEnd] = SelectedMonth::range();
+
         if ($isAdmin) {
 
             $approvedAmount = (float) Customer::query()
-                ->whereMonth(
+                ->whereBetween(
                     'created_at',
-                    now()->month
-                )
-                ->whereYear(
-                    'created_at',
-                    now()->year
+                    [$monthStart, $monthEnd]
                 )
                 ->sum(
                     'approved_loan_amount'
@@ -154,13 +162,9 @@ class PerformanceStats extends BaseWidget
                     'employee_id',
                     $employeeIds
                 )
-                ->whereMonth(
+                ->whereBetween(
                     'created_at',
-                    now()->month
-                )
-                ->whereYear(
-                    'created_at',
-                    now()->year
+                    [$monthStart, $monthEnd]
                 )
                 ->sum(
                     'approved_loan_amount'
@@ -533,21 +537,21 @@ class PerformanceStats extends BaseWidget
             return number_format(
                 $amount / 10000000,
                 2
-            ) . ' Cr';
+            ).' Cr';
         }
 
         if ($amount >= 100000) {
             return number_format(
                 $amount / 100000,
                 2
-            ) . ' L';
+            ).' L';
         }
 
         if ($amount >= 1000) {
             return number_format(
                 $amount / 1000,
                 2
-            ) . ' K';
+            ).' K';
         }
 
         return number_format(

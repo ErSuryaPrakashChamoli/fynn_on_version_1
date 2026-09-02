@@ -1,0 +1,13 @@
+# Fynn OCR engine dependencies.
+#
+# PaddleOCR/PaddlePaddle wheels track a specific set of CPython versions
+# (typically the last 2-3 minor releases) and do not yet support very new
+# interpreters the same day they ship. Install this into a dedicated
+# virtualenv running Python 3.10-3.12, NOT the system python3 — see
+# the installation notes shipped alongside this file.
+paddleocr==2.9.1
+paddlepaddle==2.6.2
+opencv-python-headless==4.10.0.84
+PyMuPDF==1.24.11
+numpy==1.26.4
+python-dateutil==2.9.0.post0

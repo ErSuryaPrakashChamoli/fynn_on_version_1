@@ -2,27 +2,30 @@
 
 namespace App\Filament\Resources\Customers\Tables;
 
+use App\Filament\Actions\AssignCustomersToUserBulkAction;
+use App\Filament\Exports\CustomerExporter;
+use App\Filament\Imports\CustomerImporter;
+use App\Filament\Resources\FollowUps\FollowUpResource;
+use App\Models\Employee;
+use App\Services\HierarchyService;
+use App\Support\SelectedMonth;
+use Carbon\Carbon;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Actions\ViewAction;
-use Filament\Tables\Table;
-use Filament\Tables\Columns\TextColumn;
-use App\Models\Employee;
-use App\Filament\Resources\FollowUps\FollowUpResource;
-use Filament\Actions\Action;
-use App\Filament\Exports\CustomerExporter;
 use Filament\Actions\ExportAction;
 use Filament\Actions\ExportBulkAction;
 use Filament\Actions\ImportAction;
-use App\Filament\Imports\CustomerImporter;
-use Filament\Tables\Filters\SelectFilter;
+use Filament\Actions\ViewAction;
 use Filament\Facades\Filament;
-use Illuminate\Database\Eloquent\Builder;
-use Filament\Tables\Filters\Filter;
 use Filament\Forms\Components\DatePicker;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
-use App\Services\HierarchyService;
 
 class CustomersTable
 {
@@ -49,7 +52,7 @@ class CustomersTable
 
                 TextColumn::make('sanctioned_loan_amount')
                     ->label('Loan Amount')
-                    ->formatStateUsing(fn($state) => filled($state) ? '₹' . number_format((float) $state, 0) : '-')
+                    ->formatStateUsing(fn ($state) => filled($state) ? '₹'.number_format((float) $state, 0) : '-')
                     ->alignRight()
                     ->sortable(),
 
@@ -60,7 +63,7 @@ class CustomersTable
                             return $state ?? '-';
                         }
 
-                        return 'XXXXXX' . substr($state, -4);
+                        return 'XXXXXX'.substr($state, -4);
                     })
                     ->searchable(),
 
@@ -78,13 +81,19 @@ class CustomersTable
 
                 TextColumn::make('salary')
                     ->label('Salary')
-                    ->formatStateUsing(fn($state) => filled($state) ? '₹' . number_format((float) $state, 0) : '-')
+                    ->formatStateUsing(fn ($state) => filled($state) ? '₹'.number_format((float) $state, 0) : '-')
                     ->alignRight()
                     ->sortable(),
 
                 TextColumn::make('eligibility_status')
                     ->label('Eligibility')
-                    ->badge(),
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'eligible' => 'success',
+                        'not_eligible' => 'danger',
+                        'consent_pending' => 'warning',
+                        default => 'gray',
+                    }),
 
                 TextColumn::make('bank_eligible_for')
                     ->label('Bank Eligible For')
@@ -99,35 +108,32 @@ class CustomersTable
                 //     ->label('Journey')
                 //     ->badge(),
 
-
                 TextColumn::make('journey_status')
                     ->label('Journey')
                     ->badge()
-                    ->formatStateUsing(fn(string $state): string => match ($state) {
-                        'sanctioned'   => 'Disbursed',
-                        'sfl'          => 'SFL',
+                    ->formatStateUsing(fn (string $state): string => match ($state) {
+                        'sanctioned' => 'Disbursed',
+                        'sfl' => 'SFL',
                         'underwriting' => 'Underwriting',
-                        'approved'     => 'Approved',
-                        default        => ucfirst(str_replace('_', ' ', $state)),
+                        'approved' => 'Approved',
+                        default => ucfirst(str_replace('_', ' ', $state)),
                     })
-                    ->color(fn(string $state): string => match ($state) {
-                        'sfl'          => 'gray',
+                    ->color(fn (string $state): string => match ($state) {
+                        'sfl' => 'gray',
                         'underwriting' => 'warning',
-                        'approved'     => 'info',
-                        'sanctioned'   => 'success', // Displays "Disbursed" with a green badge
-                        default        => 'gray',
+                        'approved' => 'info',
+                        'sanctioned' => 'success', // Displays "Disbursed" with a green badge
+                        default => 'gray',
                     }),
 
                 TextColumn::make('direct')
                     ->label('Type')
                     ->badge()
                     ->formatStateUsing(
-                        fn($state): string =>
-                        $state ? 'Direct' : 'Regular'
+                        fn ($state): string => $state ? 'Direct' : 'Regular'
                     )
                     ->color(
-                        fn($state): string =>
-                        $state ? 'success' : 'gray'
+                        fn ($state): string => $state ? 'success' : 'gray'
                     ),
 
                 TextColumn::make('sanctioned_bank')
@@ -138,8 +144,6 @@ class CustomersTable
                     ->label('Channel')
                     ->searchable()
                     ->toggleable(),
-
-
 
                 TextColumn::make('created_at')
                     ->dateTime()
@@ -178,63 +182,25 @@ class CustomersTable
                         return $query
                             ->when(
                                 $data['created_from'],
-                                fn(Builder $query, $date) => $query->whereDate('created_at', '>=', $date),
+                                fn (Builder $query, $date) => $query->whereDate('created_at', '>=', $date),
                             )
                             ->when(
                                 $data['created_until'],
-                                fn(Builder $query, $date) => $query->whereDate('created_at', '<=', $date),
+                                fn (Builder $query, $date) => $query->whereDate('created_at', '<=', $date),
                             );
                     })
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
 
                         if ($data['created_from'] ?? null) {
-                            $indicators[] = 'From: ' . \Carbon\Carbon::parse($data['created_from'])->format('d M Y');
+                            $indicators[] = 'From: '.Carbon::parse($data['created_from'])->format('d M Y');
                         }
 
                         if ($data['created_until'] ?? null) {
-                            $indicators[] = 'To: ' . \Carbon\Carbon::parse($data['created_until'])->format('d M Y');
+                            $indicators[] = 'To: '.Carbon::parse($data['created_until'])->format('d M Y');
                         }
 
                         return $indicators;
-                    }),
-
-                SelectFilter::make('month')
-                    ->label('Month')
-                    ->options([
-                        1 => 'January',
-                        2 => 'February',
-                        3 => 'March',
-                        4 => 'April',
-                        5 => 'May',
-                        6 => 'June',
-                        7 => 'July',
-                        8 => 'August',
-                        9 => 'September',
-                        10 => 'October',
-                        11 => 'November',
-                        12 => 'December',
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query->when(
-                            filled($data['value'] ?? null),
-                            fn(Builder $query) => $query->whereMonth('created_at', $data['value'])
-                        );
-                    }),
-
-                SelectFilter::make('year')
-                    ->label('Year')
-                    ->options([
-                        2025 => '2025',
-                        2026 => '2026',
-                        2027 => '2027',
-                        2028 => '2028',
-                    ])
-                    ->query(function (Builder $query, array $data): Builder {
-                        return $query->when(
-                            filled($data['value'] ?? null),
-                            fn(Builder $query) => $query->whereYear('created_at', $data['value'])
-                        );
                     }),
 
                 SelectFilter::make('employee_id')
@@ -253,7 +219,7 @@ class CustomersTable
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when(
                             filled($data['value'] ?? null),
-                            fn(Builder $query) => $query->where('employee_id', $data['value'])
+                            fn (Builder $query) => $query->where('employee_id', $data['value'])
                         );
                     }),
 
@@ -265,12 +231,11 @@ class CustomersTable
                             ->pluck('emp_name', 'id')
                     )
                     ->query(
-                        fn(Builder $query, array $data) =>
-                        $query->when(
+                        fn (Builder $query, array $data) => $query->when(
                             filled($data['values'] ?? null),
-                            fn($query) => $query->whereHas(
+                            fn ($query) => $query->whereHas(
                                 'employee',
-                                fn($q) => $q->whereIn('cluster_id', $data['values'])
+                                fn ($q) => $q->whereIn('cluster_id', $data['values'])
                             )
                         )
                     ),
@@ -283,12 +248,11 @@ class CustomersTable
                             ->pluck('emp_name', 'id')
                     )
                     ->query(
-                        fn(Builder $query, array $data) =>
-                        $query->when(
+                        fn (Builder $query, array $data) => $query->when(
                             filled($data['values'] ?? null),
-                            fn($query) => $query->whereHas(
+                            fn ($query) => $query->whereHas(
                                 'employee',
-                                fn($q) => $q->whereIn('manager_id', $data['values'])
+                                fn ($q) => $q->whereIn('manager_id', $data['values'])
                             )
                         )
                     ),
@@ -301,12 +265,11 @@ class CustomersTable
                             ->pluck('emp_name', 'id')
                     )
                     ->query(
-                        fn(Builder $query, array $data) =>
-                        $query->when(
+                        fn (Builder $query, array $data) => $query->when(
                             filled($data['values'] ?? null),
-                            fn($query) => $query->whereHas(
+                            fn ($query) => $query->whereHas(
                                 'employee',
-                                fn($q) => $q->whereIn('superviser_id', $data['values'])
+                                fn ($q) => $q->whereIn('superviser_id', $data['values'])
                             )
                         )
                     ),
@@ -319,10 +282,9 @@ class CustomersTable
                             ->pluck('emp_name', 'id')
                     )
                     ->query(
-                        fn(Builder $query, array $data) =>
-                        $query->when(
+                        fn (Builder $query, array $data) => $query->when(
                             filled($data['values'] ?? null),
-                            fn($query) => $query->whereIn('employee_id', $data['values'])
+                            fn ($query) => $query->whereIn('employee_id', $data['values'])
                         )
                     ),
 
@@ -333,18 +295,18 @@ class CustomersTable
                         0 => 'Regular Customer',
                     ]),
 
-
-
-
             ])
             ->defaultPaginationPageOption(5)
             ->paginated([5, 10, 25, 50, 100, 'all'])
+            ->modifyQueryUsing(
+                fn (Builder $query) => $query->whereBetween('created_at', SelectedMonth::range())
+            )
             ->recordActions([
                 ViewAction::make(),
                 // EditAction::make(),
                 EditAction::make()
                     ->visible(
-                        fn($record) =>
+                        fn ($record) =>
                         // ! $record->documents_submitted &&
                         // auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
                         Filament::auth()->user()?->employee?->designation !== Employee::DESIGNATION_CALLER
@@ -354,7 +316,7 @@ class CustomersTable
                     ->label('Follow Up')
                     ->icon('heroicon-o-phone')
                     ->color('warning')
-                    ->url(fn($record) => FollowUpResource::getUrl('create', [
+                    ->url(fn ($record) => FollowUpResource::getUrl('create', [
                         'customer' => $record->id,
                     ])),
             ])
@@ -364,13 +326,13 @@ class CustomersTable
                     ->exporter(CustomerExporter::class)
                     ->label('Export Customers')
                     ->icon('heroicon-o-arrow-down-tray')
-                    ->visible(fn() => auth()->user()->hasRole('Admin')),
+                    ->visible(fn () => auth()->user()->hasRole('Admin')),
 
                 ImportAction::make()
                     ->label('Import Customers')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('primary')
-                    ->importer(CustomerImporter::class)
+                    ->importer(CustomerImporter::class),
             ])
             ->toolbarActions([
                 // BulkActionGroup::make([
@@ -378,18 +340,19 @@ class CustomersTable
                 // ]),
 
                 DeleteBulkAction::make()
-                    ->visible(fn() => auth()->user()->hasRole('Admin')),
+                    ->visible(fn () => auth()->user()->hasRole('Admin')),
                 // ->visible(
                 //     fn() => auth()->user()->employee?->designation === Employee::DESIGNATION_ADMIN
                 // ),
                 ExportBulkAction::make()
                     ->exporter(CustomerExporter::class)
                     ->label('Export Selected')
-                    ->visible(fn() => auth()->user()->hasRole('Admin')),
+                    ->visible(fn () => auth()->user()->hasRole('Admin')),
                 // ->visible(
                 //     fn() => auth()->user()->employee?->designation === Employee::DESIGNATION_ADMIN
                 // ),
 
+                AssignCustomersToUserBulkAction::make(),
 
             ]);
     }

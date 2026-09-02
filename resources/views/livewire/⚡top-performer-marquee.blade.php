@@ -19,10 +19,6 @@ new class extends Component
 
     public function loadPerformers(TopPerformerService $service){
 
-        // $employee = auth()->user()->employee;
-        // $performers = $service->getTopPerformers($employee);
-       $service = app(TopPerformerService::class);
-
         $user = auth()->user();
         $employee = $user->employee;
 
@@ -35,43 +31,66 @@ new class extends Component
 
         if (!$employee) {
 
-            $title = '🏆 Top 5 Callers';
+            $this->message = $this->buildAdminMessage($performers);
 
-        } else {
-
-            $title = match ($employee->designation) {
-
-                Employee::DESIGNATION_CALLER => '🏆 Top 5 Callers',
-
-                Employee::DESIGNATION_TEAM_LEADER => '🏆 Top 3 Team Leaders',
-
-                Employee::DESIGNATION_MANAGER => '🏆 Top 3 Managers',
-
-                Employee::DESIGNATION_CLUSTER => '🏆 Top 3 Cluster Managers',
-
-                default => '🏆 Top Performers',
-            };
+            return;
         }
 
-        // if (empty($performers)) {
-        //     $this->message = '🏆 No Top Performers Found';
-        //     return;
-        // }
+        $title = match ($employee->designation) {
 
-        // $title = match ($employee->designation) {
+            Employee::DESIGNATION_CALLER => '🏆 Top 5 Callers',
 
-        //     Employee::DESIGNATION_CALLER => '🏆 Top 5 Callers',
+            Employee::DESIGNATION_TEAM_LEADER => '🏆 Top 3 Team Leaders',
 
-        //     Employee::DESIGNATION_TEAM_LEADER => '🏆 Top 3 Team Leaders',
+            Employee::DESIGNATION_MANAGER => '🏆 Top 3 Managers',
 
-        //     Employee::DESIGNATION_MANAGER => '🏆 Top 3 Managers',
+            Employee::DESIGNATION_CLUSTER => '🏆 Top 3 Cluster Managers',
 
-        //     Employee::DESIGNATION_CLUSTER => '🏆 Top 3 Cluster Managers',
+            default => '🏆 Top Performers',
+        };
 
-        //     default => '🏆 Top Performers',
-        // };
+        $this->message = implode('     •     ', [$title, ...$this->formatPerformers($performers)]);
+    }
 
-        $messages = [$title];
+    /**
+     * Admin sees a combined leaderboard (Top 5 Callers, Top 5 Team Leaders,
+     * Top 2 Managers), each ranked with its own 🥇🥈🥉 medals rather than
+     * one ranking spanning all three groups.
+     */
+    private function buildAdminMessage(array $performers): string
+    {
+        $sections = [
+            Employee::DESIGNATION_CALLER => '🏆 Top 5 Callers',
+            Employee::DESIGNATION_TEAM_LEADER => '🏆 Top 5 Team Leaders',
+            Employee::DESIGNATION_MANAGER => '🏆 Top 2 Managers',
+        ];
+
+        $messages = [];
+
+        foreach ($sections as $designation => $title) {
+
+            $group = array_values(array_filter(
+                $performers,
+                fn ($performer) => $performer['designation'] === $designation
+            ));
+
+            if (empty($group)) {
+                continue;
+            }
+
+            $messages[] = $title;
+            array_push($messages, ...$this->formatPerformers($group));
+        }
+
+        return implode('     •     ', $messages);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function formatPerformers(array $performers): array
+    {
+        $messages = [];
 
         foreach ($performers as $index => $top) {
 
@@ -87,7 +106,7 @@ new class extends Component
                 . "%";
         }
 
-        $this->message = implode('     •     ', $messages);
+        return $messages;
     }
 
 
@@ -165,7 +184,7 @@ new class extends Component
             .fi-top-marquee-wrapper {
                 position: absolute;
                 left: 260px;       /* Start after Filament logo/sidebar area */
-                right: 160px;      /* End before profile area */
+                right: 380px;      /* End before profile area — widened from 160px to also clear the global month selector (two <select>s, ~220px) now sitting left of the notification bell; fine-tune visually if it still overlaps at your topbar font/zoom. */
                 top: 50%;
                 transform: translateY(-50%);
                 overflow: hidden;
@@ -180,10 +199,11 @@ new class extends Component
             .marquee-text {
                 display: inline-flex;
                 white-space: nowrap;
-                animation: marquee 25s linear infinite;
+                animation: marquee 80s linear infinite;
                 font-weight: 900;
                 font-size: 1rem;
-                color: #ae2012;
+                color: #ffffff;
+                text-shadow: 0 0 10px rgb(45 212 191 / 60%), 0 1px 2px rgb(0 0 0 / 50%);
             }
 
             .marquee-text:hover {

@@ -2,23 +2,23 @@
 
 namespace App\Filament\Resources\UserLoginSessions\Tables;
 
+use App\Filament\Exports\UserLoginSessionExporter;
+use App\Models\Employee;
+use App\Support\HierarchyHelper;
+use App\Support\SelectedMonth;
 use Filament\Actions\BulkActionGroup;
+use Filament\Actions\ExportAction;
+use Filament\Actions\Exports\Enums\ExportFormat;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
+use Filament\Tables\Columns\Summarizers\Sum;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
-use App\Models\Employee;
-use App\Support\HierarchyHelper;
 use Illuminate\Support\Facades\Auth;
-
-use Filament\Actions\ExportAction;
-
-use App\Filament\Exports\UserLoginSessionExporter;
-use Filament\Actions\Exports\Enums\ExportFormat;
 
 class UserLoginSessionsTable
 {
@@ -45,8 +45,6 @@ class UserLoginSessionsTable
                     ->searchable()
                     ->sortable()
                     ->placeholder('N/A'),
-
-
 
                 /*
                  * Logout
@@ -84,16 +82,16 @@ class UserLoginSessionsTable
                     ->label('Screen Time')
                     ->numeric()
                     ->formatStateUsing(
-                        fn($state): string => self::formatDuration(
+                        fn ($state): string => self::formatDuration(
                             (int) $state
                         )
                     )
                     ->sortable()
                     ->summarize(
-                        \Filament\Tables\Columns\Summarizers\Sum::make()
+                        Sum::make()
                             ->label('Total Screen Time')
                             ->formatStateUsing(
-                                fn($state): string => self::formatDuration(
+                                fn ($state): string => self::formatDuration(
                                     (int) $state
                                 )
                             )
@@ -177,8 +175,7 @@ class UserLoginSessionsTable
                     ->label('Logout Reason')
                     ->badge()
                     ->formatStateUsing(
-                        fn(?string $state, $record): string =>
-                        $record->logout_at
+                        fn (?string $state, $record): string => $record->logout_at
                             ? ucfirst(
                                 str_replace(
                                     '_',
@@ -189,7 +186,7 @@ class UserLoginSessionsTable
                             : '-'
                     )
                     ->color(
-                        fn(?string $state): string => match ($state) {
+                        fn (?string $state): string => match ($state) {
                             'logout' => 'gray',
                             'session_timeout' => 'warning',
                             'new_login' => 'info',
@@ -198,8 +195,6 @@ class UserLoginSessionsTable
                     )
                     ->placeholder('-')
                     ->toggleable(isToggledHiddenByDefault: true),
-
-
 
                 /*
                  * IP
@@ -216,8 +211,7 @@ class UserLoginSessionsTable
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('success')
                     ->visible(
-                        fn(): bool =>
-                        auth()->user()?->hasRole('Admin') === true
+                        fn (): bool => auth()->user()?->hasRole('Admin') === true
                     )
                     ->exporter(
                         UserLoginSessionExporter::class
@@ -229,7 +223,6 @@ class UserLoginSessionsTable
                     ->chunkSize(500),
 
             ])
-
 
             ->filters([
 
@@ -266,8 +259,7 @@ class UserLoginSessionsTable
                             return $query
                                 ->when(
                                     $data['from'] ?? null,
-                                    fn(Builder $query, $date) =>
-                                    $query->whereDate(
+                                    fn (Builder $query, $date) => $query->whereDate(
                                         'login_at',
                                         '>=',
                                         $date
@@ -275,8 +267,7 @@ class UserLoginSessionsTable
                                 )
                                 ->when(
                                     $data['until'] ?? null,
-                                    fn(Builder $query, $date) =>
-                                    $query->whereDate(
+                                    fn (Builder $query, $date) => $query->whereDate(
                                         'login_at',
                                         '<=',
                                         $date
@@ -292,14 +283,14 @@ class UserLoginSessionsTable
 
                             if (! empty($data['from'])) {
                                 $indicators[] =
-                                    'From: ' . Carbon::parse(
+                                    'From: '.Carbon::parse(
                                         $data['from']
                                     )->format('d M Y');
                             }
 
                             if (! empty($data['until'])) {
                                 $indicators[] =
-                                    'Until: ' . Carbon::parse(
+                                    'Until: '.Carbon::parse(
                                         $data['until']
                                     )->format('d M Y');
                             }
@@ -326,8 +317,6 @@ class UserLoginSessionsTable
             //         )
             // )
 
-
-
             ->modifyQueryUsing(
                 function (Builder $query): Builder {
 
@@ -343,6 +332,10 @@ class UserLoginSessionsTable
                         return $query->whereRaw('1 = 0');
                     }
 
+                    // Scoped to the globally selected month — supersedes
+                    // the previous hardcoded rolling-90-day floor.
+                    $query->whereBetween('login_at', SelectedMonth::range());
+
                     /*
                     |--------------------------------------------------------------------------
                     | ADMIN
@@ -353,11 +346,7 @@ class UserLoginSessionsTable
 
                     if ($user->hasRole('Admin')) {
 
-                        return $query->where(
-                            'login_at',
-                            '>=',
-                            now()->subDays(90)->startOfDay()
-                        );
+                        return $query;
                     }
 
                     /*
@@ -374,11 +363,6 @@ class UserLoginSessionsTable
                         ->whereIn(
                             'employee_id',
                             $employeeIds
-                        )
-                        ->where(
-                            'login_at',
-                            '>=',
-                            now()->subDays(90)->startOfDay()
                         );
                 }
             );
