@@ -2311,4 +2311,128 @@ ul.eh-vtree ul.eh-vtree > li::before {
     }
 }
 
+/* =========================================================
+   DASHBOARD GREETING
+   Rendered on PanelsRenderHook::PAGE_START, scoped to the Dashboard
+   page only (see AdminPanelProvider). Uses the --primary- variables
+   so it automatically matches whichever theme (Classic/Emerald/FYNN-ON)
+   is currently active.
+   ========================================================= */
+
+.fynn-dashboard-greeting {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    margin-bottom: 1.25rem;
+    padding: 1rem 1.25rem;
+    border-radius: 0.85rem;
+    border: 1px solid color-mix(in oklab, var(--primary-500) 25%, transparent);
+    background: linear-gradient(135deg, color-mix(in oklab, var(--primary-500) 12%, transparent), transparent);
+}
+
+/* The icon sits right at the end of the tagline sentence (inside
+   .fynn-dashboard-greeting-sub-line below), not floated off to the
+   banner's edge. It's admin-selectable (see DashboardGreetingSettings) and
+   not fixed to the rocket any more, so there's no forced rotation here —
+   just a gentle float for the "dashing" feel; reduced-motion users get it
+   static. A Heroicon reads `currentColor`, so tying that to the --primary-
+   variables recolors it automatically whenever the active theme
+   (Classic/Emerald/FYNN-ON) changes; an emoji glyph keeps its own built-in
+   color regardless (browsers don't let CSS `color` repaint color emoji),
+   so only its circular badge background themes itself. */
+.fynn-dashboard-greeting-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0.375rem;
+    border-radius: 9999px;
+    color: var(--primary-700);
+    background-color: color-mix(in oklab, var(--primary-500) 18%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary-500) 30%, transparent);
+    animation: fynn-dashboard-greeting-icon-float 2.4s ease-in-out infinite;
+}
+
+.dark .fynn-dashboard-greeting-icon {
+    color: var(--primary-300);
+    background-color: color-mix(in oklab, var(--primary-500) 25%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary-500) 40%, transparent);
+}
+
+.fynn-dashboard-greeting-icon--emoji {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+@keyframes fynn-dashboard-greeting-icon-float {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-4px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fynn-dashboard-greeting-icon {
+        animation: none;
+    }
+}
+
+.fynn-dashboard-greeting-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.fynn-dashboard-greeting-sub-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+/* Gradient text (same background-clip technique as the sidebar group
+   label) rather than a flat color, so the headline visibly re-colors
+   itself whenever the primary theme (Classic/Emerald/FYNN-ON) changes. */
+.fynn-dashboard-greeting-headline {
+    font-weight: 800;
+    font-style: italic;
+    font-size: 1.375rem;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+    background: linear-gradient(120deg, var(--primary-700), var(--primary-500) 60%, var(--primary-300));
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+}
+
+.dark .fynn-dashboard-greeting-headline {
+    background: linear-gradient(120deg, var(--primary-300), var(--primary-400) 60%, var(--primary-200));
+    background-clip: text;
+    -webkit-background-clip: text;
+}
+
+.fynn-dashboard-greeting-dash {
+    display: block;
+    width: 2.5rem;
+    height: 3px;
+    margin-block: 0.15rem;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, var(--primary-500), var(--primary-300));
+}
+
+.fynn-dashboard-greeting-sub {
+    font-size: 0.8125rem;
+    font-style: italic;
+    font-weight: 500;
+    color: rgb(100 116 139);
+}
+
+.dark .fynn-dashboard-greeting-sub {
+    color: rgb(148 163 184);
+}
+
 

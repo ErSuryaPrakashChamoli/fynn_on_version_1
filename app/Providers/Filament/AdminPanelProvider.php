@@ -7,6 +7,7 @@ use App\Filament\Pages\Auth\Login;
 use App\Filament\Pages\ChangePassword;
 use App\Filament\Pages\CustomerFollowUpCalendar;
 use App\Filament\Pages\Dashboard;
+use App\Filament\Pages\DashboardGreetingSettings;
 use App\Filament\Pages\EmployeeHierarchy;
 use App\Filament\Pages\EmployeePerformanceDashboard;
 use App\Filament\Pages\JourneyContinuityDashboard;
@@ -38,6 +39,7 @@ use App\Filament\Resources\PerformanceMetricRatios\PerformanceMetricRatioResourc
 use App\Filament\Resources\Teams\TeamResource;
 use App\Filament\Resources\UserLoginSessions\UserLoginSessionResource;
 use App\Filament\Resources\Users\UserResource;
+use App\Filament\Widgets\CustomerStats;
 use App\Filament\Widgets\DailyCommitmentStats;
 use App\Filament\Widgets\IncentiveStats;
 use App\Filament\Widgets\ManagerPPPStats;
@@ -55,8 +57,8 @@ use Filament\Navigation\NavigationBuilder;
 use Filament\Navigation\NavigationGroup;
 use Filament\Navigation\NavigationItem;
 use Filament\Panel;
-use Filament\PanelProvider;
 // use App\Filament\Widgets\AchievementChart;
+use Filament\PanelProvider;
 use Filament\Support\Assets\Js;
 use Filament\Support\Colors\Color;
 use Filament\Support\Enums\Width;
@@ -72,7 +74,6 @@ use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Saade\FilamentFullCalendar\FilamentFullCalendarPlugin;
-use App\Filament\Widgets\CustomerStats;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -179,6 +180,15 @@ class AdminPanelProvider extends PanelProvider
             ->renderHook(
                 PanelsRenderHook::SIDEBAR_NAV_END,
                 fn (): string => view('filament.components.sidebar-nav-scroll-up')->render(),
+            )
+            // A time-of-day greeting ("Good Morning, <name>! Let's make
+            // every move count!") just above the "Dashboard" heading, for
+            // every user. Scoped to the Dashboard page only so it doesn't
+            // leak onto every other page in the panel.
+            ->renderHook(
+                PanelsRenderHook::PAGE_START,
+                fn (): string => view('filament.components.dashboard-greeting')->render(),
+                scopes: Dashboard::class,
             )
             // Duplicates the table's "records per page" select at the top
             // of every table's toolbar (left side), so it doesn't only
@@ -509,6 +519,7 @@ class AdminPanelProvider extends PanelProvider
             NavigationGroup::make('Setting')->items([
                 ...$this->navigationItemsFor(CityResource::class),
                 ...$this->navigationItemsFor(LoginPageSettings::class),
+                ...$this->navigationItemsFor(DashboardGreetingSettings::class),
             ]),
         ]);
     }
