@@ -46,8 +46,10 @@ use App\Filament\Widgets\ManagerPPPStats;
 use App\Filament\Widgets\PerformanceStats;
 use App\Filament\Widgets\TargetStats;
 use App\Http\Middleware\EncryptCookies;
+use Filament\Actions\Action;
 use Filament\Enums\ThemeMode;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -56,8 +58,8 @@ use Filament\Navigation\MenuItem;
 use Filament\Navigation\NavigationBuilder;
 use Filament\Navigation\NavigationGroup;
 use Filament\Navigation\NavigationItem;
-use Filament\Panel;
 // use App\Filament\Widgets\AchievementChart;
+use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Assets\Js;
 use Filament\Support\Colors\Color;
@@ -65,6 +67,9 @@ use Filament\Support\Enums\Width;
 use Filament\Support\Facades\FilamentAsset;
 use Filament\Support\Facades\FilamentView;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Table;
 use Filament\Tables\View\TablesRenderHook;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
@@ -549,6 +554,9 @@ class AdminPanelProvider extends PanelProvider
 
     public function boot(): void
     {
+        $this->configureSearchableDropdowns();
+        $this->configureFilterApplyBehaviour();
+
         FilamentAsset::register([
             Js::make(
                 'login-session-heartbeat',
@@ -594,5 +602,81 @@ class AdminPanelProvider extends PanelProvider
                 BLADE);
             },
         );
+    }
+
+    /**
+     * Give every dropdown in the panel a type-to-filter search box so long
+     * option lists (employees, banks, cities, statuses) never have to be
+     * scrolled through one option at a time.
+     *
+     * Registered as component defaults, so any explicit `->searchable(...)`
+     * or `->preload(...)` chained on an individual component still wins.
+     */
+    protected function configureSearchableDropdowns(): void
+    {
+        Select::configureUsing(function (Select $select): void {
+            $select->searchable();
+        });
+
+        SelectFilter::configureUsing(function (SelectFilter $filter): void {
+            // Ternary filters only ever hold three options; a search box
+            // there would be noise rather than help.
+            if ($filter instanceof TernaryFilter) {
+                return;
+            }
+
+            $filter->searchable()->preload();
+        });
+    }
+
+    /**
+     * Applying a filter should hand the user straight back to the results.
+     *
+     * Filament leaves the filter panel open on apply, so with the number of
+     * filters these listings carry the user is left staring at the filter
+     * form and has to close it and scroll back up to see what changed. The
+     * apply button now closes the panel it lives in and brings the listing
+     * into view.
+     */
+    protected function configureFilterApplyBehaviour(): void
+    {
+        // `close()` comes from the Alpine component wrapping the filter panel
+        // -- `filamentDropdown` or `filamentModal`, depending on the layout.
+        // It is read off `$data` (the merged Alpine scope) rather than called
+        // as a bare identifier, because an inline filters layout has neither,
+        // and a bare `close` would silently resolve to `window.close`.
+        $handler = <<<'JS'
+            $data.close?.();
+            $nextTick(() => {
+                const listing = $el.closest('.fi-ta');
+
+                if (! listing) {
+                    return;
+                }
+
+                const top = listing.getBoundingClientRect().top;
+
+                if (top >= 0 && top <= window.innerHeight * 0.5) {
+                    return;
+                }
+
+                listing.scrollIntoView({
+                    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+                    block: 'start',
+                });
+            });
+            JS;
+
+        Table::configureUsing(function (Table $table) use ($handler): void {
+            $table->filtersApplyAction(
+                fn (Action $action): Action => $action
+                    ->alpineClickHandler($handler)
+                    // alpineClickHandler() turns the wire:click off on the
+                    // assumption that the Alpine expression replaces it; here
+                    // it only runs alongside, so the filters still need to be
+                    // applied on the server.
+                    ->livewireClickHandlerEnabled(true),
+            );
+        });
     }
 }

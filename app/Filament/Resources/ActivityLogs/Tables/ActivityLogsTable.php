@@ -2,12 +2,14 @@
 
 namespace App\Filament\Resources\ActivityLogs\Tables;
 
+use App\Models\ActivityLog;
 use App\Support\SelectedMonth;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -26,7 +28,8 @@ class ActivityLogsTable
                 TextColumn::make('causer.name')
                     ->label('User')
                     ->placeholder('System')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 // BadgeColumn::make('event')
                 // ->colors([
@@ -37,15 +40,40 @@ class ActivityLogsTable
 
                 TextColumn::make('subject_type')
                     ->label('Module')
+                    ->searchable()
+                    ->sortable()
                     ->formatStateUsing(fn ($state) => class_basename($state)),
 
                 TextColumn::make('subject_id')
-                    ->label('Record ID'),
+                    ->label('Record ID')
+                    ->searchable()
+                    ->sortable(),
 
-                TextColumn::make('description'),
+                TextColumn::make('description')
+                    ->searchable()
+                    ->sortable(),
             ])
             ->filters([
-                //
+                SelectFilter::make('subject_type')
+                    ->label('Module')
+                    ->multiple()
+                    ->options(fn (): array => ActivityLog::query()
+                        ->whereNotNull('subject_type')
+                        ->distinct()
+                        ->orderBy('subject_type')
+                        ->pluck('subject_type')
+                        ->mapWithKeys(fn (string $type): array => [$type => class_basename($type)])
+                        ->all()),
+
+                SelectFilter::make('event')
+                    ->label('Event')
+                    ->multiple()
+                    ->options(fn (): array => ActivityLog::query()
+                        ->whereNotNull('event')
+                        ->distinct()
+                        ->orderBy('event')
+                        ->pluck('event', 'event')
+                        ->all()),
             ])
             ->modifyQueryUsing(
                 fn (Builder $query) => $query->whereBetween('created_at', SelectedMonth::range())

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 class SettlementHistoryRelationManager extends RelationManager
 {
     protected static string $relationship = 'histories';
+
     protected static ?string $title = 'Change History';
 
     public function form(Schema $schema): Schema
@@ -29,19 +30,26 @@ class SettlementHistoryRelationManager extends RelationManager
                     ->sortable(),
                 TextColumn::make('action')
                     ->badge()
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
                 TextColumn::make('field_name')
                     ->label('Field')
+                    ->searchable()
+                    ->sortable()
                     ->formatStateUsing(fn (?string $state) => $state ? str($state)->replace('_', ' ')->title() : '-'),
                 TextColumn::make('old_value')
                     ->label('Old Value')
-                    ->limit(60),
+                    ->limit(60)
+                    ->searchable()
+                    ->sortable(),
                 TextColumn::make('new_value')
                     ->label('New Value')
-                    ->limit(60),
-                TextColumn::make('source')->badge(),
-                TextColumn::make('performedBy.name')->label('Changed By'),
-                TextColumn::make('reason')->limit(80),
+                    ->limit(60)
+                    ->searchable()
+                    ->sortable(),
+                TextColumn::make('source')->badge()->sortable(),
+                TextColumn::make('performedBy.name')->label('Changed By')->searchable()->sortable(),
+                TextColumn::make('reason')->limit(80)->searchable()->sortable(),
             ])
             ->headerActions([])
             ->recordActions([]);

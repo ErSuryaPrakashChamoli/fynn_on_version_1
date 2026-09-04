@@ -5,6 +5,7 @@ namespace App\Filament\Resources\CustomerSlaBreaches\Tables;
 use App\Enums\JourneyModule;
 use App\Filament\Resources\JourneyTakeovers\JourneyTakeoverResource;
 use App\Models\CustomerSlaBreach;
+use App\Support\EmployeeOptions;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
@@ -19,34 +20,51 @@ class CustomerSlaBreachesTable
             ->columns([
                 TextColumn::make('customer.customer_name')
                     ->label('Customer')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('customer.application_no')
-                    ->label('Application No'),
+                    ->label('Application No')
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('module')
                     ->badge()
+                    ->sortable()
                     ->formatStateUsing(fn (?string $state): string => JourneyModule::tryFrom((string) $state)?->label() ?? (string) $state),
 
                 TextColumn::make('stage_entered_at')
                     ->dateTime('d M Y h:i A')
-                    ->label('In Stage Since'),
+                    ->label('In Stage Since')
+                    ->sortable(),
 
                 TextColumn::make('reminder_sent_at')
                     ->dateTime('d M Y h:i A')
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->sortable(),
 
                 TextColumn::make('escalated_at')
                     ->dateTime('d M Y h:i A')
                     ->placeholder('Not escalated')
+                    ->sortable()
                     ->color(fn (?string $state): string => $state ? 'danger' : 'gray'),
 
                 TextColumn::make('escalatedTo.emp_name')
                     ->label('Escalated To')
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->searchable()
+                    ->sortable(),
+
+                TextColumn::make('escalatedTo.emp_id')
+                    ->label('Escalated To Emp ID')
+                    ->placeholder('—')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
 
                 TextColumn::make('status')
                     ->badge()
+                    ->sortable()
                     ->colors([
                         'danger' => CustomerSlaBreach::STATUS_OPEN,
                         'success' => CustomerSlaBreach::STATUS_RESOLVED,
@@ -60,6 +78,16 @@ class CustomerSlaBreachesTable
                         CustomerSlaBreach::STATUS_RESOLVED => 'Resolved',
                     ])
                     ->default(CustomerSlaBreach::STATUS_OPEN),
+
+                SelectFilter::make('module')
+                    ->label('Module')
+                    ->multiple()
+                    ->options(collect(JourneyModule::cases())->mapWithKeys(fn (JourneyModule $module): array => [$module->value => $module->label()])->all()),
+
+                SelectFilter::make('escalated_to_employee_id')
+                    ->label('Escalated To')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::visibleTo()),
             ])
             ->recordActions([
                 Action::make('takeOver')

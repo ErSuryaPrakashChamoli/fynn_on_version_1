@@ -4,6 +4,7 @@ namespace App\Filament\Resources\LeadAssignmentReports\Tables;
 
 use App\Filament\Exports\LeadAssignmentReportExporter;
 use App\Models\Employee;
+use App\Support\EmployeeOptions;
 use App\Support\SelectedMonth;
 use Filament\Actions\ExportAction;
 use Filament\Tables\Columns\TextColumn;
@@ -61,10 +62,16 @@ class LeadAssignmentReportsTable
                     ->searchable()
                     ->sortable(),
 
+                TextColumn::make('emp_id')
+                    ->label('Emp ID')
+                    ->searchable()
+                    ->sortable(),
+
                 TextColumn::make('designation')
                     ->label('Role')
                     ->formatStateUsing(fn ($state) => Employee::designationOptions()[$state] ?? $state)
-                    ->badge(),
+                    ->badge()
+                    ->sortable(),
 
                 TextColumn::make('assigned_count')
                     ->label('Assigned')
@@ -72,63 +79,81 @@ class LeadAssignmentReportsTable
 
                 TextColumn::make('opened_count')
                     ->label('Opened')
+                    ->sortable()
                     ->formatStateUsing(fn ($state, Employee $record) => "{$state} (".static::percentOf('opened_count')($record).')'),
 
                 TextColumn::make('contacted_count')
                     ->label('Contacted')
+                    ->sortable()
                     ->formatStateUsing(fn ($state, Employee $record) => "{$state} (".static::percentOf('contacted_count')($record).')'),
 
                 TextColumn::make('approved_count')
                     ->label('Approved')
+                    ->sortable()
                     ->formatStateUsing(fn ($state, Employee $record) => "{$state} (".static::percentOf('approved_count')($record).')'),
 
                 TextColumn::make('disbursed_count')
                     ->label('Disbursed')
+                    ->sortable()
                     ->formatStateUsing(fn ($state, Employee $record) => "{$state} (".static::percentOf('disbursed_count')($record).')'),
 
                 TextColumn::make('eligible_count')
                     ->label('Eligible')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('not_eligible_count')
                     ->label('Not Eligible')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('sfl_count')
                     ->label('SFL')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('underwriting_count')
                     ->label('Underwriting')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('completed_count')
                     ->label('Completed')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('carry_forward_count')
                     ->label('Carry Forward')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('dropped_count')
                     ->label('Dropped')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('not_approved_count')
                     ->label('Not Approved')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('id')
                     ->label('User')
-                    ->options(
-                        Employee::query()
-                            ->whereHas('assignmentsReceived')
-                            ->orderBy('emp_name')
-                            ->pluck('emp_name', 'id')
-                    )
-                    ->searchable()
-                    ->preload(),
+                    ->multiple()
+                    ->options(fn (): array => Employee::query()
+                        ->whereHas('assignmentsReceived')
+                        ->orderBy('emp_name')
+                        ->get(['id', 'emp_name', 'emp_id'])
+                        ->mapWithKeys(fn (Employee $employee): array => [
+                            $employee->id => EmployeeOptions::label($employee),
+                        ])
+                        ->all()),
+
+                SelectFilter::make('designation')
+                    ->label('Role')
+                    ->multiple()
+                    ->options(fn (): array => Employee::designationOptions()),
             ])
             ->headerActions([
                 ExportAction::make()

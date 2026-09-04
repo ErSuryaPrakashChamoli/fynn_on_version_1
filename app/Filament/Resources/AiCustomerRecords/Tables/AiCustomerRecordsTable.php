@@ -55,8 +55,8 @@ class AiCustomerRecordsTable
                 TextColumn::make('id')->label('#')->sortable(),
                 TextColumn::make('schema.name')->label('Configuration')->searchable()->sortable(),
                 TextColumn::make('customer.customer_name')->label('Customer')->searchable()->sortable()->default('-'),
-                TextColumn::make('document.original_name')->label('Source Document')->limit(30),
-                TextColumn::make('status')->badge()->color(fn (string $state): string => match ($state) {
+                TextColumn::make('document.original_name')->label('Source Document')->limit(30)->searchable()->sortable(),
+                TextColumn::make('status')->badge()->searchable()->sortable()->color(fn (string $state): string => match ($state) {
                     'approved' => 'success',
                     'review' => 'warning',
                     'rejected' => 'danger',
@@ -64,6 +64,7 @@ class AiCustomerRecordsTable
                 }),
                 TextColumn::make('confidence_score')
                     ->label('Confidence')
+                    ->sortable()
                     ->formatStateUsing(fn ($state) => $state === null ? '-' : number_format((float) $state * 100, 1).'%'),
             ], $dynamicColumns))
             ->filters([

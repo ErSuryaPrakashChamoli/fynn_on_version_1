@@ -3,27 +3,22 @@
 namespace App\Filament\Resources\Teams\Pages;
 
 use App\Filament\Resources\Teams\TeamResource;
-use Filament\Resources\Pages\Page;
+use App\Models\Customer;
 use App\Models\Employee;
-use Illuminate\Database\Eloquent\Collection;
+use App\Support\EmployeeOptions;
 use App\Support\HierarchyHelper;
-
-use Filament\Tables\Table;
+use Filament\Forms\Components\Select;
+use Filament\Resources\Pages\Page;
 use Filament\Tables;
 // use Filament\Tables\Contracts\HasTable;
 // use Filament\Tables\Concerns\InteractsWithTable;
-use Illuminate\Database\Eloquent\Builde;
 
-use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Concerns\InteractsWithTable;
-use Filament\Actions\Action;
-use App\Models\Customer;
+use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Filament\Forms\Components\Select;
-
-
-
+use Illuminate\Database\Eloquent\Collection;
 
 class CustomerTeamPage extends Page implements HasTable
 {
@@ -34,7 +29,6 @@ class CustomerTeamPage extends Page implements HasTable
     protected static string $resource = TeamResource::class;
 
     protected string $view = 'filament.resources.teams.pages.view-team';
-
 
     public Employee $record;
 
@@ -48,8 +42,6 @@ class CustomerTeamPage extends Page implements HasTable
         return $table
             ->query(
 
-
-
                 Customer::query()
                     ->with('employee')
                     ->whereIn(
@@ -59,16 +51,19 @@ class CustomerTeamPage extends Page implements HasTable
             )
             ->columns([
                 Tables\Columns\TextColumn::make('customer_name')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 // Tables\Columns\TextColumn::make('mobile_no'),
                 Tables\Columns\TextColumn::make('mobile_no')
+                    ->searchable()
+                    ->sortable()
                     ->formatStateUsing(function ($state) {
                         if (blank($state)) {
                             return '-';
                         }
 
-                        return 'XXXXXX' . substr($state, -4);
+                        return 'XXXXXX'.substr($state, -4);
                     }),
 
                 // Tables\Columns\TextColumn::make('journey_status')
@@ -76,7 +71,8 @@ class CustomerTeamPage extends Page implements HasTable
 
                 Tables\Columns\TextColumn::make('journey_status')
                     ->badge()
-                    ->formatStateUsing(fn($state) => match ($state) {
+                    ->sortable()
+                    ->formatStateUsing(fn ($state) => match ($state) {
                         'sfl' => 'SFL',
                         'underwriting' => 'Underwriting',
                         'approved' => 'Approved',
@@ -87,7 +83,7 @@ class CustomerTeamPage extends Page implements HasTable
                         'dropped' => 'Dropped',
                         default => ucfirst(str_replace('_', ' ', $state)),
                     })
-                    ->color(fn($state) => match ($state) {
+                    ->color(fn ($state) => match ($state) {
                         'sfl' => 'gray',
                         'underwriting' => 'warning',
                         'approved' => 'info',
@@ -99,8 +95,8 @@ class CustomerTeamPage extends Page implements HasTable
                     }),
 
                 Tables\Columns\TextColumn::make('approved_loan_amount')
-                    ->money('INR'),
-
+                    ->money('INR')
+                    ->sortable(),
 
                 // Tables\Columns\TextColumn::make('employee.emp_name')
                 //     ->label('Caller'),
@@ -111,12 +107,15 @@ class CustomerTeamPage extends Page implements HasTable
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('employee.emp_id')
-                    ->label('Employee ID'),
+                    ->label('Employee ID')
+                    ->searchable()
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('employee.designation')
                     ->label('Designation')
-                    ->formatStateUsing(fn($state) => Employee::designationOptions()[$state] ?? 'Unknown')
-                    ->badge(),
+                    ->formatStateUsing(fn ($state) => Employee::designationOptions()[$state] ?? 'Unknown')
+                    ->badge()
+                    ->sortable(),
 
             ])
             ->filters([
@@ -138,7 +137,8 @@ class CustomerTeamPage extends Page implements HasTable
 
                 SelectFilter::make('employee_id')
                     ->label('Employee')
-                    ->visible(fn() => $this->record->designation !== Employee::DESIGNATION_CALLER)
+                    ->multiple()
+                    ->visible(fn () => $this->record->designation !== Employee::DESIGNATION_CALLER)
                     ->options(function () {
                         return Employee::query()
                             ->whereIn(
@@ -146,20 +146,22 @@ class CustomerTeamPage extends Page implements HasTable
                                 HierarchyHelper::callerIds($this->record)
                             )
                             ->orderBy('emp_name')
-                            ->pluck('emp_name', 'id');
+                            ->get(['id', 'emp_name', 'emp_id'])
+                            ->mapWithKeys(fn (Employee $employee): array => [
+                                $employee->id => EmployeeOptions::label($employee),
+                            ])
+                            ->all();
                     })
-                    ->searchable()
-                    ->preload()
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when(
-                            filled($data['value'] ?? null),
-                            fn(Builder $query) => $query->where('employee_id', $data['value'])
+                            filled($data['values'] ?? null),
+                            fn (Builder $query) => $query->whereIn('employee_id', $data['values'])
                         );
                     }),
 
                 SelectFilter::make('month')
                     ->label('Month')
-                    ->form([
+                    ->schema([
                         Select::make('month')
                             ->options([
                                 1 => 'January',
@@ -180,17 +182,17 @@ class CustomerTeamPage extends Page implements HasTable
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when(
                             filled($data['month'] ?? null),
-                            fn(Builder $query) => $query->whereMonth('created_at', $data['month'])
+                            fn (Builder $query) => $query->whereMonth('created_at', $data['month'])
                         );
                     }),
 
                 SelectFilter::make('year')
                     ->label('Year')
-                    ->form([
+                    ->schema([
                         Select::make('year')
                             ->options(
                                 collect(range(now()->year, now()->year - 10))
-                                    ->mapWithKeys(fn($year) => [$year => $year])
+                                    ->mapWithKeys(fn ($year) => [$year => $year])
                                     ->toArray()
                             )
                             ->placeholder('All Years'),
@@ -198,7 +200,7 @@ class CustomerTeamPage extends Page implements HasTable
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when(
                             filled($data['year'] ?? null),
-                            fn(Builder $query) => $query->whereYear('created_at', $data['year'])
+                            fn (Builder $query) => $query->whereYear('created_at', $data['year'])
                         );
                     }),
             ]);
@@ -208,7 +210,6 @@ class CustomerTeamPage extends Page implements HasTable
     {
         return "{$this->record->emp_name} - Customer List";
     }
-
 
     public function getBreadcrumbs(): array
     {

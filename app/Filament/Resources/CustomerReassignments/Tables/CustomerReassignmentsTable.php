@@ -3,13 +3,16 @@
 namespace App\Filament\Resources\CustomerReassignments\Tables;
 
 use App\Models\Customer;
+use App\Models\CustomerReassignment;
 use App\Models\Employee;
 use App\Services\Journey\CustomerReassignmentService;
+use App\Support\EmployeeOptions;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -22,29 +25,53 @@ class CustomerReassignmentsTable
             ->columns([
                 TextColumn::make('customer.customer_name')
                     ->label('Customer')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('customer.application_no')
-                    ->label('Application No'),
+                    ->label('Application No')
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('previousOwner.emp_name')
                     ->label('Previous Owner')
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->description(fn (CustomerReassignment $record): ?string => $record->previousOwner?->emp_id)
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('newOwner.emp_name')
-                    ->label('New Owner'),
+                    ->label('New Owner')
+                    ->description(fn (CustomerReassignment $record): ?string => $record->newOwner?->emp_id)
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('reassignedBy.name')
-                    ->label('Reassigned By'),
+                    ->label('Reassigned By')
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('reason')
-                    ->limit(50),
+                    ->limit(50)
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('reassigned_at')
                     ->dateTime('d M Y h:i A')
                     ->sortable(),
             ])
             ->defaultSort('reassigned_at', 'desc')
+            ->filters([
+                SelectFilter::make('previous_owner_id')
+                    ->label('Previous Owner')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::visibleTo()),
+
+                SelectFilter::make('new_owner_id')
+                    ->label('New Owner')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::visibleTo()),
+            ])
             ->headerActions([
                 Action::make('reassignCustomer')
                     ->label('Reassign Customer')
@@ -54,14 +81,18 @@ class CustomerReassignmentsTable
                     ->form([
                         Select::make('customer_id')
                             ->label('Customer')
-                            ->options(fn (): array => Customer::query()
-                                ->orderByDesc('created_at')
-                                ->limit(200)
-                                ->get()
-                                ->mapWithKeys(fn (Customer $customer): array => [
-                                    $customer->id => "{$customer->customer_name} ({$customer->application_no})",
-                                ])
-                                ->all())
+                            // Typing searches every customer; with no search term
+                            // the newest few are listed so the field is never an
+                            // empty dropdown.
+                            ->options(fn (): array => self::customerOptions())
+                            ->getSearchResultsUsing(fn (string $search): array => self::customerOptions($search))
+                            ->getOptionLabelUsing(function ($value): ?string {
+                                $customer = Customer::find($value);
+
+                                return $customer
+                                    ? "{$customer->customer_name} ({$customer->application_no})"
+                                    : null;
+                            })
                             ->searchable()
                             ->required(),
 
@@ -166,6 +197,32 @@ class CustomerReassignmentsTable
             ]);
     }
 
+    /**
+     * @return array<int, string>
+     */
+    private static function customerOptions(?string $search = null): array
+    {
+        return Customer::query()
+            ->when(
+                filled($search),
+                fn ($query) => $query->where(
+                    fn ($q) => $q->where('customer_name', 'like', "%{$search}%")
+                        ->orWhere('application_no', 'like', "%{$search}%")
+                        ->orWhere('lan_no', 'like', "%{$search}%")
+                ),
+            )
+            ->orderByDesc('created_at')
+            ->limit(50)
+            ->get(['id', 'customer_name', 'application_no'])
+            ->mapWithKeys(fn (Customer $customer): array => [
+                $customer->id => "{$customer->customer_name} ({$customer->application_no})",
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
     private static function ownerOptions(): array
     {
         return Employee::query()
@@ -179,6 +236,9 @@ class CustomerReassignmentsTable
             ->all();
     }
 
+    /**
+     * @return array<int, string>
+     */
     private static function managerOptions(): array
     {
         return Employee::query()

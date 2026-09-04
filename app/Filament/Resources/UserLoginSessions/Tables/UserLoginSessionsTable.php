@@ -4,6 +4,7 @@ namespace App\Filament\Resources\UserLoginSessions\Tables;
 
 use App\Filament\Exports\UserLoginSessionExporter;
 use App\Models\Employee;
+use App\Support\EmployeeOptions;
 use App\Support\HierarchyHelper;
 use App\Support\SelectedMonth;
 use Filament\Actions\BulkActionGroup;
@@ -46,6 +47,13 @@ class UserLoginSessionsTable
                     ->sortable()
                     ->placeholder('N/A'),
 
+                TextColumn::make('employee.emp_id')
+                    ->label('Emp ID')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('N/A')
+                    ->toggleable(),
+
                 /*
                  * Logout
                  */
@@ -60,6 +68,12 @@ class UserLoginSessionsTable
                  */
                 TextColumn::make('session_duration')
                     ->label('Session Duration')
+                    // login_at → logout_at (or now for a live session); sorting
+                    // orders by that span in seconds. TIMESTAMPDIFF/NOW are
+                    // MySQL, which is this application's only driver.
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderByRaw(
+                        'TIMESTAMPDIFF(SECOND, login_at, COALESCE(logout_at, NOW())) '.($direction === 'asc' ? 'asc' : 'desc')
+                    ))
                     ->state(function ($record): string {
                         if (! $record->login_at) {
                             return '-';
@@ -99,6 +113,10 @@ class UserLoginSessionsTable
 
                 TextColumn::make('inactive_time')
                     ->label('Inactive Time')
+                    // Session span minus recorded screen time.
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderByRaw(
+                        'GREATEST(TIMESTAMPDIFF(SECOND, login_at, COALESCE(logout_at, NOW())) - COALESCE(screen_time_seconds, 0), 0) '.($direction === 'asc' ? 'asc' : 'desc')
+                    ))
                     ->state(function ($record): string {
                         if (! $record->login_at) {
                             return '-';
@@ -148,6 +166,9 @@ class UserLoginSessionsTable
 
                 TextColumn::make('activity_status')
                     ->label('Activity')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query
+                        ->orderByRaw('logout_at IS NOT NULL '.($direction === 'asc' ? 'asc' : 'desc'))
+                        ->orderBy('is_active', $direction))
                     ->state(function ($record): string {
                         if ($record->logout_at) {
                             return 'Logged Out';
@@ -174,6 +195,7 @@ class UserLoginSessionsTable
                 TextColumn::make('logout_reason')
                     ->label('Logout Reason')
                     ->badge()
+                    ->sortable()
                     ->formatStateUsing(
                         fn (?string $state, $record): string => $record->logout_at
                             ? ucfirst(
@@ -201,6 +223,8 @@ class UserLoginSessionsTable
                  */
                 TextColumn::make('ip_address')
                     ->label('IP Address')
+                    ->searchable()
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
             ])
@@ -231,18 +255,23 @@ class UserLoginSessionsTable
                  */
                 SelectFilter::make('employee_id')
                     ->label('Employee')
-                    ->relationship(
-                        'employee',
-                        'emp_name'
-                    )
-                    ->searchable()
-                    ->preload(),
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::visibleTo()),
+
+                SelectFilter::make('logout_reason')
+                    ->label('Logout Reason')
+                    ->multiple()
+                    ->options([
+                        'logout' => 'Logout',
+                        'session_timeout' => 'Session Timeout',
+                        'new_login' => 'New Login',
+                    ]),
 
                 /*
                  * Date range filter
                  */
                 Filter::make('date_range')
-                    ->form([
+                    ->schema([
                         DatePicker::make('from')
                             ->label('From Date'),
 

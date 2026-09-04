@@ -20,30 +20,37 @@ class PerformanceMetricRatiosTable
             ->columns([
                 TextColumn::make('name')
                     ->searchable()
+                    ->sortable()
                     ->weight('bold'),
 
                 TextColumn::make('numerator_key')
                     ->label('Numerator')
                     ->formatStateUsing(fn (string $state) => MetricRegistry::label($state))
                     ->badge()
+                    ->sortable()
                     ->color('info'),
 
                 TextColumn::make('denominator_key')
                     ->label('Denominator')
                     ->formatStateUsing(fn (string $state) => MetricRegistry::label($state))
                     ->badge()
+                    ->sortable()
                     ->color('gray'),
 
                 TextColumn::make('format')
-                    ->badge(),
+                    ->badge()
+                    ->sortable(),
 
                 IconColumn::make('is_active')
                     ->label('Active')
-                    ->boolean(),
+                    ->boolean()
+                    ->sortable(),
 
                 TextColumn::make('creator.emp_name')
                     ->label('Created By')
                     ->placeholder('System')
+                    ->searchable()
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
