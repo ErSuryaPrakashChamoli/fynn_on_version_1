@@ -1099,6 +1099,7 @@ class CustomerForm
                                     ->label('SFL Remarks')
                                     ->rows(2)
                                     ->columnSpanFull()
+                                    ->required()
                                     // Fix: Underwriting ya uske aage remarks non-editable ho jaye
                                     ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->dehydrated(),
@@ -1190,6 +1191,7 @@ class CustomerForm
                                 Textarea::make('underwriting_remarks')
                                     ->label('Underwriting Remarks')
                                     ->rows(2)
+                                    ->required()
                                     ->columnSpanFull()
                                     ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->dehydrated(),
@@ -1240,6 +1242,7 @@ class CustomerForm
                                     ->options(array_merge($banks, [
                                         'other' => 'Other',
                                     ]))
+                                    ->required()
                                     ->searchable()
                                     ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->dehydrated(true)
@@ -1261,6 +1264,7 @@ class CustomerForm
                                 Textarea::make('approved_remarks')
                                     ->label('Approved Credit Remarks')
                                     ->rows(2)
+                                    ->required()
                                     ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->dehydrated(true)
                                     ->columnSpanFull(),
@@ -1368,6 +1372,7 @@ class CustomerForm
                                     ])
                                     ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
                                     ->dehydrated(true)
+                                    ->required()
                                     ->visible(
                                         fn (Get $get) => in_array($get('disbursal_status'), [
                                             'disbursed',
@@ -1399,6 +1404,7 @@ class CustomerForm
                                     ->label('Cashback Given')
                                     ->prefix('₹')
                                     ->live()
+                                    ->required()
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->afterStateUpdated(function ($state, callable $set) {
                                         $value = preg_replace('/[^0-9]/', '', (string) $state);
@@ -1414,6 +1420,7 @@ class CustomerForm
                                 TextInput::make('subvention')
                                     ->label('Subvention Fees')
                                     ->prefix('₹')
+                                    ->required()
                                     ->live()
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->afterStateUpdated(function ($state, callable $set) {
@@ -1433,6 +1440,7 @@ class CustomerForm
                                     ->live()
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
+                                    ->required()
                                     ->afterStateUpdated(function ($state, callable $set) {
                                         $value = preg_replace('/[^0-9]/', '', (string) $state);
 

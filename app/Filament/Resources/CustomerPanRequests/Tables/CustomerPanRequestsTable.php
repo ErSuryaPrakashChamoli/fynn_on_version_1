@@ -4,6 +4,7 @@ namespace App\Filament\Resources\CustomerPanRequests\Tables;
 
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\CustomerPanRequest;
+use App\Support\EmployeeOptions;
 use App\Support\SelectedMonth;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -28,30 +29,48 @@ class CustomerPanRequestsTable
             ->columns([
                 //
                 TextColumn::make('request_no')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('customer.customer_name')
                     ->label('Customer')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('customer.application_no')
                     ->label('Application No')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('requestedBy.emp_name')
-                    ->label('Requested By'),
+                    ->label('Requested By')
+                    ->description(fn (CustomerPanRequest $record): ?string => $record->requestedBy?->emp_id)
+                    ->searchable()
+                    ->sortable(),
+
+                TextColumn::make('requestedBy.emp_id')
+                    ->label('Emp ID')
+                    ->placeholder('-')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
 
                 TextColumn::make('pan_number')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('requestedBank.bank_name')
-                    ->label('Requested Bank'),
+                    ->label('Requested Bank')
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('requested_loan_type')
-                    ->badge(),
+                    ->badge()
+                    ->sortable(),
 
                 TextColumn::make('status')
                     ->badge()
+                    ->sortable()
                     ->colors([
                         'warning' => 'pending',
                         'success' => 'approved',
@@ -66,14 +85,25 @@ class CustomerPanRequestsTable
                 //
 
                 SelectFilter::make('status')
+                    ->multiple()
                     ->options([
                         'pending' => 'Pending',
                         'approved' => 'Approved',
                         'rejected' => 'Rejected',
                     ]),
 
+                SelectFilter::make('requested_by')
+                    ->label('Requested By')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::visibleTo()),
+
+                SelectFilter::make('requested_bank_id')
+                    ->label('Requested Bank')
+                    ->multiple()
+                    ->relationship('requestedBank', 'bank_name'),
+
                 Filter::make('pan_number')
-                    ->form([
+                    ->schema([
                         TextInput::make('pan_number')
                             ->label('PAN Number')
                             ->placeholder('ABCDE1234F')

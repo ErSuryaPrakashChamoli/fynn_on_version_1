@@ -11,6 +11,7 @@ use App\Filament\Resources\Employees\Schemas\EmployeeForm;
 use App\Filament\Resources\Employees\Schemas\EmployeeInfolist;
 use App\Filament\Resources\Employees\Tables\EmployeesTable;
 use App\Models\Employee;
+use App\Support\EmployeeOptions;
 use App\Support\SelectedMonth;
 use BackedEnum;
 use Filament\Actions\DeleteAction;
@@ -29,6 +30,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -340,7 +342,8 @@ class EmployeeResource extends Resource
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('emp_name')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 // Tables\Columns\TextColumn::make('designation'),
                 Tables\Columns\TextColumn::make('designation')
@@ -348,26 +351,52 @@ class EmployeeResource extends Resource
                     ->formatStateUsing(fn ($state) => Employee::designationOptions()[$state] ?? '-')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('email'),
+                Tables\Columns\TextColumn::make('email')
+                    ->searchable()
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('category')
-                    ->label('Target Category'),
+                    ->label('Target Category')
+                    ->searchable()
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('superviser.emp_name')
-                    ->label('Superviser'),
+                    ->label('Superviser')
+                    ->searchable()
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('manager.emp_name')
-                    ->label('Manager'),
+                    ->label('Manager')
+                    ->searchable()
+                    ->sortable(),
 
-                Tables\Columns\TextColumn::make('cost_center'),
+                Tables\Columns\TextColumn::make('cluster.emp_name')
+                    ->label('Cluster Manager')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
 
-                Tables\Columns\TextColumn::make('unit_name'),
+                Tables\Columns\TextColumn::make('cost_center')
+                    ->searchable()
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('unit_name')
+                    ->searchable()
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('doj')
-                    ->date('d M Y'),
+                    ->date('d M Y')
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('reporting_date')
-                    ->date('d M Y'),
+                    ->date('d M Y')
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('exit_status')
+                    ->label('Exited')
+                    ->badge()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
             ])
             ->defaultPaginationPageOption(5)
@@ -383,6 +412,33 @@ class EmployeeResource extends Resource
 
                         return $query->activeDuring($start, $end);
                     }),
+
+                SelectFilter::make('designation')
+                    ->label('Designation')
+                    ->multiple()
+                    ->options(fn (): array => Employee::designationOptions()),
+
+                SelectFilter::make('manager_id')
+                    ->label('Manager')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_MANAGER)),
+
+                SelectFilter::make('superviser_id')
+                    ->label('Team Leader')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_TEAM_LEADER)),
+
+                SelectFilter::make('cluster_id')
+                    ->label('Cluster Manager')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_CLUSTER)),
+
+                SelectFilter::make('exit_status')
+                    ->label('Exit Status')
+                    ->options([
+                        'no' => 'Active',
+                        'yes' => 'Exited',
+                    ]),
             ])
             ->recordActions([
                 EditAction::make(),

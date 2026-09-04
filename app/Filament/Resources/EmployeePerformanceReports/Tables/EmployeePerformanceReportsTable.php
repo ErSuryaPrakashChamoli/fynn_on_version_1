@@ -8,6 +8,7 @@ use App\Models\Employee;
 use App\Models\PerformanceMetricRatio;
 use App\Services\Performance\EmployeePerformanceMetricsService;
 use App\Services\Performance\RatioCalculator;
+use App\Support\EmployeeOptions;
 use App\Support\Performance\PerformancePeriod;
 use App\Support\SelectedMonth;
 use Carbon\Carbon;
@@ -17,6 +18,7 @@ use Filament\Forms\Components\Select;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -46,10 +48,16 @@ class EmployeePerformanceReportsTable
                     ->sortable()
                     ->weight('bold'),
 
+                TextColumn::make('emp_id')
+                    ->label('Emp ID')
+                    ->searchable()
+                    ->sortable(),
+
                 TextColumn::make('designation')
                     ->label('Role')
                     ->formatStateUsing(fn ($state) => Employee::designationOptions()[$state] ?? $state)
-                    ->badge(),
+                    ->badge()
+                    ->sortable(),
 
                 TextColumn::make('otp_count')
                     ->label('OTP')
@@ -91,6 +99,16 @@ class EmployeePerformanceReportsTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ], self::ratioColumns()))
             ->filters([
+                SelectFilter::make('id')
+                    ->label('Employee')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::visibleTo()),
+
+                SelectFilter::make('designation')
+                    ->label('Role')
+                    ->multiple()
+                    ->options(fn (): array => Employee::designationOptions()),
+
                 Filter::make('period')
                     ->schema([
                         Select::make('type')

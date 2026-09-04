@@ -8,6 +8,7 @@ use App\Enums\JourneyModule;
 use App\Models\CustomerJourneyDelegation;
 use App\Models\Employee;
 use App\Services\Journey\CustomerJourneyDelegationService;
+use App\Support\EmployeeOptions;
 use App\Support\HierarchyHelper;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
@@ -36,21 +37,43 @@ class CustomerJourneyDelegationsTable
                 TextColumn::make('delegatingManager.emp_name')
                     ->label('Original Employee')
                     ->searchable()
-                    ->description(fn (CustomerJourneyDelegation $record): ?string => Employee::designationOptions()[$record->delegatingManager?->designation] ?? null),
+                    ->sortable()
+                    ->description(fn (CustomerJourneyDelegation $record): ?string => filled($record->delegatingManager?->emp_id)
+                        ? $record->delegatingManager->emp_id.' · '.(Employee::designationOptions()[$record->delegatingManager?->designation] ?? '')
+                        : (Employee::designationOptions()[$record->delegatingManager?->designation] ?? null)),
+
+                TextColumn::make('delegatingManager.emp_id')
+                    ->label('Original Emp ID')
+                    ->placeholder('—')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
 
                 TextColumn::make('actingManager.emp_name')
                     ->label('Backup Employee')
                     ->searchable()
-                    ->description(fn (CustomerJourneyDelegation $record): ?string => Employee::designationOptions()[$record->actingManager?->designation] ?? null),
+                    ->sortable()
+                    ->description(fn (CustomerJourneyDelegation $record): ?string => filled($record->actingManager?->emp_id)
+                        ? $record->actingManager->emp_id.' · '.(Employee::designationOptions()[$record->actingManager?->designation] ?? '')
+                        : (Employee::designationOptions()[$record->actingManager?->designation] ?? null)),
+
+                TextColumn::make('actingManager.emp_id')
+                    ->label('Backup Emp ID')
+                    ->placeholder('—')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
 
                 TextColumn::make('coverage_type')
                     ->label('Coverage')
                     ->badge()
+                    ->sortable()
                     ->formatStateUsing(fn (ContinuityCoverageType $state): string => $state->label()),
 
                 TextColumn::make('access_type')
                     ->label('Access Type')
                     ->badge()
+                    ->sortable()
                     ->formatStateUsing(fn (JourneyAccessType $state): string => $state->label())
                     ->color(fn (JourneyAccessType $state): string => match ($state) {
                         JourneyAccessType::EmergencyTakeover => 'danger',
@@ -67,16 +90,21 @@ class CustomerJourneyDelegationsTable
 
                 TextColumn::make('start_at')
                     ->dateTime('d M Y h:i A')
-                    ->label('Start'),
+                    ->label('Start')
+                    ->sortable(),
 
                 TextColumn::make('end_at')
                     ->dateTime('d M Y h:i A')
-                    ->label('End'),
+                    ->label('End')
+                    ->sortable(),
 
                 TextColumn::make('display_status')
                     ->label('Status')
                     ->state(fn (CustomerJourneyDelegation $record): string => $record->displayStatus())
                     ->badge()
+                    // Display status layers "expired/upcoming" on top of the
+                    // stored status, so header sorting uses the stored value.
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('status', $direction))
                     ->colors([
                         'gray' => 'Pending',
                         'info' => 'Upcoming',
@@ -87,6 +115,8 @@ class CustomerJourneyDelegationsTable
 
                 TextColumn::make('reason')
                     ->limit(40)
+                    ->searchable()
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('created_at')
@@ -100,10 +130,32 @@ class CustomerJourneyDelegationsTable
                     ->query(fn (Builder $query): Builder => $query->activeAt(now())),
 
                 SelectFilter::make('access_type')
+                    ->multiple()
                     ->options(collect(JourneyAccessType::cases())->mapWithKeys(fn (JourneyAccessType $t): array => [$t->value => $t->label()])->all()),
 
                 SelectFilter::make('coverage_type')
+                    ->multiple()
                     ->options(ContinuityCoverageType::options()),
+
+                SelectFilter::make('delegating_manager_id')
+                    ->label('Original Employee')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::visibleTo()),
+
+                SelectFilter::make('acting_manager_id')
+                    ->label('Backup Employee')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::visibleTo()),
+
+                SelectFilter::make('status')
+                    ->label('Status')
+                    ->multiple()
+                    ->options([
+                        CustomerJourneyDelegation::STATUS_PENDING => 'Pending',
+                        CustomerJourneyDelegation::STATUS_ACTIVE => 'Active',
+                        CustomerJourneyDelegation::STATUS_CANCELLED => 'Cancelled',
+                        CustomerJourneyDelegation::STATUS_REJECTED => 'Rejected',
+                    ]),
             ])
             ->recordActions([
                 Action::make('cancel')

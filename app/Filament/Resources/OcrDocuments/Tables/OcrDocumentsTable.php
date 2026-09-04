@@ -26,9 +26,9 @@ class OcrDocumentsTable
             ->columns([
                 TextColumn::make('id')->label('#')->sortable(),
                 TextColumn::make('customer.customer_name')->label('Customer')->searchable()->sortable(),
-                TextColumn::make('original_name')->label('Document')->searchable()->limit(35),
-                TextColumn::make('document_type')->label('Type')->badge(),
-                TextColumn::make('status')->badge()->color(fn (string $state): string => match ($state) {
+                TextColumn::make('original_name')->label('Document')->searchable()->sortable()->limit(35),
+                TextColumn::make('document_type')->label('Type')->badge()->sortable(),
+                TextColumn::make('status')->badge()->sortable()->color(fn (string $state): string => match ($state) {
                     'completed' => 'success',
                     'processing' => 'warning',
                     'failed' => 'danger',
@@ -38,8 +38,11 @@ class OcrDocumentsTable
                         ? Str::limit($record->error_message, 80)
                         : null),
                 TextColumn::make('page_count')->label('Pages')->sortable(),
-                TextColumn::make('formatted_confidence')->label('Confidence'),
+                TextColumn::make('formatted_confidence')
+                    ->label('Confidence')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('confidence_score', $direction)),
                 TextColumn::make('is_verified')->label('Verified')->badge()
+                    ->sortable()
                     ->formatStateUsing(fn (bool $state): string => $state ? 'Yes' : 'No')
                     ->color(fn (bool $state): string => $state ? 'success' : 'gray'),
                 TextColumn::make('created_at')->dateTime('d M Y h:i A')->sortable(),
@@ -51,6 +54,9 @@ class OcrDocumentsTable
                     'completed' => 'Completed',
                     'failed' => 'Failed',
                 ]),
+                SelectFilter::make('customer_id')
+                    ->label('Customer')
+                    ->relationship('customer', 'customer_name'),
                 SelectFilter::make('document_type')->options([
                     'customer_form' => 'Customer Form',
                     'kyc' => 'KYC',

@@ -5,6 +5,7 @@ namespace App\Filament\Resources\JourneyTakeovers\Tables;
 use App\Models\Customer;
 use App\Models\JourneyTakeover;
 use App\Services\Journey\JourneyTakeoverService;
+use App\Support\EmployeeOptions;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -29,30 +30,64 @@ class JourneyTakeoversTable
         'other' => 'Other',
     ];
 
+    /**
+     * @return array<int, string>
+     */
+    private static function customerOptions(?string $search = null): array
+    {
+        return Customer::query()
+            ->when(
+                filled($search),
+                fn ($query) => $query->where(
+                    fn ($q) => $q->where('customer_name', 'like', "%{$search}%")
+                        ->orWhere('application_no', 'like', "%{$search}%")
+                        ->orWhere('lan_no', 'like', "%{$search}%")
+                ),
+            )
+            ->orderByDesc('created_at')
+            ->limit(50)
+            ->get(['id', 'customer_name', 'application_no'])
+            ->mapWithKeys(fn (Customer $customer): array => [
+                $customer->id => "{$customer->customer_name} ({$customer->application_no})",
+            ])
+            ->all();
+    }
+
     public static function configure(Table $table): Table
     {
         return $table
             ->columns([
                 TextColumn::make('customer.customer_name')
                     ->label('Customer')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('customer.application_no')
-                    ->label('Application No'),
+                    ->label('Application No')
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('originalManager.emp_name')
-                    ->label('Original Manager'),
+                    ->label('Original Manager')
+                    ->description(fn (JourneyTakeover $record): ?string => $record->originalManager?->emp_id)
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('takeoverBy.emp_name')
-                    ->label('Taken Over By'),
+                    ->label('Taken Over By')
+                    ->description(fn (JourneyTakeover $record): ?string => $record->takeoverBy?->emp_id)
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('takeover_type')
                     ->label('Reason Type')
                     ->badge()
+                    ->sortable()
                     ->formatStateUsing(fn (?string $state): string => self::TYPE_LABELS[$state] ?? (string) $state),
 
                 TextColumn::make('status')
                     ->badge()
+                    ->sortable()
                     ->colors([
                         'success' => JourneyTakeover::STATUS_ACTIVE,
                         'gray' => JourneyTakeover::STATUS_ENDED,
@@ -60,19 +95,32 @@ class JourneyTakeoversTable
                     ]),
 
                 TextColumn::make('started_at')
-                    ->dateTime('d M Y h:i A'),
+                    ->dateTime('d M Y h:i A')
+                    ->sortable(),
 
                 TextColumn::make('ended_at')
                     ->dateTime('d M Y h:i A')
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->sortable(),
             ])
             ->filters([
                 SelectFilter::make('status')
+                    ->multiple()
                     ->options([
                         JourneyTakeover::STATUS_ACTIVE => 'Active',
                         JourneyTakeover::STATUS_ENDED => 'Ended',
                         JourneyTakeover::STATUS_CANCELLED => 'Cancelled',
                     ]),
+
+                SelectFilter::make('takeover_type')
+                    ->label('Reason Type')
+                    ->multiple()
+                    ->options(self::TYPE_LABELS),
+
+                SelectFilter::make('takeover_by_id')
+                    ->label('Taken Over By')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::visibleTo()),
             ])
             ->recordActions([
                 Action::make('end')
@@ -106,14 +154,18 @@ class JourneyTakeoversTable
                     ->form([
                         Select::make('customer_id')
                             ->label('Customer')
-                            ->options(fn (): array => Customer::query()
-                                ->orderByDesc('created_at')
-                                ->limit(200)
-                                ->get()
-                                ->mapWithKeys(fn (Customer $customer): array => [
-                                    $customer->id => "{$customer->customer_name} ({$customer->application_no})",
-                                ])
-                                ->all())
+                            // Typing searches every customer; without a search
+                            // term we still show the newest few so the field is
+                            // never an empty dropdown.
+                            ->options(fn (): array => self::customerOptions())
+                            ->getSearchResultsUsing(fn (string $search): array => self::customerOptions($search))
+                            ->getOptionLabelUsing(function ($value): ?string {
+                                $customer = Customer::find($value);
+
+                                return $customer
+                                    ? "{$customer->customer_name} ({$customer->application_no})"
+                                    : null;
+                            })
                             ->searchable()
                             ->required(),
 

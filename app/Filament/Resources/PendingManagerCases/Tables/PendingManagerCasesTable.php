@@ -7,6 +7,7 @@ use App\Filament\Resources\JourneyTakeovers\JourneyTakeoverResource;
 use App\Models\Customer;
 use App\Services\Journey\CustomerJourneyAccessService;
 use App\Services\Journey\JourneySlaService;
+use App\Support\EmployeeOptions;
 use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -20,11 +21,27 @@ class PendingManagerCasesTable
             ->columns([
                 TextColumn::make('customer_name')
                     ->label('Customer')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('application_no')
                     ->label('Application No')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
+
+                TextColumn::make('employee.emp_name')
+                    ->label('Case Owner')
+                    ->placeholder('Unassigned')
+                    ->description(fn (Customer $record): ?string => $record->employee?->emp_id)
+                    ->searchable()
+                    ->sortable(),
+
+                TextColumn::make('employee.emp_id')
+                    ->label('Emp ID')
+                    ->placeholder('-')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
 
                 TextColumn::make('original_manager')
                     ->label('Original Manager')
@@ -79,6 +96,7 @@ class PendingManagerCasesTable
             ->filters([
                 SelectFilter::make('journey_status')
                     ->label('Journey Status')
+                    ->multiple()
                     ->options([
                         'sfl' => 'SFL',
                         'underwriting' => 'Underwriting',
@@ -86,6 +104,11 @@ class PendingManagerCasesTable
                         'not_approved' => 'Not Approved',
                         'sanctioned' => 'Sanctioned',
                     ]),
+
+                SelectFilter::make('employee_id')
+                    ->label('Case Owner')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::visibleTo()),
             ])
             ->recordActions([
                 Action::make('takeOver')

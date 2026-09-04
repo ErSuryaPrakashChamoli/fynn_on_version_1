@@ -2,18 +2,18 @@
 
 namespace App\Filament\Resources\CustomerSettlements\RelationManagers;
 
+use App\Models\CustomerSettlement;
 use App\Models\CustomerSettlementTransaction;
 use App\Services\Settlement\SettlementTransactionService;
+use Filament\Actions\CreateAction;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\EditAction;
 use Filament\Forms;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
-use Filament\Actions\EditAction;
-use Filament\Actions\ViewAction;
-use Filament\Actions\DeleteAction;
-use Filament\Actions\CreateAction;
 
 class TransactionsRelationManager extends RelationManager
 {
@@ -92,16 +92,21 @@ class TransactionsRelationManager extends RelationManager
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('reference')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('utr_number')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('status')
-                    ->badge(),
+                    ->badge()
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('createdBy.name')
-                    ->label('Created By'),
+                    ->label('Created By')
+                    ->searchable()
+                    ->sortable(),
             ])
             ->headerActions([
                 CreateAction::make()
@@ -146,7 +151,7 @@ class TransactionsRelationManager extends RelationManager
                         );
 
                         if ($settlementId) {
-                            $settlement = \App\Models\CustomerSettlement::find($settlementId);
+                            $settlement = CustomerSettlement::find($settlementId);
 
                             if ($settlement) {
                                 app(SettlementTransactionService::class)->sync($settlement);

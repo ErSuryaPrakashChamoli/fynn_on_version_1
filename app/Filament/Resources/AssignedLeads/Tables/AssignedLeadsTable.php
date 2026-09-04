@@ -3,9 +3,10 @@
 namespace App\Filament\Resources\AssignedLeads\Tables;
 
 use App\Filament\Resources\Customers\CustomerResource;
+use App\Models\Customer;
 use App\Models\CustomerAssignment;
 use App\Models\Employee;
-use App\Services\HierarchyService;
+use App\Support\EmployeeOptions;
 use App\Support\SelectedMonth;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
@@ -24,26 +25,53 @@ class AssignedLeadsTable
             ->defaultSort('id', 'desc')
             ->columns([
                 TextColumn::make('display_name')
-                    ->label('Prospect Name'),
+                    ->label('Prospect Name')
+                    // Name lives on either the customer or the AI record, so
+                    // sorting orders by whichever one this row points at.
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy(
+                        Customer::query()
+                            ->select('customer_name')
+                            ->whereColumn('customers.id', 'customer_assignments.customer_id')
+                            ->limit(1),
+                        $direction,
+                    )),
 
                 TextColumn::make('source_label')
                     ->label('Source')
                     ->badge()
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderByRaw(
+                        'customer_assignments.customer_id IS NULL '.($direction === 'asc' ? 'asc' : 'desc')
+                    ))
                     ->color(fn (string $state): string => $state === 'Customer' ? 'success' : 'gray'),
 
                 TextColumn::make('employee.emp_name')
-                    ->label('Assigned To')
+                    ->label('Case Owner')
+                    ->placeholder('Unassigned')
+                    ->description(fn (CustomerAssignment $record): ?string => $record->employee?->emp_id)
                     ->searchable()
+                    ->sortable()
+                    ->visible(fn () => Filament::auth()->user()?->hasRole('Admin')
+                        || Filament::auth()->user()?->employee?->designation !== Employee::DESIGNATION_CALLER),
+
+                TextColumn::make('employee.emp_id')
+                    ->label('Emp ID')
+                    ->placeholder('-')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable()
                     ->visible(fn () => Filament::auth()->user()?->hasRole('Admin')
                         || Filament::auth()->user()?->employee?->designation !== Employee::DESIGNATION_CALLER),
 
                 TextColumn::make('status')
                     ->label('Status')
                     ->badge()
+                    // "Opened"/"Pending" is derived from the open counter.
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('opens_count', $direction))
                     ->color(fn (string $state): string => $state === 'Opened' ? 'success' : 'gray'),
 
                 TextColumn::make('opens_count')
-                    ->label('Opens'),
+                    ->label('Opens')
+                    ->sortable(),
 
                 TextColumn::make('follow_up_status')
                     ->label('Follow-Up Status')
@@ -66,6 +94,7 @@ class AssignedLeadsTable
                 TextColumn::make('customer.journey_status')
                     ->label('Journey')
                     ->badge()
+                    ->sortable()
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
                         'sanctioned' => 'Disbursed',
                         'sfl' => 'SFL',
@@ -90,21 +119,42 @@ class AssignedLeadsTable
                     ->label('Last Opened')
                     ->dateTime('d M Y h:i A')
                     ->placeholder('Never')
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('employee_id')
-                    ->label('Assigned To')
-                    ->options(
-                        Employee::query()
-                            ->whereIn('id', HierarchyService::visibleEmployeeIds(Filament::auth()->user()))
-                            ->orderBy('emp_name')
-                            ->pluck('emp_name', 'id')
-                    )
-                    ->searchable()
-                    ->preload()
+                    ->label('Case Owner')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::visibleTo(Filament::auth()->user()))
                     ->visible(fn () => Filament::auth()->user()?->hasRole('Admin')
                         || Filament::auth()->user()?->employee?->designation !== Employee::DESIGNATION_CALLER),
+
+                SelectFilter::make('source')
+                    ->label('Source')
+                    ->options([
+                        'customer' => 'Customer',
+                        'ai_record' => 'AI Record',
+                    ])
+                    ->query(fn (Builder $query, array $data): Builder => $query->when(
+                        filled($data['value'] ?? null),
+                        fn (Builder $query) => $data['value'] === 'customer'
+                            ? $query->whereNotNull('customer_id')
+                            : $query->whereNull('customer_id')
+                    )),
+
+                SelectFilter::make('open_status')
+                    ->label('Status')
+                    ->options([
+                        'opened' => 'Opened',
+                        'pending' => 'Pending',
+                    ])
+                    ->query(fn (Builder $query, array $data): Builder => $query->when(
+                        filled($data['value'] ?? null),
+                        fn (Builder $query) => $data['value'] === 'opened'
+                            ? $query->where('opens_count', '>', 0)
+                            : $query->where('opens_count', 0)
+                    )),
             ])
             ->recordActions([
                 EditAction::make(),

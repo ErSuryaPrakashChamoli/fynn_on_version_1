@@ -2,12 +2,15 @@
 
 namespace App\Filament\Resources\Cities\Tables;
 
+use App\Models\City;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
-use Filament\Tables\Table;
-use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
+use Filament\Tables\Table;
 
 class CitiesTable
 {
@@ -34,14 +37,17 @@ class CitiesTable
 
                 TextColumn::make('state_code')
                     ->label('State Code')
+                    ->searchable()
                     ->sortable(),
 
                 TextColumn::make('city_code')
                     ->label('City Code')
+                    ->searchable()
                     ->sortable(),
 
                 IconColumn::make('is_active')
-                    ->boolean(),
+                    ->boolean()
+                    ->sortable(),
 
                 TextColumn::make('created_at')
                     ->dateTime('d M Y H:i')
@@ -54,7 +60,18 @@ class CitiesTable
                     ->toggleable(),
             ])
             ->filters([
-                //
+                SelectFilter::make('country')
+                    ->label('Country')
+                    ->multiple()
+                    ->options(fn (): array => City::query()->distinct()->orderBy('country')->pluck('country', 'country')->all()),
+
+                SelectFilter::make('state')
+                    ->label('State')
+                    ->multiple()
+                    ->options(fn (): array => City::query()->distinct()->orderBy('state')->pluck('state', 'state')->all()),
+
+                TernaryFilter::make('is_active')
+                    ->label('Active'),
             ])
             ->recordActions([
                 // EditAction::make(),

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 class AiCustomerRecordsRelationManager extends RelationManager
 {
     protected static string $relationship = 'aiCustomerRecords';
+
     protected static ?string $title = 'AI Document Data';
 
     public function form(Schema $schema): Schema
@@ -23,12 +24,13 @@ class AiCustomerRecordsRelationManager extends RelationManager
         return $table
             ->defaultSort('created_at', 'desc')
             ->columns([
-                TextColumn::make('schema.name')->label('Configuration')->searchable(),
-                TextColumn::make('document.original_name')->label('Source Document')->limit(35),
-                TextColumn::make('status')->badge(),
+                TextColumn::make('schema.name')->label('Configuration')->searchable()->sortable(),
+                TextColumn::make('document.original_name')->label('Source Document')->limit(35)->searchable()->sortable(),
+                TextColumn::make('status')->badge()->searchable()->sortable(),
                 TextColumn::make('confidence_score')
                     ->label('Confidence')
-                    ->formatStateUsing(fn ($state) => $state === null ? '-' : number_format((float) $state * 100, 1) . '%'),
+                    ->sortable()
+                    ->formatStateUsing(fn ($state) => $state === null ? '-' : number_format((float) $state * 100, 1).'%'),
                 TextColumn::make('created_at')->dateTime('d M Y h:i A')->sortable(),
             ])
             ->headerActions([])

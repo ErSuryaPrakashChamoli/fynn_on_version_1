@@ -6,15 +6,19 @@ use App\Filament\Imports\LeadImporter;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\Employee;
 use App\Models\Lead;
+use App\Support\EmployeeOptions;
 use App\Support\SelectedMonth;
+use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ImportAction;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\DatePicker;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,8 +30,24 @@ class LeadsTable
         return $table
             ->defaultSort('id', 'desc')
             ->columns([
-                //
-                TextColumn::make('customer_name')->label('Prospect Name')->searchable(),
+                TextColumn::make('customer_name')
+                    ->label('Prospect Name')
+                    ->searchable()
+                    ->sortable(),
+
+                TextColumn::make('employee.emp_name')
+                    ->label('Case Owner')
+                    ->placeholder('Unassigned')
+                    ->searchable()
+                    ->sortable(),
+
+                TextColumn::make('employee.emp_id')
+                    ->label('Emp ID')
+                    ->placeholder('-')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
+
                 TextColumn::make('mobile_no')
                     ->label('Mobile No')
                     ->formatStateUsing(function (?string $state): string {
@@ -37,9 +57,18 @@ class LeadsTable
 
                         return 'XXXXXX'.substr($state, -4);
                     })
-                    ->searchable(),
-                TextColumn::make('current_location')->label('Location'),
-                TextColumn::make('status')->badge(),
+                    ->searchable()
+                    ->sortable(),
+
+                TextColumn::make('current_location')
+                    ->label('Location')
+                    ->searchable()
+                    ->sortable(),
+
+                TextColumn::make('status')
+                    ->badge()
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('bank.bank_name')
                     ->label('Bank')
@@ -51,18 +80,16 @@ class LeadsTable
                     ->dateTime('d M Y h:i A')
                     ->badge()
                     ->sortable(),
-                // TextColumn::make('next_follow_up_date')->date()->label('Next Follow Up'),
+
                 TextColumn::make('next_follow_up_date')
                     ->label('Next Follow Up')
                     ->dateTime('d M Y h:i A')
                     ->sortable(),
+
                 TextColumn::make('created_at')
                     ->label('Created On')
                     ->dateTime('d M Y h:i A')
                     ->sortable(),
-            ])
-            ->filters([
-                //
             ])
             ->recordActions([
                 EditAction::make(),
@@ -131,14 +158,39 @@ class LeadsTable
             ])
             ->filters([
 
+                SelectFilter::make('employee_id')
+                    ->label('Case Owner')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::visibleTo())
+                    ->query(
+                        fn (Builder $query, array $data) => $query->when(
+                            filled($data['values'] ?? null),
+                            fn (Builder $query) => $query->whereIn('employee_id', $data['values'])
+                        )
+                    ),
+
+                SelectFilter::make('status')
+                    ->label('Status')
+                    ->multiple()
+                    ->options([
+                        'Pending' => 'Pending',
+                        'Interested' => 'Interested',
+                        'Not Interested' => 'Not Interested',
+                        'Busy' => 'Busy',
+                        'No Response' => 'No Response',
+                        'Not Eligible' => 'Not Eligible',
+                        'Eligible for Other Bank' => 'Eligible for Other Bank',
+                    ]),
+
+                SelectFilter::make('bank_id')
+                    ->label('Bank')
+                    ->multiple()
+                    ->relationship('bank', 'bank_name'),
+
                 SelectFilter::make('manager_id')
                     ->label('Manager')
                     ->multiple()
-                    ->options(
-                        Employee::where('designation', Employee::DESIGNATION_MANAGER)
-                            ->orderBy('emp_name')
-                            ->pluck('emp_name', 'id')
-                    )
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_MANAGER))
                     ->query(
                         fn (Builder $query, array $data) => $query->when(
                             filled($data['values'] ?? null),
@@ -152,11 +204,7 @@ class LeadsTable
                 SelectFilter::make('team_leader_id')
                     ->label('Team Leader')
                     ->multiple()
-                    ->options(
-                        Employee::where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                            ->orderBy('emp_name')
-                            ->pluck('emp_name', 'id')
-                    )
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_TEAM_LEADER))
                     ->query(
                         fn (Builder $query, array $data) => $query->when(
                             filled($data['values'] ?? null),
@@ -170,17 +218,42 @@ class LeadsTable
                 SelectFilter::make('caller_id')
                     ->label('Caller')
                     ->multiple()
-                    ->options(
-                        Employee::where('designation', Employee::DESIGNATION_CALLER)
-                            ->orderBy('emp_name')
-                            ->pluck('emp_name', 'id')
-                    )
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_CALLER))
                     ->query(
                         fn (Builder $query, array $data) => $query->when(
                             filled($data['values'] ?? null),
                             fn (Builder $query) => $query->whereIn('employee_id', $data['values'])
                         )
                     ),
+
+                Filter::make('next_follow_up_date')
+                    ->label('Next Follow Up')
+                    ->schema([
+                        DatePicker::make('follow_up_from')->label('From'),
+                        DatePicker::make('follow_up_until')->label('To'),
+                    ])
+                    ->query(fn (Builder $query, array $data): Builder => $query
+                        ->when(
+                            $data['follow_up_from'] ?? null,
+                            fn (Builder $query, $date) => $query->whereDate('next_follow_up_date', '>=', $date),
+                        )
+                        ->when(
+                            $data['follow_up_until'] ?? null,
+                            fn (Builder $query, $date) => $query->whereDate('next_follow_up_date', '<=', $date),
+                        ))
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+
+                        if ($data['follow_up_from'] ?? null) {
+                            $indicators[] = 'Follow up from: '.Carbon::parse($data['follow_up_from'])->format('d M Y');
+                        }
+
+                        if ($data['follow_up_until'] ?? null) {
+                            $indicators[] = 'Follow up to: '.Carbon::parse($data['follow_up_until'])->format('d M Y');
+                        }
+
+                        return $indicators;
+                    }),
 
             ])
             ->modifyQueryUsing(

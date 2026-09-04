@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Teams\Tables;
 use App\Filament\Resources\Teams\TeamResource;
 use App\Models\Employee;
 use App\Services\AchievementCalculatorService;
+use App\Support\EmployeeOptions;
 use App\Support\HierarchyHelper;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -30,6 +31,11 @@ class TeamsTable
                     ->searchable()
                     ->sortable(),
 
+                TextColumn::make('emp_id')
+                    ->label('Emp ID')
+                    ->searchable()
+                    ->sortable(),
+
                 TextColumn::make('designation')
                     ->label('Position')
                     ->badge()
@@ -47,14 +53,20 @@ class TeamsTable
 
                 TextColumn::make('superviser.emp_name')
                     ->label('Team Leader')
-                    ->default('-'),
+                    ->default('-')
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('manager.emp_name')
-                    ->default('-'),
+                    ->default('-')
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('cluster.emp_name')
                     ->label('Cluster Manager')
-                    ->default('-'),
+                    ->default('-')
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('target_category')
                     ->label('Category')
@@ -222,6 +234,7 @@ class TeamsTable
                 //
 
                 SelectFilter::make('designation')
+                    ->multiple()
                     ->options([
                         Employee::DESIGNATION_CLUSTER => 'Cluster Manager',
                         Employee::DESIGNATION_MANAGER => 'Manager',
@@ -262,6 +275,11 @@ class TeamsTable
                     )
                     ->searchable()
                     ->preload(),
+
+                SelectFilter::make('superviser_id')
+                    ->label('Team Leader')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_TEAM_LEADER)),
 
             ])
             ->recordActions([

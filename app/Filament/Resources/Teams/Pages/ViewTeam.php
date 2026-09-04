@@ -52,7 +52,13 @@ class ViewTeam extends Page implements HasTable
 
                 Tables\Columns\TextColumn::make('emp_name')
                     ->label('Employee')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('emp_id')
+                    ->label('Emp ID')
+                    ->searchable()
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('designation')
                     ->label('Position')

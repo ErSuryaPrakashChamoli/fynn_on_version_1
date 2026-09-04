@@ -7,7 +7,7 @@ use App\Filament\Exports\CustomerExporter;
 use App\Filament\Imports\CustomerImporter;
 use App\Filament\Resources\FollowUps\FollowUpResource;
 use App\Models\Employee;
-use App\Services\HierarchyService;
+use App\Support\EmployeeOptions;
 use App\Support\SelectedMonth;
 use Carbon\Carbon;
 use Filament\Actions\Action;
@@ -50,6 +50,19 @@ class CustomersTable
                     ->searchable()
                     ->sortable(),
 
+                TextColumn::make('employee.emp_name')
+                    ->label('Case Owner')
+                    ->placeholder('Unassigned')
+                    ->searchable()
+                    ->sortable(),
+
+                TextColumn::make('employee.emp_id')
+                    ->label('Emp ID')
+                    ->placeholder('-')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
+
                 TextColumn::make('sanctioned_loan_amount')
                     ->label('Loan Amount')
                     ->formatStateUsing(fn ($state) => filled($state) ? '₹'.number_format((float) $state, 0) : '-')
@@ -65,19 +78,23 @@ class CustomersTable
 
                         return 'XXXXXX'.substr($state, -4);
                     })
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('email')
                     ->searchable()
+                    ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('pan_number')
                     ->label('PAN Number')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('loan_applied')
                     ->label('Loan Applied')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('salary')
                     ->label('Salary')
@@ -88,6 +105,8 @@ class CustomersTable
                 TextColumn::make('eligibility_status')
                     ->label('Eligibility')
                     ->badge()
+                    ->searchable()
+                    ->sortable()
                     ->color(fn (string $state): string => match ($state) {
                         'eligible' => 'success',
                         'not_eligible' => 'danger',
@@ -102,7 +121,8 @@ class CustomersTable
                             ? ($record->other_bank_eligible_for ?: '-')
                             : $state;
                     })
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 // TextColumn::make('journey_status')
                 //     ->label('Journey')
@@ -111,6 +131,7 @@ class CustomersTable
                 TextColumn::make('journey_status')
                     ->label('Journey')
                     ->badge()
+                    ->sortable()
                     ->formatStateUsing(fn (string $state): string => match ($state) {
                         'sanctioned' => 'Disbursed',
                         'sfl' => 'SFL',
@@ -129,6 +150,7 @@ class CustomersTable
                 TextColumn::make('direct')
                     ->label('Type')
                     ->badge()
+                    ->sortable()
                     ->formatStateUsing(
                         fn ($state): string => $state ? 'Direct' : 'Regular'
                     )
@@ -138,11 +160,13 @@ class CustomersTable
 
                 TextColumn::make('sanctioned_bank')
                     ->label('Bank')
-                    ->searchable(),
+                    ->searchable()
+                    ->sortable(),
 
                 TextColumn::make('channel')
                     ->label('Channel')
                     ->searchable()
+                    ->sortable()
                     ->toggleable(),
 
                 TextColumn::make('created_at')
@@ -171,7 +195,7 @@ class CustomersTable
 
                 Filter::make('created_at')
                     ->label('Created Date')
-                    ->form([
+                    ->schema([
                         DatePicker::make('created_from')
                             ->label('From'),
 
@@ -204,32 +228,20 @@ class CustomersTable
                     }),
 
                 SelectFilter::make('employee_id')
-                    ->label('Employee')
-                    ->options(
-                        Employee::query()
-                            ->whereIn(
-                                'id',
-                                HierarchyService::visibleEmployeeIds(Auth::user())
-                            )
-                            ->orderBy('emp_name')
-                            ->pluck('emp_name', 'id')
-                    )
-                    ->searchable()
-                    ->preload()
+                    ->label('Case Owner')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::visibleTo(Auth::user()))
                     ->query(function (Builder $query, array $data): Builder {
                         return $query->when(
-                            filled($data['value'] ?? null),
-                            fn (Builder $query) => $query->where('employee_id', $data['value'])
+                            filled($data['values'] ?? null),
+                            fn (Builder $query) => $query->whereIn('employee_id', $data['values'])
                         );
                     }),
 
                 SelectFilter::make('cluster_id')
                     ->label('Cluster Manager')
                     ->multiple()
-                    ->options(
-                        Employee::where('designation', Employee::DESIGNATION_CLUSTER)
-                            ->pluck('emp_name', 'id')
-                    )
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_CLUSTER))
                     ->query(
                         fn (Builder $query, array $data) => $query->when(
                             filled($data['values'] ?? null),
@@ -243,10 +255,7 @@ class CustomersTable
                 SelectFilter::make('manager_id')
                     ->label('Manager')
                     ->multiple()
-                    ->options(
-                        Employee::where('designation', Employee::DESIGNATION_MANAGER)
-                            ->pluck('emp_name', 'id')
-                    )
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_MANAGER))
                     ->query(
                         fn (Builder $query, array $data) => $query->when(
                             filled($data['values'] ?? null),
@@ -260,10 +269,7 @@ class CustomersTable
                 SelectFilter::make('team_leader_id')
                     ->label('Team Leader')
                     ->multiple()
-                    ->options(
-                        Employee::where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                            ->pluck('emp_name', 'id')
-                    )
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_TEAM_LEADER))
                     ->query(
                         fn (Builder $query, array $data) => $query->when(
                             filled($data['values'] ?? null),
@@ -277,10 +283,7 @@ class CustomersTable
                 SelectFilter::make('caller_id')
                     ->label('Caller')
                     ->multiple()
-                    ->options(
-                        Employee::where('designation', Employee::DESIGNATION_CALLER)
-                            ->pluck('emp_name', 'id')
-                    )
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_CALLER))
                     ->query(
                         fn (Builder $query, array $data) => $query->when(
                             filled($data['values'] ?? null),
@@ -294,6 +297,44 @@ class CustomersTable
                         1 => 'Direct Customer',
                         0 => 'Regular Customer',
                     ]),
+
+                SelectFilter::make('eligibility_status')
+                    ->label('Eligibility')
+                    ->multiple()
+                    ->options([
+                        'eligible' => 'Eligible',
+                        'not_eligible' => 'Not Eligible',
+                        'consent_pending' => 'Consent Pending',
+                    ]),
+
+                Filter::make('disbursal_date')
+                    ->label('Disbursal Date')
+                    ->schema([
+                        DatePicker::make('disbursed_from')->label('From'),
+                        DatePicker::make('disbursed_until')->label('To'),
+                    ])
+                    ->query(fn (Builder $query, array $data): Builder => $query
+                        ->when(
+                            $data['disbursed_from'] ?? null,
+                            fn (Builder $query, $date) => $query->whereDate('disbursal_date', '>=', $date),
+                        )
+                        ->when(
+                            $data['disbursed_until'] ?? null,
+                            fn (Builder $query, $date) => $query->whereDate('disbursal_date', '<=', $date),
+                        ))
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+
+                        if ($data['disbursed_from'] ?? null) {
+                            $indicators[] = 'Disbursed from: '.Carbon::parse($data['disbursed_from'])->format('d M Y');
+                        }
+
+                        if ($data['disbursed_until'] ?? null) {
+                            $indicators[] = 'Disbursed to: '.Carbon::parse($data['disbursed_until'])->format('d M Y');
+                        }
+
+                        return $indicators;
+                    }),
 
             ])
             ->defaultPaginationPageOption(5)
