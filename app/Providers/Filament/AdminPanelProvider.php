@@ -51,6 +51,7 @@ use App\Filament\Widgets\ManagerPPPStats;
 use App\Filament\Widgets\PerformanceStats;
 use App\Filament\Widgets\TargetStats;
 use App\Http\Middleware\EncryptCookies;
+use App\Http\Middleware\EnsureMonthlyTargetIsSet;
 use Filament\Actions\Action;
 use Filament\Enums\ThemeMode;
 use Filament\Facades\Filament;
@@ -216,6 +217,18 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_AFTER,
                 fn (): string => view('filament.components.table-scroll-to-top')->render(),
             )
+            // The Daily Commitment module's monthly target has to be fixed
+            // by hand every calendar month, so from the 1st it blocks the
+            // panel until it exists: managers fix their callers, the Admin
+            // line fixes managers and team leaders, and everyone else is
+            // told who to chase. Hung on the body so it covers every page;
+            // EnsureMonthlyTargetIsSet below is the server-side half.
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => Filament::auth()->check()
+                    ? Blade::render('@livewire("monthly-target-prompt")')
+                    : '',
+            )
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([
@@ -278,6 +291,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
+                EnsureMonthlyTargetIsSet::class,
             ]);
     }
 

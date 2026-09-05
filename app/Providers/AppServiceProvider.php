@@ -9,6 +9,7 @@ use App\Models\Customer;
 use App\Models\User;
 use App\Observers\CustomerObserver;
 use App\Services\Journey\CustomerJourneyAccessService;
+use App\Services\MonthlyTargetGate;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Queue\Events\QueueBusy;
@@ -29,6 +30,14 @@ class AppServiceProvider extends ServiceProvider
             $this->app->register(\Laravel\Telescope\TelescopeServiceProvider::class);
             $this->app->register(TelescopeServiceProvider::class);
         }
+
+        /*
+         * Shared for the request so the panel middleware and the blocking
+         * prompt component answer "are this month's targets fixed?" from
+         * one memoized result instead of re-running the same queries on
+         * every panel page load.
+         */
+        $this->app->singleton(MonthlyTargetGate::class);
         //
     }
 

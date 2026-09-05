@@ -1,6 +1,7 @@
 ---
 paths:
   - app/Services/DailyCommitmentService.php
+  - app/Services/MonthlyTargetGate.php
 ---
 
 # Services
@@ -29,3 +30,18 @@ Attendance: presentDays()/presence() count any UserLoginSession login row on a d
 filterEmployeeIds() applies one hierarchy filter (caller/TL/manager/cluster) and then the optional `role` designation filter, both intersected against visibleEmployeeIds() — a filter can never widen what a user may see. With no role chosen, rows() returns employees in hierarchicalOrder(): cluster, its managers, each manager's team leaders, then each leader's callers.
 
 Trap: `daily_commitments.date` uses the `date` cast, which writes "Y-m-d H:i:s". whereBetween with bare "Y-m-d" bounds compares as strings and silently drops matching rows (a single-day range returns nothing). Always use whereDate('date', '>=' / '<=') — see DailyCommitment::scopeForMonth and rows()/pipeline().
+
+## Monthly commitment targets are mandatory and gate the whole panel
+From the 1st of every calendar month the Daily Commitment module's monthly_commitment_targets rows do not exist yet, and MonthlyTargetGate closes the panel until they do.
+
+Who owns whose target (responsibleFor()): a Manager owns their callers; the Admin line — role Admin/Business Head, plus a Cluster Manager inside their own branch — owns Managers and Team Leaders. A Team Leader or Caller owns nobody: they wait and are told who to chase. assignableEmployeeIds() is the wider "may set" list used for record-level writes; isTargetSetter() is seat-based (Admin/Business Head role, or designation Cluster/Manager) and is what MonthlyCommitmentTargetResource::canAccess() and the middleware landing page use — a Manager with an empty team must still reach the screen, so never gate access on the assignable list being non-empty.
+
+Only employees who are still on the rolls AND have a user account are waited on (activeEmployees()). Demanding a target for a login-less row would deadlock whoever owns them.
+
+Enforced in two places, both needed: App\Http\Middleware\EnsureMonthlyTargetIsSet (in the panel's authMiddleware) redirects blocked users away from every route except .auth.*, change-password, and either the Monthly Target resource (setters) or the dashboard (everyone else); App\Livewire\MonthlyTargetPrompt, hung on PanelsRenderHook::BODY_END, is the non-dismissible modal and re-authorises every write with canSetTargetFor().
+
+Register the gate as a singleton (AppServiceProvider) — the middleware and the prompt both ask the same question per request and share its memo; call forget() after writing targets.
+
+This is the module's own target only. It never touches employees.category / employee_targets or AchievementCalculatorService.
+
+Trap: monthly_commitment_targets.month uses the `date` cast, so it writes "Y-m-d H:i:s". updateOrCreate(['month' => 'Y-m-d']) misses the existing row on SQLite and trips the (employee_id, month) unique index — look rows up with MonthlyCommitmentTarget::forMonth() (whereDate) instead.
