@@ -25,11 +25,19 @@
 
         return null;
     };
+
+    // The full follow-up log for every prospect shown here, loaded in one
+    // query so each card can show how many times — and when — the prospect
+    // was followed up, and every next-follow-up date that was set along the
+    // way. Only the latest follow-up is listed on the calendar itself; the
+    // superseded dates live here.
+    $histories = \App\Models\FollowUp::historiesFor($followUps);
 @endphp
 
 <div class="grid grid-cols-1 gap-3">
     @forelse ($followUps as $followUp)
         @php($url = $recordUrl($followUp))
+        @php($history = $histories[$followUp->subject_key] ?? collect())
         <{{ $url ? 'a' : 'div' }}
             @if ($url) href="{{ $url }}" @endif
             @class([
@@ -54,7 +62,7 @@
                 <div class="flex items-center justify-between gap-2">
                     <dt>Time</dt>
                     <dd class="text-gray-700 dark:text-gray-300">
-                        {{ optional($followUp->next_follow_up_date ?? $followUp->follow_up_date)->format('h:i A') }}
+                        {{ $followUp->next_follow_up_date?->format('h:i A') ?? '-' }}
                     </dd>
                 </div>
                 <div class="flex items-center justify-between gap-2">
@@ -69,6 +77,35 @@
                 </p>
             @endif
         </{{ $url ? 'a' : 'div' }}>
+
+        @if ($history->count() > 1)
+            <details class="-mt-2 rounded-b-lg border border-t-0 border-gray-200 px-3 pb-2 dark:border-gray-700">
+                <summary class="cursor-pointer py-2 text-xs font-medium text-gray-500 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400">
+                    Followed up {{ $history->count() }} times — view log
+                </summary>
+
+                <ol class="space-y-2 border-t border-gray-100 pt-2 dark:border-gray-800">
+                    @foreach ($history as $index => $entry)
+                        <li class="flex items-start justify-between gap-2 text-xs">
+                            <span class="text-gray-500 dark:text-gray-400">
+                                {{ $index + 1 }}.
+                                {{ $entry->created_at?->format('d M Y h:i A') }}
+                                <span class="text-gray-400 dark:text-gray-500">
+                                    · {{ $entry->employee?->emp_name ?? 'Admin' }}
+                                </span>
+                            </span>
+                            <span @class([
+                                'shrink-0 text-right',
+                                'font-semibold text-primary-600 dark:text-primary-400' => $entry->is($followUp),
+                                'text-gray-400 line-through dark:text-gray-500' => ! $entry->is($followUp),
+                            ])>
+                                {{ $entry->next_follow_up_date?->format('d M Y h:i A') ?? 'No next date' }}
+                            </span>
+                        </li>
+                    @endforeach
+                </ol>
+            </details>
+        @endif
     @empty
         <div class="col-span-full rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
             No follow-ups found for this day.

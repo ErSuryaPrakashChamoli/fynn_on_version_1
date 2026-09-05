@@ -6,12 +6,16 @@ use App\Filament\Pages\AssignedLeadFollowUpCalendar;
 use App\Filament\Pages\Auth\Login;
 use App\Filament\Pages\ChangePassword;
 use App\Filament\Pages\CustomerFollowUpCalendar;
+use App\Filament\Pages\DailyCommitmentDashboard;
+use App\Filament\Pages\DailyCommitmentReports;
+use App\Filament\Pages\DailyCommitmentTeamView;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\DashboardGreetingSettings;
 use App\Filament\Pages\EmployeeHierarchy;
 use App\Filament\Pages\EmployeePerformanceDashboard;
 use App\Filament\Pages\JourneyContinuityDashboard;
 use App\Filament\Pages\LoginPageSettings;
+use App\Filament\Pages\MyDailyCommitment;
 use App\Filament\Pages\MyProfile;
 use App\Filament\Pages\TeamPerformance;
 use App\Filament\Resources\AccountVerifications\AccountVerificationResource;
@@ -33,6 +37,7 @@ use App\Filament\Resources\FollowUps\FollowUpResource;
 use App\Filament\Resources\JourneyTakeovers\JourneyTakeoverResource;
 use App\Filament\Resources\LeadAssignmentReports\LeadAssignmentReportResource;
 use App\Filament\Resources\Leads\LeadResource;
+use App\Filament\Resources\MonthlyCommitmentTargets\MonthlyCommitmentTargetResource;
 use App\Filament\Resources\OcrDocuments\OcrDocumentResource;
 use App\Filament\Resources\PendingManagerCases\PendingManagerCaseResource;
 use App\Filament\Resources\PerformanceMetricRatios\PerformanceMetricRatioResource;
@@ -488,6 +493,19 @@ class AdminPanelProvider extends PanelProvider
                 ...$this->navigationItemsFor(EmployeePerformanceReportResource::class),
                 ...$this->navigationItemsFor(TeamPerformance::class),
                 ...$this->navigationItemsFor(PerformanceMetricRatioResource::class),
+            ]),
+
+            // Standalone module: each salesperson's morning commitment and
+            // how the day actually went. Reads the existing customer
+            // journey, login sessions and hierarchy; keeps its own
+            // commitments and monthly targets, separate from the LMS
+            // target/incentive dashboards in the Performance group above.
+            NavigationGroup::make('Daily Commitment')->items([
+                ...$this->navigationItemsFor(DailyCommitmentDashboard::class),
+                ...$this->navigationItemsFor(MyDailyCommitment::class),
+                ...$this->navigationItemsFor(DailyCommitmentTeamView::class),
+                ...$this->navigationItemsFor(DailyCommitmentReports::class),
+                ...$this->navigationItemsFor(MonthlyCommitmentTargetResource::class),
             ]),
 
             NavigationGroup::make('Administration')->items([

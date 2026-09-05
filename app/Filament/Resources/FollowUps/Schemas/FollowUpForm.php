@@ -6,8 +6,6 @@ use App\Models\AiCustomerRecord;
 use App\Models\Bank;
 use App\Models\Customer;
 use Coolsam\Flatpickr\Forms\Components\Flatpickr;
-use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -84,11 +82,8 @@ class FollowUpForm
                     ->columns(2),
 
                 Section::make('Follow Up')
+                    ->description('This follow-up is recorded against today. Set the next follow-up date to say when the customer is due again — it replaces any date set previously, and every change stays visible in the follow-up log.')
                     ->schema([
-
-                        DatePicker::make('follow_up_date')
-                            ->required()
-                            ->default(now()),
 
                         Select::make('follow_up_type')
                             ->options([

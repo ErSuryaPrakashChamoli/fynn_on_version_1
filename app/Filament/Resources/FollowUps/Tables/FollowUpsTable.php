@@ -44,11 +44,6 @@ class FollowUpsTable
                     ->searchable()
                     ->sortable(),
 
-                TextColumn::make('follow_up_date')
-                    ->label('Follow Up Created')
-                    ->dateTime('d M Y h:i A')
-                    ->sortable(),
-
                 TextColumn::make('follow_up_type')
                     ->badge()
                     ->sortable(),
@@ -90,6 +85,14 @@ class FollowUpsTable
 
                         return $date->isToday() ? 'warning' : 'gray';
                     }),
+
+                TextColumn::make('follow_up_count')
+                    ->label('Follow-ups')
+                    ->badge()
+                    ->color('gray')
+                    ->alignCenter()
+                    ->sortable()
+                    ->tooltip('How many times this prospect has been followed up in total'),
 
                 TextColumn::make('employee.emp_name')
                     ->label('Followed By')
@@ -161,10 +164,25 @@ class FollowUpsTable
                     ->relationship('bank', 'bank_name'),
             ])
             ->modifyQueryUsing(
-                fn (Builder $query) => $query->whereBetween('follow_up_date', SelectedMonth::range())
+                fn (Builder $query) => $query
+                    ->latestPerSubject()
+                    ->withFollowUpCount()
+                    ->whereBetween('follow_ups.created_at', SelectedMonth::range())
             )
             ->recordActions([
                 EditAction::make(),
+
+                Action::make('log')
+                    ->label('Log')
+                    ->icon('heroicon-o-clock')
+                    ->color('gray')
+                    ->modalHeading(fn (FollowUp $record): string => 'Follow-up log — '.$record->display_name)
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Close')
+                    ->modalContent(fn (FollowUp $record) => view(
+                        'filament.follow-ups.history',
+                        ['history' => $record->historyForSubject(), 'current' => $record],
+                    )),
                 //   Action::make('followup')
                 //     ->label('Follow Up')
                 //     ->icon('heroicon-o-phone')

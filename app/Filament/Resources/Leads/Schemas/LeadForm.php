@@ -2,19 +2,18 @@
 
 namespace App\Filament\Resources\Leads\Schemas;
 
-use Filament\Schemas\Schema;
-
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Select;
-use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\Textarea;
-use Filament\Schemas\Components\Section;
-use Filament\Forms\Components\Hidden;
-use App\Models\City;
-use Illuminate\Support\Str;
 use App\Models\Bank;
-use Filament\Forms\Components\DateTimePicker;
+use App\Models\City;
 use Coolsam\Flatpickr\Forms\Components\Flatpickr;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Schema;
+use Illuminate\Support\Str;
 
 class LeadForm
 {
@@ -26,9 +25,6 @@ class LeadForm
 
                 Section::make('Prospect Details (Manual Entry)')
                     ->schema([
-
-
-
 
                         TextInput::make('customer_name')
                             ->label('Customer Name')
@@ -71,9 +67,6 @@ class LeadForm
                                 'regex' => 'Please enter a valid Indian mobile number starting with 6, 7, 8, or 9.',
                             ]),
 
-
-
-
                         TextInput::make('pan_number')
                             ->label('PAN Number')
                             // ->required()
@@ -89,7 +82,7 @@ class LeadForm
                                     $livewire->validateOnly('data.pan_number');
                                 }
                             })
-                            ->dehydrateStateUsing(fn($state) => strtoupper($state))
+                            ->dehydrateStateUsing(fn ($state) => strtoupper($state))
 
                             ->rules([
                                 'nullable',
@@ -121,19 +114,18 @@ class LeadForm
                                 'unique' => 'This email already exists.',
                             ]),
 
-
                         Select::make('current_location')
                             ->label('Current Location')
                             // ->required()
                             ->searchable()
                             ->preload()
                             ->options(
-                                fn() => City::query()
+                                fn () => City::query()
                                     ->where('is_active', 1)
                                     ->orderBy('city')
                                     ->get()
-                                    ->mapWithKeys(fn($item) => [
-                                        $item->city => "{$item->city}, {$item->state}"
+                                    ->mapWithKeys(fn ($item) => [
+                                        $item->city => "{$item->city}, {$item->state}",
                                     ])
                             ),
 
@@ -143,12 +135,12 @@ class LeadForm
                             ->searchable()
                             ->preload()
                             ->options(
-                                fn() => City::query()
+                                fn () => City::query()
                                     ->where('is_active', 1)
                                     ->orderBy('city')
                                     ->get()
-                                    ->mapWithKeys(fn($item) => [
-                                        $item->city => "{$item->city}, {$item->state}"
+                                    ->mapWithKeys(fn ($item) => [
+                                        $item->city => "{$item->city}, {$item->state}",
                                     ])
                             ),
 
@@ -158,21 +150,20 @@ class LeadForm
                             ->searchable()
                             ->preload()
                             ->options(
-                                fn() => City::query()
+                                fn () => City::query()
                                     ->where('is_active', 1)
                                     ->orderBy('city')
                                     ->get()
-                                    ->mapWithKeys(fn($item) => [
-                                        $item->city => "{$item->city}, {$item->state}"
+                                    ->mapWithKeys(fn ($item) => [
+                                        $item->city => "{$item->city}, {$item->state}",
                                     ])
                             ),
-
 
                         TextInput::make('salary')
                             ->label('Salary')
                             ->prefix('₹')
                             ->live()
-                            ->formatStateUsing(fn($state) => filled($state)
+                            ->formatStateUsing(fn ($state) => filled($state)
                                 ? indianCurrencyFormat($state)
                                 : null)
                             ->afterStateUpdated(function ($state, callable $set) {
@@ -192,21 +183,9 @@ class LeadForm
 
                     ])->columns(2),
 
-
-
-
-
-
                 Section::make('Initial Follow Up Details')
+                    ->description('This follow-up is recorded against today. The next follow-up date decides when the lead is due — changing it replaces the previous date and is kept in the lead\'s follow-up log.')
                     ->schema([
-
-                        DatePicker::make('follow_up_date')
-                            ->displayFormat('d F Y')
-                            ->maxDate(now())
-                            ->native(false)
-                            ->default(now())
-                            ->suffixIcon('heroicon-m-calendar')
-                            ->label('Follow Up Date'),
 
                         Select::make('follow_up_type')
                             ->options(['Call' => 'Call', 'WhatsApp' => 'WhatsApp', 'Email' => 'Email', 'Visit' => 'Visit'])
@@ -241,7 +220,7 @@ class LeadForm
                         Select::make('bank_id')
                             ->label('Bank Name')
                             ->options(
-                                fn() => Bank::query()
+                                fn () => Bank::query()
                                     ->where('is_active', 1)
                                     ->orderBy('bank_name')
                                     ->pluck('bank_name', 'id')
@@ -250,14 +229,12 @@ class LeadForm
                             ->searchable()
                             ->preload()
                             ->required(
-                                fn($get) => $get('status') === 'Eligible for Other Bank'
+                                fn ($get) => $get('status') === 'Eligible for Other Bank'
                             )
                             ->visible(
-                                fn($get) => $get('status') === 'Eligible for Other Bank'
+                                fn ($get) => $get('status') === 'Eligible for Other Bank'
                             )
                             ->live(),
-
-
 
                         // DatePicker::make('next_follow_up_date')
                         //     ->label('Next Follow Up Date')
@@ -370,7 +347,6 @@ class LeadForm
                         //     ->placeholder('Select date & time')
                         //     ->helperText('⚠️ Please select both date and time for the next follow-up'),
 
-
                         Flatpickr::make('next_follow_up_date')
                             ->label('Next Follow Up Date & Time')
                             ->time(true)
@@ -381,13 +357,13 @@ class LeadForm
                             ->displayFormat('d M Y h:i K')
                             ->minDate(today())
                             ->required(
-                                fn($get) => ! in_array($get('status'), [
+                                fn ($get) => ! in_array($get('status'), [
                                     'Not Interested',
                                     'Not Eligible',
                                 ])
                             )
                             ->visible(
-                                fn($get) => ! in_array($get('status'), [
+                                fn ($get) => ! in_array($get('status'), [
                                     'Not Interested',
                                     'Not Eligible',
                                 ])
@@ -402,8 +378,8 @@ class LeadForm
                             ->columnSpanFull(),
 
                         Hidden::make('employee_id')
-                            ->default(fn() => auth()->user()->employee?->id)
-                            ->dehydrated(true)
+                            ->default(fn () => auth()->user()->employee?->id)
+                            ->dehydrated(true),
                     ])->columns(2),
             ]);
     }

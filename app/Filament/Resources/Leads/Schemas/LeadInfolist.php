@@ -3,20 +3,16 @@
 namespace App\Filament\Resources\Leads\Schemas;
 
 use Filament\Infolists\Components\TextEntry;
-use Filament\Schemas\Components\Section;
-use Filament\Schemas\Schema;
-use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Fieldset;
+use Filament\Schemas\Schema;
 
 class LeadInfolist
 {
     public static function configure(Schema $schema): Schema
     {
 
-
         return $schema
             ->components([
-
 
                 Fieldset::make('Lead Information')
                     ->columnSpanFull()
@@ -48,9 +44,6 @@ class LeadInfolist
                         TextEntry::make('employee.emp_name')
                             ->label('Assigned Employee'),
 
-                        TextEntry::make('follow_up_date')
-                            ->date(),
-
                         TextEntry::make('follow_up_type'),
 
                         TextEntry::make('status')
@@ -61,9 +54,6 @@ class LeadInfolist
 
                         TextEntry::make('remarks')
                             ->columnSpanFull(),
-
-
-
 
                     ]),
 
@@ -78,8 +68,8 @@ class LeadInfolist
                         TextEntry::make('is_converted')
                             ->label('Status')
                             ->badge()
-                            ->color(fn($state) => $state ? 'success' : 'warning')
-                            ->formatStateUsing(fn($state) => $state ? 'Converted' : 'Pending'),
+                            ->color(fn ($state) => $state ? 'success' : 'warning')
+                            ->formatStateUsing(fn ($state) => $state ? 'Converted' : 'Pending'),
 
                         TextEntry::make('convertedCustomer.application_no')
                             ->label('Application No')
@@ -93,7 +83,7 @@ class LeadInfolist
 
                 Fieldset::make('System Information')
                     ->columnSpanFull()
-                     ->columns(2) // ← This is the missing part
+                    ->columns(2) // ← This is the missing part
                     ->extraAttributes([
                         'class' => 'bg-yellow-100 border-2 border-yellow-400 rounded-xl p-5 shadow',
                     ])

@@ -75,9 +75,11 @@ class DashboardFollowUpCalendarWidget extends AssignedLeadFollowUpCalendarWidget
         $this->scopeToVisibleLeadFollowUps($query, $customerIds, $aiRecordIds, $leadIds);
 
         return $query
-            ->whereRaw('COALESCE(next_follow_up_date, follow_up_date) BETWEEN ? AND ?', [$start, $end])
-            ->get(['next_follow_up_date', 'follow_up_date'])
-            ->groupBy(fn (FollowUp $followUp) => Carbon::parse($followUp->next_follow_up_date ?? $followUp->follow_up_date)->toDateString())
+            ->latestPerSubject()
+            ->scheduled()
+            ->whereBetween('next_follow_up_date', [$start, $end])
+            ->get(['next_follow_up_date'])
+            ->groupBy(fn (FollowUp $followUp) => $followUp->next_follow_up_date->toDateString())
             ->map->count()
             ->all();
     }
@@ -88,9 +90,11 @@ class DashboardFollowUpCalendarWidget extends AssignedLeadFollowUpCalendarWidget
     protected function customerFollowUpCountsByDate(Carbon $start, Carbon $end): array
     {
         return FollowUpResource::getEloquentQuery()
-            ->whereRaw('COALESCE(next_follow_up_date, follow_up_date) BETWEEN ? AND ?', [$start, $end])
-            ->get(['next_follow_up_date', 'follow_up_date'])
-            ->groupBy(fn (FollowUp $followUp) => Carbon::parse($followUp->next_follow_up_date ?? $followUp->follow_up_date)->toDateString())
+            ->latestPerSubject()
+            ->scheduled()
+            ->whereBetween('next_follow_up_date', [$start, $end])
+            ->get(['next_follow_up_date'])
+            ->groupBy(fn (FollowUp $followUp) => $followUp->next_follow_up_date->toDateString())
             ->map->count()
             ->all();
     }
@@ -98,9 +102,11 @@ class DashboardFollowUpCalendarWidget extends AssignedLeadFollowUpCalendarWidget
     public function customerFollowUpsForDate(string $date): Collection
     {
         return FollowUpResource::getEloquentQuery()
-            ->whereRaw('DATE(COALESCE(next_follow_up_date, follow_up_date)) = ?', [$date])
+            ->latestPerSubject()
+            ->scheduled()
+            ->whereDate('next_follow_up_date', $date)
             ->with(['customer', 'aiCustomerRecord', 'employee'])
-            ->orderByRaw('COALESCE(next_follow_up_date, follow_up_date)')
+            ->orderBy('next_follow_up_date')
             ->get();
     }
 

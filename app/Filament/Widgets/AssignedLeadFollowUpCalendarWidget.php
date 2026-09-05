@@ -11,13 +11,11 @@ use App\Support\SelectedMonth;
 use Carbon\Carbon;
 use Coolsam\Flatpickr\Forms\Components\Flatpickr;
 use Filament\Facades\Filament;
-use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Components\Utilities\Get;
-use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -123,14 +121,7 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
     protected function headerActions(): array
     {
         return [
-            CreateAction::make()
-                ->mountUsing(function (Schema $schema, array $arguments) {
-                    $schema->fill([
-                        'follow_up_date' => filled($arguments['start'] ?? null)
-                            ? Carbon::parse($arguments['start'])->toDateString()
-                            : now()->toDateString(),
-                    ]);
-                }),
+            CreateAction::make(),
         ];
     }
 
@@ -149,9 +140,11 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
         $this->scopeToVisibleLeadFollowUps($query, $customerIds, $aiRecordIds, $leadIds);
 
         return $query
-            ->whereRaw('COALESCE(next_follow_up_date, follow_up_date) BETWEEN ? AND ?', [$start, $end])
-            ->get(['id', 'next_follow_up_date', 'follow_up_date'])
-            ->groupBy(fn (FollowUp $followUp) => Carbon::parse($followUp->next_follow_up_date ?? $followUp->follow_up_date)->toDateString())
+            ->latestPerSubject()
+            ->scheduled()
+            ->whereBetween('next_follow_up_date', [$start, $end])
+            ->get(['id', 'next_follow_up_date'])
+            ->groupBy(fn (FollowUp $followUp) => $followUp->next_follow_up_date->toDateString())
             ->map(function (\Illuminate\Support\Collection $followUpsForDay, string $date) {
                 $count = $followUpsForDay->count();
 
@@ -204,9 +197,11 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
         $this->scopeToVisibleLeadFollowUps($query, $customerIds, $aiRecordIds, $leadIds);
 
         return $query
-            ->whereRaw('DATE(COALESCE(next_follow_up_date, follow_up_date)) = ?', [$date])
+            ->latestPerSubject()
+            ->scheduled()
+            ->whereDate('next_follow_up_date', $date)
             ->with(['customer', 'aiCustomerRecord', 'lead', 'employee'])
-            ->orderByRaw('COALESCE(next_follow_up_date, follow_up_date)')
+            ->orderBy('next_follow_up_date')
             ->get();
     }
 
@@ -262,10 +257,6 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
                 ->label('Assigned Lead')
                 ->content(fn () => $this->currentRecord()?->display_name)
                 ->visible(fn () => (bool) $this->currentRecord()),
-
-            DatePicker::make('follow_up_date')
-                ->required()
-                ->default(now()),
 
             Select::make('follow_up_type')
                 ->options([

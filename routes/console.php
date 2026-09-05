@@ -20,3 +20,11 @@ Schedule::command('ocr:check-stuck')
 
 Schedule::command('journey:check-sla-breaches')
     ->everyFiveMinutes();
+
+/*
+ * Daily Commitment: freeze yesterday's commitments (MET / OVERACHIEVED /
+ * FAILED) once the day is over. The module's screens always compute live,
+ * so this only keeps the stored history honest.
+ */
+Schedule::command('daily-commitment:settle')
+    ->dailyAt('00:30');

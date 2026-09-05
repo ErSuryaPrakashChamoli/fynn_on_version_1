@@ -2,6 +2,7 @@
 @import '../../../../vendor/saade/filament-fullcalendar/resources/css/filament-fullcalendar.css';
 
 @source '../../../../app/Filament/**/*';
+@source '../../../../app/Enums/*.php';
 @source '../../../../resources/views/filament/**/*';
 
 @source '../../../../resources/views/components';
@@ -2436,3 +2437,174 @@ ul.eh-vtree ul.eh-vtree > li::before {
 }
 
 
+
+
+/* =========================================================
+   DAILY COMMITMENT MODULE
+   Small, flat cards and stage chips. The stage palette is fixed
+   (see App\Enums\CommitmentStage) so a stage is recognisable by
+   colour alone across cards, tables, badges and bars.
+   ========================================================= */
+
+.dc-card {
+    border-radius: 14px;
+    border-width: 1px;
+    padding: 0.875rem 1rem;
+    background: rgb(255 255 255);
+    border-color: rgb(229 231 235);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dark .dc-card {
+    background: rgb(17 24 39);
+    border-color: rgb(55 65 81);
+}
+
+.dc-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+.dc-card-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgb(107 114 128);
+}
+
+.dark .dc-card-label {
+    color: rgb(156 163 175);
+}
+
+.dc-card-value {
+    margin-top: 0.25rem;
+    font-size: 1.375rem;
+    font-weight: 800;
+    line-height: 1.15;
+    color: rgb(3 7 18);
+}
+
+.dark .dc-card-value {
+    color: rgb(255 255 255);
+}
+
+.dc-card-hint {
+    margin-top: 0.125rem;
+    font-size: 0.6875rem;
+    color: rgb(107 114 128);
+}
+
+.dark .dc-card-hint {
+    color: rgb(156 163 175);
+}
+
+.dc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border-radius: 9999px;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    line-height: 1.25rem;
+    white-space: nowrap;
+}
+
+.dc-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+    display: inline-block;
+    flex: none;
+}
+
+.dc-bar {
+    height: 0.5rem;
+    width: 100%;
+    border-radius: 9999px;
+    background: rgb(229 231 235);
+    overflow: hidden;
+}
+
+.dark .dc-bar {
+    background: rgb(55 65 81);
+}
+
+.dc-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: 9999px;
+    transition: width 0.3s ease;
+}
+
+.dc-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.8125rem;
+}
+
+.dc-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: rgb(249 250 251);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: rgb(75 85 99);
+    border-bottom: 1px solid rgb(229 231 235);
+}
+
+.dark .dc-table thead th {
+    background: rgb(31 41 55);
+    color: rgb(209 213 219);
+    border-bottom-color: rgb(55 65 81);
+}
+
+.dc-table tbody td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid rgb(243 244 246);
+    color: rgb(31 41 55);
+}
+
+.dark .dc-table tbody td {
+    border-bottom-color: rgb(31 41 55);
+    color: rgb(229 231 235);
+}
+
+.dc-table tbody tr:hover td {
+    background: rgb(249 250 251);
+}
+
+.dark .dc-table tbody tr:hover td {
+    background: rgb(31 41 55);
+}
+
+.dc-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* A commitment row that opens its detail page. */
+.dc-table tbody tr.dc-row-link {
+    cursor: pointer;
+}
+
+.dc-table tbody tr.dc-row-link:hover td {
+    background: rgb(243 244 246);
+}
+
+.dark .dc-table tbody tr.dc-row-link:hover td {
+    background: rgb(31 41 55);
+}
+
+.dc-row-link .dc-row-name {
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+}

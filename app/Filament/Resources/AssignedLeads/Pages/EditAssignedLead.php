@@ -23,8 +23,8 @@ class EditAssignedLead extends EditRecord
                 ->label('Convert to Customer')
                 ->icon('heroicon-o-check-circle')
                 ->color('success')
-                ->visible(fn() => $this->record->isEligibleForConversion())
-                ->url(fn() => CustomerResource::getUrl('create', [
+                ->visible(fn () => $this->record->isEligibleForConversion())
+                ->url(fn () => CustomerResource::getUrl('create', [
                     'ai_customer_record' => $this->record->ai_customer_record_id,
                 ])),
         ];
@@ -33,7 +33,6 @@ class EditAssignedLead extends EditRecord
     protected function mutateFormDataBeforeSave(array $data): array
     {
         $this->pendingFollowUpData = [
-            'follow_up_date' => $data['follow_up_date'],
             'follow_up_type' => $data['follow_up_type'],
             'status' => $data['status'],
             'bank_id' => $data['bank_id'] ?? null,

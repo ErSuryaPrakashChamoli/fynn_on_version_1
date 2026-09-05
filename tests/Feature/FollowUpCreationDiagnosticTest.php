@@ -36,7 +36,6 @@ class FollowUpCreationDiagnosticTest extends TestCase
             ->test(CreateFollowUp::class)
             ->assertFormSet(['customer_id' => $customer->id])
             ->fillForm([
-                'follow_up_date' => now()->toDateString(),
                 'follow_up_type' => 'Call',
                 'status' => 'Awaiting Low ROI',
                 'next_follow_up_date' => now()->addWeek()->format('Y-m-d H:i'),

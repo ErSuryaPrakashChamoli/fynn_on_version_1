@@ -40,8 +40,10 @@ class LeadImporter extends Importer
             ImportColumn::make('salary')
                 ->numeric(),
 
-            ImportColumn::make('follow_up_date')
-                ->requiredMapping(),
+            // Retained only so existing lead CSV templates keep importing —
+            // nothing reads follow_up_date any more; a follow-up is dated by
+            // its creation time.
+            ImportColumn::make('follow_up_date'),
 
             ImportColumn::make('follow_up_type')
                 ->requiredMapping(),
@@ -56,7 +58,7 @@ class LeadImporter extends Importer
 
     public function resolveRecord(): Lead
     {
-        return new Lead();
+        return new Lead;
         //    return Lead::firstOrNew([
         //     'mobile_no' => $this->data['mobile_no'],
         //     ]);
@@ -65,15 +67,13 @@ class LeadImporter extends Importer
     public function beforeSave(): void
     {
         $this->record->employee_id = Auth::user()->employee?->id;
-            if (blank($this->record->status)) {
-                $this->record->status = 'Pending';
-            }
+        if (blank($this->record->status)) {
+            $this->record->status = 'Pending';
+        }
     }
 
     public static function getCompletedNotificationBody(Import $import): string
     {
         return "{$import->successful_rows} leads imported successfully.";
     }
-
-    
 }
