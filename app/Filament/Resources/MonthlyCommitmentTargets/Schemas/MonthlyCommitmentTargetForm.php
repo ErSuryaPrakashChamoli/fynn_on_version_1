@@ -4,8 +4,11 @@ namespace App\Filament\Resources\MonthlyCommitmentTargets\Schemas;
 
 use App\Enums\CommitmentStage;
 use App\Models\Employee;
-use App\Services\DailyCommitmentService;
+use App\Models\MonthlyCommitmentTarget;
+use App\Models\User;
+use App\Services\MonthlyTargetGate;
 use App\Support\EmployeeOptions;
+use Closure;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
@@ -28,7 +31,23 @@ class MonthlyCommitmentTargetForm
                             ->label('Employee')
                             ->options(fn (): array => self::employeeOptions())
                             ->preload()
-                            ->required(),
+                            ->required()
+                            // One row per employee per month is a database
+                            // constraint; catch it here so a duplicate reads
+                            // as a form error rather than a 500.
+                            ->rule(fn (Get $get, ?MonthlyCommitmentTarget $record): Closure => function (string $attribute, $value, Closure $fail) use ($get, $record): void {
+                                $month = Carbon::parse($get('month') ?: today())->startOfMonth();
+
+                                $exists = MonthlyCommitmentTarget::query()
+                                    ->where('employee_id', $value)
+                                    ->forMonth($month)
+                                    ->when($record, fn ($query) => $query->whereKeyNot($record->getKey()))
+                                    ->exists();
+
+                                if ($exists) {
+                                    $fail('This employee already has a target for '.$month->format('M Y').'.');
+                                }
+                            }),
 
                         DatePicker::make('month')
                             ->label('Month')
@@ -70,7 +89,9 @@ class MonthlyCommitmentTargetForm
     }
 
     /**
-     * Only employees the current user can see — an Admin sees everyone.
+     * Only employees whose target this user is allowed to set: a Manager
+     * gets their own callers, the Admin line gets the management levels
+     * (see MonthlyTargetGate::assignableEmployeeIds()).
      *
      * @return array<int, string>
      */
@@ -78,8 +99,12 @@ class MonthlyCommitmentTargetForm
     {
         $user = Filament::auth()->user();
 
+        if (! $user instanceof User) {
+            return [];
+        }
+
         return Employee::query()
-            ->whereIn('id', app(DailyCommitmentService::class)->visibleEmployeeIds($user))
+            ->whereIn('id', app(MonthlyTargetGate::class)->assignableEmployeeIds($user))
             ->orderBy('emp_name')
             ->get(['id', 'emp_name', 'emp_id'])
             ->mapWithKeys(fn (Employee $employee): array => [

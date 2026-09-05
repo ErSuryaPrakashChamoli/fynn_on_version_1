@@ -10,5 +10,5 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Models/FollowUp.php | .ai/rules/models.md |
 | app/Filament/Pages/DailyCommitment*.php | .ai/rules/pages.md |
 | app/Providers/Filament/AdminPanelProvider.php | .ai/rules/providers-filament.md |
-| app/Services/DailyCommitmentService.php | .ai/rules/services.md |
+| app/Services/DailyCommitmentService.php, app/Services/MonthlyTargetGate.php | .ai/rules/services.md |
 | app/Filament/Resources/**/Tables/*.php | .ai/rules/tables.md |

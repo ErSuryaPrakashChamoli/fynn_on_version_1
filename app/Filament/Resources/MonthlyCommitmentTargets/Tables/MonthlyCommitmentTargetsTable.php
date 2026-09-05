@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\MonthlyCommitmentTargets\Tables;
 
 use App\Enums\CommitmentStage;
+use App\Filament\Resources\MonthlyCommitmentTargets\MonthlyCommitmentTargetResource;
 use App\Models\Employee;
 use App\Models\MonthlyCommitmentTarget;
 use Filament\Actions\BulkActionGroup;
@@ -89,13 +90,20 @@ class MonthlyCommitmentTargetsTable
                     ->label('This month only')
                     ->query(fn (Builder $query): Builder => $query->whereDate('month', Carbon::today()->startOfMonth()->toDateString())),
             ])
+            // A Manager can see a Team Leader's target row (it's in their
+            // tree) but only the Admin line may rewrite it, so every write
+            // action is gated per record — see
+            // MonthlyCommitmentTargetResource::canEdit()/canDelete().
             ->recordActions([
-                EditAction::make(),
-                DeleteAction::make(),
+                EditAction::make()
+                    ->visible(fn (MonthlyCommitmentTarget $record): bool => MonthlyCommitmentTargetResource::canEdit($record)),
+                DeleteAction::make()
+                    ->visible(fn (MonthlyCommitmentTarget $record): bool => MonthlyCommitmentTargetResource::canDelete($record)),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
-                    DeleteBulkAction::make(),
+                    DeleteBulkAction::make()
+                        ->authorizeIndividualRecords('delete'),
                 ]),
             ]);
     }
