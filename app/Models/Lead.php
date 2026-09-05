@@ -101,7 +101,6 @@ class Lead extends Model
      * @var array<int, string>
      */
     protected const FOLLOW_UP_FIELDS = [
-        'follow_up_date',
         'follow_up_type',
         'status',
         'next_follow_up_date',
@@ -134,7 +133,6 @@ class Lead extends Model
     {
         $this->followUps()->create([
             'employee_id' => $this->employee_id,
-            'follow_up_date' => $this->follow_up_date,
             'follow_up_type' => $this->follow_up_type,
             'status' => $this->status ?? 'Pending',
             'remarks' => $this->remarks,

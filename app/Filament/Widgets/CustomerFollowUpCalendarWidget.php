@@ -17,6 +17,10 @@ use Saade\FilamentFullCalendar\Widgets\FullCalendarWidget;
  * Follow-ups"). Visibility is inherited by calling
  * FollowUpResource::getEloquentQuery() directly rather than re-implementing
  * the hierarchy logic here, so the two stay identical by construction.
+ *
+ * Each prospect appears on exactly one day: the next-follow-up date on their
+ * most recent follow-up. Superseded dates are part of the follow-up log, not
+ * the calendar — see FollowUp::scopeLatestPerSubject().
  */
 class CustomerFollowUpCalendarWidget extends FullCalendarWidget
 {
@@ -110,9 +114,11 @@ class CustomerFollowUpCalendarWidget extends FullCalendarWidget
         $end = Carbon::parse($info['end']);
 
         return FollowUpResource::getEloquentQuery()
-            ->whereRaw('COALESCE(next_follow_up_date, follow_up_date) BETWEEN ? AND ?', [$start, $end])
-            ->get(['id', 'next_follow_up_date', 'follow_up_date'])
-            ->groupBy(fn (FollowUp $followUp) => Carbon::parse($followUp->next_follow_up_date ?? $followUp->follow_up_date)->toDateString())
+            ->latestPerSubject()
+            ->scheduled()
+            ->whereBetween('next_follow_up_date', [$start, $end])
+            ->get(['id', 'next_follow_up_date'])
+            ->groupBy(fn (FollowUp $followUp) => $followUp->next_follow_up_date->toDateString())
             ->map(function (\Illuminate\Support\Collection $followUpsForDay, string $date) {
                 $count = $followUpsForDay->count();
 
@@ -146,9 +152,11 @@ class CustomerFollowUpCalendarWidget extends FullCalendarWidget
     protected function followUpsForDate(string $date): Collection
     {
         return FollowUpResource::getEloquentQuery()
-            ->whereRaw('DATE(COALESCE(next_follow_up_date, follow_up_date)) = ?', [$date])
+            ->latestPerSubject()
+            ->scheduled()
+            ->whereDate('next_follow_up_date', $date)
             ->with(['customer', 'aiCustomerRecord', 'employee'])
-            ->orderByRaw('COALESCE(next_follow_up_date, follow_up_date)')
+            ->orderBy('next_follow_up_date')
             ->get();
     }
 

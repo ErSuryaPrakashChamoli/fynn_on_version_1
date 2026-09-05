@@ -75,12 +75,6 @@ class LeadsTable
                     ->searchable()
                     ->sortable(),
 
-                TextColumn::make('follow_up_date')
-                    ->label('Follow Up Created')
-                    ->dateTime('d M Y h:i A')
-                    ->badge()
-                    ->sortable(),
-
                 TextColumn::make('next_follow_up_date')
                     ->label('Next Follow Up')
                     ->dateTime('d M Y h:i A')
