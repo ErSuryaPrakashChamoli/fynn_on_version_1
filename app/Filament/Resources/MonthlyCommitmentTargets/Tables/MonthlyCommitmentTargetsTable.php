@@ -54,7 +54,10 @@ class MonthlyCommitmentTargetsTable
                     ->alignEnd()
                     ->formatStateUsing(fn ($state, MonthlyCommitmentTarget $record): string => $record->stage->isCount()
                         ? '—'
-                        : '₹'.indianCurrencyFormat($state))
+                        : indianAmount($state))
+                    ->description(fn ($state, MonthlyCommitmentTarget $record): ?string => $record->stage->isCount()
+                        ? null
+                        : indianAmountInWords($record->target_amount))
                     ->sortable(),
 
                 TextColumn::make('target_count')

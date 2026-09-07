@@ -34,7 +34,8 @@
                                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
                                     {{ $missing->count() }} {{ str('team member')->plural($missing->count()) }}
                                     {{ $missing->count() === 1 ? 'has' : 'have' }} no commitment target for {{ $month }}.
-                                    The rest of the LMS stays locked until every target is fixed.
+                                    The rest of the LMS stays locked until every target is fixed. Somebody who has gone
+                                    inactive can be ticketed instead — their target is then skipped for the month.
                                 </p>
                             </div>
                         </div>
@@ -71,9 +72,14 @@
                                 <input
                                     type="number"
                                     min="1"
-                                    wire:model="bulkAmount"
+                                    wire:model.live.debounce.500ms="bulkAmount"
                                     class="mt-1 block w-40 rounded-lg border-none bg-white py-1.5 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
                                 />
+                                @if (filled($bulkAmount))
+                                    <span class="mt-1 block font-normal">
+                                        {{ indianAmount($bulkAmount) }} — {{ indianAmountInWords($bulkAmount) }}
+                                    </span>
+                                @endif
                             </label>
                         @endif
 
@@ -130,9 +136,54 @@
                                             type="number"
                                             min="1"
                                             placeholder="Amount (₹)"
-                                            wire:model="targets.{{ $employee->id }}.amount"
+                                            wire:model.live.debounce.500ms="targets.{{ $employee->id }}.amount"
                                             class="w-36 rounded-lg border-none bg-white py-1.5 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
                                         />
+
+                                        @if (filled($targets[$employee->id]['amount'] ?? null))
+                                            <span class="w-full text-xs text-gray-500 dark:text-gray-400 sm:w-auto">
+                                                {{ indianAmount($targets[$employee->id]['amount']) }}
+                                                — {{ indianAmountInWords($targets[$employee->id]['amount']) }}
+                                            </span>
+                                        @endif
+                                    @endif
+
+                                    {{-- Nobody should invent a number for someone who has
+                                         stopped turning up: raise the ticket instead. --}}
+                                    @if ($inactiveFor === $employee->id)
+                                        <div class="w-full">
+                                            <textarea
+                                                rows="2"
+                                                placeholder="Why is {{ $employee->emp_name }} inactive? (seen by the Admin who reviews the ticket)"
+                                                wire:model="inactiveReason"
+                                                class="mt-2 block w-full rounded-lg border-none bg-white py-1.5 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
+                                            ></textarea>
+
+                                            <div class="mt-2 flex items-center gap-2">
+                                                <x-filament::button
+                                                    size="xs"
+                                                    color="danger"
+                                                    icon="heroicon-o-ticket"
+                                                    wire:click="raiseInactivity({{ $employee->id }})"
+                                                    wire:loading.attr="disabled"
+                                                >
+                                                    Raise inactivity ticket
+                                                </x-filament::button>
+
+                                                <x-filament::button size="xs" color="gray" wire:click="cancelInactive">
+                                                    Cancel
+                                                </x-filament::button>
+                                            </div>
+                                        </div>
+                                    @else
+                                        <x-filament::button
+                                            size="xs"
+                                            color="gray"
+                                            icon="heroicon-o-user-minus"
+                                            wire:click="askInactive({{ $employee->id }})"
+                                        >
+                                            Mark inactive
+                                        </x-filament::button>
                                     @endif
                                 </div>
                             @endforeach

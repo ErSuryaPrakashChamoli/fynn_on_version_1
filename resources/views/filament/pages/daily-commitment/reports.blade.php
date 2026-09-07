@@ -1,7 +1,9 @@
 <x-filament-panels::page>
     @php
         $daily = $this->daily;
+        $dailyLevels = $this->dailyByLevel;
         $mtd = $this->mtd;
+        $mtdLevels = $this->mtdByLevel;
         $caller = $this->callerReport;
         $stageTotals = $this->monthStageTotals;
         $pipeline = $this->pipeline;
@@ -20,10 +22,9 @@
         heading="Period report"
         description="{{ $rangeLabel }}"
     >
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
-            <x-daily-commitment.kpi label="Total commitment" :value="shortIndianAmount($daily['committed_amount'])" accent="#3b82f6" />
-            <x-daily-commitment.kpi label="Total achievement" :value="shortIndianAmount($daily['achieved_amount'])" accent="#22c55e" />
-            <x-daily-commitment.kpi label="Pending" :value="shortIndianAmount($daily['pending_amount'])" accent="#f97316" />
+        <x-daily-commitment.level-summary :levels="$dailyLevels" :total="$daily" />
+
+        <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <x-daily-commitment.kpi label="Achievement %" :value="$daily['percentage'] . '%'" accent="#a855f7" />
             <x-daily-commitment.kpi label="Met" :value="$daily['met']" accent="#22c55e" />
             <x-daily-commitment.kpi label="Failed" :value="$daily['failed']" accent="#ef4444" />
@@ -42,14 +43,16 @@
         heading="MTD report"
         description="{{ $month->format('F Y') }} — this module's own monthly targets only."
     >
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            <x-daily-commitment.kpi label="Monthly target" :value="shortIndianAmount($mtd['target'])" accent="#3b82f6" />
-            <x-daily-commitment.kpi label="MTD achievement" :value="shortIndianAmount($mtd['achieved'])" accent="#22c55e" />
-            <x-daily-commitment.kpi label="Pending" :value="shortIndianAmount($mtd['pending'])" accent="#f97316" />
+        <x-daily-commitment.monthly-level-summary :levels="$mtdLevels" :total="$mtd" />
+
+        <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <x-daily-commitment.kpi label="Monthly target" :amount="$mtd['target']" accent="#3b82f6" />
+            <x-daily-commitment.kpi label="MTD achievement" :amount="$mtd['achieved']" accent="#22c55e" />
+            <x-daily-commitment.kpi label="Pending" :amount="$mtd['pending']" accent="#f97316" />
             <x-daily-commitment.kpi label="Achievement %" :value="$mtd['percentage'] . '%'" accent="#a855f7" />
             <x-daily-commitment.kpi
                 label="DRR"
-                :value="shortIndianAmount($mtd['drr'])"
+                :amount="$mtd['drr']"
                 hint="MTD ÷ {{ $mtd['elapsed_working_days'] }} working days"
                 accent="#0d9488"
             />
@@ -59,7 +62,7 @@
         </div>
         <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
             DRR = MTD achievement ÷ working days elapsed. To close the gap,
-            <strong>{{ shortIndianAmount($mtd['required_drr']) }}</strong> is needed on each of the
+            <strong>{{ indianAmount($mtd['required_drr']) }}</strong> ({{ indianAmountInWords($mtd['required_drr']) }}) is needed on each of the
             {{ $mtd['remaining_working_days'] }} remaining working days
             ({{ $mtd['people_with_target'] }} people have a target this month).
         </p>
@@ -109,7 +112,11 @@
                         <tr>
                             <td><x-daily-commitment.stage-chip :stage="$stage" /></td>
                             <td class="dc-num font-semibold">{{ number_format($totals['count']) }}</td>
-                            <td class="dc-num">{{ $stage->rank() ? shortIndianAmount($totals['amount']) : '—' }}</td>
+                            <td class="dc-num">
+                                @if ($stage->rank())
+                                    <x-daily-commitment.amount :value="$totals['amount']" />
+                                @else — @endif
+                            </td>
                             <td>
                                 <div class="flex items-center gap-2">
                                     <x-daily-commitment.progress-bar :percentage="$share" :color="$stage->hex()" />
@@ -131,12 +138,12 @@
     >
         <div class="mb-4 flex flex-wrap items-baseline gap-x-3">
             <span class="text-2xl font-extrabold text-gray-950 dark:text-white">
-                {{ shortIndianAmount($pipeline['total_amount']) }}
+                {{ indianAmount($pipeline['total_amount']) }}
             </span>
             <span class="text-sm text-gray-500">
                 across {{ number_format($pipeline['total_count']) }} open
                 {{ \Illuminate\Support\Str::plural('case', $pipeline['total_count']) }}
-                (excludes disbursed, dropped and rejected)
+                (excludes disbursal, dropped and rejected)
             </span>
         </div>
 
@@ -145,7 +152,8 @@
                 @php $totals = $pipeline['stages'][$stage->value]; @endphp
                 <div class="dc-card" style="border-color: {{ $stage->hex() }}55; box-shadow: inset 3px 0 0 0 {{ $stage->hex() }}">
                     <x-daily-commitment.stage-chip :stage="$stage" />
-                    <div class="dc-card-value">{{ shortIndianAmount($totals['amount']) }}</div>
+                    <div class="dc-card-value dc-card-amount">{{ indianAmount($totals['amount']) }}</div>
+                    <div class="dc-card-words">{{ indianAmountInWords($totals['amount']) }}</div>
                     <div class="dc-card-hint">{{ $totals['count'] }} {{ \Illuminate\Support\Str::plural('case', $totals['count']) }}</div>
                 </div>
             @endforeach

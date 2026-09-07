@@ -823,6 +823,156 @@ class DailyCommitmentService
     }
 
     /**
+     * The order the four hierarchy levels are always reported in.
+     *
+     * @var array<int, int>
+     */
+    public const LEVELS = [
+        Employee::DESIGNATION_CLUSTER,
+        Employee::DESIGNATION_MANAGER,
+        Employee::DESIGNATION_TEAM_LEADER,
+        Employee::DESIGNATION_CALLER,
+    ];
+
+    /**
+     * The headline numbers split by hierarchy level, never added into one
+     * indistinguishable total.
+     *
+     * A Manager looking at their own screen has to see three separate
+     * figures — their own commitment, the sum of their Team Leaders' and
+     * the sum of their Callers' — because a single blended number cannot
+     * answer "who is behind?". The Admin gets the same split one level up.
+     * summarise() is still the only place a group is totalled, so a level
+     * can never disagree with the combined figure.
+     *
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return array<int, array{designation: int, label: string, summary: array<string, mixed>}>
+     */
+    public function summariseByLevel(Collection $rows): array
+    {
+        $labels = Employee::designationOptions();
+        $grouped = $rows->groupBy(fn (array $row): int => (int) $row['designation']);
+
+        $levels = [];
+
+        foreach (self::LEVELS as $designation) {
+            $group = $grouped->get($designation);
+
+            if (! $group || $group->isEmpty()) {
+                continue;
+            }
+
+            $levels[] = [
+                'designation' => $designation,
+                'label' => $labels[$designation] ?? '—',
+                'summary' => $this->summarise($group->values()),
+            ];
+        }
+
+        // Admin/unset designations are still somebody's number — they get
+        // their own line rather than being silently dropped from the split.
+        $others = $grouped
+            ->reject(fn (Collection $group, $designation): bool => in_array((int) $designation, self::LEVELS, true))
+            ->collapse();
+
+        if ($others->isNotEmpty()) {
+            $levels[] = [
+                'designation' => 0,
+                'label' => 'Other',
+                'summary' => $this->summarise($others->values()),
+            ];
+        }
+
+        return $levels;
+    }
+
+    /**
+     * Everyone's month-to-date position rolled into one set of figures.
+     * OTP (count) targets are skipped: they are a headcount, and adding
+     * them to a rupee total would be meaningless.
+     *
+     * @param  Collection<int, int>  $employeeIds
+     * @return array<string, mixed>
+     */
+    public function monthlyRollup(Collection $employeeIds, Carbon $month): array
+    {
+        $targets = MonthlyCommitmentTarget::query()
+            ->whereIn('employee_id', $employeeIds)
+            ->forMonth($month)
+            ->get();
+
+        $target = 0.0;
+        $achieved = 0.0;
+        $drr = 0.0;
+        $requiredDrr = 0.0;
+        $elapsed = 0;
+        $remaining = 0;
+
+        foreach ($targets as $row) {
+            if ($row->stage->isCount()) {
+                continue;
+            }
+
+            $position = $this->monthlyPosition($row->employee_id, $month);
+
+            $target += $position['target'];
+            $achieved += $position['achieved'];
+            $drr += $position['drr'];
+            $requiredDrr += $position['required_drr'];
+            $elapsed = max($elapsed, $position['elapsed_working_days']);
+            $remaining = max($remaining, $position['remaining_working_days']);
+        }
+
+        return [
+            'target' => $target,
+            'achieved' => $achieved,
+            'pending' => max($target - $achieved, 0),
+            'percentage' => $target > 0 ? round(($achieved / $target) * 100, 1) : 0.0,
+            'drr' => round($drr, 2),
+            'required_drr' => round($requiredDrr, 2),
+            'elapsed_working_days' => $elapsed,
+            'remaining_working_days' => $remaining,
+            'people_with_target' => $targets->count(),
+        ];
+    }
+
+    /**
+     * The monthly rollup split by hierarchy level — the sum of all the
+     * Callers' monthly targets, of all the Team Leaders' and of all the
+     * Managers', each on its own line.
+     *
+     * @param  Collection<int, int>  $employeeIds
+     * @return array<int, array{designation: int, label: string, summary: array<string, mixed>}>
+     */
+    public function monthlyRollupByLevel(Collection $employeeIds, Carbon $month): array
+    {
+        $labels = Employee::designationOptions();
+
+        $byDesignation = Employee::query()
+            ->whereIn('id', $employeeIds)
+            ->get(['id', 'designation'])
+            ->groupBy(fn (Employee $employee): int => (int) $employee->designation);
+
+        $levels = [];
+
+        foreach (self::LEVELS as $designation) {
+            $group = $byDesignation->get($designation);
+
+            if (! $group || $group->isEmpty()) {
+                continue;
+            }
+
+            $levels[] = [
+                'designation' => $designation,
+                'label' => $labels[$designation] ?? '—',
+                'summary' => $this->monthlyRollup($group->pluck('id'), $month),
+            ];
+        }
+
+        return $levels;
+    }
+
+    /**
      * Month-to-date position against this module's own monthly target.
      *
      * MTD achievement is the sum of that month's daily achievements — the

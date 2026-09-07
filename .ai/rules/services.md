@@ -45,3 +45,17 @@ Register the gate as a singleton (AppServiceProvider) — the middleware and the
 This is the module's own target only. It never touches employees.category / employee_targets or AchievementCalculatorService.
 
 Trap: monthly_commitment_targets.month uses the `date` cast, so it writes "Y-m-d H:i:s". updateOrCreate(['month' => 'Y-m-d']) misses the existing row on SQLite and trips the (employee_id, month) unique index — look rows up with MonthlyCommitmentTarget::forMonth() (whereDate) instead.
+
+## Commitment rollups are reported level by level, never as one blended total
+A Manager's own commitment, their Team Leaders' and their Callers' must stay three separate figures; the same one level up for Admin. summariseByLevel() and monthlyRollupByLevel() group rows/employees by designation in DailyCommitmentService::LEVELS order (Cluster, Manager, Team Leader, Caller) and delegate the arithmetic to summarise()/monthlyRollup(), so a level can never disagree with the combined figure.
+
+The dashboard, reports and team view lead with the by-level table (x-daily-commitment.level-summary / monthly-level-summary) and show the combined figure only as the labelled "All levels combined" footer row. Do not turn a headline back into a single mixed sum.
+
+monthlyRollup() is the one place the MTD rollup lives — the dashboard and reports both call it rather than repeating the loop.
+
+## An inactivity ticket skips the month's target; Admin may set anybody's
+Nobody invents a target for somebody who has stopped turning up. A target setter raises an EmployeeInactivityRequest (from the blocking MonthlyTargetPrompt or the Inactivity Tickets resource) and skippedEmployeeIds() drops that employee out of missingTargets() and requiresOwnTarget() for that month.
+
+A ticket counts from the moment it is raised (pending OR approved — see scopeSkipping), not once reviewed: waiting for the Admin would keep the whole team locked out of the panel. Rejecting puts the target back. Approving is what sets employees.exit_status = 'yes'. Tickets are per (employee, month) — look them up with EmployeeInactivityRequest::forMonth(), never a bare "Y-m-d" match, because the `month` cast writes "Y-m-d H:i:s".
+
+assignableEmployeeIds() for Admin/Business Head is now every employee at any level (not just REQUIRES_TARGET, not filtered by exit status) — the Admin may correct anyone's target. responsibleFor() (the duty) is deliberately still narrow. Call forget() after any write.

@@ -7,7 +7,7 @@ namespace App\Enums;
  * where it maps onto the existing LMS customer journey.
  *
  * The main journey is a ladder — Docs Received -> SFL -> Underwriting ->
- * Approved -> Disbursed — so reaching a stage implies every stage below
+ * Approval -> Disbursal — so reaching a stage implies every stage below
  * it (see rank()). Dropped and Rejected are outcomes, not rungs: a case
  * that went Approved -> Rejected still has a highest rank of Approved,
  * which is exactly why achievement is computed from the highest rank
@@ -36,8 +36,8 @@ enum CommitmentStage: string
             self::DocsReceived => 'Docs Received',
             self::Sfl => 'SFL',
             self::Underwriting => 'Underwriting',
-            self::Approved => 'Approved',
-            self::Disbursed => 'Disbursed',
+            self::Approved => 'Approval',
+            self::Disbursed => 'Disbursal',
             self::Otp => 'No. of OTPs',
             self::Dropped => 'Dropped',
             self::Rejected => 'Rejected',
@@ -66,6 +66,16 @@ enum CommitmentStage: string
     public function isCount(): bool
     {
         return $this === self::Otp;
+    }
+
+    /**
+     * The stage every target and commitment starts on unless somebody
+     * deliberately picks another one: the business is only really done
+     * once it is disbursed.
+     */
+    public static function default(): self
+    {
+        return self::Disbursed;
     }
 
     /**

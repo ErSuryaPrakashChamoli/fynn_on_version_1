@@ -5,7 +5,7 @@
         $entries = $commitment->entries;
         $stage = $commitment->commitment_stage;
         $ladder = \App\Enums\CommitmentStage::ladder();
-        $fmt = fn ($v) => $stage->isCount() ? number_format($v) : shortIndianAmount($v);
+        $isCount = $stage->isCount();
     @endphp
 
     {{-- Who / when --}}
@@ -35,9 +35,9 @@
 
     {{-- Headline --}}
     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <x-daily-commitment.kpi label="Commitment" :value="$fmt($row['target'])" :hint="$stage->label()" :accent="$stage->hex()" />
-        <x-daily-commitment.kpi label="Achievement" :value="$fmt($row['achieved'])" accent="#22c55e" />
-        <x-daily-commitment.kpi label="Pending" :value="$fmt($row['pending'])" accent="#f97316" />
+        <x-daily-commitment.kpi label="Commitment" :amount="$row['target']" :count="$isCount" :hint="$stage->label()" :accent="$stage->hex()" />
+        <x-daily-commitment.kpi label="Achievement" :amount="$row['achieved']" :count="$isCount" accent="#22c55e" />
+        <x-daily-commitment.kpi label="Pending" :amount="$row['pending']" :count="$isCount" accent="#f97316" />
         <x-daily-commitment.kpi label="Achievement %" :value="$row['percentage'] . '%'" accent="#3b82f6" />
         <div class="dc-card">
             <div class="dc-card-label">Final stage</div>
@@ -111,7 +111,7 @@
                                 <td><x-daily-commitment.stage-chip :stage="$entry->stage" /></td>
                                 <td><x-daily-commitment.stage-chip :stage="$entry->lms_highest_stage" muted="Not in LMS" /></td>
                                 <td><x-daily-commitment.stage-chip :stage="$entry->outcome" muted="Live" /></td>
-                                <td class="dc-num font-semibold">{{ shortIndianAmount($entry->amount) }}</td>
+                                <td class="dc-num font-semibold"><x-daily-commitment.amount :value="$entry->amount" /></td>
                                 <td>
                                     @if ($counts)
                                         <span class="dc-chip bg-green-100 text-green-700 ring-1 ring-inset ring-green-600/20 dark:bg-green-500/15 dark:text-green-300 dark:ring-green-400/30">
@@ -134,7 +134,8 @@
                     @php $totals = $row['breakdown']['stages'][$rung->value] ?? ['amount' => 0, 'count' => 0]; @endphp
                     <div class="dc-card" style="border-color: {{ $rung->hex() }}55; box-shadow: inset 3px 0 0 0 {{ $rung->hex() }}">
                         <x-daily-commitment.stage-chip :stage="$rung" />
-                        <div class="dc-card-value">{{ shortIndianAmount($totals['amount']) }}</div>
+                        <div class="dc-card-value dc-card-amount">{{ indianAmount($totals['amount']) }}</div>
+                        <div class="dc-card-words">{{ indianAmountInWords($totals['amount']) }}</div>
                         <div class="dc-card-hint">{{ $totals['count'] }} {{ \Illuminate\Support\Str::plural('case', $totals['count']) }}</div>
                     </div>
                 @endforeach
@@ -180,7 +181,7 @@
                                         :stage="$log->old_stage ? \App\Enums\CommitmentStage::tryFrom($log->old_stage) : null"
                                     />
                                     <span class="ms-1 text-xs text-gray-500">
-                                        {{ $log->old_count ? number_format($log->old_count) : shortIndianAmount($log->old_amount) }}
+                                        {{ $log->old_count ? number_format($log->old_count) : indianAmount($log->old_amount) }}
                                     </span>
                                 </td>
                                 <td>
@@ -188,7 +189,7 @@
                                         :stage="$log->new_stage ? \App\Enums\CommitmentStage::tryFrom($log->new_stage) : null"
                                     />
                                     <span class="ms-1 text-xs text-gray-500">
-                                        {{ $log->new_count ? number_format($log->new_count) : shortIndianAmount($log->new_amount) }}
+                                        {{ $log->new_count ? number_format($log->new_count) : indianAmount($log->new_amount) }}
                                     </span>
                                 </td>
                                 <td class="text-xs text-gray-500">{{ $log->note ?? '—' }}</td>

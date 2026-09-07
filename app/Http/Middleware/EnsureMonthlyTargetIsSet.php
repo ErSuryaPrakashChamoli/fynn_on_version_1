@@ -45,8 +45,9 @@ class EnsureMonthlyTargetIsSet
     }
 
     /**
-     * Signing out, changing a password and the target screen itself stay
-     * open — everything else in the panel is closed.
+     * Signing out, changing a password, the target screen itself and the
+     * inactivity tickets beside it stay open — everything else in the
+     * panel is closed.
      */
     private function isPermitted(Request $request, User $user): bool
     {
@@ -60,8 +61,11 @@ class EnsureMonthlyTargetIsSet
             return true;
         }
 
+        // A setter needs both screens: the targets themselves, and the
+        // inactivity tickets that are the alternative to inventing one.
         if ($this->gate->isTargetSetter($user)) {
-            return str_contains($name, '.resources.monthly-commitment-targets.');
+            return str_contains($name, '.resources.monthly-commitment-targets.')
+                || str_contains($name, '.resources.employee-inactivity-requests.');
         }
 
         return str_contains($name, '.pages.dashboard');

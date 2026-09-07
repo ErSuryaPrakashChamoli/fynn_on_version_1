@@ -3,12 +3,14 @@
 namespace Tests\Feature;
 
 use App\Enums\CommitmentStage;
+use App\Enums\InactivityRequestStatus;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\MyDailyCommitment;
 use App\Filament\Resources\MonthlyCommitmentTargets\MonthlyCommitmentTargetResource;
 use App\Filament\Resources\MonthlyCommitmentTargets\Pages\CreateMonthlyCommitmentTarget;
 use App\Livewire\MonthlyTargetPrompt;
 use App\Models\Employee;
+use App\Models\EmployeeInactivityRequest;
 use App\Models\MonthlyCommitmentTarget;
 use App\Models\User;
 use App\Services\MonthlyTargetGate;
@@ -348,6 +350,152 @@ class MonthlyTargetGateTest extends TestCase
 
     /*
     |--------------------------------------------------------------------------
+    | Somebody who has gone inactive
+    |--------------------------------------------------------------------------
+    */
+
+    public function test_a_ticket_raised_from_the_prompt_skips_that_persons_target(): void
+    {
+        // The Manager's own target is already fixed, so the only thing
+        // still holding them out of the panel is their caller's.
+        $this->target($this->manager);
+
+        $manager = $this->userFor($this->manager, 'Manager');
+
+        $this->actingAs($manager);
+        $this->assertSame(MonthlyTargetGate::REASON_SET_TARGETS, $this->gate->status($manager)['reason']);
+
+        Livewire::test(MonthlyTargetPrompt::class)
+            ->call('askInactive', $this->caller->id)
+            ->set('inactiveReason', 'Stopped attending on 3 Sep, exit paperwork in progress.')
+            ->call('raiseInactivity', $this->caller->id);
+
+        $this->assertDatabaseHas('employee_inactivity_requests', [
+            'employee_id' => $this->caller->id,
+            'status' => InactivityRequestStatus::Pending->value,
+        ]);
+
+        app(MonthlyTargetGate::class)->forget();
+
+        // No target was invented, and the Manager is no longer held up.
+        $this->assertDatabaseMissing('monthly_commitment_targets', ['employee_id' => $this->caller->id]);
+        $this->assertTrue($this->gate->missingTargets($manager)->isEmpty());
+        $this->assertFalse($this->gate->isBlocked($manager));
+        $this->assertDatabaseCount('employee_inactivity_requests', 1);
+    }
+
+    public function test_a_ticket_without_a_reason_is_not_raised(): void
+    {
+        $this->actingAs($this->userFor($this->manager, 'Manager'));
+
+        Livewire::test(MonthlyTargetPrompt::class)
+            ->set('inactiveReason', 'no')
+            ->call('raiseInactivity', $this->caller->id);
+
+        $this->assertDatabaseCount('employee_inactivity_requests', 0);
+    }
+
+    public function test_a_manager_cannot_ticket_somebody_outside_their_own_team(): void
+    {
+        $outsider = Employee::factory()->create([
+            'designation' => Employee::DESIGNATION_CALLER,
+            'exit_status' => 'no',
+        ]);
+        User::factory()->create(['employee_id' => $outsider->id]);
+
+        $this->actingAs($this->userFor($this->manager, 'Manager'));
+
+        Livewire::test(MonthlyTargetPrompt::class)
+            ->set('inactiveReason', 'Not on my team at all, but worth a try.')
+            ->call('raiseInactivity', $outsider->id);
+
+        $this->assertDatabaseMissing('employee_inactivity_requests', ['employee_id' => $outsider->id]);
+    }
+
+    public function test_the_ticketed_employee_is_not_blocked_waiting_for_their_own_target(): void
+    {
+        $this->ticket($this->caller);
+
+        $caller = $this->userFor($this->caller, 'Caller');
+        $this->actingAs($caller);
+
+        $this->assertFalse($this->gate->requiresOwnTarget($caller));
+        $this->assertFalse($this->gate->isBlocked($caller));
+    }
+
+    public function test_a_rejected_ticket_puts_the_target_back(): void
+    {
+        $this->target($this->manager);
+        $ticket = $this->ticket($this->caller);
+
+        $manager = $this->userFor($this->manager, 'Manager');
+        $this->assertFalse($this->gate->isBlocked($manager));
+
+        $ticket->update(['status' => InactivityRequestStatus::Rejected]);
+        app(MonthlyTargetGate::class)->forget();
+
+        $this->assertTrue($this->gate->isBlocked($manager));
+        $this->assertTrue($this->gate->missingTargets($manager)->contains('id', $this->caller->id));
+    }
+
+    public function test_last_months_ticket_does_not_skip_this_months_target(): void
+    {
+        $this->ticket($this->caller, today()->subMonthNoOverflow()->startOfMonth());
+
+        $manager = $this->userFor($this->manager, 'Manager');
+
+        $this->assertTrue($this->gate->missingTargets($manager)->contains('id', $this->caller->id));
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | The Admin's reach
+    |--------------------------------------------------------------------------
+    */
+
+    public function test_an_admin_may_set_anybodys_target_at_any_level(): void
+    {
+        $cluster = Employee::factory()->create([
+            'designation' => Employee::DESIGNATION_CLUSTER,
+            'exit_status' => 'no',
+        ]);
+
+        $left = Employee::factory()->create([
+            'designation' => Employee::DESIGNATION_CALLER,
+            'exit_status' => 'yes',
+        ]);
+
+        $admin = $this->adminUser();
+        $this->actingAs($admin);
+
+        foreach ([$this->manager, $this->teamLeader, $this->caller, $cluster, $left] as $employee) {
+            $this->assertTrue(
+                $this->gate->canSetTargetFor($admin, $employee->id),
+                "Admin should be able to set {$employee->emp_name}'s target.",
+            );
+        }
+    }
+
+    public function test_a_manager_still_only_reaches_their_own_callers(): void
+    {
+        $manager = $this->userFor($this->manager, 'Manager');
+        $this->actingAs($manager);
+
+        $this->assertTrue($this->gate->canSetTargetFor($manager, $this->caller->id));
+        $this->assertFalse($this->gate->canSetTargetFor($manager, $this->teamLeader->id));
+    }
+
+    public function test_the_prompt_starts_every_row_on_disbursal(): void
+    {
+        $this->actingAs($this->userFor($this->manager, 'Manager'));
+
+        Livewire::test(MonthlyTargetPrompt::class)
+            ->assertSet('bulkStage', CommitmentStage::Disbursed->value)
+            ->assertSet("targets.{$this->caller->id}.stage", CommitmentStage::Disbursed->value);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Helpers
     |--------------------------------------------------------------------------
     */
@@ -373,6 +521,20 @@ class MonthlyTargetGateTest extends TestCase
         app(MonthlyTargetGate::class)->forget();
 
         return $user;
+    }
+
+    private function ticket(Employee $employee, ?Carbon $month = null): EmployeeInactivityRequest
+    {
+        $ticket = EmployeeInactivityRequest::create([
+            'employee_id' => $employee->id,
+            'month' => ($month ?? today()->startOfMonth())->toDateString(),
+            'reason' => 'Stopped attending.',
+            'status' => InactivityRequestStatus::Pending,
+        ]);
+
+        app(MonthlyTargetGate::class)->forget();
+
+        return $ticket;
     }
 
     private function target(Employee $employee, ?Carbon $month = null): MonthlyCommitmentTarget
