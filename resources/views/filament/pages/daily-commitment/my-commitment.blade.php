@@ -7,7 +7,7 @@
         $ladder = \App\Enums\CommitmentStage::ladder();
         $submitted = $commitment?->submitted_at !== null;
         $stage = $row['stage'] ?? null;
-        $fmt = fn ($v) => $stage && $stage->isCount() ? number_format($v) : shortIndianAmount($v);
+        $isCount = (bool) $stage?->isCount();
     @endphp
 
     {{-- 1. MORNING --}}
@@ -49,17 +49,19 @@
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                 <x-daily-commitment.kpi
                     label="Commitment"
-                    :value="$fmt($row['target'])"
+                    :amount="$row['target']"
+                    :count="$isCount"
                     :hint="$stage->label()"
                     :accent="$stage->hex()"
                 />
                 <x-daily-commitment.kpi
                     label="Achievement"
-                    :value="$fmt($row['achieved'])"
+                    :amount="$row['achieved']"
+                    :count="$isCount"
                     hint="{{ $stage->label() }} and beyond"
                     accent="#22c55e"
                 />
-                <x-daily-commitment.kpi label="Pending" :value="$fmt($row['pending'])" accent="#f97316" />
+                <x-daily-commitment.kpi label="Pending" :amount="$row['pending']" :count="$isCount" accent="#f97316" />
                 <x-daily-commitment.kpi label="Achievement %" :value="$row['percentage'] . '%'" accent="#3b82f6" />
                 <div class="dc-card">
                     <div class="dc-card-label">Result</div>
@@ -152,7 +154,7 @@
                                             @endif
                                         </td>
                                         <td><x-daily-commitment.stage-chip :stage="$entry->outcome" muted="Live" /></td>
-                                        <td class="dc-num font-semibold">{{ shortIndianAmount($entry->amount) }}</td>
+                                        <td class="dc-num font-semibold"><x-daily-commitment.amount :value="$entry->amount" /></td>
                                         <td>
                                             @if ($counts)
                                                 <span class="dc-chip bg-green-100 text-green-700 ring-1 ring-inset ring-green-600/20 dark:bg-green-500/15 dark:text-green-300 dark:ring-green-400/30">Counts</span>
@@ -171,7 +173,8 @@
                             @php $totals = $row['breakdown']['stages'][$rung->value] ?? ['amount' => 0, 'count' => 0]; @endphp
                             <div class="dc-card" style="border-color: {{ $rung->hex() }}55; box-shadow: inset 3px 0 0 0 {{ $rung->hex() }}">
                                 <x-daily-commitment.stage-chip :stage="$rung" />
-                                <div class="dc-card-value">{{ shortIndianAmount($totals['amount']) }}</div>
+                                <div class="dc-card-value dc-card-amount">{{ indianAmount($totals['amount']) }}</div>
+                                <div class="dc-card-words">{{ indianAmountInWords($totals['amount']) }}</div>
                                 <div class="dc-card-hint">{{ $totals['count'] }} {{ \Illuminate\Support\Str::plural('case', $totals['count']) }}</div>
                             </div>
                         @endforeach
@@ -188,11 +191,11 @@
         >
             <div class="mb-4 flex flex-wrap items-baseline gap-x-3">
                 <span class="text-2xl font-extrabold text-gray-950 dark:text-white">
-                    {{ shortIndianAmount($row['pipeline']['total_amount']) }}
+                    {{ indianAmount($row['pipeline']['total_amount']) }}
                 </span>
                 <span class="text-sm text-gray-500">
                     across {{ $row['pipeline']['total_count'] }} open {{ \Illuminate\Support\Str::plural('case', $row['pipeline']['total_count']) }}
-                    (excludes disbursed, dropped and rejected)
+                    (excludes disbursal, dropped and rejected)
                 </span>
             </div>
 
@@ -201,7 +204,8 @@
                     @php $totals = $row['pipeline']['stages'][$rung->value] ?? ['amount' => 0, 'count' => 0]; @endphp
                     <div class="dc-card" style="border-color: {{ $rung->hex() }}55; box-shadow: inset 3px 0 0 0 {{ $rung->hex() }}">
                         <x-daily-commitment.stage-chip :stage="$rung" />
-                        <div class="dc-card-value">{{ shortIndianAmount($totals['amount']) }}</div>
+                        <div class="dc-card-value dc-card-amount">{{ indianAmount($totals['amount']) }}</div>
+                        <div class="dc-card-words">{{ indianAmountInWords($totals['amount']) }}</div>
                         <div class="dc-card-hint">{{ $totals['count'] }} {{ \Illuminate\Support\Str::plural('case', $totals['count']) }}</div>
                     </div>
                 @endforeach
@@ -215,20 +219,22 @@
                 heading="Month to date"
                 collapsible
             >
-                @php $mFmt = fn ($v) => $monthly['is_count'] ? number_format($v) : shortIndianAmount($v); @endphp
+                @php $mFmt = fn ($v) => $monthly['is_count'] ? number_format($v) : indianAmount($v); @endphp
                 <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                     <x-daily-commitment.kpi
                         label="Monthly target"
-                        :value="$mFmt($monthly['target'])"
+                        :amount="$monthly['target']"
+                        :count="$monthly['is_count']"
                         :hint="$monthly['stage']->label()"
                         :accent="$monthly['stage']->hex()"
                     />
-                    <x-daily-commitment.kpi label="MTD achievement" :value="$mFmt($monthly['achieved'])" accent="#22c55e" />
-                    <x-daily-commitment.kpi label="Pending" :value="$mFmt($monthly['pending'])" accent="#f97316" />
+                    <x-daily-commitment.kpi label="MTD achievement" :amount="$monthly['achieved']" :count="$monthly['is_count']" accent="#22c55e" />
+                    <x-daily-commitment.kpi label="Pending" :amount="$monthly['pending']" :count="$monthly['is_count']" accent="#f97316" />
                     <x-daily-commitment.kpi label="Achievement %" :value="$monthly['percentage'] . '%'" accent="#3b82f6" />
                     <x-daily-commitment.kpi
                         label="DRR"
-                        :value="$mFmt($monthly['drr'])"
+                        :amount="$monthly['drr']"
+                        :count="$monthly['is_count']"
                         hint="{{ $mFmt($monthly['achieved']) }} ÷ {{ $monthly['elapsed_working_days'] }} working days"
                         accent="#a855f7"
                     />
@@ -264,7 +270,7 @@
                                             :stage="$log->old_stage ? \App\Enums\CommitmentStage::tryFrom($log->old_stage) : null"
                                         />
                                         <span class="ms-1 text-xs text-gray-500">
-                                            {{ $log->old_count ? number_format($log->old_count) : shortIndianAmount($log->old_amount) }}
+                                            {{ $log->old_count ? number_format($log->old_count) : indianAmount($log->old_amount) }}
                                         </span>
                                     </td>
                                     <td>
@@ -272,7 +278,7 @@
                                             :stage="$log->new_stage ? \App\Enums\CommitmentStage::tryFrom($log->new_stage) : null"
                                         />
                                         <span class="ms-1 text-xs text-gray-500">
-                                            {{ $log->new_count ? number_format($log->new_count) : shortIndianAmount($log->new_amount) }}
+                                            {{ $log->new_count ? number_format($log->new_count) : indianAmount($log->new_amount) }}
                                         </span>
                                     </td>
                                 </tr>

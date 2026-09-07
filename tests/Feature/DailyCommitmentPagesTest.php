@@ -160,6 +160,65 @@ class DailyCommitmentPagesTest extends TestCase
         ]);
     }
 
+    public function test_an_admin_can_set_or_change_anyones_monthly_target_from_the_detail_page(): void
+    {
+        $commitment = DailyCommitment::create([
+            'employee_id' => $this->caller->id,
+            'date' => today(),
+            'commitment_stage' => CommitmentStage::Disbursed,
+            'commitment_amount' => 1000000,
+        ]);
+
+        $admin = User::factory()->create();
+        $admin->assignRole('Admin');
+        $this->actingAs($admin);
+
+        Livewire::test(DailyCommitmentDetail::class, ['record' => $commitment->id])
+            ->assertActionVisible('setMonthlyTarget')
+            ->callAction('setMonthlyTarget', [
+                'stage' => CommitmentStage::Disbursed->value,
+                'target_amount' => 4500000,
+            ]);
+
+        $target = MonthlyCommitmentTarget::query()
+            ->where('employee_id', $this->caller->id)
+            ->forMonth(today()->startOfMonth())
+            ->firstOrFail();
+
+        $this->assertSame(CommitmentStage::Disbursed, $target->stage);
+        $this->assertSame(4500000.0, $target->target_amount);
+
+        // Calling it again rewrites the same row rather than tripping the
+        // (employee_id, month) unique index.
+        Livewire::test(DailyCommitmentDetail::class, ['record' => $commitment->id])
+            ->callAction('setMonthlyTarget', [
+                'stage' => CommitmentStage::Disbursed->value,
+                'target_amount' => 3000000,
+            ]);
+
+        $this->assertSame(3000000.0, $target->fresh()->target_amount);
+        $this->assertDatabaseCount('monthly_commitment_targets', 1);
+    }
+
+    public function test_a_team_leader_cannot_set_a_callers_monthly_target_from_the_detail_page(): void
+    {
+        $commitment = DailyCommitment::create([
+            'employee_id' => $this->caller->id,
+            'date' => today(),
+            'commitment_stage' => CommitmentStage::Disbursed,
+            'commitment_amount' => 1000000,
+        ]);
+
+        $user = User::factory()->create(['employee_id' => $this->teamLeader->id]);
+        $user->assignRole('Team Leader');
+        $this->actingAs($user);
+
+        Livewire::test(DailyCommitmentDetail::class, ['record' => $commitment->id])
+            ->assertActionHidden('setMonthlyTarget');
+
+        $this->assertDatabaseCount('monthly_commitment_targets', 0);
+    }
+
     public function test_the_detail_page_shows_the_customers_and_the_change_log(): void
     {
         $commitment = DailyCommitment::create([
@@ -202,7 +261,9 @@ class DailyCommitmentPagesTest extends TestCase
             ->assertSee('Customers declared')
             ->assertSee('Change log')
             ->assertSee('Achievement recalculated from the declared fulfilment.')
-            ->assertSee('₹4 L');
+            // Indian grouping with the word statement under it.
+            ->assertSee('₹4,00,000')
+            ->assertSee('Four Lakh');
     }
 
     public function test_the_detail_page_refuses_a_commitment_outside_your_hierarchy(): void
@@ -329,7 +390,8 @@ class DailyCommitmentPagesTest extends TestCase
         Livewire::test(DailyCommitmentDashboard::class)
             ->assertOk()
             ->assertSee($this->caller->emp_name)
-            ->assertSee('₹8 L')
+            ->assertSee('₹8,00,000')
+            ->assertSee('Eight Lakh')
             ->assertSee('80%');
     }
 
@@ -424,7 +486,8 @@ class DailyCommitmentPagesTest extends TestCase
             ->assertSee('Current pipeline')
             ->assertSee('Month to date')
             ->assertSee($customer->customer_name)
-            ->assertSee('₹8 L')
+            ->assertSee('₹8,00,000')
+            ->assertSee('Eight Lakh')
             ->assertSee('80%');
     }
 

@@ -5,7 +5,6 @@ namespace App\Filament\Pages;
 use App\Enums\CommitmentStage;
 use App\Models\DailyCommitment;
 use App\Models\Employee;
-use App\Models\MonthlyCommitmentTarget;
 use App\Services\DailyCommitmentService;
 use BackedEnum;
 use Filament\Facades\Filament;
@@ -165,11 +164,30 @@ class DailyCommitmentReports extends Page
      */
     public function getDailyProperty(): array
     {
+        return app(DailyCommitmentService::class)->summarise($this->periodRows);
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function getPeriodRowsProperty(): Collection
+    {
         $service = app(DailyCommitmentService::class);
 
         [$start, $end] = $this->range;
 
-        return $service->summarise($service->rows($this->employeeIds, $start, $end));
+        return $service->rows($this->employeeIds, $start, $end);
+    }
+
+    /**
+     * The period report split by hierarchy level, so the Callers', Team
+     * Leaders' and Managers' totals are never read as one number.
+     *
+     * @return array<int, array{designation: int, label: string, summary: array<string, mixed>}>
+     */
+    public function getDailyByLevelProperty(): array
+    {
+        return app(DailyCommitmentService::class)->summariseByLevel($this->periodRows);
     }
 
     /**
@@ -197,46 +215,17 @@ class DailyCommitmentReports extends Page
      */
     public function getMtdProperty(): array
     {
-        $service = app(DailyCommitmentService::class);
+        return app(DailyCommitmentService::class)->monthlyRollup($this->employeeIds, $this->month);
+    }
 
-        $targets = MonthlyCommitmentTarget::query()
-            ->whereIn('employee_id', $this->employeeIds)
-            ->forMonth($this->month)
-            ->get();
-
-        $target = 0.0;
-        $achieved = 0.0;
-        $drr = 0.0;
-        $requiredDrr = 0.0;
-        $elapsed = 0;
-        $remaining = 0;
-
-        foreach ($targets as $row) {
-            if ($row->stage->isCount()) {
-                continue;
-            }
-
-            $position = $service->monthlyPosition($row->employee_id, $this->month);
-
-            $target += $position['target'];
-            $achieved += $position['achieved'];
-            $drr += $position['drr'];
-            $requiredDrr += $position['required_drr'];
-            $elapsed = max($elapsed, $position['elapsed_working_days']);
-            $remaining = max($remaining, $position['remaining_working_days']);
-        }
-
-        return [
-            'target' => $target,
-            'achieved' => $achieved,
-            'pending' => max($target - $achieved, 0),
-            'percentage' => $target > 0 ? round(($achieved / $target) * 100, 1) : 0.0,
-            'drr' => round($drr, 2),
-            'required_drr' => round($requiredDrr, 2),
-            'elapsed_working_days' => $elapsed,
-            'remaining_working_days' => $remaining,
-            'people_with_target' => $targets->count(),
-        ];
+    /**
+     * The MTD report split by hierarchy level.
+     *
+     * @return array<int, array{designation: int, label: string, summary: array<string, mixed>}>
+     */
+    public function getMtdByLevelProperty(): array
+    {
+        return app(DailyCommitmentService::class)->monthlyRollupByLevel($this->employeeIds, $this->month);
     }
 
     /**

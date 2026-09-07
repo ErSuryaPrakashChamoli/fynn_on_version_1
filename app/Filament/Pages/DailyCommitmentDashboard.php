@@ -5,7 +5,6 @@ namespace App\Filament\Pages;
 use App\Enums\CommitmentResult;
 use App\Enums\CommitmentStage;
 use App\Models\Employee;
-use App\Models\MonthlyCommitmentTarget;
 use App\Services\DailyCommitmentService;
 use BackedEnum;
 use Filament\Facades\Filament;
@@ -232,6 +231,19 @@ class DailyCommitmentDashboard extends Page
     }
 
     /**
+     * The same period figures split by hierarchy level. This is the
+     * headline on the page: the sum of the Callers' commitments, of the
+     * Team Leaders' and of the Managers' are three separate numbers, and
+     * the combined total is only ever shown as a footer beneath them.
+     *
+     * @return array<int, array{designation: int, label: string, summary: array<string, mixed>}>
+     */
+    public function getLevelSummariesProperty(): array
+    {
+        return app(DailyCommitmentService::class)->summariseByLevel($this->rows);
+    }
+
+    /**
      * The whole visible group's month-to-date position, rolled up from
      * each person's own monthly target for this module.
      *
@@ -239,48 +251,28 @@ class DailyCommitmentDashboard extends Page
      */
     public function getMonthlyProperty(): array
     {
-        $service = app(DailyCommitmentService::class);
-        $employeeIds = $service->filterEmployeeIds(Filament::auth()->user(), $this->data ?? []);
-        $month = $this->range[1]->copy();
+        return app(DailyCommitmentService::class)->monthlyRollup($this->monthlyEmployeeIds, $this->range[1]->copy());
+    }
 
-        $targets = MonthlyCommitmentTarget::query()
-            ->whereIn('employee_id', $employeeIds)
-            ->forMonth($month)
-            ->get();
+    /**
+     * Month-to-date monthly targets, split the same way as the period
+     * figures above.
+     *
+     * @return array<int, array{designation: int, label: string, summary: array<string, mixed>}>
+     */
+    public function getMonthlyByLevelProperty(): array
+    {
+        return app(DailyCommitmentService::class)
+            ->monthlyRollupByLevel($this->monthlyEmployeeIds, $this->range[1]->copy());
+    }
 
-        $target = 0.0;
-        $achieved = 0.0;
-        $drr = 0.0;
-        $requiredDrr = 0.0;
-        $elapsed = 0;
-        $remaining = 0;
-
-        foreach ($targets as $row) {
-            if ($row->stage->isCount()) {
-                continue;
-            }
-
-            $position = $service->monthlyPosition($row->employee_id, $month);
-
-            $target += $position['target'];
-            $achieved += $position['achieved'];
-            $drr += $position['drr'];
-            $requiredDrr += $position['required_drr'];
-            $elapsed = max($elapsed, $position['elapsed_working_days']);
-            $remaining = max($remaining, $position['remaining_working_days']);
-        }
-
-        return [
-            'target' => $target,
-            'achieved' => $achieved,
-            'pending' => max($target - $achieved, 0),
-            'percentage' => $target > 0 ? round(($achieved / $target) * 100, 1) : 0.0,
-            'drr' => round($drr, 2),
-            'required_drr' => round($requiredDrr, 2),
-            'elapsed_working_days' => $elapsed,
-            'remaining_working_days' => $remaining,
-            'people_with_target' => $targets->count(),
-        ];
+    /**
+     * @return Collection<int, int>
+     */
+    public function getMonthlyEmployeeIdsProperty(): Collection
+    {
+        return app(DailyCommitmentService::class)
+            ->filterEmployeeIds(Filament::auth()->user(), $this->data ?? []);
     }
 
     public static function canAccess(): bool

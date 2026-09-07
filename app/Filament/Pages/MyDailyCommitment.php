@@ -90,6 +90,7 @@ class MyDailyCommitment extends Page
                     ->label('I commit to')
                     ->options(CommitmentStage::commitableOptions())
                     ->native(false)
+                    ->default(CommitmentStage::default()->value)
                     ->required()
                     ->disabled(fn (): bool => $this->isCommitmentLocked())
                     ->live(),
@@ -101,7 +102,13 @@ class MyDailyCommitment extends Page
                     ->required(fn (Get $get): bool => $get('commitment_stage') !== CommitmentStage::Otp->value)
                     ->visible(fn (Get $get): bool => $get('commitment_stage') !== CommitmentStage::Otp->value)
                     ->disabled(fn (): bool => $this->isCommitmentLocked())
-                    ->helperText('e.g. 1000000 for ₹10 L'),
+                    // The figure is read straight back in Indian grouping
+                    // and in words — a commitment is locked once given, so
+                    // a stray zero has to be caught before it is saved.
+                    ->live(onBlur: true)
+                    ->helperText(fn ($state): string => filled($state)
+                        ? indianAmount($state).' — '.indianAmountInWords($state)
+                        : 'e.g. 1000000 for ₹10,00,000'),
 
                 TextInput::make('commitment_count')
                     ->label('Number of OTPs')
@@ -202,6 +209,10 @@ class MyDailyCommitment extends Page
                             ->numeric()
                             ->minValue(0)
                             ->required()
+                            ->live(onBlur: true)
+                            ->helperText(fn ($state): ?string => filled($state)
+                                ? indianAmount($state).' — '.indianAmountInWords($state)
+                                : null)
                             ->columnSpan(2),
 
                         Textarea::make('remarks')
@@ -531,7 +542,8 @@ class MyDailyCommitment extends Page
 
         $this->form->fill([
             'date' => $this->date,
-            'commitment_stage' => $commitment?->commitment_stage->value,
+            // Disbursal unless this day already carries a commitment.
+            'commitment_stage' => $commitment?->commitment_stage->value ?? CommitmentStage::default()->value,
             'commitment_amount' => $commitment && ! $commitment->commitment_stage->isCount()
                 ? (int) $commitment->commitment_amount
                 : null,

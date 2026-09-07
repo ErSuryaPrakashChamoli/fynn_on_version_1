@@ -6,7 +6,8 @@ function indianCurrencyFormat($number): string
         return '';
     }
 
-    $number = (string) ((int) $number);
+    $sign = (int) $number < 0 ? '-' : '';
+    $number = (string) abs((int) $number);
 
     $lastThree = substr($number, -3);
     $rest = substr($number, 0, -3);
@@ -14,10 +15,10 @@ function indianCurrencyFormat($number): string
     if ($rest !== '') {
         $rest = preg_replace('/\B(?=(\d{2})+(?!\d))/', ',', $rest);
 
-        return $rest.','.$lastThree;
+        return $sign.$rest.','.$lastThree;
     }
 
-    return $lastThree;
+    return $sign.$lastThree;
 }
 
 /**
@@ -49,4 +50,92 @@ function shortIndianAmount($number, string $symbol = '₹'): string
         : rtrim(rtrim(number_format($value, 2), '0'), '.');
 
     return $sign.$symbol.$formatted.$suffix;
+}
+
+/**
+ * A rupee figure in Indian digit grouping with the symbol in front —
+ * 1250000 becomes "₹12,50,000". Paise are dropped: every amount in the
+ * Daily Commitment module is a whole-rupee loan figure.
+ */
+function indianAmount($number, string $symbol = '₹'): string
+{
+    if ($number === null || $number === '') {
+        return '';
+    }
+
+    $rupees = (int) round((float) $number);
+
+    return ($rupees < 0 ? '-' : '').$symbol.indianCurrencyFormat(abs($rupees));
+}
+
+/**
+ * The word statement of a rupee figure, in the Indian system —
+ * 1250000 becomes "Twelve Lakh Fifty Thousand". Shown under the digits
+ * so a number can be read back without counting commas.
+ */
+function indianAmountInWords($number): string
+{
+    if ($number === null || $number === '') {
+        return '';
+    }
+
+    $rupees = (int) round((float) $number);
+
+    if ($rupees < 0) {
+        return 'Minus '.indianAmountInWords(-$rupees);
+    }
+
+    if ($rupees === 0) {
+        return 'Zero';
+    }
+
+    $ones = [
+        1 => 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+        'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+        'Seventeen', 'Eighteen', 'Nineteen',
+    ];
+
+    $tens = [2 => 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+    $upToNinetyNine = function (int $value) use ($ones, $tens): string {
+        if ($value < 20) {
+            return $ones[$value] ?? '';
+        }
+
+        $word = $tens[intdiv($value, 10)];
+
+        return $value % 10 ? $word.' '.$ones[$value % 10] : $word;
+    };
+
+    $crore = intdiv($rupees, 10000000);
+    $lakh = intdiv($rupees, 100000) % 100;
+    $thousand = intdiv($rupees, 1000) % 100;
+    $hundred = intdiv($rupees, 100) % 10;
+    $rest = $rupees % 100;
+
+    $words = [];
+
+    if ($crore > 0) {
+        // Beyond 99 crore the count itself needs the Indian grouping
+        // again — 12,34,00,00,000 reads "Twelve Thousand Thirty Four Crore".
+        $words[] = ($crore > 99 ? indianAmountInWords($crore) : $upToNinetyNine($crore)).' Crore';
+    }
+
+    if ($lakh > 0) {
+        $words[] = $upToNinetyNine($lakh).' Lakh';
+    }
+
+    if ($thousand > 0) {
+        $words[] = $upToNinetyNine($thousand).' Thousand';
+    }
+
+    if ($hundred > 0) {
+        $words[] = $ones[$hundred].' Hundred';
+    }
+
+    if ($rest > 0) {
+        $words[] = $upToNinetyNine($rest);
+    }
+
+    return implode(' ', $words);
 }

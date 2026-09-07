@@ -5,6 +5,9 @@
         $reporteeRows = $this->reporteeRows;
         $callerRows = $this->callerRows;
         $callerSummary = $this->callerSummary;
+        $callerLevels = $this->callerLevels;
+        $reporteeLevels = $this->reporteeLevels;
+        $reporteeSummary = $this->reporteeSummary;
         $date = $this->date;
         $designations = \App\Models\Employee::designationOptions();
         $canSetOtp = $this->canSetExpectedOtp();
@@ -34,22 +37,22 @@
         >
             @php
                 $stage = $ownRow['stage'];
-                $fmt = fn ($v) => $ownRow['count_mode'] ? number_format($v) : shortIndianAmount($v);
+                $ownCount = $ownRow['count_mode'];
             @endphp
 
             @if (! $stage)
                 <p class="text-sm text-gray-500">No commitment given for this date.</p>
             @else
                 <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                    <x-daily-commitment.kpi label="Commitment" :value="$fmt($ownRow['target'])" :hint="$stage->label()" :accent="$stage->hex()" />
-                    <x-daily-commitment.kpi label="Achievement" :value="$fmt($ownRow['achieved'])" accent="#22c55e" />
-                    <x-daily-commitment.kpi label="Pending" :value="$fmt($ownRow['pending'])" accent="#f97316" />
+                    <x-daily-commitment.kpi label="Commitment" :amount="$ownRow['target']" :count="$ownCount" :hint="$stage->label()" :accent="$stage->hex()" />
+                    <x-daily-commitment.kpi label="Achievement" :amount="$ownRow['achieved']" :count="$ownCount" accent="#22c55e" />
+                    <x-daily-commitment.kpi label="Pending" :amount="$ownRow['pending']" :count="$ownCount" accent="#f97316" />
                     <x-daily-commitment.kpi label="Achievement %" :value="$ownRow['percentage'] . '%'" accent="#3b82f6" />
                     <div class="dc-card">
                         <div class="dc-card-label">Result</div>
                         <div class="mt-2"><x-daily-commitment.result-chip :result="$ownRow['result']" /></div>
                         <div class="dc-card-hint">
-                            Pipeline {{ shortIndianAmount($ownRow['pipeline']['total_amount']) }} (separate)
+                            Pipeline {{ indianAmount($ownRow['pipeline']['total_amount']) }} (separate)
                         </div>
                     </div>
                 </div>
@@ -61,8 +64,16 @@
     <x-filament::section
         icon="heroicon-o-user-group"
         heading="Direct reportees"
-        description="Click a name to drill into their own team."
+        description="Totalled by their own level — kept apart from your own commitment above and from the callers below."
     >
+        @unless ($reporteeRows->isEmpty())
+            <div class="mb-4">
+                <x-daily-commitment.level-summary :levels="$reporteeLevels" :total="$reporteeSummary" totalLabel="All reportees combined" />
+            </div>
+        @endunless
+
+        <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">Click a name to drill into their own team.</p>
+
         @if ($reporteeRows->isEmpty())
             <p class="text-sm text-gray-500">No direct reportees.</p>
         @else
@@ -89,7 +100,7 @@
                         @foreach ($reporteeRows as $row)
                             @php
                                 $stage = $row['stage'];
-                                $fmt = fn ($v) => $row['count_mode'] ? number_format($v) : shortIndianAmount($v);
+                                $countMode = $row['count_mode'];
                             @endphp
                             @php
                                 $detailUrl = $row['commitment']
@@ -119,13 +130,25 @@
                                 </td>
                                 <td><x-daily-commitment.presence-chip :present="$row['present']" /></td>
                                 <td><x-daily-commitment.stage-chip :stage="$stage" /></td>
-                                <td class="dc-num font-semibold">{{ $stage ? $fmt($row['target']) : '—' }}</td>
-                                <td class="dc-num font-semibold">{{ $stage ? $fmt($row['achieved']) : '—' }}</td>
-                                <td class="dc-num">{{ $stage ? $fmt($row['pending']) : '—' }}</td>
+                                <td class="dc-num font-semibold">
+                                    @if ($stage)
+                                        <x-daily-commitment.amount :value="$row['target']" :count="$countMode" />
+                                    @else — @endif
+                                </td>
+                                <td class="dc-num font-semibold">
+                                    @if ($stage)
+                                        <x-daily-commitment.amount :value="$row['achieved']" :count="$countMode" />
+                                    @else — @endif
+                                </td>
+                                <td class="dc-num">
+                                    @if ($stage)
+                                        <x-daily-commitment.amount :value="$row['pending']" :count="$countMode" />
+                                    @else — @endif
+                                </td>
                                 <td class="dc-num">{{ $stage ? $row['percentage'] . '%' : '—' }}</td>
                                 <td class="dc-num">{{ $row['changes'] }}</td>
                                 <td><x-daily-commitment.stage-chip :stage="$row['current_stage']" muted="—" /></td>
-                                <td class="dc-num text-gray-500">{{ shortIndianAmount($row['pipeline']['total_amount']) }}</td>
+                                <td class="dc-num text-gray-500"><x-daily-commitment.amount :value="$row['pipeline']['total_amount']" /></td>
                                 <td><x-daily-commitment.result-chip :result="$row['result']" /></td>
                                 <td x-on:click.stop>
                                     @if ($row['employee']->designation !== \App\Models\Employee::DESIGNATION_CALLER)
@@ -153,6 +176,10 @@
         heading="Callers"
         description="Attendance, commitment and OTP for every caller below this level."
     >
+        <div class="mb-4">
+            <x-daily-commitment.level-summary :levels="$callerLevels" :total="null" />
+        </div>
+
         <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
             <x-daily-commitment.kpi label="Callers" :value="$callerSummary['people']" accent="#3b82f6" />
             <x-daily-commitment.kpi label="Present" :value="$callerSummary['present']" accent="#22c55e" />
@@ -162,7 +189,7 @@
             <x-daily-commitment.kpi label="OTP %" :value="$callerSummary['otp_percentage'] . '%'" accent="#a855f7" />
             <x-daily-commitment.kpi
                 label="Pipeline"
-                :value="shortIndianAmount($callerSummary['pipeline_amount'])"
+                :amount="$callerSummary['pipeline_amount']"
                 hint="{{ $callerSummary['pipeline_count'] }} open cases"
                 accent="#0d9488"
             />
@@ -198,7 +225,7 @@
                         @foreach ($callerRows as $row)
                             @php
                                 $stage = $row['stage'];
-                                $fmt = fn ($v) => $row['count_mode'] ? number_format($v) : shortIndianAmount($v);
+                                $countMode = $row['count_mode'];
                             @endphp
                             @php
                                 $detailUrl = $row['commitment']
@@ -225,9 +252,21 @@
                                 </td>
                                 <td><x-daily-commitment.presence-chip :present="$row['present']" /></td>
                                 <td><x-daily-commitment.stage-chip :stage="$stage" /></td>
-                                <td class="dc-num font-semibold">{{ $stage ? $fmt($row['target']) : '—' }}</td>
-                                <td class="dc-num font-semibold">{{ $stage ? $fmt($row['achieved']) : '—' }}</td>
-                                <td class="dc-num">{{ $stage ? $fmt($row['pending']) : '—' }}</td>
+                                <td class="dc-num font-semibold">
+                                    @if ($stage)
+                                        <x-daily-commitment.amount :value="$row['target']" :count="$countMode" />
+                                    @else — @endif
+                                </td>
+                                <td class="dc-num font-semibold">
+                                    @if ($stage)
+                                        <x-daily-commitment.amount :value="$row['achieved']" :count="$countMode" />
+                                    @else — @endif
+                                </td>
+                                <td class="dc-num">
+                                    @if ($stage)
+                                        <x-daily-commitment.amount :value="$row['pending']" :count="$countMode" />
+                                    @else — @endif
+                                </td>
                                 <td class="dc-num">{{ $stage ? $row['percentage'] . '%' : '—' }}</td>
                                 <td class="dc-num">{{ $row['present'] ? number_format($row['expected_otp']) : '—' }}</td>
                                 <td class="dc-num">{{ $row['present'] ? number_format($row['actual_otp']) : '—' }}</td>
@@ -236,7 +275,7 @@
                                 </td>
                                 <td class="dc-num">{{ $row['changes'] }}</td>
                                 <td><x-daily-commitment.stage-chip :stage="$row['current_stage']" muted="—" /></td>
-                                <td class="dc-num text-gray-500">{{ shortIndianAmount($row['pipeline']['total_amount']) }}</td>
+                                <td class="dc-num text-gray-500"><x-daily-commitment.amount :value="$row['pipeline']['total_amount']" /></td>
                                 <td><x-daily-commitment.result-chip :result="$row['result']" /></td>
                                 @if ($canSetOtp)
                                     <td x-on:click.stop>

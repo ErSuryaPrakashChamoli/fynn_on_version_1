@@ -3,7 +3,9 @@
 namespace App\Livewire;
 
 use App\Enums\CommitmentStage;
+use App\Enums\InactivityRequestStatus;
 use App\Models\Employee;
+use App\Models\EmployeeInactivityRequest;
 use App\Models\MonthlyCommitmentTarget;
 use App\Models\User;
 use App\Services\MonthlyTargetGate;
@@ -26,6 +28,10 @@ use Livewire\Component;
  *  - "awaiting_target" — the user's own target has not been fixed yet,
  *    so they are told exactly who to chase.
  *
+ * A team member who has gone inactive is not a target to be invented: the
+ * setter raises an inactivity ticket for them from this same screen, which
+ * skips their target for the month and leaves the Admin to review it.
+ *
  * Every write is re-authorised against the gate, so a crafted Livewire
  * request cannot set a target for somebody outside the user's team.
  */
@@ -38,15 +44,114 @@ class MonthlyTargetPrompt extends Component
      */
     public array $targets = [];
 
+    /** Disbursal is the default everywhere in this module. */
     public ?string $bulkStage = null;
 
     public ?string $bulkAmount = null;
 
     public ?string $bulkCount = null;
 
+    /** The row whose "mark inactive" reason box is currently open. */
+    public ?int $inactiveFor = null;
+
+    public ?string $inactiveReason = null;
+
     public function mount(): void
     {
+        $this->bulkStage ??= CommitmentStage::default()->value;
+
         $this->primeRows();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Inactive team members
+    |--------------------------------------------------------------------------
+    */
+
+    public function askInactive(int $employeeId): void
+    {
+        $this->inactiveFor = $employeeId;
+        $this->inactiveReason = null;
+    }
+
+    public function cancelInactive(): void
+    {
+        $this->inactiveFor = null;
+        $this->inactiveReason = null;
+    }
+
+    /**
+     * Raise the inactivity ticket. The month's target for that person is
+     * skipped from this moment — waiting for the Admin to review the
+     * ticket would keep the whole team locked out of the panel — and the
+     * Admin decides afterwards whether the employee really comes off the
+     * rolls.
+     */
+    public function raiseInactivity(int $employeeId): void
+    {
+        $user = Filament::auth()->user();
+
+        if (! $user instanceof User) {
+            return;
+        }
+
+        $gate = app(MonthlyTargetGate::class);
+
+        if (! $gate->canSetTargetFor($user, $employeeId)) {
+            Notification::make()
+                ->title('That is not your team member')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $reason = trim((string) $this->inactiveReason);
+
+        if (mb_strlen($reason) < 5) {
+            Notification::make()
+                ->title('Say why they are inactive')
+                ->body('A ticket without a reason cannot be reviewed.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $month = $gate->month();
+
+        $existing = EmployeeInactivityRequest::query()
+            ->where('employee_id', $employeeId)
+            ->forMonth($month)
+            ->skipping()
+            ->first();
+
+        if (! $existing) {
+            EmployeeInactivityRequest::create([
+                'employee_id' => $employeeId,
+                'month' => $month->toDateString(),
+                'requested_by' => $user->getKey(),
+                'reason' => $reason,
+                'status' => InactivityRequestStatus::Pending,
+            ]);
+        }
+
+        $gate->forget();
+
+        $this->cancelInactive();
+
+        Notification::make()
+            ->title('Inactivity ticket raised')
+            ->body('Their target is skipped for '.$month->format('F Y').' while the Admin reviews it.')
+            ->success()
+            ->send();
+
+        // Clearing one row may clear the block entirely, and that changes
+        // what the whole panel may render — reload rather than re-render.
+        if ($this->missing()->isEmpty()) {
+            $this->redirect(Filament::getUrl(), navigate: false);
+        }
     }
 
     /**
@@ -193,7 +298,7 @@ class MonthlyTargetPrompt extends Component
     {
         foreach ($this->missing() as $employee) {
             $this->targets[$employee->id] ??= [
-                'stage' => null,
+                'stage' => CommitmentStage::default()->value,
                 'amount' => null,
                 'count' => null,
             ];

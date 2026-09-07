@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Employee;
+use App\Models\EmployeeInactivityRequest;
 use App\Models\MonthlyCommitmentTarget;
 use App\Models\User;
 use App\Support\HierarchyHelper;
@@ -70,6 +71,14 @@ class MonthlyTargetGate
      * @var array<int, Collection<int, int>>
      */
     private array $assignable = [];
+
+    /**
+     * Per-request memo of the employees whose target is skipped this
+     * month because an inactivity ticket is open for them.
+     *
+     * @var array<string, Collection<int, int>>
+     */
+    private array $skipped = [];
 
     /** The month the gate is currently policing: always the calendar month in progress. */
     public function month(): Carbon
@@ -143,10 +152,11 @@ class MonthlyTargetGate
      */
     private function resolveAssignableEmployeeIds(User $user): Collection
     {
+        // The Admin line may set or correct anybody's target, at any
+        // level and whether or not the module is currently waiting on it
+        // — an Admin overruling a number is the whole point of the seat.
         if ($user->hasAnyRole(['Admin', 'Business Head'])) {
-            return $this->activeEmployees()
-                ->whereIn('designation', self::REQUIRES_TARGET)
-                ->pluck('id');
+            return Employee::query()->pluck('id');
         }
 
         $employee = $user->employee;
@@ -213,13 +223,47 @@ class MonthlyTargetGate
             return $responsible;
         }
 
-        $set = $this->employeeIdsWithTarget($responsible->pluck('id'), $month ?? $this->month());
+        $month ??= $this->month();
 
-        return $responsible->reject(fn (Employee $employee): bool => $set->contains($employee->id))->values();
+        $set = $this->employeeIdsWithTarget($responsible->pluck('id'), $month);
+        $skipped = $this->skippedEmployeeIds($month);
+
+        return $responsible
+            ->reject(fn (Employee $employee): bool => $set->contains($employee->id)
+                || $skipped->contains($employee->id))
+            ->values();
+    }
+
+    /**
+     * Employees whose monthly target is skipped because somebody has
+     * raised an inactivity ticket for them. A ticket counts from the
+     * moment it is raised — the team is not made to wait for the Admin to
+     * review it, or one person who has stopped turning up would hold
+     * everybody else out of the panel.
+     *
+     * @return Collection<int, int>
+     */
+    public function skippedEmployeeIds(?Carbon $month = null): Collection
+    {
+        $month ??= $this->month();
+        $key = $month->toDateString();
+
+        return $this->skipped[$key] ??= EmployeeInactivityRequest::query()
+            ->forMonth($month)
+            ->skipping()
+            ->pluck('employee_id')
+            ->unique()
+            ->values();
+    }
+
+    /** Is this employee's target already skipped for the month? */
+    public function isSkipped(int $employeeId, ?Carbon $month = null): bool
+    {
+        return $this->skippedEmployeeIds($month)->contains($employeeId);
     }
 
     /** Does this user's own designation need a target fixed for them? */
-    public function requiresOwnTarget(User $user): bool
+    public function requiresOwnTarget(User $user, ?Carbon $month = null): bool
     {
         // The Admin line sets targets rather than carrying one.
         if ($user->hasAnyRole(['Admin', 'Business Head'])) {
@@ -230,7 +274,8 @@ class MonthlyTargetGate
 
         return $employee !== null
             && in_array($employee->designation, self::REQUIRES_TARGET, true)
-            && $employee->exit_status !== 'yes';
+            && $employee->exit_status !== 'yes'
+            && ! $this->isSkipped($employee->id, $month);
     }
 
     public function hasOwnTarget(User $user, ?Carbon $month = null): bool
@@ -286,7 +331,7 @@ class MonthlyTargetGate
             ];
         }
 
-        if ($this->requiresOwnTarget($user) && ! $this->hasOwnTarget($user, $month)) {
+        if ($this->requiresOwnTarget($user, $month) && ! $this->hasOwnTarget($user, $month)) {
             return $this->statuses[$key] = [
                 'blocked' => true,
                 'reason' => self::REASON_AWAITING_TARGET,
@@ -315,6 +360,7 @@ class MonthlyTargetGate
     {
         $this->statuses = [];
         $this->assignable = [];
+        $this->skipped = [];
     }
 
     /*

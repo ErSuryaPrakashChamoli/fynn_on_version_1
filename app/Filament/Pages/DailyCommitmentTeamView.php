@@ -165,6 +165,38 @@ class DailyCommitmentTeamView extends Page
     }
 
     /**
+     * The direct reportees' figures split by their own level — a Manager
+     * sees the Team Leaders' total on its own line, never folded into
+     * their own commitment or into the callers' below them.
+     *
+     * @return array<int, array{designation: int, label: string, summary: array<string, mixed>}>
+     */
+    public function getReporteeLevelsProperty(): array
+    {
+        return app(DailyCommitmentService::class)->summariseByLevel($this->reporteeRows);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getReporteeSummaryProperty(): array
+    {
+        return app(DailyCommitmentService::class)->summarise($this->reporteeRows);
+    }
+
+    /**
+     * The callers below this level, split by level for consistency with
+     * the reportee table (a caller list is one level, so this is a single
+     * row — it exists so both tables read the same way).
+     *
+     * @return array<int, array{designation: int, label: string, summary: array<string, mixed>}>
+     */
+    public function getCallerLevelsProperty(): array
+    {
+        return app(DailyCommitmentService::class)->summariseByLevel($this->callerRows);
+    }
+
+    /**
      * Set a caller's expected OTP for the selected day. Kept as a modal
      * action here rather than a screen of its own — it is one number.
      */

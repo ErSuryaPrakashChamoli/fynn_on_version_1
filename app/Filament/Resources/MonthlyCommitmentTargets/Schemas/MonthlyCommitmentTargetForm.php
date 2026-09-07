@@ -65,6 +65,10 @@ class MonthlyCommitmentTargetForm
                             ->label('Stage')
                             ->options(CommitmentStage::commitableOptions())
                             ->native(false)
+                            // Disbursal is the module's default: the
+                            // business is only really done once the money
+                            // has gone out.
+                            ->default(CommitmentStage::default()->value)
                             ->required()
                             ->live(),
 
@@ -74,7 +78,14 @@ class MonthlyCommitmentTargetForm
                             ->minValue(0)
                             ->default(0)
                             ->required(fn (Get $get): bool => $get('stage') !== CommitmentStage::Otp->value)
-                            ->visible(fn (Get $get): bool => $get('stage') !== CommitmentStage::Otp->value),
+                            ->visible(fn (Get $get): bool => $get('stage') !== CommitmentStage::Otp->value)
+                            // Read the typed figure back in Indian
+                            // grouping and in words, so a stray zero is
+                            // obvious before the target is saved.
+                            ->live(onBlur: true)
+                            ->helperText(fn ($state): ?string => filled($state)
+                                ? indianAmount($state).' — '.indianAmountInWords($state)
+                                : null),
 
                         TextInput::make('target_count')
                             ->label('Target OTPs')

@@ -5,7 +5,10 @@ namespace App\Filament\Pages;
 use App\Enums\CommitmentStage;
 use App\Models\DailyCommitment;
 use App\Models\DailyCommitmentLog;
+use App\Models\MonthlyCommitmentTarget;
+use App\Models\User;
 use App\Services\DailyCommitmentService;
+use App\Services\MonthlyTargetGate;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
@@ -108,6 +111,7 @@ class DailyCommitmentDetail extends Page
                     ->label('Stage')
                     ->options(CommitmentStage::commitableOptions())
                     ->native(false)
+                    ->default(CommitmentStage::default()->value)
                     ->required()
                     ->live(),
 
@@ -116,7 +120,11 @@ class DailyCommitmentDetail extends Page
                     ->numeric()
                     ->minValue(1)
                     ->required(fn (Get $get): bool => $get('commitment_stage') !== CommitmentStage::Otp->value)
-                    ->visible(fn (Get $get): bool => $get('commitment_stage') !== CommitmentStage::Otp->value),
+                    ->visible(fn (Get $get): bool => $get('commitment_stage') !== CommitmentStage::Otp->value)
+                    ->live(onBlur: true)
+                    ->helperText(fn ($state): ?string => filled($state)
+                        ? indianAmount($state).' — '.indianAmountInWords($state)
+                        : null),
 
                 TextInput::make('commitment_count')
                     ->label('Number of OTPs')
@@ -172,9 +180,120 @@ class DailyCommitmentDetail extends Page
             });
     }
 
+    /**
+     * Whether this viewer may rewrite the employee's monthly target. The
+     * Admin line may do it for anybody, which is why the action lives on
+     * the screen where the number is actually being questioned rather
+     * than only on the Monthly Target listing.
+     */
+    public function canSetMonthlyTarget(): bool
+    {
+        $user = Filament::auth()->user();
+
+        return $user instanceof User
+            && app(MonthlyTargetGate::class)->canSetTargetFor($user, (int) $this->commitment->employee_id);
+    }
+
+    /**
+     * Set or correct this employee's monthly commitment target for the
+     * month the commitment falls in.
+     */
+    public function setMonthlyTargetAction(): Action
+    {
+        return Action::make('setMonthlyTarget')
+            ->label('Set monthly target')
+            ->icon('heroicon-o-trophy')
+            ->color('primary')
+            ->visible(fn (): bool => $this->canSetMonthlyTarget())
+            ->modalHeading(fn (): string => 'Monthly target — '.$this->commitment->date->format('F Y'))
+            ->modalDescription('This module\'s own monthly target for this employee. The LMS target and incentive calculation are not affected.')
+            ->schema([
+                Select::make('stage')
+                    ->label('Stage')
+                    ->options(CommitmentStage::commitableOptions())
+                    ->native(false)
+                    ->default(CommitmentStage::default()->value)
+                    ->required()
+                    ->live(),
+
+                TextInput::make('target_amount')
+                    ->label('Target amount (₹)')
+                    ->numeric()
+                    ->minValue(1)
+                    ->required(fn (Get $get): bool => $get('stage') !== CommitmentStage::Otp->value)
+                    ->visible(fn (Get $get): bool => $get('stage') !== CommitmentStage::Otp->value)
+                    ->live(onBlur: true)
+                    ->helperText(fn ($state): ?string => filled($state)
+                        ? indianAmount($state).' — '.indianAmountInWords($state)
+                        : null),
+
+                TextInput::make('target_count')
+                    ->label('Target OTPs')
+                    ->numeric()
+                    ->minValue(1)
+                    ->required(fn (Get $get): bool => $get('stage') === CommitmentStage::Otp->value)
+                    ->visible(fn (Get $get): bool => $get('stage') === CommitmentStage::Otp->value),
+            ])
+            ->fillForm(function (): array {
+                $existing = $this->monthlyTarget();
+
+                return [
+                    'stage' => $existing?->stage->value ?? CommitmentStage::default()->value,
+                    'target_amount' => $existing && ! $existing->stage->isCount()
+                        ? (int) $existing->target_amount
+                        : null,
+                    'target_count' => $existing?->stage->isCount() ? $existing->target_count : null,
+                ];
+            })
+            ->action(function (array $data): void {
+                if (! $this->canSetMonthlyTarget()) {
+                    Notification::make()->title('You cannot set that target.')->danger()->send();
+
+                    return;
+                }
+
+                $stage = CommitmentStage::from($data['stage']);
+
+                $values = [
+                    'stage' => $stage,
+                    'target_amount' => $stage->isCount() ? 0 : (float) ($data['target_amount'] ?? 0),
+                    'target_count' => $stage->isCount() ? (int) ($data['target_count'] ?? 0) : 0,
+                ];
+
+                // Looked up through forMonth()/whereDate rather than
+                // updateOrCreate(): the `month` cast writes "Y-m-d H:i:s",
+                // so a bare "Y-m-d" match misses the existing row and
+                // trips the (employee_id, month) unique index instead.
+                $existing = $this->monthlyTarget();
+
+                $existing
+                    ? $existing->update($values)
+                    : MonthlyCommitmentTarget::create([
+                        'employee_id' => $this->commitment->employee_id,
+                        'month' => $this->commitment->date->copy()->startOfMonth()->toDateString(),
+                        ...$values,
+                    ]);
+
+                app(MonthlyTargetGate::class)->forget();
+
+                Notification::make()->title('Monthly target saved')->success()->send();
+            });
+    }
+
+    protected function monthlyTarget(): ?MonthlyCommitmentTarget
+    {
+        return MonthlyCommitmentTarget::query()
+            ->where('employee_id', $this->commitment->employee_id)
+            ->forMonth($this->commitment->date->copy())
+            ->first();
+    }
+
     protected function getHeaderActions(): array
     {
-        return [$this->editCommitmentAction()];
+        return [
+            $this->editCommitmentAction(),
+            $this->setMonthlyTargetAction(),
+        ];
     }
 
     public static function canAccess(): bool

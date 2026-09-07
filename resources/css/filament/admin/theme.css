@@ -2608,3 +2608,75 @@ ul.eh-vtree ul.eh-vtree > li::before {
     text-decoration-style: dotted;
     text-underline-offset: 2px;
 }
+
+/* A full rupee figure with its word statement underneath. The digits
+   stay the loud part; the words are a quiet second line so a dense
+   table still scans down its number column. */
+.dc-card-value.dc-card-amount {
+    font-size: 1rem;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+}
+
+/* A card sits in a grid track, so it must be allowed to shrink, and a
+   long rupee figure has to be allowed to break rather than run past the
+   card's right edge — "₹8,50,00,000" is 12 characters with no space in
+   it, which nothing else in the layout would ever wrap. */
+.dc-card {
+    min-width: 0;
+}
+
+.dc-card-value,
+.dc-card-words,
+.dc-card-hint,
+.dc-card-label {
+    overflow-wrap: anywhere;
+}
+
+.dc-card-words {
+    margin-top: 0.125rem;
+    font-size: 0.625rem;
+    line-height: 1.25;
+    font-weight: 500;
+    color: rgb(107 114 128);
+}
+
+.dark .dc-card-words {
+    color: rgb(156 163 175);
+}
+
+.dc-amount {
+    display: inline-block;
+}
+
+.dc-amount-value {
+    display: block;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.dc-amount-words {
+    display: block;
+    margin-top: 0.0625rem;
+    font-size: 0.625rem;
+    line-height: 1.25;
+    font-weight: 400;
+    color: rgb(107 114 128);
+}
+
+.dark .dc-amount-words {
+    color: rgb(156 163 175);
+}
+
+/* The "all levels combined" footer on a by-level table — present, but
+   deliberately quieter than the per-level rows above it. */
+.dc-table tbody tr.dc-total-row td {
+    background: rgb(249 250 251);
+    font-weight: 700;
+    border-top: 2px solid rgb(229 231 235);
+}
+
+.dark .dc-table tbody tr.dc-total-row td {
+    background: rgb(31 41 55);
+    border-top-color: rgb(55 65 81);
+}
