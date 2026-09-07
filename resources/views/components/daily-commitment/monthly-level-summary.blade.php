@@ -2,8 +2,10 @@
     The monthly targets of this module, one hierarchy level at a time:
     the sum of all the Callers' targets, of all the Team Leaders' and of
     all the Managers', each answerable on its own.
+
+    No grand total, on purpose — see level-summary.blade.php.
 --}}
-@props(['levels' => [], 'total' => null, 'totalLabel' => 'All levels combined'])
+@props(['levels' => []])
 
 <div class="overflow-x-auto">
     <table class="dc-table">
@@ -42,19 +44,6 @@
                 </tr>
             @endforelse
 
-            @if ($total)
-                <tr class="dc-total-row">
-                    <td>{{ $totalLabel }}</td>
-                    <td class="dc-num">{{ $total['people_with_target'] }}</td>
-                    <td class="dc-num"><x-daily-commitment.amount :value="$total['target']" /></td>
-                    <td class="dc-num"><x-daily-commitment.amount :value="$total['achieved']" /></td>
-                    <td class="dc-num"><x-daily-commitment.amount :value="$total['pending']" /></td>
-                    <td class="dc-num">{{ $total['percentage'] }}%</td>
-                    <td><x-daily-commitment.progress-bar :percentage="$total['percentage']" color="#6b7280" /></td>
-                    <td class="dc-num"><x-daily-commitment.amount :value="$total['drr']" /></td>
-                    <td class="dc-num"><x-daily-commitment.amount :value="$total['required_drr']" /></td>
-                </tr>
-            @endif
         </tbody>
     </table>
 </div>

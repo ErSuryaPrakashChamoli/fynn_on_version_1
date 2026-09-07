@@ -160,6 +160,41 @@ class DailyCommitmentPagesTest extends TestCase
         ]);
     }
 
+    public function test_the_dashboard_bifurcates_monthly_targets_and_never_shows_their_sum(): void
+    {
+        $manager = Employee::factory()->create([
+            'designation' => Employee::DESIGNATION_MANAGER,
+        ]);
+        $this->teamLeader->manager_id = $manager->id;
+        $this->teamLeader->save();
+
+        // A Manager's target already covers the team below them, so the
+        // levels must never be added up: ₹50,00,000 + ₹10,00,000 is not a
+        // target anybody is answerable for.
+        foreach ([[$manager, 5000000], [$this->caller, 1000000]] as [$employee, $amount]) {
+            MonthlyCommitmentTarget::create([
+                'employee_id' => $employee->id,
+                'month' => today()->startOfMonth()->toDateString(),
+                'stage' => CommitmentStage::Disbursed,
+                'target_amount' => $amount,
+                'target_count' => 0,
+            ]);
+        }
+
+        $admin = User::factory()->create();
+        $admin->assignRole('Admin');
+        $this->actingAs($admin);
+
+        Livewire::test(DailyCommitmentDashboard::class)
+            ->assertSee('Month to date by level')
+            ->assertSee('₹50,00,000')
+            ->assertSee('Fifty Lakh')
+            ->assertSee('₹10,00,000')
+            ->assertSee('Ten Lakh')
+            ->assertDontSee('₹60,00,000')
+            ->assertDontSee('Sixty Lakh');
+    }
+
     public function test_an_admin_can_set_or_change_anyones_monthly_target_from_the_detail_page(): void
     {
         $commitment = DailyCommitment::create([

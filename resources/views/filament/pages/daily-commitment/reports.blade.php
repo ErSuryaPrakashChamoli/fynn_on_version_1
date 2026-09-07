@@ -20,12 +20,11 @@
     <x-filament::section
         icon="heroicon-o-calendar"
         heading="Period report"
-        description="{{ $rangeLabel }}"
+        description="{{ $rangeLabel }} — totalled one level at a time"
     >
-        <x-daily-commitment.level-summary :levels="$dailyLevels" :total="$daily" />
+        <x-daily-commitment.level-summary :levels="$dailyLevels" />
 
-        <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <x-daily-commitment.kpi label="Achievement %" :value="$daily['percentage'] . '%'" accent="#a855f7" />
+        <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
             <x-daily-commitment.kpi label="Met" :value="$daily['met']" accent="#22c55e" />
             <x-daily-commitment.kpi label="Failed" :value="$daily['failed']" accent="#ef4444" />
             <x-daily-commitment.kpi label="Overachieved" :value="$daily['overachieved']" accent="#0d9488" />
@@ -41,30 +40,17 @@
     <x-filament::section
         icon="heroicon-o-calendar-days"
         heading="MTD report"
-        description="{{ $month->format('F Y') }} — this module's own monthly targets only."
+        description="{{ $month->format('F Y') }} — this module's own monthly targets, bifurcated by level."
     >
-        <x-daily-commitment.monthly-level-summary :levels="$mtdLevels" :total="$mtd" />
+        <x-daily-commitment.monthly-level-summary :levels="$mtdLevels" />
 
-        <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            <x-daily-commitment.kpi label="Monthly target" :amount="$mtd['target']" accent="#3b82f6" />
-            <x-daily-commitment.kpi label="MTD achievement" :amount="$mtd['achieved']" accent="#22c55e" />
-            <x-daily-commitment.kpi label="Pending" :amount="$mtd['pending']" accent="#f97316" />
-            <x-daily-commitment.kpi label="Achievement %" :value="$mtd['percentage'] . '%'" accent="#a855f7" />
-            <x-daily-commitment.kpi
-                label="DRR"
-                :amount="$mtd['drr']"
-                hint="MTD ÷ {{ $mtd['elapsed_working_days'] }} working days"
-                accent="#0d9488"
-            />
-        </div>
-        <div class="mt-3">
-            <x-daily-commitment.progress-bar :percentage="$mtd['percentage']" color="#22c55e" />
-        </div>
-        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            DRR = MTD achievement ÷ working days elapsed. To close the gap,
-            <strong>{{ indianAmount($mtd['required_drr']) }}</strong> ({{ indianAmountInWords($mtd['required_drr']) }}) is needed on each of the
-            {{ $mtd['remaining_working_days'] }} remaining working days
-            ({{ $mtd['people_with_target'] }} people have a target this month).
+        <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            {{ $mtd['people_with_target'] }} {{ \Illuminate\Support\Str::plural('person', $mtd['people_with_target']) }}
+            in scope {{ $mtd['people_with_target'] === 1 ? 'has' : 'have' }} a target this month ·
+            {{ $mtd['elapsed_working_days'] }} working {{ \Illuminate\Support\Str::plural('day', $mtd['elapsed_working_days']) }} elapsed,
+            {{ $mtd['remaining_working_days'] }} remaining.
+            DRR = that level's own MTD achievement ÷ working days elapsed; "needed / day" is what closes that
+            level's own gap. The levels are never added together — a Manager's target already covers their team.
         </p>
     </x-filament::section>
 

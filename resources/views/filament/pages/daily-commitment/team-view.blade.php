@@ -7,7 +7,6 @@
         $callerSummary = $this->callerSummary;
         $callerLevels = $this->callerLevels;
         $reporteeLevels = $this->reporteeLevels;
-        $reporteeSummary = $this->reporteeSummary;
         $date = $this->date;
         $designations = \App\Models\Employee::designationOptions();
         $canSetOtp = $this->canSetExpectedOtp();
@@ -68,7 +67,7 @@
     >
         @unless ($reporteeRows->isEmpty())
             <div class="mb-4">
-                <x-daily-commitment.level-summary :levels="$reporteeLevels" :total="$reporteeSummary" totalLabel="All reportees combined" />
+                <x-daily-commitment.level-summary :levels="$reporteeLevels" />
             </div>
         @endunless
 
@@ -177,7 +176,7 @@
         description="Attendance, commitment and OTP for every caller below this level."
     >
         <div class="mb-4">
-            <x-daily-commitment.level-summary :levels="$callerLevels" :total="null" />
+            <x-daily-commitment.level-summary :levels="$callerLevels" />
         </div>
 
         <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
