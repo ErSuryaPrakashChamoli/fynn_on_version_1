@@ -1,9 +1,13 @@
 {{--
-    Commitment and achievement one hierarchy level at a time. A blended
-    "everyone below me" total cannot say who is behind, so the levels are
-    the rows and the combined figure is only a quiet footer.
+    Commitment and achievement one hierarchy level at a time.
+
+    There is deliberately no grand total row. A Manager's commitment
+    already covers the team underneath them, so adding the Managers', the
+    Team Leaders' and the Callers' figures together counts the same
+    business two and three times over — a number nobody is answerable
+    for. Each level stands on its own line and nowhere else.
 --}}
-@props(['levels' => [], 'total' => null, 'totalLabel' => 'All levels combined'])
+@props(['levels' => []])
 
 <div class="overflow-x-auto">
     <table class="dc-table">
@@ -56,20 +60,6 @@
                 </tr>
             @endforelse
 
-            @if ($total)
-                <tr class="dc-total-row">
-                    <td>{{ $totalLabel }}</td>
-                    <td class="dc-num">{{ $total['with_commitment'] }} / {{ $total['people'] }}</td>
-                    <td class="dc-num"><x-daily-commitment.amount :value="$total['committed_amount']" /></td>
-                    <td class="dc-num">{{ $total['committed_count'] > 0 ? number_format($total['committed_count']).' OTP' : '—' }}</td>
-                    <td class="dc-num"><x-daily-commitment.amount :value="$total['achieved_amount']" /></td>
-                    <td class="dc-num"><x-daily-commitment.amount :value="$total['pending_amount']" /></td>
-                    <td class="dc-num">{{ $total['percentage'] }}%</td>
-                    <td><x-daily-commitment.progress-bar :percentage="$total['percentage']" color="#6b7280" /></td>
-                    <td class="dc-num">{{ $total['met'] + $total['overachieved'] }}</td>
-                    <td class="dc-num">{{ $total['failed'] }}</td>
-                </tr>
-            @endif
         </tbody>
     </table>
 </div>

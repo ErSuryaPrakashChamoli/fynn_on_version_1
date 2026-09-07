@@ -177,14 +177,6 @@ class DailyCommitmentTeamView extends Page
     }
 
     /**
-     * @return array<string, mixed>
-     */
-    public function getReporteeSummaryProperty(): array
-    {
-        return app(DailyCommitmentService::class)->summarise($this->reporteeRows);
-    }
-
-    /**
      * The callers below this level, split by level for consistency with
      * the reportee table (a caller list is one level, so this is a single
      * row — it exists so both tables read the same way).

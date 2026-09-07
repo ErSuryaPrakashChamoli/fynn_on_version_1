@@ -21,9 +21,9 @@
     <x-filament::section
         icon="heroicon-o-bars-3-bottom-left"
         heading="Commitment by level — {{ $rangeLabel }}"
-        description="Managers, Team Leaders and Callers are totalled separately. The combined figure is the last row only."
+        description="Managers, Team Leaders and Callers are totalled separately. They are never added together — a Manager's commitment already covers their team."
     >
-        <x-daily-commitment.level-summary :levels="$levels" :total="$summary" />
+        <x-daily-commitment.level-summary :levels="$levels" />
     </x-filament::section>
 
     {{-- Headline counts (people, not money — these do add up across levels) --}}
@@ -34,19 +34,14 @@
             hint="{{ $summary['submitted'] }} submitted a final status"
             accent="#3b82f6"
         />
-        <x-daily-commitment.kpi label="Achievement" :value="$summary['percentage'] . '%'" accent="#a855f7" />
         <x-daily-commitment.kpi label="Met" :value="$summary['met']" accent="#22c55e" />
         <x-daily-commitment.kpi label="Failed" :value="$summary['failed']" accent="#ef4444" />
         <x-daily-commitment.kpi label="Overachieved" :value="$summary['overachieved']" accent="#0d9488" />
         <x-daily-commitment.kpi label="In progress" :value="$summary['in_progress']" accent="#eab308" />
     </div>
 
-    <div class="mt-2">
-        <x-daily-commitment.progress-bar :percentage="$summary['percentage']" color="#22c55e" />
-    </div>
-
     {{-- Attendance + OTP + MTD --}}
-    <div class="grid gap-4 lg:grid-cols-3">
+    <div class="grid gap-4 lg:grid-cols-2">
         <x-filament::section icon="heroicon-o-users" heading="Callers today" compact>
             <div class="grid grid-cols-2 gap-3">
                 <x-daily-commitment.kpi label="Present" :value="$summary['present']" accent="#22c55e" />
@@ -68,37 +63,25 @@
             </div>
         </x-filament::section>
 
-        {{-- Deliberately labelled: this card adds every level's monthly
-             target together, which is only meaningful as a grand total.
-             The per-level split is the table below. --}}
-        <x-filament::section icon="heroicon-o-calendar-days" heading="Month to date — all levels added" compact>
-            <div class="grid grid-cols-2 gap-3">
-                <x-daily-commitment.kpi label="Monthly target" :amount="$monthly['target']" accent="#3b82f6" />
-                <x-daily-commitment.kpi label="MTD achievement" :amount="$monthly['achieved']" accent="#22c55e" />
-                <x-daily-commitment.kpi label="Pending" :amount="$monthly['pending']" accent="#f97316" />
-                <x-daily-commitment.kpi
-                    label="DRR"
-                    :amount="$monthly['drr']"
-                    hint="MTD ÷ {{ $monthly['elapsed_working_days'] }} working days"
-                    accent="#a855f7"
-                />
-            </div>
-            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                {{ $monthly['percentage'] }}% achieved · needs {{ indianAmount($monthly['required_drr']) }}/day
-                for the remaining {{ $monthly['remaining_working_days'] }} working days.
-                This is the sum of all {{ $monthly['people_with_target'] }} individual monthly targets across every
-                level — see the per-level split below for what each level owes on its own.
-            </p>
-        </x-filament::section>
     </div>
 
-    {{-- Monthly target by level --}}
+    {{-- Month to date, bifurcated. There is no combined figure on purpose:
+         adding a Manager's target to their own Team Leaders' and Callers'
+         counts the same business three times over. --}}
     <x-filament::section
         icon="heroicon-o-trophy"
-        heading="Monthly target by level — {{ $rangeEnd->format('F Y') }}"
-        description="This module's own monthly targets, kept separate per level so a Manager's target is never buried inside their team's."
+        heading="Month to date by level — {{ $rangeEnd->format('F Y') }}"
+        description="The total of all the Callers' targets, of all the Team Leaders' and of all the Managers', each on its own line. They are deliberately not added together."
     >
-        <x-daily-commitment.monthly-level-summary :levels="$monthlyLevels" :total="$monthly" />
+        <x-daily-commitment.monthly-level-summary :levels="$monthlyLevels" />
+
+        <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            {{ $monthly['people_with_target'] }} {{ \Illuminate\Support\Str::plural('person', $monthly['people_with_target']) }}
+            in scope {{ $monthly['people_with_target'] === 1 ? 'has' : 'have' }} a target this month ·
+            {{ $monthly['elapsed_working_days'] }} working {{ \Illuminate\Support\Str::plural('day', $monthly['elapsed_working_days']) }} elapsed,
+            {{ $monthly['remaining_working_days'] }} remaining.
+            DRR is each level's own MTD ÷ working days elapsed; "needed / day" closes that level's own gap.
+        </p>
     </x-filament::section>
 
     {{-- Current pipeline — deliberately separate from today's achievement --}}
