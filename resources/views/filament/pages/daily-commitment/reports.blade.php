@@ -26,6 +26,7 @@
 
         <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
             <x-daily-commitment.kpi label="Met" :value="$daily['met']" accent="#22c55e" />
+            <x-daily-commitment.kpi label="Partially met" :value="$daily['partial'] ?? 0" accent="#f59e0b" />
             <x-daily-commitment.kpi label="Failed" :value="$daily['failed']" accent="#ef4444" />
             <x-daily-commitment.kpi label="Overachieved" :value="$daily['overachieved']" accent="#0d9488" />
         </div>

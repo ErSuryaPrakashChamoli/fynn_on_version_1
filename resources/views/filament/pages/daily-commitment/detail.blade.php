@@ -73,12 +73,7 @@
         heading="Customers declared"
         :description="$entries->count() . ' ' . \Illuminate\Support\Str::plural('case', $entries->count()) . ' claimed against this commitment'"
     >
-        @if ($stage->isCount())
-            <p class="text-sm text-gray-500">
-                An OTP commitment is counted automatically from the cases opened that day
-                ({{ $row['actual_otp'] }}), so no customer list is declared.
-            </p>
-        @elseif ($entries->isEmpty())
+        @if ($entries->isEmpty())
             <p class="text-sm text-gray-500">No customers have been declared against this commitment yet.</p>
         @else
             <div class="overflow-x-auto">

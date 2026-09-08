@@ -22,6 +22,7 @@
                 <th class="dc-num">%</th>
                 <th style="min-width: 7rem">Progress</th>
                 <th class="dc-num">Met</th>
+                <th class="dc-num">Partial</th>
                 <th class="dc-num">Failed</th>
             </tr>
         </thead>
@@ -52,11 +53,13 @@
                         <x-daily-commitment.progress-bar :percentage="$s['percentage']" color="#22c55e" />
                     </td>
                     <td class="dc-num">{{ $s['met'] + $s['overachieved'] }}</td>
+                    {{-- The number was made, but below the stage promised. --}}
+                    <td class="dc-num">{{ $s['partial'] ?? 0 }}</td>
                     <td class="dc-num">{{ $s['failed'] }}</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="10" class="text-sm text-gray-500">Nobody in scope for this period.</td>
+                    <td colspan="11" class="text-sm text-gray-500">Nobody in scope for this period.</td>
                 </tr>
             @endforelse
 

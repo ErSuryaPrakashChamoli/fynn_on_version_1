@@ -6,22 +6,23 @@ namespace App\Enums;
  * The Daily Commitment module's stage vocabulary, and the single place
  * where it maps onto the existing LMS customer journey.
  *
- * The main journey is a ladder — Docs Received -> SFL -> Underwriting ->
- * Approval -> Disbursal — so reaching a stage implies every stage below
- * it (see rank()). Dropped and Rejected are outcomes, not rungs: a case
- * that went Approved -> Rejected still has a highest rank of Approved,
- * which is exactly why achievement is computed from the highest rank
- * reached rather than from the current journey_status.
+ * The main journey is a ladder — OTP -> SFL -> Underwriting -> Approval
+ * -> Disbursal — so reaching a stage implies every stage below it (see
+ * rank()). Dropped and Rejected are outcomes, not rungs: a case that went
+ * Approved -> Rejected still has a highest rank of Approved, which is
+ * exactly why achievement is computed from the highest rank reached
+ * rather than from the current journey_status.
  *
- * Otp is a count-based commitment (number of cases), not an amount one,
- * and sits outside the ladder entirely.
+ * Otp is the bottom rung, so every declared case counts toward an OTP
+ * commitment. It is still MEASURED as a headcount rather than in rupees
+ * (see isCount()) — an OTP commitment is a number of cases, and cannot be
+ * added into a rupee total.
  *
  * Colours are fixed per stage and reused everywhere (badges, cards,
  * tables, charts) — see the .commitment-stage-* rules in the admin theme.
  */
 enum CommitmentStage: string
 {
-    case DocsReceived = 'docs_received';
     case Sfl = 'sfl';
     case Underwriting = 'underwriting';
     case Approved = 'approved';
@@ -33,7 +34,6 @@ enum CommitmentStage: string
     public function label(): string
     {
         return match ($this) {
-            self::DocsReceived => 'Docs Received',
             self::Sfl => 'SFL',
             self::Underwriting => 'Underwriting',
             self::Approved => 'Approval',
@@ -51,7 +51,7 @@ enum CommitmentStage: string
     public function rank(): ?int
     {
         return match ($this) {
-            self::DocsReceived => 1,
+            self::Otp => 1,
             self::Sfl => 2,
             self::Underwriting => 3,
             self::Approved => 4,
@@ -62,6 +62,8 @@ enum CommitmentStage: string
 
     /**
      * OTP commitments are counted, every other stage is an amount in ₹.
+     * This is about the UNIT, not the ladder: Otp is the bottom rung and
+     * still ranks below SFL, it just cannot be added into a rupee total.
      */
     public function isCount(): bool
     {
@@ -85,7 +87,6 @@ enum CommitmentStage: string
     public function chipClasses(): string
     {
         return match ($this) {
-            self::DocsReceived => 'bg-blue-100 text-blue-700 ring-blue-600/20 dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-400/30',
             self::Sfl => 'bg-purple-100 text-purple-700 ring-purple-600/20 dark:bg-purple-500/15 dark:text-purple-300 dark:ring-purple-400/30',
             self::Underwriting => 'bg-orange-100 text-orange-700 ring-orange-600/20 dark:bg-orange-500/15 dark:text-orange-300 dark:ring-orange-400/30',
             self::Approved => 'bg-green-100 text-green-700 ring-green-600/20 dark:bg-green-500/15 dark:text-green-300 dark:ring-green-400/30',
@@ -102,7 +103,6 @@ enum CommitmentStage: string
     public function hex(): string
     {
         return match ($this) {
-            self::DocsReceived => '#3b82f6',
             self::Sfl => '#a855f7',
             self::Underwriting => '#f97316',
             self::Approved => '#22c55e',
@@ -120,17 +120,18 @@ enum CommitmentStage: string
      */
     public static function ladder(): array
     {
-        return [self::DocsReceived, self::Sfl, self::Underwriting, self::Approved, self::Disbursed];
+        return [self::Otp, self::Sfl, self::Underwriting, self::Approved, self::Disbursed];
     }
 
     /**
-     * Stages an employee may actually commit to: the ladder plus OTP.
+     * Stages an employee may actually commit to. OTP is on the ladder
+     * now, so this is simply the ladder.
      *
      * @return array<int, self>
      */
     public static function commitable(): array
     {
-        return [...self::ladder(), self::Otp];
+        return self::ladder();
     }
 
     /**

@@ -40,8 +40,11 @@ class DailyCommitment extends Model
         'current_stage',
         'achievement_amount',
         'achievement_count',
+        'below_stage_amount',
+        'below_stage_count',
         'result',
         'submitted_at',
+        'declaration_note',
         'remarks',
         'created_by',
     ];
@@ -54,8 +57,10 @@ class DailyCommitment extends Model
         'result' => CommitmentResult::class,
         'commitment_amount' => 'float',
         'achievement_amount' => 'float',
+        'below_stage_amount' => 'float',
         'commitment_count' => 'integer',
         'achievement_count' => 'integer',
+        'below_stage_count' => 'integer',
     ];
 
     public function employee(): BelongsTo
@@ -131,6 +136,26 @@ class DailyCommitment extends Model
         return $this->commitment_stage->isCount()
             ? (float) $this->achievement_count
             : (float) $this->achievement_amount;
+    }
+
+    /**
+     * Declared business that landed BELOW the committed stage — the ₹3L
+     * of SFL against a ₹10L Approval promise. It never counts as a pass,
+     * but it is what separates a partial day from a failed one.
+     */
+    public function belowStage(): float
+    {
+        return $this->commitment_stage->isCount()
+            ? (float) $this->below_stage_count
+            : (float) $this->below_stage_amount;
+    }
+
+    /**
+     * Everything declared for the day, at whatever stage it sits.
+     */
+    public function totalAchieved(): float
+    {
+        return $this->achieved() + $this->belowStage();
     }
 
     public function pending(): float

@@ -142,11 +142,11 @@ class DailyCommitmentService
      * it on that day's fulfilment.
      *
      * Stage mapping to the existing LMS (verified against the data):
-     *  - Docs Received: customers.documentation_status = 'complete' — the
-     *    documentation checklist inside "Step 1: SFL (Source File
-     *    Logging)". NOT customer_documents, which only ever holds the
-     *    post-disbursal "Disbursal Letter", and NOT documents_submitted,
-     *    which is also post-disbursal.
+     *  - SFL is the lowest rung the LMS can prove, so a case whose
+     *    documents are in but which is not yet eligible resolves to no
+     *    stage at all. (Docs Received used to sit below SFL, keyed off
+     *    documentation_status = 'complete'; the rung was removed from the
+     *    ladder, so that condition no longer resolves to anything.)
      *  - SFL: eligibility_status = 'eligible'. CreateCustomer sets
      *    journey_status to 'sfl' exactly when the case is eligible (and to
      *    'not_started' otherwise), and no 'Moved to Sfl' history row is
@@ -206,8 +206,6 @@ class DailyCommitmentService
 
                 in_array(self::HISTORY_STATUS['sfl'], $history, true)
                     || $customer->eligibility_status === 'eligible' => CommitmentStage::Sfl,
-
-                $customer->documentation_status === 'complete' => CommitmentStage::DocsReceived,
 
                 default => null,
             };
@@ -300,20 +298,37 @@ class DailyCommitmentService
     */
 
     /**
-     * Achievement from a commitment's declared fulfilment rows: the sum of
-     * every row whose effective stage is at or beyond the committed stage.
+     * Achievement from a commitment's declared fulfilment rows, split at
+     * the committed stage.
+     *
+     * `amount` is business at or beyond the stage that was promised — the
+     * only figure that earns a clean pass, and the one every rollup in
+     * the module has always meant by "achievement". `below_amount` is the
+     * rest of the declared business, sitting on a lower rung: a day may
+     * be fulfilled in parts (₹7L Approval + ₹3L SFL against a ₹10L
+     * Approval promise), and that shortfall-by-stage is what separates a
+     * partial day from a failed one.
      *
      * @param  Collection<int, DailyCommitmentEntry>  $entries
-     * @return array{amount: float, count: int, counting: Collection<int, DailyCommitmentEntry>}
+     * @return array{amount: float, count: int, counting: Collection<int, DailyCommitmentEntry>, below_amount: float, below_count: int, below: Collection<int, DailyCommitmentEntry>, total_amount: float, total_count: int}
      */
     public function achievementFromEntries(Collection $entries, CommitmentStage $stage): array
     {
-        $counting = $entries->filter(fn (DailyCommitmentEntry $entry): bool => $entry->countsToward($stage));
+        [$counting, $below] = $entries
+            ->partition(fn (DailyCommitmentEntry $entry): bool => $entry->countsToward($stage));
+
+        $amount = (float) $counting->sum('amount');
+        $belowAmount = (float) $below->sum('amount');
 
         return [
-            'amount' => (float) $counting->sum('amount'),
+            'amount' => $amount,
             'count' => $counting->count(),
             'counting' => $counting->values(),
+            'below_amount' => $belowAmount,
+            'below_count' => $below->count(),
+            'below' => $below->values(),
+            'total_amount' => $amount + $belowAmount,
+            'total_count' => $counting->count() + $below->count(),
         ];
     }
 
@@ -326,28 +341,29 @@ class DailyCommitmentService
         $stage = $commitment->commitment_stage;
         $entries = $commitment->entries()->get();
 
-        if ($stage->isCount()) {
-            // An OTP commitment is measured by cases opened that day, which
-            // already carries its own date boundary (customers.created_at).
-            $achievedCount = $this->otpCounts(
-                collect([$commitment->employee_id]),
-                $commitment->date->copy()->startOfDay(),
-                $commitment->date->copy()->endOfDay(),
-            )[$commitment->employee_id] ?? 0;
+        // Every commitment, OTP included, is answered by the cases the
+        // employee declares. OTP is simply the bottom rung, so every
+        // declared case counts toward one — but it is counted, not summed
+        // in rupees.
+        $achievement = $this->achievementFromEntries($entries, $stage);
 
-            $achievedAmount = 0.0;
-            $highest = CommitmentStage::Otp;
-        } else {
-            $achievement = $this->achievementFromEntries($entries, $stage);
-            $achievedAmount = $achievement['amount'];
-            $achievedCount = $achievement['count'];
-            $highest = $this->highestDeclaredStage($entries);
-        }
+        $achievedAmount = $stage->isCount() ? 0.0 : $achievement['amount'];
+        $achievedCount = $achievement['count'];
+        $belowAmount = $stage->isCount() ? 0.0 : $achievement['below_amount'];
+        $belowCount = $stage->isCount() ? 0 : $achievement['below_count'];
+        $highest = $this->highestDeclaredStage($entries);
 
         $target = $commitment->target();
         $achieved = $stage->isCount() ? (float) $achievedCount : $achievedAmount;
 
-        $result = CommitmentResult::decide($target, $achieved, dayClosed: $commitment->isClosed());
+        // Nothing ranks below OTP, so an OTP commitment has no below-stage
+        // business to rescue it: total === achieved there.
+        $result = CommitmentResult::decide(
+            $target,
+            $achieved,
+            dayClosed: $commitment->isClosed(),
+            totalAchieved: $achieved + $belowAmount,
+        );
 
         $changed = round((float) $commitment->achievement_amount, 2) !== round($achievedAmount, 2)
             || (int) $commitment->achievement_count !== (int) $achievedCount
@@ -372,6 +388,8 @@ class DailyCommitmentService
             'current_stage' => $highest?->value,
             'achievement_amount' => $achievedAmount,
             'achievement_count' => $achievedCount,
+            'below_stage_amount' => $belowAmount,
+            'below_stage_count' => $belowCount,
             'result' => $result,
         ])->save();
 
@@ -642,16 +660,27 @@ class DailyCommitmentService
             $achievedAmount = (float) $amountCommitments->sum(
                 fn (DailyCommitment $c): float => $this->achievementFromEntries($c->entries, $c->commitment_stage)['amount']
             );
+            // Declared business that landed below the stage promised — it
+            // never counts as a pass, only as the difference between a
+            // partial day and a failed one.
+            $belowAmount = (float) $amountCommitments->sum(
+                fn (DailyCommitment $c): float => $this->achievementFromEntries($c->entries, $c->commitment_stage)['below_amount']
+            );
 
             $targetCount = (int) $countCommitments->sum(fn (DailyCommitment $c): float => $c->target());
-            // An OTP commitment is measured by cases opened in the period,
-            // which already carries its own date boundary.
-            $achievedCount = $countCommitments->isNotEmpty() ? $actualOtp : 0;
+            // An OTP commitment is answered by the cases declared against
+            // it, exactly like every other stage — `actual_otp` below is a
+            // separate reporting figure (cases opened in the period) and
+            // is deliberately not what settles the commitment.
+            $achievedCount = (int) $countCommitments->sum(
+                fn (DailyCommitment $c): int => $this->achievementFromEntries($c->entries, $c->commitment_stage)['count']
+            );
 
             $isCountMode = $amountCommitments->isEmpty() && $countCommitments->isNotEmpty();
 
             $target = $isCountMode ? (float) $targetCount : $targetAmount;
             $achieved = $isCountMode ? (float) $achievedCount : $achievedAmount;
+            $below = $isCountMode ? 0.0 : $belowAmount;
 
             $entries = $own->flatMap(fn (DailyCommitment $c) => $c->entries);
 
@@ -660,6 +689,7 @@ class DailyCommitmentService
                     $target,
                     $achieved,
                     dayClosed: $own->every(fn (DailyCommitment $c): bool => $c->isClosed()),
+                    totalAchieved: $achieved + $below,
                 )
                 : null;
 
@@ -677,6 +707,10 @@ class DailyCommitmentService
                 'current_stage' => $latest?->current_stage,
                 'target' => $target,
                 'achieved' => $achieved,
+                'below_stage' => $below,
+                'total_achieved' => $achieved + $below,
+                // The gap still owed AT the committed stage — below-stage
+                // business does not close it, it only softens the result.
                 'pending' => max($target - $achieved, 0),
                 'percentage' => $target > 0 ? round(($achieved / $target) * 100, 1) : 0.0,
                 'result' => $result,
@@ -807,6 +841,9 @@ class DailyCommitmentService
             'met' => $withCommitment->where('result', CommitmentResult::Met)->count(),
             'failed' => $withCommitment->where('result', CommitmentResult::Failed)->count(),
             'overachieved' => $withCommitment->where('result', CommitmentResult::Overachieved)->count(),
+            // Days where the number was made up but not at the stage
+            // promised. A headcount, so it may be summed across levels.
+            'partial' => $withCommitment->where('result', CommitmentResult::Partial)->count(),
             'in_progress' => $withCommitment->where('result', CommitmentResult::InProgress)->count(),
             'present' => $rows->where('present', true)->count(),
             'absent' => $rows->where('present', false)->count(),
@@ -1004,22 +1041,18 @@ class DailyCommitmentService
         $achieved = 0.0;
 
         if ($stage !== null) {
-            if ($isCount) {
-                $achieved = (float) ($this->otpCounts(
-                    collect([$employeeId]),
-                    $start->copy()->startOfDay(),
-                    $end->copy()->endOfDay(),
-                )[$employeeId] ?? 0);
-            } else {
-                $commitments = DailyCommitment::query()
-                    ->where('employee_id', $employeeId)
-                    ->forMonth($month)
-                    ->with('entries')
-                    ->get();
+            $commitments = DailyCommitment::query()
+                ->where('employee_id', $employeeId)
+                ->forMonth($month)
+                ->with('entries')
+                ->get();
 
-                foreach ($commitments as $commitment) {
-                    $achieved += $this->achievementFromEntries($commitment->entries, $stage)['amount'];
-                }
+            // MTD is the sum of each day's declared fulfilment, whether the
+            // target is a rupee figure or an OTP headcount.
+            foreach ($commitments as $commitment) {
+                $achievement = $this->achievementFromEntries($commitment->entries, $stage);
+
+                $achieved += $isCount ? $achievement['count'] : $achievement['amount'];
             }
         }
 

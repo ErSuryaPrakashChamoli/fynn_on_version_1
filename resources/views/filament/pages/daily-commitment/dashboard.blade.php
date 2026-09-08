@@ -35,6 +35,7 @@
             accent="#3b82f6"
         />
         <x-daily-commitment.kpi label="Met" :value="$summary['met']" accent="#22c55e" />
+        <x-daily-commitment.kpi label="Partially met" :value="$summary['partial'] ?? 0" accent="#f59e0b" />
         <x-daily-commitment.kpi label="Failed" :value="$summary['failed']" accent="#ef4444" />
         <x-daily-commitment.kpi label="Overachieved" :value="$summary['overachieved']" accent="#0d9488" />
         <x-daily-commitment.kpi label="In progress" :value="$summary['in_progress']" accent="#eab308" />

@@ -51,6 +51,7 @@ use App\Filament\Widgets\ManagerPPPStats;
 use App\Filament\Widgets\PerformanceStats;
 use App\Filament\Widgets\TargetStats;
 use App\Http\Middleware\EncryptCookies;
+use App\Http\Middleware\EnsureDailyCommitmentIsDeclared;
 use App\Http\Middleware\EnsureMonthlyTargetIsSet;
 use Filament\Actions\Action;
 use Filament\Enums\ThemeMode;
@@ -229,6 +230,16 @@ class AdminPanelProvider extends PanelProvider
                     ? Blade::render('@livewire("monthly-target-prompt")')
                     : '',
             )
+            // The same module's daily half: a commitment is owed by 09:50
+            // and its achievement declared by 18:30, and the panel stays
+            // shut behind either deadline until that happens.
+            // EnsureDailyCommitmentIsDeclared below is the server-side half.
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => Filament::auth()->check()
+                    ? Blade::render('@livewire("daily-commitment-prompt")')
+                    : '',
+            )
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([
@@ -292,6 +303,7 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
                 EnsureMonthlyTargetIsSet::class,
+                EnsureDailyCommitmentIsDeclared::class,
             ]);
     }
 
