@@ -315,27 +315,214 @@ class DailyCommitmentDeadlinesTest extends TestCase
         $this->assertNull(DailyCommitment::first()->submitted_at);
     }
 
-    public function test_a_nil_day_needs_a_reason_before_it_closes(): void
+    public function test_a_failed_day_closes_on_the_zeros_alone_without_a_reason(): void
     {
         $this->actingAs($this->user);
 
         $this->commit(CommitmentStage::Approved, 1000000);
 
+        // Meeting the commitment is not compulsory — declaring the
+        // outcome is. The zeros against every rung are that declaration,
+        // and no justification is demanded on top of them.
         Livewire::test(MyDailyCommitment::class)
-            ->set('nothingReason', 'nope')
-            ->call('declareNothing');
-
-        $this->assertNull(DailyCommitment::first()->submitted_at);
-
-        Livewire::test(MyDailyCommitment::class)
-            ->set('nothingReason', 'Two files were pushed back by credit, nothing else moved.')
             ->call('declareNothing');
 
         $commitment = DailyCommitment::first();
 
         $this->assertNotNull($commitment->submitted_at);
         $this->assertSame(CommitmentResult::Failed, $commitment->result);
-        $this->assertStringContainsString('pushed back by credit', $commitment->declaration_note);
+        $this->assertNull($commitment->declaration_note);
+        $this->assertFalse(app(DailyCommitmentGate::class)->isBlocked($this->user->refresh()));
+    }
+
+    public function test_a_note_is_kept_on_a_failed_day_when_one_is_given(): void
+    {
+        $this->actingAs($this->user);
+
+        $this->commit(CommitmentStage::Approved, 1000000);
+
+        Livewire::test(MyDailyCommitment::class)
+            ->set('nothingReason', 'Two files were pushed back by credit.')
+            ->call('declareNothing');
+
+        $this->assertStringContainsString('pushed back by credit', DailyCommitment::first()->declaration_note);
+    }
+
+    public function test_real_business_cannot_be_slipped_in_through_the_failed_day_zeros(): void
+    {
+        $this->actingAs($this->user);
+
+        $this->commit(CommitmentStage::Approved, 1000000);
+
+        // ₹7L against Approval is not a failed day, and it has no customer
+        // or mobile number behind it — it belongs on a named case.
+        Livewire::test(MyDailyCommitment::class)
+            ->set('nilStages.'.CommitmentStage::Approved->value, '700000')
+            ->call('declareNothing');
+
+        $this->assertNull(DailyCommitment::first()->submitted_at);
+        $this->assertSame(0, DailyCommitmentEntry::count());
+    }
+
+    public function test_the_customer_list_is_only_asked_for_once_there_is_something_to_feed_it(): void
+    {
+        $this->actingAs($this->user);
+
+        $this->commit(CommitmentStage::Approved, 1000000);
+
+        $page = Livewire::test(MyDailyCommitment::class);
+
+        // Nothing chosen yet: neither the case list nor the zeros are shown.
+        $this->assertNull($page->get('declarationMode'));
+
+        $page->call('chooseDeclarationMode', 'cases');
+        $this->assertSame('cases', $page->get('declarationMode'));
+
+        $page->call('chooseDeclarationMode', 'failed');
+        $this->assertSame('failed', $page->get('declarationMode'));
+
+        // Anything else is not a path.
+        $page->call('chooseDeclarationMode', 'whatever');
+        $this->assertNull($page->get('declarationMode'));
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | A customer is claimed once, by one person
+    |--------------------------------------------------------------------------
+    */
+
+    public function test_a_case_cannot_be_declared_without_a_mobile_number(): void
+    {
+        $this->actingAs($this->user);
+
+        $this->commit(CommitmentStage::Approved, 1000000);
+
+        Livewire::test(MyDailyCommitment::class)
+            ->set('fulfilment.entries', [[
+                'customer_id' => null,
+                'customer_name' => 'Rohit Kumar',
+                'mobile_no' => null,
+                'stage' => CommitmentStage::Approved->value,
+                'amount' => 1000000,
+            ]])
+            ->call('submitFinalStatus');
+
+        $this->assertSame(0, DailyCommitmentEntry::count());
+        $this->assertNull(DailyCommitment::first()->submitted_at);
+    }
+
+    public function test_a_mobile_number_already_counted_cannot_be_counted_again(): void
+    {
+        // Yesterday, somebody else already claimed this customer.
+        $other = Employee::factory()->create(['designation' => Employee::DESIGNATION_CALLER]);
+
+        $theirs = DailyCommitment::create([
+            'employee_id' => $other->id,
+            'date' => today()->subDay(),
+            'commitment_stage' => CommitmentStage::Approved,
+            'commitment_amount' => 500000,
+            'result' => CommitmentResult::InProgress,
+            'submitted_at' => now(),
+        ]);
+
+        DailyCommitmentEntry::create([
+            'daily_commitment_id' => $theirs->id,
+            'customer_name' => 'Rohit Kumar',
+            'mobile_no' => '9876543210',
+            'stage' => CommitmentStage::Approved,
+            'amount' => 500000,
+        ]);
+
+        $this->actingAs($this->user);
+        $this->commit(CommitmentStage::Approved, 1000000);
+
+        // Same customer, typed with a country code and spacing — it is the
+        // same number once normalised, and must still be refused.
+        Livewire::test(MyDailyCommitment::class)
+            ->set('fulfilment.entries', [[
+                'customer_id' => null,
+                'customer_name' => 'Rohit K',
+                'mobile_no' => '+91 98765 43210',
+                'stage' => CommitmentStage::Approved->value,
+                'amount' => 1000000,
+            ]])
+            ->call('submitFinalStatus');
+
+        $this->assertSame(1, DailyCommitmentEntry::count(), 'Only the original claim survives.');
+        $this->assertNull(DailyCommitment::where('employee_id', $this->caller->id)->first()->submitted_at);
+    }
+
+    public function test_the_same_number_cannot_appear_twice_on_one_day(): void
+    {
+        $this->actingAs($this->user);
+
+        $this->commit(CommitmentStage::Approved, 1000000);
+
+        Livewire::test(MyDailyCommitment::class)
+            ->set('fulfilment.entries', [
+                [
+                    'customer_id' => null,
+                    'customer_name' => 'Rohit Kumar',
+                    'mobile_no' => '9876543210',
+                    'stage' => CommitmentStage::Approved->value,
+                    'amount' => 500000,
+                ],
+                [
+                    'customer_id' => null,
+                    'customer_name' => 'Rohit Kumar again',
+                    'mobile_no' => '09876543210',
+                    'stage' => CommitmentStage::Approved->value,
+                    'amount' => 500000,
+                ],
+            ])
+            ->call('submitFinalStatus');
+
+        $this->assertSame(0, DailyCommitmentEntry::count());
+    }
+
+    public function test_re_saving_your_own_day_is_not_a_clash_with_yourself(): void
+    {
+        $this->actingAs($this->user);
+
+        $this->commit(CommitmentStage::Approved, 1000000);
+
+        $rows = [[
+            'customer_id' => null,
+            'customer_name' => 'Rohit Kumar',
+            'mobile_no' => '9876543210',
+            'stage' => CommitmentStage::Approved->value,
+            'amount' => 1000000,
+        ]];
+
+        Livewire::test(MyDailyCommitment::class)
+            ->set('fulfilment.entries', $rows)
+            ->call('saveFulfilment');
+
+        $this->assertSame(1, DailyCommitmentEntry::count());
+
+        // Saved again with the same number: the row is rebuilt, not rejected.
+        Livewire::test(MyDailyCommitment::class)
+            ->set('fulfilment.entries', $rows)
+            ->call('submitFinalStatus');
+
+        $this->assertSame(1, DailyCommitmentEntry::count());
+        $this->assertNotNull(DailyCommitment::first()->submitted_at);
+        $this->assertSame('9876543210', DailyCommitmentEntry::first()->mobile_no);
+    }
+
+    public function test_a_nil_day_still_needs_no_mobile_number(): void
+    {
+        $this->actingAs($this->user);
+
+        $this->commit(CommitmentStage::Approved, 1000000);
+
+        // Nothing was fulfilled, so there is no case and no number to give.
+        Livewire::test(MyDailyCommitment::class)
+            ->call('declareNothing');
+
+        $this->assertNotNull(DailyCommitment::first()->submitted_at);
+        $this->assertSame(0, DailyCommitmentEntry::count());
     }
 
     protected function tearDown(): void

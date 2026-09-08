@@ -626,9 +626,11 @@ class DailyCommitmentPagesTest extends TestCase
             ->call('save')
             ->assertHasNoFormErrors();
 
+        // Every declared case carries its customer's mobile: it is what
+        // identifies the case, and it can only ever be claimed once.
         $page->set('fulfilment.entries', [
-            ['customer_id' => $approved->id, 'customer_name' => 'Rajesh Kumar', 'reference' => null, 'stage' => CommitmentStage::Approved->value, 'outcome' => null, 'amount' => 400000, 'remarks' => null],
-            ['customer_id' => $underwriting->id, 'customer_name' => 'Neha Singh', 'reference' => null, 'stage' => CommitmentStage::Underwriting->value, 'outcome' => null, 'amount' => 200000, 'remarks' => null],
+            ['customer_id' => $approved->id, 'customer_name' => 'Rajesh Kumar', 'mobile_no' => '9876543210', 'reference' => null, 'stage' => CommitmentStage::Approved->value, 'outcome' => null, 'amount' => 400000, 'remarks' => null],
+            ['customer_id' => $underwriting->id, 'customer_name' => 'Neha Singh', 'mobile_no' => '9876500001', 'reference' => null, 'stage' => CommitmentStage::Underwriting->value, 'outcome' => null, 'amount' => 200000, 'remarks' => null],
         ])->call('submitFinalStatus');
 
         $commitment = DailyCommitment::query()->where('employee_id', $this->caller->id)->firstOrFail();
@@ -664,7 +666,7 @@ class DailyCommitmentPagesTest extends TestCase
             ])
             ->call('save')
             ->set('fulfilment.entries', [
-                ['customer_id' => $strangerCase->id, 'customer_name' => 'Not Mine', 'reference' => null, 'stage' => CommitmentStage::Approved->value, 'outcome' => null, 'amount' => 900000, 'remarks' => null],
+                ['customer_id' => $strangerCase->id, 'customer_name' => 'Not Mine', 'mobile_no' => '9876543210', 'reference' => null, 'stage' => CommitmentStage::Approved->value, 'outcome' => null, 'amount' => 900000, 'remarks' => null],
             ])
             ->call('submitFinalStatus');
 

@@ -188,52 +188,114 @@
                         </div>
                     @endif
                 @else
-                    <form wire:submit="submitFinalStatus">
-                        {{ $this->fulfilmentForm }}
+                    {{-- Meeting the commitment is not compulsory; declaring
+                         the outcome is. So the first question is simply
+                         whether there is anything to feed in — the customer
+                         list is never put in front of somebody who had no
+                         customers. --}}
+                    @if ($this->declarationMode === null)
+                        <div class="grid gap-3 sm:grid-cols-2">
+                            <button
+                                type="button"
+                                wire:click="chooseDeclarationMode('cases')"
+                                class="flex items-start gap-3 rounded-xl border border-gray-200 p-4 text-start transition hover:border-primary-500 hover:bg-primary-50/50 dark:border-white/10 dark:hover:border-primary-400 dark:hover:bg-primary-500/10"
+                            >
+                                <x-filament::icon icon="heroicon-o-check-badge" class="mt-0.5 h-6 w-6 shrink-0 text-success-600 dark:text-success-400" />
+                                <span>
+                                    <span class="block font-semibold text-gray-950 dark:text-white">I have business to declare</span>
+                                    <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                                        Name each case with its customer and mobile number. Part of the commitment is fine —
+                                        lower stages still count.
+                                    </span>
+                                </span>
+                            </button>
 
-                        <div class="mt-5 flex flex-wrap items-center gap-3">
-                            <x-filament::button type="submit" icon="heroicon-o-check-badge" color="success">
-                                Submit final status
-                            </x-filament::button>
-
-                            <x-filament::button type="button" color="gray" icon="heroicon-o-bookmark" wire:click="saveFulfilment">
-                                Save without submitting
-                            </x-filament::button>
+                            <button
+                                type="button"
+                                wire:click="chooseDeclarationMode('failed')"
+                                class="flex items-start gap-3 rounded-xl border border-gray-200 p-4 text-start transition hover:border-danger-500 hover:bg-danger-50/50 dark:border-white/10 dark:hover:border-danger-400 dark:hover:bg-danger-500/10"
+                            >
+                                <x-filament::icon icon="heroicon-o-x-circle" class="mt-0.5 h-6 w-6 shrink-0 text-danger-600 dark:text-danger-400" />
+                                <span>
+                                    <span class="block font-semibold text-gray-950 dark:text-white">Nothing came through — commitment failed</span>
+                                    <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                                        Record a zero against every stage. A failed day is a legitimate answer; it just has
+                                        to be stated.
+                                    </span>
+                                </span>
+                            </button>
                         </div>
-                    </form>
+                    @elseif ($this->declarationMode === 'cases')
+                        <form wire:submit="submitFinalStatus">
+                            {{ $this->fulfilmentForm }}
 
-                    {{-- Nothing came through today. The declaration is still
-                         compulsory, so it is stated on the record with a
-                         reason rather than left silent. --}}
-                    <div
-                        x-data="{ open: false }"
-                        class="mt-6 rounded-lg bg-gray-50 p-4 dark:bg-white/5"
-                    >
-                        <button
-                            type="button"
-                            x-on:click="open = ! open"
-                            class="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white"
-                        >
-                            <x-filament::icon icon="heroicon-o-minus-circle" class="h-4 w-4 shrink-0" />
-                            Nothing came through today
-                        </button>
+                            <div class="mt-5 flex flex-wrap items-center gap-3">
+                                <x-filament::button type="submit" icon="heroicon-o-check-badge" color="success">
+                                    Submit final status
+                                </x-filament::button>
 
-                        <div x-show="open" x-cloak class="mt-3 space-y-3">
-                            <p class="text-xs text-gray-500 dark:text-gray-400">
-                                This closes the day as <strong>failed</strong> and unlocks the rest of the LMS.
-                                Say what happened — at least 10 characters.
+                                <x-filament::button type="button" color="gray" icon="heroicon-o-bookmark" wire:click="saveFulfilment">
+                                    Save without submitting
+                                </x-filament::button>
+
+                                <button
+                                    type="button"
+                                    wire:click="chooseDeclarationMode(null)"
+                                    class="text-xs text-gray-500 underline-offset-2 hover:underline dark:text-gray-400"
+                                >
+                                    Nothing came through after all
+                                </button>
+                            </div>
+                        </form>
+                    @else
+                        {{-- The zeros ARE the declaration: a figure against
+                             every rung, rather than one vague "nothing". --}}
+                        <div class="rounded-xl bg-gray-50 p-4 dark:bg-white/5">
+                            <p class="text-sm font-semibold text-gray-950 dark:text-white">Nothing at any stage today</p>
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                Confirm the zeros below. This closes the day as <strong>failed</strong> and unlocks the rest
+                                of the LMS. Anything that did come through belongs on a named case instead.
                             </p>
+
+                            <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                                @foreach ($ladder as $rung)
+                                    <label class="block">
+                                        <span class="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
+                                            <span class="inline-block h-2.5 w-2.5 rounded-full" style="background: {{ $rung->hex() }}"></span>
+                                            {{ $rung->label() }}
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            wire:model="nilStages.{{ $rung->value }}"
+                                            class="mt-1 block w-full rounded-lg border-none bg-white py-2 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
+                                        />
+                                    </label>
+                                @endforeach
+                            </div>
+
                             <textarea
                                 wire:model="nothingReason"
                                 rows="2"
-                                placeholder="e.g. Two files were pushed back by credit, nothing else moved."
-                                class="block w-full rounded-lg border-none bg-white py-2 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
+                                placeholder="Anything worth noting? (optional) e.g. Two files were pushed back by credit."
+                                class="mt-4 block w-full rounded-lg border-none bg-white py-2 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
                             ></textarea>
-                            <x-filament::button size="sm" color="danger" icon="heroicon-o-flag" wire:click="declareNothing">
-                                Record a nil day
-                            </x-filament::button>
+
+                            <div class="mt-4 flex flex-wrap items-center gap-3">
+                                <x-filament::button size="sm" color="danger" icon="heroicon-o-flag" wire:click="declareNothing">
+                                    Record commitment as failed
+                                </x-filament::button>
+
+                                <button
+                                    type="button"
+                                    wire:click="chooseDeclarationMode('cases')"
+                                    class="text-xs text-gray-500 underline-offset-2 hover:underline dark:text-gray-400"
+                                >
+                                    Actually, I do have something to declare
+                                </button>
+                            </div>
                         </div>
-                    </div>
+                    @endif
                 @endif
 
                 {{-- Customer-wise breakup --}}
@@ -243,6 +305,7 @@
                             <thead>
                                 <tr>
                                     <th>Customer</th>
+                                    <th>Mobile</th>
                                     <th>Lead / App ID</th>
                                     <th>Stage reached</th>
                                     <th>Outcome</th>
@@ -263,6 +326,7 @@
                                                 <div class="text-xs text-gray-500">{{ $entry->remarks }}</div>
                                             @endif
                                         </td>
+                                        <td class="whitespace-nowrap text-xs text-gray-600 dark:text-gray-300">{{ $entry->mobile_no ?? '—' }}</td>
                                         <td class="text-xs text-gray-500">{{ $entry->reference ?? '—' }}</td>
                                         <td>
                                             <x-daily-commitment.stage-chip :stage="$effective" />

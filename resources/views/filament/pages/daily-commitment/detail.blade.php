@@ -81,6 +81,7 @@
                     <thead>
                         <tr>
                             <th>Customer</th>
+                            <th>Mobile</th>
                             <th>Lead / App ID</th>
                             <th>Declared stage</th>
                             <th>LMS highest stage</th>
@@ -95,13 +96,11 @@
                             <tr>
                                 <td>
                                     <div class="font-semibold">{{ $entry->customer_name }}</div>
-                                    @if ($entry->customer)
-                                        <div class="text-xs text-gray-500">{{ $entry->customer->mobile_no }}</div>
-                                    @endif
                                     @if ($entry->remarks)
                                         <div class="text-xs text-gray-500">{{ $entry->remarks }}</div>
                                     @endif
                                 </td>
+                                <td class="whitespace-nowrap text-xs text-gray-600 dark:text-gray-300">{{ $entry->mobile_no ?? '—' }}</td>
                                 <td class="text-xs text-gray-500">{{ $entry->reference ?? '—' }}</td>
                                 <td><x-daily-commitment.stage-chip :stage="$entry->stage" /></td>
                                 <td><x-daily-commitment.stage-chip :stage="$entry->lms_highest_stage" muted="Not in LMS" /></td>
