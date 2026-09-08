@@ -70,13 +70,44 @@ class MyDailyCommitment extends Page
 
     public string $date;
 
-    /** Reason attached to a nil day — a compulsory declaration cannot be silent. */
+    /** Optional note attached to a failed day. */
     public ?string $nothingReason = null;
+
+    /**
+     * Which of the two ways the day is being closed: 'cases' when there is
+     * business to name, 'failed' when there is not. Null until the
+     * employee has said which — the customer list is only asked for once
+     * they have said they have something to feed into it.
+     */
+    public ?string $declarationMode = null;
+
+    /**
+     * The stage-by-stage zeros on a failed day, keyed by stage value.
+     *
+     * Meeting the commitment is not compulsory — declaring the outcome
+     * is. So a day with nothing on it is closed by stating a figure
+     * against every rung rather than by a single vague "nothing": the
+     * zeros are the declaration.
+     *
+     * @var array<string, string|null>
+     */
+    public array $nilStages = [];
 
     public function mount(): void
     {
         $this->date = today()->toDateString();
+        $this->primeNilStages();
         $this->fillFromCommitment();
+    }
+
+    /**
+     * Every rung starts at zero, ready to be confirmed.
+     */
+    protected function primeNilStages(): void
+    {
+        $this->nilStages = collect(CommitmentStage::ladder())
+            ->mapWithKeys(fn (CommitmentStage $stage): array => [$stage->value => '0'])
+            ->all();
     }
 
     /*
@@ -160,7 +191,9 @@ class MyDailyCommitment extends Page
                     ->reorderable(false)
                     ->columns(6)
                     ->defaultItems(0)
-                    ->itemLabel(fn (array $state): ?string => $state['customer_name'] ?? null)
+                    ->itemLabel(fn (array $state): ?string => trim(
+                        ($state['customer_name'] ?? '').(filled($state['mobile_no'] ?? null) ? ' — '.$state['mobile_no'] : '')
+                    ) ?: null)
                     ->schema([
                         Select::make('customer_id')
                             ->label('Customer (from LMS)')
@@ -186,6 +219,7 @@ class MyDailyCommitment extends Page
                                     ->highestStageFor(collect([$customer->id]))[$customer->id] ?? null;
 
                                 $set('customer_name', $customer->customer_name);
+                                $set('mobile_no', DailyCommitmentEntry::normaliseMobile($customer->mobile_no));
                                 $set('reference', $customer->application_no ?? $customer->lan_no);
                                 $set('stage', $resolved['stage']?->value);
                                 $set('outcome', $resolved['outcome']?->value);
@@ -199,12 +233,28 @@ class MyDailyCommitment extends Page
                             ->maxLength(255)
                             ->columnSpan(2),
 
+                        // The number is what identifies the case. It is
+                        // checked as it is typed, so a customer somebody
+                        // has already claimed is caught here rather than
+                        // on submit with the whole day filled in.
+                        TextInput::make('mobile_no')
+                            ->label('Mobile number')
+                            ->tel()
+                            ->required()
+                            ->maxLength(20)
+                            ->live(onBlur: true)
+                            ->rule(fn (): \Closure => function (string $attribute, $value, \Closure $fail): void {
+                                $this->failIfMobileIsTaken($value, $fail);
+                            })
+                            ->helperText('Claimed once — a customer counted on any commitment cannot be counted again.')
+                            ->columnSpan(2),
+
                         Select::make('stage')
                             ->label('Stage reached')
                             ->options(CommitmentStage::ladderOptions())
                             ->native(false)
                             ->required()
-                            ->columnSpan(1),
+                            ->columnSpan(3),
 
                         TextInput::make('amount')
                             ->label('Amount (₹)')
@@ -215,7 +265,7 @@ class MyDailyCommitment extends Page
                             ->helperText(fn ($state): ?string => filled($state)
                                 ? indianAmount($state)
                                 : null)
-                            ->columnSpan(1),
+                            ->columnSpan(3),
 
                         // Everything below is the exception, not the rule:
                         // four fields close a normal case, and the rest
@@ -249,6 +299,35 @@ class MyDailyCommitment extends Page
     }
 
     /**
+     * Fail validation when this number has already been declared on some
+     * other commitment — anybody's, on any day. The message names the
+     * claim so the employee can go and sort it out rather than guessing.
+     */
+    protected function failIfMobileIsTaken(?string $value, \Closure $fail): void
+    {
+        $claim = DailyCommitmentEntry::claimFor($value, $this->commitment?->id);
+
+        if (! $claim) {
+            return;
+        }
+
+        $owner = $claim->commitment?->employee?->emp_name;
+        $on = $claim->commitment?->date?->format('d M Y');
+
+        $fail(
+            trim(sprintf(
+                'This customer has already been counted%s%s. A mobile number can only be claimed once.',
+                $owner ? ' by '.$owner : '',
+                $on ? ' on '.$on : '',
+            ))
+        );
+    }
+
+    /**
+     * Cases already claimed on some other commitment are dropped from the
+     * picker — the number can only be counted once, so offering them
+     * would only lead to a rejected save.
+     *
      * @return array<int, string>
      */
     protected function searchCustomers(string $search): array
@@ -259,6 +338,12 @@ class MyDailyCommitment extends Page
             return [];
         }
 
+        $claimed = DailyCommitmentEntry::query()
+            ->whereNotNull('mobile_no')
+            ->when($this->commitment, fn ($query) => $query->where('daily_commitment_id', '!=', $this->commitment->id))
+            ->pluck('mobile_no')
+            ->all();
+
         return $this->customerScope($employee)
             ->where(function ($query) use ($search) {
                 $query->where('customer_name', 'like', "%{$search}%")
@@ -267,8 +352,17 @@ class MyDailyCommitment extends Page
                     ->orWhere('pan_number', 'like', "%{$search}%");
             })
             ->orderByDesc('id')
-            ->limit(30)
-            ->get(['id', 'customer_name', 'application_no'])
+            ->limit(50)
+            ->get(['id', 'customer_name', 'application_no', 'mobile_no'])
+            // Normalising both sides is the only reliable comparison, and
+            // no portable SQL does it — so the claimed set is matched in
+            // PHP rather than in a driver-specific expression.
+            ->reject(fn (Customer $customer): bool => in_array(
+                DailyCommitmentEntry::normaliseMobile($customer->mobile_no),
+                $claimed,
+                true,
+            ))
+            ->take(30)
             ->mapWithKeys(fn (Customer $customer): array => [
                 $customer->id => trim($customer->customer_name.' ('.($customer->application_no ?? $customer->id).')'),
             ])
@@ -431,21 +525,26 @@ class MyDailyCommitment extends Page
             return;
         }
 
-        if (blank($this->nothingReason) || mb_strlen(trim($this->nothingReason)) < 10) {
-            Notification::make()
-                ->title('Say what happened')
-                ->body('A nil day needs a reason of at least 10 characters.')
-                ->warning()
-                ->send();
+        // The zeros are the declaration, so they have to actually be
+        // zeros. Anything real belongs on a named case with a mobile
+        // number against it, which is the other path entirely.
+        foreach (CommitmentStage::ladder() as $rung) {
+            if ((float) ($this->nilStages[$rung->value] ?? 0) > 0) {
+                Notification::make()
+                    ->title('That is not a failed day')
+                    ->body("You have entered business against {$rung->label()}. Declare it as a case instead, with the customer and mobile number.")
+                    ->warning()
+                    ->send();
 
-            return;
+                return;
+            }
         }
 
         $commitment->entries()->delete();
 
         $commitment->forceFill([
             'submitted_at' => now(),
-            'declaration_note' => trim($this->nothingReason),
+            'declaration_note' => filled($this->nothingReason) ? trim($this->nothingReason) : null,
         ])->save();
 
         app(DailyCommitmentService::class)->syncCommitment($commitment->refresh());
@@ -454,9 +553,24 @@ class MyDailyCommitment extends Page
 
         $this->nothingReason = null;
 
-        Notification::make()->title('Nil day recorded')->success()->send();
+        Notification::make()
+            ->title('Commitment recorded as failed')
+            ->body('Nothing at any stage today. The rest of the LMS is open again.')
+            ->success()
+            ->send();
 
         $this->fillFromCommitment();
+    }
+
+    /**
+     * Say whether there is anything to declare. Choosing "cases" is what
+     * opens the customer list; choosing "failed" opens the stage-wise
+     * zeros instead. Neither is shown until one is chosen, so nobody is
+     * handed a customer form for a day that had no customers.
+     */
+    public function chooseDeclarationMode(?string $mode): void
+    {
+        $this->declarationMode = in_array($mode, ['cases', 'failed'], true) ? $mode : null;
     }
 
     public function reopenFinalStatus(): void
@@ -493,12 +607,12 @@ class MyDailyCommitment extends Page
 
         // Every rupee declared has to be backed by a named case. A day
         // with nothing on it goes through declareNothing() instead, which
-        // asks for a reason — so an empty list can never quietly close a
-        // commitment.
+        // records a zero against every stage — so an empty list can never
+        // quietly close a commitment.
         if ($submit && $rows === []) {
             Notification::make()
                 ->title('Name the cases first')
-                ->body('Add the customers that make up today\'s business, or record a nil day with a reason.')
+                ->body('Add the customers that make up today\'s business, or go back and record the commitment as failed.')
                 ->warning()
                 ->send();
 
@@ -511,6 +625,13 @@ class MyDailyCommitment extends Page
         $allowedCustomerIds = $employee
             ? $this->customerScope($employee)->pluck('id')->all()
             : [];
+
+        // Checked BEFORE anything is written: the rows below are rebuilt by
+        // deleting and re-inserting, so a rejection discovered halfway
+        // through would take the day's work with it.
+        if (! $this->mobilesAreUsable($rows, $commitment->id)) {
+            return;
+        }
 
         $resolved = app(DailyCommitmentService::class)->highestStageFor(
             collect($rows)->pluck('customer_id')->filter()->map(fn ($id): int => (int) $id)
@@ -529,6 +650,7 @@ class MyDailyCommitment extends Page
                 'daily_commitment_id' => $commitment->id,
                 'customer_id' => $customerId,
                 'customer_name' => $row['customer_name'],
+                'mobile_no' => DailyCommitmentEntry::normaliseMobile($row['mobile_no'] ?? null),
                 'reference' => $row['reference'] ?? null,
                 'stage' => $row['stage'],
                 'lms_highest_stage' => $customerId ? ($resolved[$customerId]['stage']?->value) : null,
@@ -555,6 +677,67 @@ class MyDailyCommitment extends Page
             ->send();
 
         $this->fillFromCommitment();
+    }
+
+    /**
+     * Every declared row must carry a mobile number, no two rows may
+     * share one, and none may already be claimed on another commitment.
+     *
+     * Re-checked here as well as on the field, because the field rule
+     * cannot see sibling rows and a crafted Livewire request never runs
+     * it at all.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     */
+    protected function mobilesAreUsable(array $rows, int $commitmentId): bool
+    {
+        $seen = [];
+
+        foreach ($rows as $row) {
+            $name = $row['customer_name'] ?? 'A case';
+            $mobile = DailyCommitmentEntry::normaliseMobile($row['mobile_no'] ?? null);
+
+            if ($mobile === null) {
+                Notification::make()
+                    ->title('Mobile number missing')
+                    ->body("Enter the mobile number for {$name}. Every case declared needs one.")
+                    ->warning()
+                    ->send();
+
+                return false;
+            }
+
+            if (isset($seen[$mobile])) {
+                Notification::make()
+                    ->title('Same number twice')
+                    ->body("{$mobile} is on more than one case today. A customer can only be counted once.")
+                    ->warning()
+                    ->send();
+
+                return false;
+            }
+
+            $seen[$mobile] = true;
+
+            $claim = DailyCommitmentEntry::claimFor($mobile, $commitmentId);
+
+            if ($claim) {
+                Notification::make()
+                    ->title('Already counted')
+                    ->body(trim(sprintf(
+                        '%s was already counted%s%s. A mobile number can only be claimed once.',
+                        $mobile,
+                        $claim->commitment?->employee?->emp_name ? ' by '.$claim->commitment->employee->emp_name : '',
+                        $claim->commitment?->date?->format('d M Y') ? ' on '.$claim->commitment->date->format('d M Y') : '',
+                    )))
+                    ->danger()
+                    ->send();
+
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /*
@@ -702,6 +885,58 @@ class MyDailyCommitment extends Page
         ];
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Commitment history — day by day
+    |--------------------------------------------------------------------------
+    */
+
+    /** Period preset from DailyCommitmentService::rangeOptions(). */
+    public string $historyRange = 'this_month';
+
+    public ?string $historyFrom = null;
+
+    public ?string $historyTo = null;
+
+    /** A CommitmentResult value, or 'all'. */
+    public string $historyResult = 'all';
+
+    /**
+     * The day-by-day history for the signed-in employee.
+     *
+     * `tally` is counted over the whole range and `filtered` is what the
+     * table lists — narrowing to "Failed" must not make the headline read
+     * "0 met".
+     *
+     * @return array{rows: Collection<int, array<string, mixed>>, filtered: Collection<int, array<string, mixed>>, tally: array<string, mixed>}
+     */
+    public function getHistoryProperty(): array
+    {
+        $service = app(DailyCommitmentService::class);
+
+        $employeeId = Filament::auth()->user()?->employee?->id;
+
+        if (! $employeeId) {
+            return ['rows' => collect(), 'filtered' => collect(), 'tally' => $service->historyTally(collect())];
+        }
+
+        [$start, $end] = DailyCommitmentService::resolveRange(
+            $this->historyRange,
+            $this->historyFrom,
+            $this->historyTo,
+        );
+
+        $rows = $service->dayByDayHistory($employeeId, $start, $end);
+
+        $result = CommitmentResult::tryFrom($this->historyResult);
+
+        return [
+            'rows' => $rows,
+            'filtered' => $result ? $rows->where('result', $result)->values() : $rows,
+            'tally' => $service->historyTally($rows),
+        ];
+    }
+
     /**
      * @return Collection<int, DailyCommitmentEntry>
      */
@@ -718,6 +953,10 @@ class MyDailyCommitment extends Page
     protected function fillFromCommitment(): void
     {
         $commitment = $this->commitment;
+
+        // A day that already has cases on it is plainly the "cases" path;
+        // otherwise the employee has not said yet, and is asked.
+        $this->declarationMode = $commitment?->entries()->exists() ? 'cases' : null;
 
         $this->form->fill([
             'date' => $this->date,
@@ -737,6 +976,7 @@ class MyDailyCommitment extends Page
                 ? $commitment->entries()->get()->map(fn (DailyCommitmentEntry $entry): array => [
                     'customer_id' => $entry->customer_id,
                     'customer_name' => $entry->customer_name,
+                    'mobile_no' => $entry->mobile_no,
                     'reference' => $entry->reference,
                     'stage' => $entry->stage->value,
                     'outcome' => $entry->outcome?->value,

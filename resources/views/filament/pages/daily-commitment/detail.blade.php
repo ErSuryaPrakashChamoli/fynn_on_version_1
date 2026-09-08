@@ -81,6 +81,7 @@
                     <thead>
                         <tr>
                             <th>Customer</th>
+                            <th>Mobile</th>
                             <th>Lead / App ID</th>
                             <th>Declared stage</th>
                             <th>LMS highest stage</th>
@@ -95,13 +96,11 @@
                             <tr>
                                 <td>
                                     <div class="font-semibold">{{ $entry->customer_name }}</div>
-                                    @if ($entry->customer)
-                                        <div class="text-xs text-gray-500">{{ $entry->customer->mobile_no }}</div>
-                                    @endif
                                     @if ($entry->remarks)
                                         <div class="text-xs text-gray-500">{{ $entry->remarks }}</div>
                                     @endif
                                 </td>
+                                <td class="whitespace-nowrap text-xs text-gray-600 dark:text-gray-300">{{ $entry->mobile_no ?? '—' }}</td>
                                 <td class="text-xs text-gray-500">{{ $entry->reference ?? '—' }}</td>
                                 <td><x-daily-commitment.stage-chip :stage="$entry->stage" /></td>
                                 <td><x-daily-commitment.stage-chip :stage="$entry->lms_highest_stage" muted="Not in LMS" /></td>
@@ -136,6 +135,25 @@
                 @endforeach
             </div>
         @endif
+    </x-filament::section>
+
+    {{-- Day by day: this employee's promise against their fulfilment, so
+         how often they actually keep it is visible rather than inferred.
+         The change log below is a different thing — the audit trail of
+         this ONE commitment. --}}
+    @php $history = $this->history; @endphp
+    <x-filament::section
+        icon="heroicon-o-chart-bar-square"
+        heading="Commitment history"
+        :description="$history['tally']['kept'] . ' of ' . $history['tally']['closed'] . ' closed days kept — ' . $history['tally']['kept_percentage'] . '%'"
+    >
+        <x-daily-commitment.history
+            :rows="$history['rows']"
+            :filtered="$history['filtered']"
+            :tally="$history['tally']"
+            :range="$this->historyRange"
+            :result="$this->historyResult"
+        />
     </x-filament::section>
 
     {{-- Change log --}}
