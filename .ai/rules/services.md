@@ -67,3 +67,16 @@ Two panel-wide blocks exist in this module and they land users on different page
 DailyCommitmentGate::resolveStatus() therefore returns "clear" whenever MonthlyTargetGate::isBlocked() is true — the month's targets are the outer gate and always win. Do not remove that short-circuit, and if a third panel-wide block is ever added, decide its place in the same order first.
 
 Deadlines are DailyCommitmentGate::MORNING_DEADLINE (09:50, commitment must exist) and EVENING_DEADLINE (18:30, it must be answered), both in app.timezone (Asia/Kolkata). An unanswered earlier day inside BACKLOG_DAYS blocks today too, and is reported with overdue=true. Register the gate as a singleton (AppServiceProvider) — the middleware, the prompt and the My Commitment banner all ask the same question per request and share its memo; call forget() after any commitment or declaration write.
+
+## The daily prompt is the whole enforcement — never close or redirect routes
+Supersedes the earlier note about EnsureDailyCommitmentIsDeclared, which has been DELETED. That middleware redirected every panel route to My Commitment past a deadline, and it was wrong: a commitment module has no business stopping work in the rest of the LMS. Do not reintroduce it or any route-level block for the daily deadlines.
+
+Enforcement is App\Livewire\DailyCommitmentPrompt alone — a non-dismissible modal on PanelsRenderHook::BODY_END that takes BOTH answers in place: the 09:50 stage-and-number, and the 18:30 declaration (either the cases that make up the day, or a zero against every rung). Answering it calls DailyCommitmentGate::forget(); the component's own re-render then finds the question answered and the modal disappears with no redirect and no page reload, leaving the employee exactly where they were. Never make clear() redirect.
+
+The prompt hides itself on My Commitment (route name check) — that page is the fuller version of the same two steps.
+
+The monthly-target gate DOES still close the panel, and DailyCommitmentGate stands down while it is blocking so two prompts never stack.
+
+Three places write fulfilment — My Commitment, the prompt, and the Admin's editAchievement action — and all three go through DailyCommitmentService::reasonMobilesCannotBeSaved() then replaceFulfilment(). Validate before calling replaceFulfilment: it rebuilds by delete-then-insert.
+
+Trap: Filament's ->callAction() in tests MERGES passed data into the fillForm() defaults, so repeater rows APPEND rather than replace. A test that "corrects" an existing row ends up sending both rows and trips the duplicate-mobile guard. Test admin corrections against a commitment with no entries, or assert the guard.

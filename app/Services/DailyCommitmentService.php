@@ -1080,6 +1080,94 @@ class DailyCommitmentService
         ];
     }
 
+    /**
+     * Why these declared rows cannot be saved, or null if they can.
+     *
+     * Every case needs a mobile number, no two rows may share one, and
+     * none may already be claimed on another commitment. Returned as a
+     * sentence rather than thrown, because both places that declare
+     * fulfilment — the My Commitment screen and the blocking prompt —
+     * want to show it as a notification and keep the user's typing.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     */
+    public function reasonMobilesCannotBeSaved(array $rows, int $commitmentId): ?string
+    {
+        $seen = [];
+
+        foreach ($rows as $row) {
+            $name = $row['customer_name'] ?? 'A case';
+            $mobile = DailyCommitmentEntry::normaliseMobile($row['mobile_no'] ?? null);
+
+            if ($mobile === null) {
+                return "Enter the mobile number for {$name}. Every case declared needs one.";
+            }
+
+            if (isset($seen[$mobile])) {
+                return "{$mobile} is on more than one case today. A customer can only be counted once.";
+            }
+
+            $seen[$mobile] = true;
+
+            $claim = DailyCommitmentEntry::claimFor($mobile, $commitmentId);
+
+            if ($claim) {
+                return trim(sprintf(
+                    '%s was already counted%s%s. A mobile number can only be claimed once.',
+                    $mobile,
+                    $claim->commitment?->employee?->emp_name ? ' by '.$claim->commitment->employee->emp_name : '',
+                    $claim->commitment?->date?->format('d M Y') ? ' on '.$claim->commitment->date->format('d M Y') : '',
+                ));
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Replace a commitment's declared fulfilment with $rows, and settle it.
+     *
+     * The rows are validated by the caller (see reasonMobilesCannotBeSaved)
+     * BEFORE anything is written — this rebuilds by delete-then-insert, so
+     * a rejection discovered halfway through would take the work with it.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     */
+    public function replaceFulfilment(DailyCommitment $commitment, array $rows, bool $submit): DailyCommitment
+    {
+        $resolved = $this->highestStageFor(
+            collect($rows)->pluck('customer_id')->filter()->map(fn ($id): int => (int) $id)
+        );
+
+        $commitment->entries()->delete();
+
+        foreach ($rows as $row) {
+            $customerId = filled($row['customer_id'] ?? null) ? (int) $row['customer_id'] : null;
+
+            DailyCommitmentEntry::create([
+                'daily_commitment_id' => $commitment->id,
+                'customer_id' => $customerId,
+                'customer_name' => $row['customer_name'],
+                'mobile_no' => DailyCommitmentEntry::normaliseMobile($row['mobile_no'] ?? null),
+                'reference' => $row['reference'] ?? null,
+                'stage' => $row['stage'],
+                'lms_highest_stage' => $customerId ? ($resolved[$customerId]['stage']?->value) : null,
+                'outcome' => $row['outcome'] ?? null,
+                'amount' => (float) ($row['amount'] ?? 0),
+                'remarks' => $row['remarks'] ?? null,
+            ]);
+        }
+
+        if ($submit) {
+            $commitment->forceFill([
+                'submitted_at' => now(),
+                'declaration_note' => null,
+            ])->save();
+        }
+
+        return $this->syncCommitment($commitment->refresh());
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Day-by-day history

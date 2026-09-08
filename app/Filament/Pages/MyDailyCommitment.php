@@ -41,10 +41,12 @@ use UnitEnum;
  *  historical business sitting in the LMS can never drift into today.
  *
  * Both halves are compulsory and timed: the promise is due by 09:50 and
- * the answer by 18:30, and DailyCommitmentGate shuts the rest of the
- * panel behind either deadline (see App\Http\Middleware\EnsureDailyCommitmentIsDeclared).
- * This screen is the only way out of that block, so it is deliberately
- * the one page the prompt never covers.
+ * the answer by 18:30, and DailyCommitmentGate raises a compulsory prompt
+ * past either deadline. That prompt can take both answers itself; this
+ * screen is the fuller version of the same two steps, and is the one page
+ * the prompt never covers.
+ *
+ * Neither closes the rest of the LMS.
  *
  * A day can be fulfilled in parts: ₹10L promised at Approval may come
  * back as ₹7L Approval + ₹3L SFL. Only business at or above the promised
@@ -619,55 +621,39 @@ class MyDailyCommitment extends Page
             return;
         }
 
-        // Only cases the employee may actually claim, and the LMS's own
-        // highest stage is always resolved server-side — a client can
-        // never inflate a row past what the journey supports.
+        $service = app(DailyCommitmentService::class);
+
+        // Only cases the employee may actually claim: one outside their own
+        // book is kept as a typed row but never linked, so it can never
+        // inherit that case's LMS stage.
         $allowedCustomerIds = $employee
             ? $this->customerScope($employee)->pluck('id')->all()
             : [];
 
-        // Checked BEFORE anything is written: the rows below are rebuilt by
-        // deleting and re-inserting, so a rejection discovered halfway
-        // through would take the day's work with it.
-        if (! $this->mobilesAreUsable($rows, $commitment->id)) {
+        $rows = collect($rows)->map(function (array $row) use ($allowedCustomerIds): array {
+            $customerId = filled($row['customer_id'] ?? null) ? (int) $row['customer_id'] : null;
+
+            $row['customer_id'] = ($customerId !== null && in_array($customerId, $allowedCustomerIds, true))
+                ? $customerId
+                : null;
+
+            return $row;
+        })->all();
+
+        // Checked BEFORE anything is written: replaceFulfilment rebuilds the
+        // rows by deleting and re-inserting, so a rejection discovered
+        // halfway through would take the day's work with it. The rule itself
+        // lives in the service — the prompt and the Admin correction screen
+        // enforce the same one.
+        $reason = $service->reasonMobilesCannotBeSaved($rows, $commitment->id);
+
+        if ($reason !== null) {
+            Notification::make()->title('Check the mobile numbers')->body($reason)->danger()->send();
+
             return;
         }
 
-        $resolved = app(DailyCommitmentService::class)->highestStageFor(
-            collect($rows)->pluck('customer_id')->filter()->map(fn ($id): int => (int) $id)
-        );
-
-        $commitment->entries()->delete();
-
-        foreach ($rows as $row) {
-            $customerId = filled($row['customer_id'] ?? null) ? (int) $row['customer_id'] : null;
-
-            if ($customerId !== null && ! in_array($customerId, $allowedCustomerIds, true)) {
-                $customerId = null;
-            }
-
-            DailyCommitmentEntry::create([
-                'daily_commitment_id' => $commitment->id,
-                'customer_id' => $customerId,
-                'customer_name' => $row['customer_name'],
-                'mobile_no' => DailyCommitmentEntry::normaliseMobile($row['mobile_no'] ?? null),
-                'reference' => $row['reference'] ?? null,
-                'stage' => $row['stage'],
-                'lms_highest_stage' => $customerId ? ($resolved[$customerId]['stage']?->value) : null,
-                'outcome' => $row['outcome'] ?? null,
-                'amount' => (float) ($row['amount'] ?? 0),
-                'remarks' => $row['remarks'] ?? null,
-            ]);
-        }
-
-        if ($submit) {
-            $commitment->forceFill([
-                'submitted_at' => now(),
-                'declaration_note' => null,
-            ])->save();
-        }
-
-        app(DailyCommitmentService::class)->syncCommitment($commitment->refresh());
+        $service->replaceFulfilment($commitment, $rows, submit: $submit);
 
         app(DailyCommitmentGate::class)->forget();
 
@@ -677,67 +663,6 @@ class MyDailyCommitment extends Page
             ->send();
 
         $this->fillFromCommitment();
-    }
-
-    /**
-     * Every declared row must carry a mobile number, no two rows may
-     * share one, and none may already be claimed on another commitment.
-     *
-     * Re-checked here as well as on the field, because the field rule
-     * cannot see sibling rows and a crafted Livewire request never runs
-     * it at all.
-     *
-     * @param  array<int, array<string, mixed>>  $rows
-     */
-    protected function mobilesAreUsable(array $rows, int $commitmentId): bool
-    {
-        $seen = [];
-
-        foreach ($rows as $row) {
-            $name = $row['customer_name'] ?? 'A case';
-            $mobile = DailyCommitmentEntry::normaliseMobile($row['mobile_no'] ?? null);
-
-            if ($mobile === null) {
-                Notification::make()
-                    ->title('Mobile number missing')
-                    ->body("Enter the mobile number for {$name}. Every case declared needs one.")
-                    ->warning()
-                    ->send();
-
-                return false;
-            }
-
-            if (isset($seen[$mobile])) {
-                Notification::make()
-                    ->title('Same number twice')
-                    ->body("{$mobile} is on more than one case today. A customer can only be counted once.")
-                    ->warning()
-                    ->send();
-
-                return false;
-            }
-
-            $seen[$mobile] = true;
-
-            $claim = DailyCommitmentEntry::claimFor($mobile, $commitmentId);
-
-            if ($claim) {
-                Notification::make()
-                    ->title('Already counted')
-                    ->body(trim(sprintf(
-                        '%s was already counted%s%s. A mobile number can only be claimed once.',
-                        $mobile,
-                        $claim->commitment?->employee?->emp_name ? ' by '.$claim->commitment->employee->emp_name : '',
-                        $claim->commitment?->date?->format('d M Y') ? ' on '.$claim->commitment->date->format('d M Y') : '',
-                    )))
-                    ->danger()
-                    ->send();
-
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /*
@@ -803,9 +728,8 @@ class MyDailyCommitment extends Page
     }
 
     /**
-     * What the gate is holding this user on right now, if anything — the
-     * banner at the top of the page is the same block the rest of the
-     * panel is showing them.
+     * What, if anything, the gate is holding this user on — the same
+     * question the prompt asks, so the banner here cannot disagree with it.
      *
      * @return array{blocked: bool, reason: ?string, date: ?Carbon, commitment: ?DailyCommitment, overdue: bool}
      */
@@ -828,9 +752,10 @@ class MyDailyCommitment extends Page
     }
 
     /**
-     * The day's declared business split at the committed stage: what
-     * counts in full, and what came in below it. This is the headline the
-     * employee reads at 18:30 — "₹7L at Approval, ₹3L below it".
+     * The day's declared business split at the committed stage: what counts
+     * in full, and what came in below it. Read live from the declared rows
+     * rather than the saved snapshot, so the strip moves as the employee
+     * types.
      *
      * @return array{target: float, at_or_above: float, below: float, total: float, is_count: bool, stage: ?CommitmentStage, stages: array<string, array{amount: float, count: int, counts: bool}>}
      */
@@ -855,13 +780,15 @@ class MyDailyCommitment extends Page
         $stage = $commitment->commitment_stage;
         $entries = $this->entries;
 
-        $achievement = app(DailyCommitmentService::class)->achievementFromEntries($entries, $stage);
-        $breakdown = app(DailyCommitmentService::class)->entryBreakdown($entries);
+        $service = app(DailyCommitmentService::class);
+
+        $achievement = $service->achievementFromEntries($entries, $stage);
+        $breakdown = $service->entryBreakdown($entries);
 
         $stages = [];
 
-        // Highest rung first: the ladder reads top-down here because the
-        // committed stage is what the eye should land on.
+        // Highest rung first: the committed stage is what the eye should
+        // land on.
         foreach (array_reverse(CommitmentStage::ladder()) as $rung) {
             $totals = $breakdown['stages'][$rung->value] ?? ['amount' => 0.0, 'count' => 0];
 
@@ -873,8 +800,6 @@ class MyDailyCommitment extends Page
         }
 
         return [
-            // Read live from the declared rows, not from the last saved
-            // snapshot — this strip has to move as the employee types.
             'target' => $commitment->target(),
             'at_or_above' => $stage->isCount() ? (float) $achievement['count'] : $achievement['amount'],
             'below' => $stage->isCount() ? 0.0 : $achievement['below_amount'],

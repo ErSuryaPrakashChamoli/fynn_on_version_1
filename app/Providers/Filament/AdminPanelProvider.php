@@ -51,7 +51,6 @@ use App\Filament\Widgets\ManagerPPPStats;
 use App\Filament\Widgets\PerformanceStats;
 use App\Filament\Widgets\TargetStats;
 use App\Http\Middleware\EncryptCookies;
-use App\Http\Middleware\EnsureDailyCommitmentIsDeclared;
 use App\Http\Middleware\EnsureMonthlyTargetIsSet;
 use Filament\Actions\Action;
 use Filament\Enums\ThemeMode;
@@ -231,9 +230,10 @@ class AdminPanelProvider extends PanelProvider
                     : '',
             )
             // The same module's daily half: a commitment is owed by 09:50
-            // and its achievement declared by 18:30, and the panel stays
-            // shut behind either deadline until that happens.
-            // EnsureDailyCommitmentIsDeclared below is the server-side half.
+            // and its achievement declared by 18:30. Deliberately a modal
+            // ONLY — it is answered in place and then dismissed. It must
+            // never redirect or close routes, because the rest of the LMS
+            // has to stay usable while it is open.
             ->renderHook(
                 PanelsRenderHook::BODY_END,
                 fn (): string => Filament::auth()->check()
@@ -303,7 +303,6 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
                 EnsureMonthlyTargetIsSet::class,
-                EnsureDailyCommitmentIsDeclared::class,
             ]);
     }
 

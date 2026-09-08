@@ -260,13 +260,17 @@ class DailyCommitmentDeadlinesTest extends TestCase
     |--------------------------------------------------------------------------
     */
 
-    public function test_a_blocked_user_is_redirected_to_my_commitment(): void
+    public function test_the_rest_of_the_lms_stays_open_while_the_prompt_is_up(): void
     {
         Carbon::setTestNow(today()->setTimeFromTimeString('10:15'));
 
+        $this->assertTrue(app(DailyCommitmentGate::class)->isBlocked($this->user));
+
+        // The prompt is the whole of the enforcement. A commitment module
+        // has no business stopping other work, so every route stays open.
         $this->actingAs($this->user)
             ->get(DailyCommitmentDashboard::getUrl())
-            ->assertRedirect(MyDailyCommitment::getUrl());
+            ->assertOk();
     }
 
     public function test_my_commitment_itself_stays_reachable_while_blocked(): void
@@ -523,6 +527,101 @@ class DailyCommitmentDeadlinesTest extends TestCase
 
         $this->assertNotNull(DailyCommitment::first()->submitted_at);
         $this->assertSame(0, DailyCommitmentEntry::count());
+    }
+
+    public function test_the_evening_prompt_closes_the_day_from_wherever_the_user_is(): void
+    {
+        Carbon::setTestNow(today()->setTimeFromTimeString('18:45'));
+
+        $this->commit(CommitmentStage::Approved, 1000000);
+
+        app(DailyCommitmentGate::class)->forget();
+
+        $this->actingAs($this->user);
+
+        Livewire::test(DailyCommitmentPrompt::class)
+            ->call('chooseMode', 'cases')
+            ->set('cases', [[
+                'customer_name' => 'Rohit Kumar',
+                'mobile_no' => '9876543210',
+                'stage' => CommitmentStage::Approved->value,
+                'amount' => '1000000',
+            ]])
+            ->call('submitCases');
+
+        $commitment = DailyCommitment::first();
+
+        $this->assertNotNull($commitment->submitted_at);
+        $this->assertSame(1000000.0, (float) $commitment->achievement_amount);
+        $this->assertSame(CommitmentResult::Met, $commitment->result);
+        $this->assertSame('9876543210', DailyCommitmentEntry::first()->mobile_no);
+
+        // Answered, so the prompt lets go — without moving the user.
+        $this->assertFalse(app(DailyCommitmentGate::class)->isBlocked($this->user));
+    }
+
+    public function test_the_evening_prompt_refuses_a_case_whose_number_is_already_claimed(): void
+    {
+        Carbon::setTestNow(today()->setTimeFromTimeString('18:45'));
+
+        $other = Employee::factory()->create(['designation' => Employee::DESIGNATION_CALLER]);
+
+        $theirs = DailyCommitment::create([
+            'employee_id' => $other->id,
+            'date' => today()->subDay(),
+            'commitment_stage' => CommitmentStage::Approved,
+            'commitment_amount' => 500000,
+            'result' => CommitmentResult::InProgress,
+            'submitted_at' => now(),
+        ]);
+
+        DailyCommitmentEntry::create([
+            'daily_commitment_id' => $theirs->id,
+            'customer_name' => 'Rohit Kumar',
+            'mobile_no' => '9876543210',
+            'stage' => CommitmentStage::Approved,
+            'amount' => 500000,
+        ]);
+
+        $this->commit(CommitmentStage::Approved, 1000000);
+
+        app(DailyCommitmentGate::class)->forget();
+
+        $this->actingAs($this->user);
+
+        Livewire::test(DailyCommitmentPrompt::class)
+            ->call('chooseMode', 'cases')
+            ->set('cases', [[
+                'customer_name' => 'Rohit K',
+                'mobile_no' => '+91 98765 43210',
+                'stage' => CommitmentStage::Approved->value,
+                'amount' => '1000000',
+            ]])
+            ->call('submitCases');
+
+        $this->assertSame(1, DailyCommitmentEntry::count(), 'Only the original claim survives.');
+        $this->assertNull(DailyCommitment::where('employee_id', $this->caller->id)->first()->submitted_at);
+    }
+
+    public function test_the_evening_prompt_can_record_a_failed_day(): void
+    {
+        Carbon::setTestNow(today()->setTimeFromTimeString('18:45'));
+
+        $this->commit(CommitmentStage::Approved, 1000000);
+
+        app(DailyCommitmentGate::class)->forget();
+
+        $this->actingAs($this->user);
+
+        Livewire::test(DailyCommitmentPrompt::class)
+            ->call('chooseMode', 'failed')
+            ->call('declareFailed');
+
+        $commitment = DailyCommitment::first();
+
+        $this->assertNotNull($commitment->submitted_at);
+        $this->assertSame(CommitmentResult::Failed, $commitment->result);
+        $this->assertFalse(app(DailyCommitmentGate::class)->isBlocked($this->user));
     }
 
     /*

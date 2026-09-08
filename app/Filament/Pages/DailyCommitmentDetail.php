@@ -13,9 +13,11 @@ use App\Services\MonthlyTargetGate;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Panel;
@@ -234,6 +236,126 @@ class DailyCommitmentDetail extends Page
     }
 
     /**
+     * Correct the FULFILMENT of any day — the cases declared against the
+     * commitment, and whether the day is closed at all.
+     *
+     * Separate from editCommitmentAction() on purpose: the promise and the
+     * answer are two different records, and an Admin fixing a mistyped
+     * amount should not have to restate the other one. Admin-only, and
+     * logged like every other correction.
+     */
+    public function editAchievementAction(): Action
+    {
+        return Action::make('editAchievement')
+            ->label('Edit achievement')
+            ->icon('heroicon-o-clipboard-document-check')
+            ->color('warning')
+            ->visible(fn (): bool => $this->canEditCommitment())
+            ->modalHeading(fn (): string => 'Correct the achievement — '.$this->commitment->date->format('d M Y'))
+            ->modalDescription('Replaces the cases declared against this commitment. Every mobile number must still be unique across the whole module.')
+            ->modalWidth('5xl')
+            ->schema([
+                Repeater::make('entries')
+                    ->label('Cases declared')
+                    ->addActionLabel('Add case')
+                    ->reorderable(false)
+                    ->defaultItems(0)
+                    ->columns(4)
+                    ->itemLabel(fn (array $state): ?string => $state['customer_name'] ?? null)
+                    ->schema([
+                        TextInput::make('customer_name')
+                            ->label('Customer')
+                            ->required()
+                            ->maxLength(255),
+
+                        TextInput::make('mobile_no')
+                            ->label('Mobile')
+                            ->tel()
+                            ->required()
+                            ->maxLength(20),
+
+                        Select::make('stage')
+                            ->label('Stage reached')
+                            ->options(CommitmentStage::ladderOptions())
+                            ->native(false)
+                            ->required(),
+
+                        TextInput::make('amount')
+                            ->label('Amount (₹)')
+                            ->numeric()
+                            ->minValue(0)
+                            ->required(),
+                    ]),
+
+                Toggle::make('submitted')
+                    ->label('Day is closed')
+                    ->helperText('Turn off to hand the day back to the employee to finish.'),
+
+                Textarea::make('note')
+                    ->label('Reason for the correction')
+                    ->rows(2)
+                    ->required()
+                    ->maxLength(500),
+            ])
+            ->fillForm(fn (): array => [
+                'entries' => $this->commitment->entries()->get()->map(fn ($entry): array => [
+                    'customer_name' => $entry->customer_name,
+                    'mobile_no' => $entry->mobile_no,
+                    'stage' => $entry->stage->value,
+                    'amount' => (int) $entry->amount,
+                ])->all(),
+                'submitted' => $this->commitment->submitted_at !== null,
+            ])
+            ->action(function (array $data): void {
+                if (! $this->canEditCommitment()) {
+                    Notification::make()->title('Only an Admin can change an achievement.')->danger()->send();
+
+                    return;
+                }
+
+                $rows = $data['entries'] ?? [];
+                $service = app(DailyCommitmentService::class);
+
+                // Validated before anything is written: replaceFulfilment
+                // rebuilds by delete-then-insert.
+                $reason = $service->reasonMobilesCannotBeSaved($rows, $this->commitment->id);
+
+                if ($reason !== null) {
+                    Notification::make()->title('Check the mobile numbers')->body($reason)->danger()->send();
+
+                    return;
+                }
+
+                DailyCommitmentLog::create([
+                    'daily_commitment_id' => $this->commitment->id,
+                    'employee_id' => Filament::auth()->user()?->employee?->id,
+                    'old_stage' => $this->commitment->current_stage?->value,
+                    'new_stage' => $this->commitment->current_stage?->value,
+                    'old_amount' => $this->commitment->achievement_amount,
+                    'new_amount' => collect($rows)->sum(fn (array $row): float => (float) ($row['amount'] ?? 0)),
+                    'old_count' => $this->commitment->achievement_count,
+                    'new_count' => count($rows),
+                    'change_type' => 'admin_correction',
+                    'note' => $data['note'],
+                ]);
+
+                $service->replaceFulfilment($this->commitment, $rows, submit: false);
+
+                // The toggle owns the closed/open state, so it is applied
+                // after the rows rather than being inferred from them.
+                $this->commitment->forceFill([
+                    'submitted_at' => ($data['submitted'] ?? false)
+                        ? ($this->commitment->submitted_at ?? now())
+                        : null,
+                ])->save();
+
+                $service->syncCommitment($this->commitment->refresh());
+
+                Notification::make()->title('Achievement corrected')->success()->send();
+            });
+    }
+
+    /**
      * Whether this viewer may rewrite the employee's monthly target. The
      * Admin line may do it for anybody, which is why the action lives on
      * the screen where the number is actually being questioned rather
@@ -345,6 +467,7 @@ class DailyCommitmentDetail extends Page
     {
         return [
             $this->editCommitmentAction(),
+            $this->editAchievementAction(),
             $this->setMonthlyTargetAction(),
         ];
     }
