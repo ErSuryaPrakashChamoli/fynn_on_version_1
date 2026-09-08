@@ -525,6 +525,128 @@ class DailyCommitmentDeadlinesTest extends TestCase
         $this->assertSame(0, DailyCommitmentEntry::count());
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Day-by-day history
+    |--------------------------------------------------------------------------
+    */
+
+    public function test_the_history_reports_each_day_and_tallies_how_often_the_commitment_was_kept(): void
+    {
+        // Four closed days: one met, one overachieved, one partial, one failed.
+        $this->closedDay(today()->subDays(4), 1000000, [[CommitmentStage::Approved, 1000000]]);
+        $this->closedDay(today()->subDays(3), 1000000, [[CommitmentStage::Approved, 1500000]]);
+        $this->closedDay(today()->subDays(2), 1000000, [[CommitmentStage::Approved, 700000], [CommitmentStage::Sfl, 300000]]);
+        $this->closedDay(today()->subDay(), 1000000, []);
+
+        $rows = $this->service->dayByDayHistory($this->caller->id, today()->subDays(10), today());
+
+        $this->assertCount(4, $rows);
+        // Newest first — a history is read backwards from today.
+        $this->assertSame(today()->subDay()->toDateString(), $rows->first()['date']->toDateString());
+
+        $tally = $this->service->historyTally($rows);
+
+        $this->assertSame(1, $tally['met']);
+        $this->assertSame(1, $tally['overachieved']);
+        $this->assertSame(1, $tally['partial']);
+        $this->assertSame(1, $tally['failed']);
+        $this->assertSame(4, $tally['closed']);
+        $this->assertSame(2, $tally['kept'], 'Met and overachieved are kept; partial and failed are not.');
+        $this->assertSame(50.0, $tally['kept_percentage']);
+    }
+
+    public function test_a_day_still_running_is_not_counted_against_the_kept_rate(): void
+    {
+        $this->closedDay(today()->subDay(), 1000000, [[CommitmentStage::Approved, 1000000]]);
+
+        // Today is open and unfulfilled — not yet kept, but not yet missed.
+        $this->commit(CommitmentStage::Approved, 1000000);
+
+        $tally = $this->service->historyTally(
+            $this->service->dayByDayHistory($this->caller->id, today()->subDays(10), today())
+        );
+
+        $this->assertSame(2, $tally['days']);
+        $this->assertSame(1, $tally['in_progress']);
+        $this->assertSame(1, $tally['closed']);
+        $this->assertSame(100.0, $tally['kept_percentage']);
+    }
+
+    public function test_the_history_can_be_filtered_by_result_without_moving_the_tally(): void
+    {
+        $this->closedDay(today()->subDays(2), 1000000, [[CommitmentStage::Approved, 1000000]]);
+        $this->closedDay(today()->subDay(), 1000000, []);
+
+        $this->actingAs($this->user);
+
+        $page = Livewire::test(MyDailyCommitment::class)->set('historyResult', CommitmentResult::Failed->value);
+
+        $history = $page->instance()->history;
+
+        $this->assertCount(1, $history['filtered'], 'Only the failed day is listed.');
+        $this->assertSame(CommitmentResult::Failed, $history['filtered']->first()['result']);
+
+        // Narrowing the table must not rewrite the headline.
+        $this->assertSame(2, $history['tally']['days']);
+        $this->assertSame(1, $history['tally']['met']);
+        $this->assertSame(1, $history['tally']['failed']);
+    }
+
+    public function test_the_history_honours_the_selected_date_range(): void
+    {
+        $this->closedDay(today()->subDays(40), 1000000, [[CommitmentStage::Approved, 1000000]]);
+        $this->closedDay(today()->subDay(), 1000000, [[CommitmentStage::Approved, 1000000]]);
+
+        $this->actingAs($this->user);
+
+        $page = Livewire::test(MyDailyCommitment::class);
+
+        // Last 7 days leaves the 40-day-old commitment out.
+        $page->set('historyRange', 'last_week');
+        $this->assertCount(1, $page->instance()->history['rows']);
+
+        $page->set('historyRange', 'custom')
+            ->set('historyFrom', today()->subDays(60)->toDateString())
+            ->set('historyTo', today()->toDateString());
+
+        $this->assertCount(2, $page->instance()->history['rows']);
+    }
+
+    /**
+     * A commitment for $date, fulfilled by the given [stage, amount] pairs
+     * and closed. Each case needs its own mobile number — they are unique
+     * across the whole table.
+     *
+     * @param  array<int, array{0: CommitmentStage, 1: float}>  $cases
+     */
+    private function closedDay(Carbon $date, float $target, array $cases): DailyCommitment
+    {
+        $commitment = DailyCommitment::create([
+            'employee_id' => $this->caller->id,
+            'date' => $date,
+            'commitment_stage' => CommitmentStage::Approved,
+            'commitment_amount' => $target,
+            'result' => CommitmentResult::InProgress,
+        ]);
+
+        foreach ($cases as $index => [$stage, $amount]) {
+            DailyCommitmentEntry::create([
+                'daily_commitment_id' => $commitment->id,
+                'customer_name' => 'Case '.$date->format('md').$index,
+                'mobile_no' => '9'.str_pad((string) (crc32($date->format('Ymd').$index) % 1000000000), 9, '0', STR_PAD_LEFT),
+                'stage' => $stage,
+                'amount' => $amount,
+            ]);
+        }
+
+        $commitment->forceFill(['submitted_at' => $date->copy()->setTime(18, 45)])->save();
+
+        $this->service->syncCommitment($commitment->refresh());
+
+        return $commitment;
+    }
+
     protected function tearDown(): void
     {
         Carbon::setTestNow();

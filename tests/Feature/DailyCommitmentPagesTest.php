@@ -126,6 +126,56 @@ class DailyCommitmentPagesTest extends TestCase
             ->assertActionHidden('editCommitment');
     }
 
+    public function test_an_admin_sees_how_often_the_employee_kept_their_commitment(): void
+    {
+        // Two closed days for this caller: one kept, one missed.
+        $kept = DailyCommitment::create([
+            'employee_id' => $this->caller->id,
+            'date' => today()->subDays(2),
+            'commitment_stage' => CommitmentStage::Approved,
+            'commitment_amount' => 500000,
+            'submitted_at' => now(),
+        ]);
+
+        DailyCommitmentEntry::create([
+            'daily_commitment_id' => $kept->id,
+            'customer_name' => 'Kept Case',
+            'mobile_no' => '9800000001',
+            'stage' => CommitmentStage::Approved,
+            'amount' => 500000,
+        ]);
+
+        $missed = DailyCommitment::create([
+            'employee_id' => $this->caller->id,
+            'date' => today()->subDay(),
+            'commitment_stage' => CommitmentStage::Approved,
+            'commitment_amount' => 500000,
+            'submitted_at' => now(),
+        ]);
+
+        $service = app(DailyCommitmentService::class);
+        $service->syncCommitment($kept);
+        $service->syncCommitment($missed);
+
+        $admin = User::factory()->create();
+        $admin->assignRole('Admin');
+        $this->actingAs($admin);
+
+        $page = Livewire::test(DailyCommitmentDetail::class, ['record' => $missed->id])->assertOk();
+
+        $history = $page->instance()->history;
+
+        $this->assertSame(2, $history['tally']['days']);
+        $this->assertSame(1, $history['tally']['met']);
+        $this->assertSame(1, $history['tally']['failed']);
+        $this->assertSame(50.0, $history['tally']['kept_percentage']);
+
+        // And the admin can narrow to just the missed days.
+        $page->set('historyResult', CommitmentResult::Failed->value);
+
+        $this->assertCount(1, $page->instance()->history['filtered']);
+    }
+
     public function test_an_admin_can_correct_a_locked_commitment_and_the_change_is_logged(): void
     {
         $commitment = DailyCommitment::create([
@@ -517,7 +567,7 @@ class DailyCommitmentPagesTest extends TestCase
 
         Livewire::test(MyDailyCommitment::class)
             ->assertOk()
-            ->assertSee('Final status / fulfilment')
+            ->assertSee('Close the day')
             ->assertSee('Current pipeline')
             ->assertSee('Month to date')
             ->assertSee($customer->customer_name)

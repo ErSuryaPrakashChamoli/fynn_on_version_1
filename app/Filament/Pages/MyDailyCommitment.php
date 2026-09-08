@@ -885,6 +885,58 @@ class MyDailyCommitment extends Page
         ];
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Commitment history — day by day
+    |--------------------------------------------------------------------------
+    */
+
+    /** Period preset from DailyCommitmentService::rangeOptions(). */
+    public string $historyRange = 'this_month';
+
+    public ?string $historyFrom = null;
+
+    public ?string $historyTo = null;
+
+    /** A CommitmentResult value, or 'all'. */
+    public string $historyResult = 'all';
+
+    /**
+     * The day-by-day history for the signed-in employee.
+     *
+     * `tally` is counted over the whole range and `filtered` is what the
+     * table lists — narrowing to "Failed" must not make the headline read
+     * "0 met".
+     *
+     * @return array{rows: Collection<int, array<string, mixed>>, filtered: Collection<int, array<string, mixed>>, tally: array<string, mixed>}
+     */
+    public function getHistoryProperty(): array
+    {
+        $service = app(DailyCommitmentService::class);
+
+        $employeeId = Filament::auth()->user()?->employee?->id;
+
+        if (! $employeeId) {
+            return ['rows' => collect(), 'filtered' => collect(), 'tally' => $service->historyTally(collect())];
+        }
+
+        [$start, $end] = DailyCommitmentService::resolveRange(
+            $this->historyRange,
+            $this->historyFrom,
+            $this->historyTo,
+        );
+
+        $rows = $service->dayByDayHistory($employeeId, $start, $end);
+
+        $result = CommitmentResult::tryFrom($this->historyResult);
+
+        return [
+            'rows' => $rows,
+            'filtered' => $result ? $rows->where('result', $result)->values() : $rows,
+            'tally' => $service->historyTally($rows),
+        ];
+    }
+
     /**
      * @return Collection<int, DailyCommitmentEntry>
      */

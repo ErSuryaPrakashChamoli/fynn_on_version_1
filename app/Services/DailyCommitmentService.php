@@ -1080,6 +1080,100 @@ class DailyCommitmentService
         ];
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Day-by-day history
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * One row per day for a single employee: what was promised, what came
+     * back, and how the day settled. This is the "how often do they
+     * actually keep it?" view behind the commitment history.
+     *
+     * The result is recomputed here rather than read off the stored
+     * column, for the same reason every other figure in this module is
+     * computed live — a snapshot taken before the last edit would quietly
+     * disagree with the numbers printed beside it.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function dayByDayHistory(int $employeeId, Carbon $start, Carbon $end): Collection
+    {
+        return DailyCommitment::query()
+            ->where('employee_id', $employeeId)
+            // whereDate, not whereBetween: the `date` cast writes
+            // "Y-m-d H:i:s", which sorts after a bare "Y-m-d" bound.
+            ->whereDate('date', '>=', $start->toDateString())
+            ->whereDate('date', '<=', $end->toDateString())
+            ->with('entries')
+            ->orderByDesc('date')
+            ->get()
+            ->map(function (DailyCommitment $commitment): array {
+                $stage = $commitment->commitment_stage;
+                $achievement = $this->achievementFromEntries($commitment->entries, $stage);
+
+                $target = $commitment->target();
+                $achieved = $stage->isCount() ? (float) $achievement['count'] : $achievement['amount'];
+                $below = $stage->isCount() ? 0.0 : $achievement['below_amount'];
+
+                return [
+                    'commitment' => $commitment,
+                    'date' => $commitment->date,
+                    'stage' => $stage,
+                    'is_count' => $stage->isCount(),
+                    'target' => $target,
+                    'achieved' => $achieved,
+                    'below' => $below,
+                    'percentage' => $target > 0 ? round(($achieved / $target) * 100, 1) : 0.0,
+                    'result' => CommitmentResult::decide(
+                        $target,
+                        $achieved,
+                        dayClosed: $commitment->isClosed(),
+                        totalAchieved: $achieved + $below,
+                    ),
+                    'submitted_at' => $commitment->submitted_at,
+                    'cases' => $commitment->entries->count(),
+                    'note' => $commitment->declaration_note,
+                ];
+            })
+            ->values();
+    }
+
+    /**
+     * How the days in a history landed. Always counted over the WHOLE
+     * range, never over a filtered view — "12 failed" has to mean twelve
+     * failed days, not twelve rows currently on screen.
+     *
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return array{days: int, closed: int, met: int, overachieved: int, partial: int, failed: int, in_progress: int, kept: int, kept_percentage: float}
+     */
+    public function historyTally(Collection $rows): array
+    {
+        $count = fn (CommitmentResult $result): int => $rows->where('result', $result)->count();
+
+        $met = $count(CommitmentResult::Met);
+        $overachieved = $count(CommitmentResult::Overachieved);
+        $inProgress = $count(CommitmentResult::InProgress);
+
+        // A day still running has not been kept or missed yet, so it is
+        // left out of the rate rather than counted against them.
+        $closed = $rows->count() - $inProgress;
+        $kept = $met + $overachieved;
+
+        return [
+            'days' => $rows->count(),
+            'closed' => $closed,
+            'met' => $met,
+            'overachieved' => $overachieved,
+            'partial' => $count(CommitmentResult::Partial),
+            'failed' => $count(CommitmentResult::Failed),
+            'in_progress' => $inProgress,
+            'kept' => $kept,
+            'kept_percentage' => $closed > 0 ? round(($kept / $closed) * 100, 1) : 0.0,
+        ];
+    }
+
     /**
      * The furthest stage any declared row reached — the day's "current
      * stage" headline.
