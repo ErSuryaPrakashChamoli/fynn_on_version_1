@@ -8,7 +8,34 @@
         $submitted = $commitment?->submitted_at !== null;
         $stage = $row['stage'] ?? null;
         $isCount = (bool) $stage?->isCount();
+        $gate = $this->gateStatus;
+        $split = $this->split;
+        $morningDue = \App\Services\DailyCommitmentGate::MORNING_DEADLINE;
+        $eveningDue = \App\Services\DailyCommitmentGate::EVENING_DEADLINE;
     @endphp
+
+    {{-- 0. WHAT IS DUE, AND WHEN --}}
+    @if ($gate['blocked'])
+        <div class="flex items-start gap-3 rounded-xl bg-danger-50 p-4 text-sm text-danger-800 ring-1 ring-danger-600/20 dark:bg-danger-500/10 dark:text-danger-200 dark:ring-danger-400/30">
+            <x-filament::icon icon="heroicon-o-lock-closed" class="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+                <p class="font-semibold">The rest of the LMS is locked.</p>
+                <p class="mt-0.5">{{ $this->gateMessage }}</p>
+            </div>
+        </div>
+    @else
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl bg-gray-50 px-4 py-3 text-xs text-gray-600 ring-1 ring-gray-950/5 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10">
+            <span class="flex items-center gap-1.5">
+                <x-filament::icon icon="heroicon-o-sun" class="h-4 w-4 shrink-0" />
+                Commitment due by <strong>{{ $morningDue }}</strong>
+            </span>
+            <span class="flex items-center gap-1.5">
+                <x-filament::icon icon="heroicon-o-moon" class="h-4 w-4 shrink-0" />
+                Achievement due by <strong>{{ $eveningDue }}</strong>
+            </span>
+            <span class="text-gray-500 dark:text-gray-400">Both are compulsory — the panel closes behind either deadline.</span>
+        </div>
+    @endif
 
     {{-- 1. MORNING --}}
     <form wire:submit="save">
@@ -80,19 +107,72 @@
 
             @if ($stage->isCount())
                 <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                    An OTP commitment is counted automatically from the cases you opened today
-                    ({{ $row['actual_otp'] }} so far) — no customer list is needed.
+                    OTP is the bottom rung, so every case you declare below counts toward it.
+                    ({{ $row['actual_otp'] }} {{ \Illuminate\Support\Str::plural('case', $row['actual_otp']) }}
+                    opened in the LMS today, for reference — that figure does not settle the commitment.)
                 </p>
             @endif
         </x-filament::section>
 
         {{-- 3. FINAL STATUS / FULFILMENT --}}
-        @unless ($stage->isCount())
             <x-filament::section
                 icon="heroicon-o-clipboard-document-check"
                 heading="Final status / fulfilment"
-                description="Which customers make up today's business? Only what you list here counts as achievement."
+                description="Name the cases that make up today's business. A day can be closed in parts — lower stages still count, they just do not earn a full pass."
             >
+                {{-- Where the day sits against the promise: what landed at
+                     or above the committed stage, and what came in below
+                     it. This is the whole 18:30 question in one strip. --}}
+                <div class="mb-5 overflow-hidden rounded-xl ring-1 ring-gray-950/5 dark:ring-white/10">
+                    <div class="grid grid-cols-1 divide-y divide-gray-200 sm:grid-cols-3 sm:divide-x sm:divide-y-0 dark:divide-white/10">
+                        <div class="p-4">
+                            <div class="dc-card-label">You committed to</div>
+                            <div class="mt-1 text-xl font-extrabold text-gray-950 dark:text-white">
+                                <x-daily-commitment.amount :value="$split['target']" :count="$split['is_count']" :words="false" />
+                            </div>
+                            <div class="mt-1"><x-daily-commitment.stage-chip :stage="$split['stage']" /></div>
+                        </div>
+                        <div class="p-4">
+                            <div class="dc-card-label">At {{ $split['stage']?->label() }} or above</div>
+                            <div class="mt-1 text-xl font-extrabold text-green-600 dark:text-green-400">
+                                <x-daily-commitment.amount :value="$split['at_or_above']" :count="$split['is_count']" :words="false" />
+                            </div>
+                            <div class="dc-card-hint">Counts in full</div>
+                        </div>
+                        <div class="p-4">
+                            <div class="dc-card-label">Below {{ $split['stage']?->label() }}</div>
+                            <div class="mt-1 text-xl font-extrabold text-amber-600 dark:text-amber-400">
+                                <x-daily-commitment.amount :value="$split['below']" :count="$split['is_count']" :words="false" />
+                            </div>
+                            <div class="dc-card-hint">
+                                @if ($split['is_count'])
+                                    Nothing ranks below OTP — every declared case counts
+                                @else
+                                    Makes the day <strong>partially met</strong>, not a pass
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- The ladder, top rung first, so the committed stage
+                         is what the eye lands on. --}}
+                    <div class="border-t border-gray-200 bg-gray-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                        <div class="flex flex-wrap gap-x-6 gap-y-2">
+                            @foreach ($split['stages'] as $value => $totals)
+                                @php $rung = \App\Enums\CommitmentStage::from($value); @endphp
+                                <div class="flex items-center gap-2 text-sm {{ $totals['counts'] ? '' : 'opacity-60' }}">
+                                    <span class="inline-block h-2.5 w-2.5 rounded-full" style="background: {{ $rung->hex() }}"></span>
+                                    <span class="text-gray-500 dark:text-gray-400">{{ $rung->label() }}</span>
+                                    <span class="font-semibold text-gray-950 dark:text-white">{{ indianAmount($totals['amount']) }}</span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400">
+                                        {{ $totals['count'] }} {{ \Illuminate\Support\Str::plural('case', $totals['count']) }}
+                                    </span>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+
                 @if ($submitted)
                     <div class="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-green-50 p-3 text-sm text-green-800 dark:bg-green-500/10 dark:text-green-300">
                         <x-filament::icon icon="heroicon-o-check-badge" class="h-5 w-5" />
@@ -101,6 +181,12 @@
                             Edit final status
                         </x-filament::button>
                     </div>
+
+                    @if ($commitment->declaration_note)
+                        <div class="mb-4 rounded-lg bg-gray-50 p-3 text-sm text-gray-600 dark:bg-white/5 dark:text-gray-300">
+                            <span class="font-semibold">Nil day:</span> {{ $commitment->declaration_note }}
+                        </div>
+                    @endif
                 @else
                     <form wire:submit="submitFinalStatus">
                         {{ $this->fulfilmentForm }}
@@ -115,6 +201,39 @@
                             </x-filament::button>
                         </div>
                     </form>
+
+                    {{-- Nothing came through today. The declaration is still
+                         compulsory, so it is stated on the record with a
+                         reason rather than left silent. --}}
+                    <div
+                        x-data="{ open: false }"
+                        class="mt-6 rounded-lg bg-gray-50 p-4 dark:bg-white/5"
+                    >
+                        <button
+                            type="button"
+                            x-on:click="open = ! open"
+                            class="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white"
+                        >
+                            <x-filament::icon icon="heroicon-o-minus-circle" class="h-4 w-4 shrink-0" />
+                            Nothing came through today
+                        </button>
+
+                        <div x-show="open" x-cloak class="mt-3 space-y-3">
+                            <p class="text-xs text-gray-500 dark:text-gray-400">
+                                This closes the day as <strong>failed</strong> and unlocks the rest of the LMS.
+                                Say what happened — at least 10 characters.
+                            </p>
+                            <textarea
+                                wire:model="nothingReason"
+                                rows="2"
+                                placeholder="e.g. Two files were pushed back by credit, nothing else moved."
+                                class="block w-full rounded-lg border-none bg-white py-2 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
+                            ></textarea>
+                            <x-filament::button size="sm" color="danger" icon="heroicon-o-flag" wire:click="declareNothing">
+                                Record a nil day
+                            </x-filament::button>
+                        </div>
+                    </div>
                 @endif
 
                 {{-- Customer-wise breakup --}}
@@ -181,7 +300,6 @@
                     </div>
                 @endif
             </x-filament::section>
-        @endunless
 
         {{-- 4. CURRENT PIPELINE — never mixed into today's achievement --}}
         <x-filament::section

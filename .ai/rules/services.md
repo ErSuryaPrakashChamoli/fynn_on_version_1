@@ -2,6 +2,7 @@
 paths:
   - app/Services/DailyCommitmentService.php
   - app/Services/MonthlyTargetGate.php
+  - app/Services/DailyCommitmentGate.php
 ---
 
 # Services
@@ -14,7 +15,7 @@ A declared row counts at `effectiveStage()` = the better of the stage the employ
 `pipeline()` is the separate, undated "standing book" figure (open cases only: not sanctioned/disbursed, not dropped, not rejected) and must never be added into a daily or MTD achievement.
 
 Verified LMS stage mapping — do not guess these again:
-- Docs Received = `customers.documentation_status = 'complete'`, the checklist inside CustomerForm's "Step 1: SFL (Source File Logging)". NOT `customer_documents` (only ever holds post-disbursal "Disbursal Letter" rows) and NOT `documents_submitted` (also post-disbursal).
+- Docs Received is no longer a rung (removed 2026-09-08 — see the ladder rule in enums.md), so `documentation_status = 'complete'` maps to nothing and such a case resolves to no stage. Kept here only so the mapping is not "rediscovered" and wired back in: it was the checklist inside CustomerForm's "Step 1: SFL (Source File Logging)", NOT `customer_documents` (only ever holds post-disbursal "Disbursal Letter" rows) and NOT `documents_submitted` (also post-disbursal).
 - SFL = `eligibility_status = 'eligible'`. CreateCustomer::mutateFormDataBeforeCreate() sets journey_status to 'sfl' when eligible and 'not_started' otherwise, and no 'Moved to Sfl' history row is ever written.
 - Disbursed must NOT be detected via `disbursal_finalized`: CustomerJourneyService::sanction() sets it true for dropped cases too. Use journey_status='sanctioned' / disbursal_status='disbursed' / the 'Moved to Sanctioned' history row.
 
@@ -59,3 +60,10 @@ Nobody invents a target for somebody who has stopped turning up. A target setter
 A ticket counts from the moment it is raised (pending OR approved — see scopeSkipping), not once reviewed: waiting for the Admin would keep the whole team locked out of the panel. Rejecting puts the target back. Approving is what sets employees.exit_status = 'yes'. Tickets are per (employee, month) — look them up with EmployeeInactivityRequest::forMonth(), never a bare "Y-m-d" match, because the `month` cast writes "Y-m-d H:i:s".
 
 assignableEmployeeIds() for Admin/Business Head is now every employee at any level (not just REQUIRES_TARGET, not filtered by exit status) — the Admin may correct anyone's target. responsibleFor() (the duty) is deliberately still narrow. Call forget() after any write.
+
+## The daily gate must stand down while the monthly target gate is closed
+Two panel-wide blocks exist in this module and they land users on different pages: EnsureMonthlyTargetIsSet sends blocked users to the Monthly Target resource (setters) or the dashboard, EnsureDailyCommitmentIsDeclared sends them to My Commitment. If both are in force the user bounces between the two landing pages forever, because neither middleware permits the other's target route.
+
+DailyCommitmentGate::resolveStatus() therefore returns "clear" whenever MonthlyTargetGate::isBlocked() is true — the month's targets are the outer gate and always win. Do not remove that short-circuit, and if a third panel-wide block is ever added, decide its place in the same order first.
+
+Deadlines are DailyCommitmentGate::MORNING_DEADLINE (09:50, commitment must exist) and EVENING_DEADLINE (18:30, it must be answered), both in app.timezone (Asia/Kolkata). An unanswered earlier day inside BACKLOG_DAYS blocks today too, and is reported with overdue=true. Register the gate as a singleton (AppServiceProvider) — the middleware, the prompt and the My Commitment banner all ask the same question per request and share its memo; call forget() after any commitment or declaration write.

@@ -9,6 +9,7 @@ use App\Models\DailyCommitment;
 use App\Models\DailyCommitmentEntry;
 use App\Models\DailyCommitmentLog;
 use App\Models\Employee;
+use App\Services\DailyCommitmentGate;
 use App\Services\DailyCommitmentService;
 use BackedEnum;
 use Filament\Facades\Filament;
@@ -19,6 +20,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
@@ -37,6 +39,16 @@ use UnitEnum;
  *  customers/cases that make up the day's business and submits the final
  *  status. Achievement is computed only from those declared rows, so
  *  historical business sitting in the LMS can never drift into today.
+ *
+ * Both halves are compulsory and timed: the promise is due by 09:50 and
+ * the answer by 18:30, and DailyCommitmentGate shuts the rest of the
+ * panel behind either deadline (see App\Http\Middleware\EnsureDailyCommitmentIsDeclared).
+ * This screen is the only way out of that block, so it is deliberately
+ * the one page the prompt never covers.
+ *
+ * A day can be fulfilled in parts: ₹10L promised at Approval may come
+ * back as ₹7L Approval + ₹3L SFL. Only business at or above the promised
+ * stage earns a clean pass; the rest still counts, as PARTIALLY MET.
  */
 class MyDailyCommitment extends Page
 {
@@ -57,6 +69,9 @@ class MyDailyCommitment extends Page
     public ?array $fulfilment = [];
 
     public string $date;
+
+    /** Reason attached to a nil day — a compulsory declaration cannot be silent. */
+    public ?string $nothingReason = null;
 
     public function mount(): void
     {
@@ -184,25 +199,12 @@ class MyDailyCommitment extends Page
                             ->maxLength(255)
                             ->columnSpan(2),
 
-                        TextInput::make('reference')
-                            ->label('Lead / Application ID')
-                            ->maxLength(255)
-                            ->columnSpan(2),
-
                         Select::make('stage')
                             ->label('Stage reached')
                             ->options(CommitmentStage::ladderOptions())
                             ->native(false)
                             ->required()
-                            ->columnSpan(2),
-
-                        Select::make('outcome')
-                            ->label('Outcome')
-                            ->options(CommitmentStage::outcomeOptions())
-                            ->placeholder('Still live')
-                            ->native(false)
-                            ->helperText('Dropped/Rejected do not undo the stage already reached.')
-                            ->columnSpan(2),
+                            ->columnSpan(1),
 
                         TextInput::make('amount')
                             ->label('Amount (₹)')
@@ -211,15 +213,36 @@ class MyDailyCommitment extends Page
                             ->required()
                             ->live(onBlur: true)
                             ->helperText(fn ($state): ?string => filled($state)
-                                ? indianAmount($state).' — '.indianAmountInWords($state)
+                                ? indianAmount($state)
                                 : null)
-                            ->columnSpan(2),
+                            ->columnSpan(1),
 
-                        Textarea::make('remarks')
-                            ->label('Remarks')
-                            ->rows(1)
-                            ->maxLength(500)
-                            ->columnSpanFull(),
+                        // Everything below is the exception, not the rule:
+                        // four fields close a normal case, and the rest
+                        // stays folded away so 18:30 is not a form-filling
+                        // exercise.
+                        Section::make('More detail')
+                            ->collapsed()
+                            ->columns(2)
+                            ->columnSpanFull()
+                            ->schema([
+                                TextInput::make('reference')
+                                    ->label('Lead / Application ID')
+                                    ->maxLength(255),
+
+                                Select::make('outcome')
+                                    ->label('Outcome')
+                                    ->options(CommitmentStage::outcomeOptions())
+                                    ->placeholder('Still live')
+                                    ->native(false)
+                                    ->helperText('Dropped/Rejected do not undo the stage already reached.'),
+
+                                Textarea::make('remarks')
+                                    ->label('Remarks')
+                                    ->rows(1)
+                                    ->maxLength(500)
+                                    ->columnSpanFull(),
+                            ]),
                     ]),
             ])
             ->statePath('fulfilment');
@@ -363,7 +386,13 @@ class MyDailyCommitment extends Page
 
         app(DailyCommitmentService::class)->syncCommitment($commitment);
 
-        Notification::make()->title('Commitment saved')->success()->send();
+        app(DailyCommitmentGate::class)->forget();
+
+        Notification::make()
+            ->title('Commitment saved')
+            ->body('Declare what you achieved against it before '.DailyCommitmentGate::EVENING_DEADLINE.'.')
+            ->success()
+            ->send();
 
         $this->fillFromCommitment();
     }
@@ -384,6 +413,52 @@ class MyDailyCommitment extends Page
         $this->persistFulfilment(submit: true);
     }
 
+    /**
+     * Close the day with nothing on it.
+     *
+     * The 18:30 declaration is compulsory, so a blank day still has to be
+     * stated rather than left silent — and stating it costs a reason,
+     * which is what stops "nothing today" being the quick way past the
+     * block.
+     */
+    public function declareNothing(): void
+    {
+        $commitment = $this->commitment;
+
+        if (! $commitment) {
+            Notification::make()->title('Give your morning commitment first.')->warning()->send();
+
+            return;
+        }
+
+        if (blank($this->nothingReason) || mb_strlen(trim($this->nothingReason)) < 10) {
+            Notification::make()
+                ->title('Say what happened')
+                ->body('A nil day needs a reason of at least 10 characters.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $commitment->entries()->delete();
+
+        $commitment->forceFill([
+            'submitted_at' => now(),
+            'declaration_note' => trim($this->nothingReason),
+        ])->save();
+
+        app(DailyCommitmentService::class)->syncCommitment($commitment->refresh());
+
+        app(DailyCommitmentGate::class)->forget();
+
+        $this->nothingReason = null;
+
+        Notification::make()->title('Nil day recorded')->success()->send();
+
+        $this->fillFromCommitment();
+    }
+
     public function reopenFinalStatus(): void
     {
         $commitment = $this->commitment;
@@ -395,6 +470,8 @@ class MyDailyCommitment extends Page
         $commitment->forceFill(['submitted_at' => null])->save();
 
         app(DailyCommitmentService::class)->syncCommitment($commitment);
+
+        app(DailyCommitmentGate::class)->forget();
 
         Notification::make()->title('Final status reopened')->success()->send();
 
@@ -413,6 +490,20 @@ class MyDailyCommitment extends Page
 
         $employee = Filament::auth()->user()?->employee;
         $rows = $this->fulfilmentForm->getState()['entries'] ?? [];
+
+        // Every rupee declared has to be backed by a named case. A day
+        // with nothing on it goes through declareNothing() instead, which
+        // asks for a reason — so an empty list can never quietly close a
+        // commitment.
+        if ($submit && $rows === []) {
+            Notification::make()
+                ->title('Name the cases first')
+                ->body('Add the customers that make up today\'s business, or record a nil day with a reason.')
+                ->warning()
+                ->send();
+
+            return;
+        }
 
         // Only cases the employee may actually claim, and the LMS's own
         // highest stage is always resolved server-side — a client can
@@ -448,10 +539,15 @@ class MyDailyCommitment extends Page
         }
 
         if ($submit) {
-            $commitment->forceFill(['submitted_at' => now()])->save();
+            $commitment->forceFill([
+                'submitted_at' => now(),
+                'declaration_note' => null,
+            ])->save();
         }
 
         app(DailyCommitmentService::class)->syncCommitment($commitment->refresh());
+
+        app(DailyCommitmentGate::class)->forget();
 
         Notification::make()
             ->title($submit ? 'Final status submitted' : 'Fulfilment saved')
@@ -521,6 +617,89 @@ class MyDailyCommitment extends Page
 
         return app(DailyCommitmentService::class)
             ->monthlyPosition($employee->id, Carbon::parse($this->date));
+    }
+
+    /**
+     * What the gate is holding this user on right now, if anything — the
+     * banner at the top of the page is the same block the rest of the
+     * panel is showing them.
+     *
+     * @return array{blocked: bool, reason: ?string, date: ?Carbon, commitment: ?DailyCommitment, overdue: bool}
+     */
+    public function getGateStatusProperty(): array
+    {
+        $user = Filament::auth()->user();
+
+        return $user
+            ? app(DailyCommitmentGate::class)->status($user)
+            : ['blocked' => false, 'reason' => null, 'date' => null, 'commitment' => null, 'overdue' => false];
+    }
+
+    public function getGateMessageProperty(): string
+    {
+        $status = $this->gateStatus;
+
+        return $status['blocked']
+            ? app(DailyCommitmentGate::class)->message($status)
+            : '';
+    }
+
+    /**
+     * The day's declared business split at the committed stage: what
+     * counts in full, and what came in below it. This is the headline the
+     * employee reads at 18:30 — "₹7L at Approval, ₹3L below it".
+     *
+     * @return array{target: float, at_or_above: float, below: float, total: float, is_count: bool, stage: ?CommitmentStage, stages: array<string, array{amount: float, count: int, counts: bool}>}
+     */
+    public function getSplitProperty(): array
+    {
+        $commitment = $this->commitment;
+
+        $blank = [
+            'target' => 0.0,
+            'at_or_above' => 0.0,
+            'below' => 0.0,
+            'total' => 0.0,
+            'is_count' => false,
+            'stage' => null,
+            'stages' => [],
+        ];
+
+        if (! $commitment) {
+            return $blank;
+        }
+
+        $stage = $commitment->commitment_stage;
+        $entries = $this->entries;
+
+        $achievement = app(DailyCommitmentService::class)->achievementFromEntries($entries, $stage);
+        $breakdown = app(DailyCommitmentService::class)->entryBreakdown($entries);
+
+        $stages = [];
+
+        // Highest rung first: the ladder reads top-down here because the
+        // committed stage is what the eye should land on.
+        foreach (array_reverse(CommitmentStage::ladder()) as $rung) {
+            $totals = $breakdown['stages'][$rung->value] ?? ['amount' => 0.0, 'count' => 0];
+
+            $stages[$rung->value] = [
+                'amount' => (float) $totals['amount'],
+                'count' => (int) $totals['count'],
+                'counts' => ($rung->rank() ?? 0) >= ($stage->rank() ?? 0),
+            ];
+        }
+
+        return [
+            // Read live from the declared rows, not from the last saved
+            // snapshot — this strip has to move as the employee types.
+            'target' => $commitment->target(),
+            'at_or_above' => $stage->isCount() ? (float) $achievement['count'] : $achievement['amount'],
+            'below' => $stage->isCount() ? 0.0 : $achievement['below_amount'],
+            'total' => $stage->isCount() ? (float) $achievement['count'] : $achievement['total_amount'],
+            'is_count' => $stage->isCount(),
+            'stage' => $stage,
+            'stages' => $stages,
+        ];
     }
 
     /**

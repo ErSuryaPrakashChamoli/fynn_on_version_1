@@ -8,6 +8,7 @@ use App\Listeners\StartLoginSession;
 use App\Models\Customer;
 use App\Models\User;
 use App\Observers\CustomerObserver;
+use App\Services\DailyCommitmentGate;
 use App\Services\Journey\CustomerJourneyAccessService;
 use App\Services\MonthlyTargetGate;
 use Illuminate\Auth\Events\Login;
@@ -38,6 +39,7 @@ class AppServiceProvider extends ServiceProvider
          * every panel page load.
          */
         $this->app->singleton(MonthlyTargetGate::class);
+        $this->app->singleton(DailyCommitmentGate::class);
         //
     }
 

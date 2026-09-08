@@ -179,7 +179,7 @@ class DailyCommitmentModuleTest extends TestCase
     |--------------------------------------------------------------------------
     */
 
-    public function test_docs_received_uses_documentation_status_not_the_existence_of_a_case(): void
+    public function test_documents_alone_no_longer_reach_a_stage_now_that_docs_received_is_off_the_ladder(): void
     {
         $bare = Customer::factory()->create([
             'employee_id' => $this->caller->id,
@@ -208,7 +208,40 @@ class DailyCommitmentModuleTest extends TestCase
         $resolved = $this->service->highestStageFor(collect([$bare->id, $withDocs->id]));
 
         $this->assertNull($resolved[$bare->id]['stage'], 'A case with no documents has reached no stage.');
-        $this->assertSame(CommitmentStage::DocsReceived, $resolved[$withDocs->id]['stage']);
+
+        // Docs Received was dropped from the ladder, which now starts at
+        // OTP and takes SFL as its lowest provable rung. Completed
+        // documentation on a case that is not yet eligible therefore
+        // proves nothing on its own — it no longer resolves to a stage,
+        // so it cannot be claimed as achievement or partial credit.
+        $this->assertNull(
+            $resolved[$withDocs->id]['stage'],
+            'Completed documents are not a rung: the ladder starts at OTP and SFL.'
+        );
+    }
+
+    public function test_otp_is_the_bottom_rung_so_every_declared_case_counts_toward_an_otp_commitment(): void
+    {
+        // 3 OTPs promised; the day brings one SFL case and one approved one.
+        $commitment = DailyCommitment::create([
+            'employee_id' => $this->caller->id,
+            'date' => today(),
+            'commitment_stage' => CommitmentStage::Otp,
+            'commitment_count' => 3,
+            'result' => CommitmentResult::InProgress,
+        ]);
+
+        $this->declare($commitment, $this->approvedCase(500000), CommitmentStage::Approved, 500000);
+        $this->declare($commitment, $this->underwritingCase(200000), CommitmentStage::Underwriting, 200000);
+
+        $commitment->forceFill(['submitted_at' => now()])->save();
+
+        $this->service->syncCommitment($commitment->refresh());
+
+        // Everything on the ladder ranks at or above OTP, so both count.
+        $this->assertSame(2, $commitment->refresh()->achievement_count);
+        $this->assertSame(0.0, (float) $commitment->achievement_amount, 'An OTP commitment is a headcount, never rupees.');
+        $this->assertSame(CommitmentResult::Failed, $commitment->result, '2 of 3 promised.');
     }
 
     public function test_sfl_is_the_eligibility_decision_taken_when_the_case_is_opened(): void
@@ -480,18 +513,15 @@ class DailyCommitmentModuleTest extends TestCase
         $this->assertSame(150.0, $commitment->achievementPercentage());
     }
 
-    public function test_an_otp_commitment_is_counted_from_cases_opened_that_day(): void
+    public function test_an_otp_commitment_is_settled_by_declared_cases_not_by_cases_merely_opened(): void
     {
+        // Three cases opened in the LMS today and never declared against
+        // the commitment. OTP is now a rung on the ladder like any other,
+        // so opening a case is not the same as claiming it.
         Customer::factory()->count(3)->create([
             'employee_id' => $this->caller->id,
             'created_at' => today()->setTime(10, 0),
             'updated_at' => today()->setTime(10, 0),
-        ]);
-
-        Customer::factory()->create([
-            'employee_id' => $this->caller->id,
-            'created_at' => today()->subDay(),
-            'updated_at' => today()->subDay(),
         ]);
 
         $commitment = DailyCommitment::create([
@@ -499,12 +529,22 @@ class DailyCommitmentModuleTest extends TestCase
             'date' => today(),
             'commitment_stage' => CommitmentStage::Otp,
             'commitment_count' => 3,
+            'result' => CommitmentResult::InProgress,
         ]);
 
-        $this->service->syncCommitment($commitment);
+        $commitment->forceFill(['submitted_at' => now()])->save();
 
-        $this->assertSame(3, $commitment->achievement_count, 'Yesterday\'s case must not count.');
-        $this->assertSame(CommitmentResult::Met, $commitment->result);
+        $this->service->syncCommitment($commitment->refresh());
+
+        $this->assertSame(0, $commitment->refresh()->achievement_count, 'Nothing was declared, so nothing counts.');
+        $this->assertSame(CommitmentResult::Failed, $commitment->result);
+
+        // The auto-count survives as a separate reporting figure — it just
+        // no longer settles the commitment.
+        $row = $this->service->dailyRows(collect([$this->caller->id]), today())->first();
+
+        $this->assertSame(3, $row['actual_otp']);
+        $this->assertSame(0.0, $row['achieved']);
     }
 
     public function test_presence_and_otp_come_from_the_existing_login_and_customer_data(): void
