@@ -126,6 +126,117 @@ class DailyCommitmentPagesTest extends TestCase
             ->assertActionHidden('editCommitment');
     }
 
+    public function test_an_admin_can_fill_in_the_achievement_for_any_day(): void
+    {
+        // A day that was closed with nothing on it, three days ago.
+        $commitment = DailyCommitment::create([
+            'employee_id' => $this->caller->id,
+            'date' => today()->subDays(3),
+            'commitment_stage' => CommitmentStage::Approved,
+            'commitment_amount' => 1000000,
+            'submitted_at' => now(),
+        ]);
+
+        app(DailyCommitmentService::class)->syncCommitment($commitment);
+
+        $this->assertSame(CommitmentResult::Failed, $commitment->refresh()->result);
+
+        $admin = User::factory()->create();
+        $admin->assignRole('Admin');
+        $this->actingAs($admin);
+
+        Livewire::test(DailyCommitmentDetail::class, ['record' => $commitment->id])
+            ->callAction('editAchievement', [
+                'entries' => [[
+                    'customer_name' => 'Rajesh Kumar',
+                    'mobile_no' => '9800000009',
+                    'stage' => CommitmentStage::Approved->value,
+                    'amount' => 1000000,
+                ]],
+                'submitted' => true,
+                'note' => 'Caller declared a nil day by mistake.',
+            ])
+            ->assertHasNoActionErrors();
+
+        $commitment->refresh();
+
+        $this->assertSame(1000000.0, (float) $commitment->achievement_amount);
+        $this->assertSame(CommitmentResult::Met, $commitment->result, 'The day now reads as met.');
+        $this->assertSame('Rajesh Kumar', $commitment->entries()->first()->customer_name);
+        $this->assertNotNull($commitment->submitted_at);
+
+        // Corrections are never silent.
+        $this->assertDatabaseHas('daily_commitment_logs', [
+            'daily_commitment_id' => $commitment->id,
+            'change_type' => 'admin_correction',
+            'note' => 'Caller declared a nil day by mistake.',
+        ]);
+    }
+
+    public function test_an_admin_correction_still_cannot_double_claim_a_mobile_number(): void
+    {
+        $commitment = DailyCommitment::create([
+            'employee_id' => $this->caller->id,
+            'date' => today()->subDays(3),
+            'commitment_stage' => CommitmentStage::Approved,
+            'commitment_amount' => 1000000,
+        ]);
+
+        // Somebody else already counted this customer.
+        $theirs = DailyCommitment::create([
+            'employee_id' => $this->teamLeader->id,
+            'date' => today()->subDays(4),
+            'commitment_stage' => CommitmentStage::Approved,
+            'commitment_amount' => 500000,
+        ]);
+
+        DailyCommitmentEntry::create([
+            'daily_commitment_id' => $theirs->id,
+            'customer_name' => 'Already Counted',
+            'mobile_no' => '9800000009',
+            'stage' => CommitmentStage::Approved,
+            'amount' => 500000,
+        ]);
+
+        $admin = User::factory()->create();
+        $admin->assignRole('Admin');
+        $this->actingAs($admin);
+
+        Livewire::test(DailyCommitmentDetail::class, ['record' => $commitment->id])
+            ->callAction('editAchievement', [
+                'entries' => [[
+                    'customer_name' => 'Same Customer',
+                    'mobile_no' => '9800000009',
+                    'stage' => CommitmentStage::Approved->value,
+                    'amount' => 1000000,
+                ]],
+                'submitted' => true,
+                'note' => 'Trying to claim a taken number.',
+            ]);
+
+        // The rule holds for an Admin correction too.
+        $this->assertSame(0, $commitment->entries()->count());
+        $this->assertSame(1, DailyCommitmentEntry::count());
+    }
+
+    public function test_only_an_admin_may_correct_an_achievement(): void
+    {
+        $commitment = DailyCommitment::create([
+            'employee_id' => $this->caller->id,
+            'date' => today(),
+            'commitment_stage' => CommitmentStage::Approved,
+            'commitment_amount' => 1000000,
+        ]);
+
+        $user = User::factory()->create(['employee_id' => $this->teamLeader->id]);
+        $user->assignRole('Team Leader');
+        $this->actingAs($user);
+
+        Livewire::test(DailyCommitmentDetail::class, ['record' => $commitment->id])
+            ->assertOk()
+            ->assertActionHidden('editAchievement');
+    }
+
     public function test_an_admin_sees_how_often_the_employee_kept_their_commitment(): void
     {
         // Two closed days for this caller: one kept, one missed.

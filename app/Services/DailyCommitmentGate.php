@@ -16,12 +16,15 @@ use Illuminate\Support\Carbon;
  *          actually came in, and the day settles to Met / Overachieved /
  *          Partially Met / Failed.
  *
- * Both deadlines close the panel behind them: past 09:50 with no
- * commitment, or past 18:30 with the day still open, every screen but
- * My Commitment redirects there (App\Http\Middleware\EnsureDailyCommitmentIsDeclared)
- * and a non-dismissible prompt covers the page (App\Livewire\DailyCommitmentPrompt).
- * Yesterday's unanswered day blocks today just the same — a day cannot be
+ * Both deadlines raise a compulsory prompt (App\Livewire\DailyCommitmentPrompt):
+ * past 09:50 with no commitment, or past 18:30 with the day still open,
+ * it opens on whatever page the employee is on and is answered there.
+ * Yesterday's unanswered day raises it just the same — a day cannot be
  * walked away from by waiting for midnight.
+ *
+ * It does NOT close the panel. The commitment module has no business
+ * stopping anyone from working in the rest of the LMS; the prompt is the
+ * whole of the enforcement, and every other route stays reachable.
  *
  * This gate is entirely the Daily Commitment module's own. It reads
  * daily_commitments and nothing else, and no other module's behaviour
@@ -163,10 +166,9 @@ class DailyCommitmentGate
             return $clear;
         }
 
-        // The month's targets are the outer gate, and it sends blocked
-        // users somewhere this one does not allow. Two blocks in force at
-        // once would bounce the user between their landing pages forever,
-        // so the daily deadlines stand down until the month is open.
+        // The month's targets are the outer gate and it DOES close the
+        // panel. Two prompts stacked on one page is nobody's idea of a
+        // clear instruction, so the daily one waits its turn.
         if ($this->monthlyTargets->isBlocked($user)) {
             return $clear;
         }
