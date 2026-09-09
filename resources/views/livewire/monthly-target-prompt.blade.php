@@ -2,6 +2,13 @@
     The monthly-target block. Deliberately not a Filament modal: this one
     cannot be dismissed, closed on escape or clicked past — the panel stays
     shut until the month's targets exist.
+
+    Every block that can be swapped for another one carries a wire:key.
+    Livewire morphs the DOM in place and only re-initialises Alpine on
+    elements it has just ADDED, so an <input> reused across a swap keeps
+    the wire:model binding it was first initialised with — the number
+    typed for OTPs would still be writing to `amount`. The keys are what
+    force a replacement instead of a reuse; do not remove them.
 --}}
 @php
     $blocked = $status['blocked'];
@@ -49,15 +56,15 @@
                                 wire:model.live="bulkStage"
                                 class="mt-1 block w-44 rounded-lg border-none bg-white py-1.5 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
                             >
-                                <option value="">Stage…</option>
+                                <option value="" @selected(blank($bulkStage))>Stage…</option>
                                 @foreach ($stageOptions as $value => $label)
-                                    <option value="{{ $value }}">{{ $label }}</option>
+                                    <option value="{{ $value }}" @selected($bulkStage === $value)>{{ $label }}</option>
                                 @endforeach
                             </select>
                         </label>
 
                         @if ($bulkStage === \App\Enums\CommitmentStage::Otp->value)
-                            <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                            <label wire:key="bulk-count" class="text-xs font-medium text-gray-500 dark:text-gray-400">
                                 Target OTPs
                                 <input
                                     type="number"
@@ -67,7 +74,7 @@
                                 />
                             </label>
                         @else
-                            <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                            <label wire:key="bulk-amount" class="text-xs font-medium text-gray-500 dark:text-gray-400">
                                 Target amount (₹)
                                 <input
                                     type="number"
@@ -117,14 +124,15 @@
                                         wire:model.live="targets.{{ $employee->id }}.stage"
                                         class="w-44 rounded-lg border-none bg-white py-1.5 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
                                     >
-                                        <option value="">Stage…</option>
+                                        <option value="" @selected(blank($rowStage))>Stage…</option>
                                         @foreach ($stageOptions as $value => $label)
-                                            <option value="{{ $value }}">{{ $label }}</option>
+                                            <option value="{{ $value }}" @selected($rowStage === $value)>{{ $label }}</option>
                                         @endforeach
                                     </select>
 
                                     @if ($rowStage === \App\Enums\CommitmentStage::Otp->value)
                                         <input
+                                            wire:key="row-count-{{ $employee->id }}"
                                             type="number"
                                             min="1"
                                             placeholder="OTPs"
@@ -133,6 +141,7 @@
                                         />
                                     @else
                                         <input
+                                            wire:key="row-amount-{{ $employee->id }}"
                                             type="number"
                                             min="1"
                                             placeholder="Amount (₹)"
@@ -151,7 +160,7 @@
                                     {{-- Nobody should invent a number for someone who has
                                          stopped turning up: raise the ticket instead. --}}
                                     @if ($inactiveFor === $employee->id)
-                                        <div class="w-full">
+                                        <div wire:key="inactive-form-{{ $employee->id }}" class="w-full">
                                             <textarea
                                                 rows="2"
                                                 placeholder="Why is {{ $employee->emp_name }} inactive? (seen by the Admin who reviews the ticket)"
@@ -177,6 +186,7 @@
                                         </div>
                                     @else
                                         <x-filament::button
+                                            wire:key="inactive-ask-{{ $employee->id }}"
                                             size="xs"
                                             color="gray"
                                             icon="heroicon-o-user-minus"
