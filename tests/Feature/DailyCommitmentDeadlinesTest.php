@@ -282,6 +282,112 @@ class DailyCommitmentDeadlinesTest extends TestCase
             ->assertSuccessful();
     }
 
+    public function test_the_prompt_gives_an_otp_commitment(): void
+    {
+        Carbon::setTestNow(today()->setTimeFromTimeString('10:32'));
+
+        $this->actingAs($this->user);
+
+        Livewire::test(DailyCommitmentPrompt::class)
+            ->set('stage', CommitmentStage::Otp->value)
+            ->set('count', '1')
+            ->call('giveCommitment')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('daily_commitments', [
+            'employee_id' => $this->caller->id,
+            'commitment_stage' => CommitmentStage::Otp->value,
+            'commitment_count' => 1,
+        ]);
+    }
+
+    /**
+     * The amount box and the OTP box occupy the same slot in the prompt.
+     * Livewire morphs the DOM in place and only re-initialises Alpine on
+     * elements it has just ADDED, so without a key of its own the one
+     * input is reused across the swap and keeps binding to `amount` —
+     * the OTP the employee typed never reaches the server, and "Give
+     * commitment" then does nothing at all.
+     */
+    public function test_the_two_units_never_share_a_dom_node(): void
+    {
+        Carbon::setTestNow(today()->setTimeFromTimeString('10:15'));
+
+        $this->actingAs($this->user);
+
+        $prompt = Livewire::test(DailyCommitmentPrompt::class);
+
+        $prompt->assertSee('wire:key="commit-amount"', escape: false)
+            ->assertDontSee('wire:key="commit-count"', escape: false);
+
+        $prompt->set('stage', CommitmentStage::Otp->value)
+            ->assertSee('wire:key="commit-count"', escape: false)
+            ->assertDontSee('wire:key="commit-amount"', escape: false);
+    }
+
+    public function test_the_stage_the_server_holds_is_the_one_the_dropdown_shows(): void
+    {
+        Carbon::setTestNow(today()->setTimeFromTimeString('10:15'));
+
+        $this->actingAs($this->user);
+
+        // Otp is option one in the list, so an unmarked <select> would show
+        // it while the server was holding the default of Disbursal.
+        Livewire::test(DailyCommitmentPrompt::class)
+            ->assertSee('<option value="disbursed" selected>Disbursal</option>', escape: false)
+            ->assertSee('<option value="otp" >No. of OTPs</option>', escape: false);
+    }
+
+    public function test_switching_the_stage_drops_the_number_typed_for_the_other_unit(): void
+    {
+        Carbon::setTestNow(today()->setTimeFromTimeString('10:15'));
+
+        $this->actingAs($this->user);
+
+        Livewire::test(DailyCommitmentPrompt::class)
+            ->set('amount', '1000000')
+            ->set('stage', CommitmentStage::Otp->value)
+            ->assertSet('amount', null)
+            ->set('count', '3')
+            ->set('stage', CommitmentStage::Approved->value)
+            ->assertSet('count', null);
+    }
+
+    public function test_the_prompt_says_so_rather_than_doing_nothing_when_the_number_is_missing(): void
+    {
+        Carbon::setTestNow(today()->setTimeFromTimeString('10:15'));
+
+        $this->actingAs($this->user);
+
+        Livewire::test(DailyCommitmentPrompt::class)
+            ->set('stage', CommitmentStage::Otp->value)
+            ->call('giveCommitment')
+            ->assertHasErrors('count');
+
+        $this->assertDatabaseCount('daily_commitments', 0);
+    }
+
+    /**
+     * removeCase() re-indexes the array, so an unkeyed row would leave the
+     * survivors bound to the inputs of the rows above them.
+     */
+    public function test_each_declared_case_row_is_keyed(): void
+    {
+        Carbon::setTestNow(today()->setTimeFromTimeString('18:45'));
+
+        $this->commit(CommitmentStage::Approved, 1000000);
+
+        app(DailyCommitmentGate::class)->forget();
+
+        $this->actingAs($this->user);
+
+        Livewire::test(DailyCommitmentPrompt::class)
+            ->call('chooseMode', 'cases')
+            ->call('addCase')
+            ->assertSee('wire:key="case-0"', escape: false)
+            ->assertSee('wire:key="case-1"', escape: false);
+    }
+
     public function test_the_prompt_gives_the_commitment_without_leaving_the_page(): void
     {
         Carbon::setTestNow(today()->setTimeFromTimeString('10:15'));
@@ -291,7 +397,7 @@ class DailyCommitmentDeadlinesTest extends TestCase
         Livewire::test(DailyCommitmentPrompt::class)
             ->set('stage', CommitmentStage::Approved->value)
             ->set('amount', '1000000')
-            ->call('commit');
+            ->call('giveCommitment');
 
         $this->assertDatabaseHas('daily_commitments', [
             'employee_id' => $this->caller->id,

@@ -80,12 +80,41 @@ class DailyCommitmentPrompt extends Component
     |--------------------------------------------------------------------------
     */
 
-    public function commit(): void
+    /**
+     * The two units are asked for in the same slot, so the one that no
+     * longer applies is dropped rather than left behind to be read back
+     * against a stage it was never typed for.
+     */
+    public function updatedStage(): void
+    {
+        if (CommitmentStage::tryFrom((string) $this->stage)?->isCount()) {
+            $this->amount = null;
+        } else {
+            $this->count = null;
+        }
+
+        $this->resetErrorBag(['stage', 'amount', 'count']);
+    }
+
+    /**
+     * Named giveCommitment, NOT commit: `commit` is a reserved alias on
+     * Livewire's $wire object (it maps to $commit, the internal
+     * flush-pending-updates call) and the alias is resolved BEFORE the
+     * component's own methods. wire:click="commit" therefore never
+     * reached this class — it quietly flushed the model updates, came
+     * back 200 with the modal unchanged, and wrote nothing.
+     */
+    public function giveCommitment(): void
     {
         $user = Filament::auth()->user();
         $employee = $user?->employee;
 
+        // Every path out of this method says something. The prompt covers
+        // the whole screen, so a button that quietly does nothing leaves
+        // the employee with no way forward and nothing to report.
         if (! $employee) {
+            $this->warn('No employee profile', 'This login is not attached to an employee record. Ask an Admin to link it.');
+
             return;
         }
 
@@ -95,6 +124,8 @@ class DailyCommitmentPrompt extends Component
         // Re-authorised here as well: the prompt only ever creates the day
         // it is actually asking about.
         if ($status['reason'] !== DailyCommitmentGate::REASON_COMMIT) {
+            $this->warn('Nothing to give', 'Today\'s commitment is no longer outstanding. Refresh the page.');
+
             return;
         }
 
@@ -185,6 +216,8 @@ class DailyCommitmentPrompt extends Component
         $commitment = $this->blockingCommitment();
 
         if (! $commitment) {
+            $this->warn('Nothing to close', 'This day is no longer outstanding. Refresh the page.');
+
             return;
         }
 
@@ -234,6 +267,8 @@ class DailyCommitmentPrompt extends Component
         $commitment = $this->blockingCommitment();
 
         if (! $commitment) {
+            $this->warn('Nothing to close', 'This day is no longer outstanding. Refresh the page.');
+
             return;
         }
 

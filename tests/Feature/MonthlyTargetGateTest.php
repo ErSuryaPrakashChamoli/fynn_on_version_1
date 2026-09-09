@@ -214,6 +214,42 @@ class MonthlyTargetGateTest extends TestCase
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * The OTP box and the amount box occupy one slot, both in the "same
+     * for everyone" row and on each employee's row. Livewire morphs the
+     * DOM in place and only re-initialises Alpine on elements it has just
+     * ADDED, so an unkeyed input is reused across the swap and keeps
+     * binding to the property it was first initialised with — the number
+     * typed for OTPs would silently land in `amount`.
+     */
+    public function test_the_two_units_never_share_a_dom_node(): void
+    {
+        $this->actingAs($this->userFor($this->manager, 'Manager'));
+
+        $prompt = Livewire::test(MonthlyTargetPrompt::class);
+
+        $prompt->assertSee('wire:key="bulk-amount"', escape: false)
+            ->assertSee('wire:key="row-amount-'.$this->caller->id.'"', escape: false);
+
+        $prompt->set('bulkStage', CommitmentStage::Otp->value)
+            ->set("targets.{$this->caller->id}.stage", CommitmentStage::Otp->value)
+            ->assertSee('wire:key="bulk-count"', escape: false)
+            ->assertDontSee('wire:key="bulk-amount"', escape: false)
+            ->assertSee('wire:key="row-count-'.$this->caller->id.'"', escape: false)
+            ->assertDontSee('wire:key="row-amount-'.$this->caller->id.'"', escape: false);
+    }
+
+    public function test_the_stage_the_server_holds_is_the_one_each_dropdown_shows(): void
+    {
+        $this->actingAs($this->userFor($this->manager, 'Manager'));
+
+        Livewire::test(MonthlyTargetPrompt::class)
+            ->set('bulkStage', CommitmentStage::Approved->value)
+            ->set("targets.{$this->caller->id}.stage", CommitmentStage::Otp->value)
+            ->assertSee('<option value="approved" selected>Approval</option>', escape: false)
+            ->assertSee('<option value="otp" selected>No. of OTPs</option>', escape: false);
+    }
+
     public function test_the_prompt_lets_a_manager_fix_every_caller_target_in_one_go(): void
     {
         $second = Employee::factory()->create([
