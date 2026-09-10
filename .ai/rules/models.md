@@ -2,6 +2,7 @@
 paths:
   - app/Models/FollowUp.php
   - app/Models/DailyCommitmentEntry.php
+  - app/Models/User.php
 ---
 
 # Models
@@ -23,3 +24,13 @@ Enforced in three places, all needed: the field's ->rule() for live feedback, My
 Consequence to know: a case declared at SFL cannot be re-declared later at Approval, so its progression never counts on the later day. That is the intended anti-double-counting rule, not an oversight.
 
 searchCustomers() hides already-claimed customers, filtering in PHP — no portable SQL normalises both sides, and the test suite runs on SQLite (no REGEXP_REPLACE).
+
+## canAccessPanel() is the portal security boundary — do not loosen it
+User::canAccessPanel() used to `return true` unconditionally. It is now the load-bearing check that keeps Academy/Demo users out of /admin, and Filament also applies it to every Livewire round-trip via its persistent Authenticate middleware.
+
+Rules:
+- A user with NO portal_accounts row is an ordinary LMS user and keeps admin access exactly as before. Never change that branch.
+- A user WITH one is pinned to that one panel and must never be granted another, regardless of Spatie roles.
+- Portal users are created only via App\Services\Portal\PortalAccountService, which calls syncRoles([]) so they hold no production role.
+
+tests/Feature/Portal/AdminPanelIsolationTest.php asserts all of this.

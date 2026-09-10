@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Enums\PortalType;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Models\Contracts\HasAvatar;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Notifications\DatabaseNotificationCollection;
@@ -96,11 +98,51 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
         return $this->belongsTo(Employee::class, 'employee_id');
     }
 
+    /**
+     * The portal account that pins this user to Academy or Demo, if any.
+     *
+     * Null for every pre-existing LMS user, which is what keeps their
+     * behaviour identical to before the portals were introduced.
+     */
+    public function portalAccount(): HasOne
+    {
+        return $this->hasOne(PortalAccount::class);
+    }
+
+    /**
+     * Filament's per-panel gate, also applied to every Livewire
+     * round-trip via Filament's persistent Authenticate middleware.
+     *
+     * Previously this returned true unconditionally, which was fine when
+     * /admin was the only panel and every user was an internal one. With
+     * the Academy and Demo panels added it becomes the load-bearing
+     * boundary, so it is now an explicit match:
+     *
+     *  - a user WITHOUT a portal account is an internal LMS user and
+     *    keeps unconditional access to /admin exactly as before. They may
+     *    additionally reach the Academy to author training content, but
+     *    only with the LMS Admin role, and never the Demo sandbox;
+     *  - a user WITH one can only ever reach that one panel, and only
+     *    while the account is active and unexpired. No Spatie role, and
+     *    no direct URL, gets them into /admin.
+     *
+     * Read through the relation attribute rather than a fresh query so
+     * Filament's repeated per-request calls cost one lookup.
+     */
     public function canAccessPanel(Panel $panel): bool
     {
-        // Check if email matches, or restore your Spatie roles logic here if needed
-        // return $this->email === 'prakash@gmail.com';
-        return true;
+        $account = $this->portalAccount;
+
+        if ($account === null) {
+            return match ($panel->getId()) {
+                PortalType::Admin->panelId() => true,
+                PortalType::Academy->panelId() => $this->hasRole('Admin'),
+                default => false,
+            };
+        }
+
+        return $account->isUsable()
+            && $account->portal->panelId() === $panel->getId();
     }
 
     public function approvedBy()

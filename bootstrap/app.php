@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\Portal\RestrictPortalUsers;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -28,6 +29,15 @@ return Application::configure(basePath: dirname(__DIR__))
             'dashboard_theme',
             'selected_month',
         ]);
+
+        // Academy/Demo portal users must not be able to reach the plain
+        // routes in routes/web.php (the OCR document download in
+        // particular, which only asks for `auth`). The Filament panels
+        // themselves are guarded separately by User::canAccessPanel();
+        // this covers everything outside them. Users with no portal
+        // account — the entire existing LMS population — pass through
+        // untouched. See App\Http\Middleware\Portal\RestrictPortalUsers.
+        $middleware->appendToGroup('web', RestrictPortalUsers::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

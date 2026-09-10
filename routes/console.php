@@ -28,3 +28,12 @@ Schedule::command('journey:check-sla-breaches')
  */
 Schedule::command('daily-commitment:settle')
     ->dailyAt('00:30');
+
+/*
+ * Academy / Demo portals: deactivate demo and training accounts whose
+ * expiry has passed. An expired account is already refused at request
+ * time by PortalAccount::isUsable(), so this only keeps the stored
+ * state honest for the listings and reports.
+ */
+Schedule::command('portal:expire-accounts')
+    ->hourly();

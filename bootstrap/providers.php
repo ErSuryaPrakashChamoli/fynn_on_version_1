@@ -1,6 +1,15 @@
 <?php
 
+use App\Providers\AppServiceProvider;
+use App\Providers\Filament\AcademyPanelProvider;
+use App\Providers\Filament\AdminPanelProvider;
+use App\Providers\Filament\DemoPanelProvider;
+use App\Providers\PortalServiceProvider;
+
 return [
-    App\Providers\AppServiceProvider::class,
-    App\Providers\Filament\AdminPanelProvider::class,
+    AppServiceProvider::class,
+    PortalServiceProvider::class,
+    AdminPanelProvider::class,
+    AcademyPanelProvider::class,
+    DemoPanelProvider::class,
 ];
