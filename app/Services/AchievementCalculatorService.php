@@ -22,6 +22,24 @@ class AchievementCalculatorService
     private const HALF_DEDUCTION_BANKS = ['BFL Prime', 'BFL Growth'];
 
     /**
+     * Calendar days a caller must be on the rolls within a month before
+     * their target is counted into the hierarchy above them.
+     */
+    private const MIN_TARGET_DAYS = 10;
+
+    /**
+     * The flat target a caller carries for a month they were only on the
+     * rolls for part of — a joiner, a leaver, or both.
+     */
+    private const PARTIAL_MONTH_TARGET = 1500000.0;
+
+    /**
+     * Fallback when employees.category holds something non-numeric
+     * (e.g. 'team_leader') or is blank.
+     */
+    private const DEFAULT_CATEGORY_TARGET = 2500000.0;
+
+    /**
      * customers.sanctioned_bank is a free-text column, not an FK — the UI
      * form constrains it to a fixed Select, but CustomerImporter's CSV
      * import column (only ->rules(['max:255']), no `in:` constraint) and
@@ -812,9 +830,7 @@ class AchievementCalculatorService
     |
     */
 
-        return is_numeric($employee->category)
-            ? (float) $employee->category
-            : 2500000;
+        return $this->categoryTarget($employee);
     }
 
     public function getHierarchyCallerTarget(Employee $employee, ?Carbon $referenceMonth = null): float
@@ -861,105 +877,180 @@ class AchievementCalculatorService
      * Evaluates one caller's hierarchy target for a single full calendar
      * month [$monthStart, $monthEnd].
      *
-     * $today is used only to cap "worked days" counting at the present day
-     * for a month that is still ongoing (the current month) — for a month
-     * that has already fully elapsed, the count runs to the month's own
-     * end. This single substitution (today vs. month-end) is what makes
-     * current-month and historical evaluation share one formula: when
-     * $monthEnd is in the future (the current month), it behaves exactly
-     * like the original today-only implementation; when $monthEnd is in
-     * the past, it behaves like a closed historical month.
+     * The month is reduced to the window the caller is actually on the
+     * rolls for, and the target follows from that window alone:
+     *
+     *   - on the rolls for the whole month  -> their category target;
+     *   - a partial month (joined and/or left inside it) -> the flat
+     *     partial-month target if the window spans at least
+     *     MIN_TARGET_DAYS calendar days, otherwise nothing.
+     *
+     * The window's END is the key business rule (changed 2026-09-10, see
+     * activeWindowForMonth()): for a caller who is still on the rolls it
+     * runs to month-end, NOT to today.
      */
     private function hierarchyCallerTargetForMonth(Employee $employee, Carbon $monthStart, Carbon $monthEnd): float
     {
+        $window = $this->activeWindowForMonth($employee, $monthStart, $monthEnd);
+
+        if ($window === null) {
+            return 0.0;
+        }
+
+        if (! $window['is_partial']) {
+            return $this->categoryTarget($employee);
+        }
+
+        return $window['days'] >= self::MIN_TARGET_DAYS
+            ? self::PARTIAL_MONTH_TARGET
+            : 0.0;
+    }
+
+    /**
+     * The slice of [$monthStart, $monthEnd] a caller is on the rolls for.
+     *
+     * Returns null when they are not on the rolls at all that month (left
+     * before it began, or — for a month that has already fully elapsed —
+     * had not joined yet).
+     *
+     * The end of the window is where the business rule lives, and it
+     * changed on 2026-09-10. It used to be capped at TODAY, which meant a
+     * mid-month joiner contributed a 0 target to their Team Leader's
+     * rollup until ten days had physically passed: a caller who reported
+     * on the 7th showed nothing on the 10th, and the Team Leader had no
+     * way to tell an unset target from a genuinely nil one. The window now
+     * runs to month-end for anyone still on the rolls — i.e. the target is
+     * assigned on the basis that they will stay for the rest of the month.
+     *
+     * That projection is self-correcting rather than optimistic: the
+     * moment an exit date is recorded, the window ends there instead, and
+     * a caller who leaves before completing MIN_TARGET_DAYS drops back to
+     * a 0 target on the next evaluation. Nothing is cached, so no
+     * recalculation job is needed.
+     *
+     * Counting is by CALENDAR days, deliberately: it is what the rule has
+     * always used, and moving to working days here would silently restate
+     * the targets of months that are already closed.
+     *
+     * @return array{start: Carbon, end: Carbon, days: int, is_partial: bool, is_projected: bool}|null
+     */
+    private function activeWindowForMonth(Employee $employee, Carbon $monthStart, Carbon $monthEnd): ?array
+    {
+        $monthStart = $monthStart->copy()->startOfDay();
+        $monthEnd = $monthEnd->copy()->startOfDay();
         $today = Carbon::today();
 
-        /*
-    |--------------------------------------------------------------------------
-    | INACTIVE / EXITED EMPLOYEE
-    |--------------------------------------------------------------------------
-    */
+        $exitDate = $this->recordedExitDate($employee);
 
-        if (
-            strtolower((string) $employee->exit_status) === 'yes'
-            && ! empty($employee->exit_date)
-        ) {
-            $exitDate = Carbon::parse($employee->exit_date);
-
-            // Exited during this month
-            if ($exitDate->between($monthStart, $monthEnd)) {
-                return $exitDate->day >= 10
-                    ? 1500000
-                    : 0;
-            }
-
-            // Exited before this month
-            if ($exitDate->lt($monthStart)) {
-                return 0;
-            }
+        // Left before this month ever started.
+        if ($exitDate !== null && $exitDate->lt($monthStart)) {
+            return null;
         }
 
-        /*
-    |--------------------------------------------------------------------------
-    | CATEGORY TARGET
-    |--------------------------------------------------------------------------
-    */
+        $reportingDate = filled($employee->reporting_date)
+            ? Carbon::parse($employee->reporting_date)->startOfDay()
+            : null;
 
-        $categoryTarget = is_numeric($employee->category)
+        /*
+         * Reporting date after the month ends. Only meaningful for a month
+         * that has already fully elapsed; for the current month it cannot
+         * be told apart from a future-dated data-entry slip, so behaviour
+         * there is left as it was — fall through to the category target.
+         */
+        if ($reportingDate !== null && $reportingDate->gt($monthEnd) && $monthEnd->lt($today)) {
+            return null;
+        }
+
+        $joinedThisMonth = $reportingDate !== null
+            && $reportingDate->betweenIncluded($monthStart, $monthEnd);
+
+        $leftThisMonth = $exitDate !== null
+            && $exitDate->betweenIncluded($monthStart, $monthEnd);
+
+        $start = $joinedThisMonth ? $reportingDate->copy() : $monthStart->copy();
+        $end = $leftThisMonth ? $exitDate->copy() : $monthEnd->copy();
+
+        // Exit recorded before the reporting date — a data anomaly, not a
+        // working window.
+        if ($end->lt($start)) {
+            return null;
+        }
+
+        return [
+            'start' => $start,
+            'end' => $end,
+            'days' => (int) $start->diffInDays($end) + 1,
+            'is_partial' => $joinedThisMonth || $leftThisMonth,
+            // True while the window's end is still in the future — the
+            // figure rests on the caller staying to month-end.
+            'is_projected' => ! $leftThisMonth && $end->gt($today),
+        ];
+    }
+
+    /**
+     * The exit date to honour, or null if the employee is on the rolls.
+     *
+     * An 'yes' exit status with no date recorded is treated as still
+     * active — there is no day to end the window on, and guessing one
+     * would silently zero a target.
+     */
+    private function recordedExitDate(Employee $employee): ?Carbon
+    {
+        if (strtolower((string) $employee->exit_status) !== 'yes' || empty($employee->exit_date)) {
+            return null;
+        }
+
+        return Carbon::parse($employee->exit_date)->startOfDay();
+    }
+
+    private function categoryTarget(Employee $employee): float
+    {
+        return is_numeric($employee->category)
             ? (float) $employee->category
-            : 2500000;
+            : self::DEFAULT_CATEGORY_TARGET;
+    }
 
-        /*
-    |--------------------------------------------------------------------------
-    | NO REPORTING DATE
-    |--------------------------------------------------------------------------
-    */
+    /**
+     * A one-line explanation of a caller's hierarchy target, for the
+     * screens a Team Leader reads it on — or null when the figure is the
+     * plain full-month category target and needs no explaining.
+     *
+     * This exists so the wording of the projection lives in the same class
+     * as the rule itself; see activeWindowForMonth().
+     */
+    public function hierarchyCallerTargetNote(Employee $employee, ?Carbon $referenceMonth = null): ?string
+    {
+        $referenceMonth ??= SelectedMonth::current();
 
-        if (empty($employee->reporting_date)) {
-            return $categoryTarget;
+        $window = $this->activeWindowForMonth(
+            $employee,
+            $referenceMonth->copy()->startOfMonth(),
+            $referenceMonth->copy()->endOfMonth(),
+        );
+
+        if ($window === null) {
+            return 'Not on the rolls this month, so no target is counted.';
         }
 
-        $reportingDate = Carbon::parse($employee->reporting_date);
-
-        /*
-    |--------------------------------------------------------------------------
-    | NOT YET JOINED AS OF THIS MONTH
-    |--------------------------------------------------------------------------
-    |
-    | Only meaningful for a month that has already fully elapsed — for the
-    | still-ongoing current month this can't be distinguished from a
-    | future-dated data-entry anomaly, so behavior there is unchanged from
-    | the original current-month-only logic (falls through to category
-    | target, exactly as before).
-    |
-    */
-
-        if ($reportingDate->gt($monthEnd) && $monthEnd->lt($today)) {
-            return 0;
+        if (! $window['is_partial']) {
+            return null;
         }
 
-        /*
-    |--------------------------------------------------------------------------
-    | REPORTING STARTED DURING THIS MONTH
-    |--------------------------------------------------------------------------
-    */
+        $days = $window['days'];
+        $span = $window['start']->format('d M').' to '.$window['end']->format('d M');
 
-        if ($reportingDate->between($monthStart, $monthEnd)) {
-            $effectiveEnd = $monthEnd->lt($today) ? $monthEnd : $today;
-
-            $workedDays = $reportingDate->diffInDays($effectiveEnd) + 1;
-
-            return $workedDays >= 10
-                ? 1500000
-                : 0;
+        if ($days < self::MIN_TARGET_DAYS) {
+            return "Only {$days} day(s) on the rolls this month ({$span}) — under the "
+                .self::MIN_TARGET_DAYS.'-day minimum, so no target is counted.';
         }
 
-        /*
-    |--------------------------------------------------------------------------
-    | EXISTING ACTIVE EMPLOYEE
-    |--------------------------------------------------------------------------
-    */
+        if ($window['is_projected']) {
+            return "{$days} days on the rolls this month ({$span}), counted on the basis that "
+                .'they stay to month-end. If they leave before completing '
+                .self::MIN_TARGET_DAYS.' days, this target drops to zero automatically.';
+        }
 
-        return $categoryTarget;
+        return "{$days} days on the rolls this month ({$span}) — at or above the "
+            .self::MIN_TARGET_DAYS.'-day minimum.';
     }
 }

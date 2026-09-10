@@ -54,8 +54,10 @@ class TeamsTargetCallerConsistencyTest extends TestCase
             'designation' => Employee::DESIGNATION_TEAM_LEADER,
         ]);
 
-        // Joined 3 days ago -> fewer than 10 worked days this month -> 0
-        // target, per the canonical entry-date rule.
+        // Joined on the 25th, so only 7 days remain in August — under the
+        // 10-day minimum, so still a 0 target. (Since 2026-09-10 the rule
+        // measures the days the caller can still work, not the days that
+        // have elapsed; a joiner this late in the month fails either way.)
         $newJoiner = Employee::factory()->create([
             'designation' => Employee::DESIGNATION_CALLER,
             'superviser_id' => $teamLeader->id,
@@ -151,6 +153,69 @@ class TeamsTargetCallerConsistencyTest extends TestCase
         Livewire::test(ViewTeam::class, ['record' => $teamLeader])
             ->assertTableColumnStateSet('target', 1500000.0, $exitedThisMonth)
             ->assertTableColumnStateSet('target', 0.0, $exitedEarlier);
+
+        Carbon::setTestNow();
+    }
+
+    /**
+     * A mid-month joiner who is still on the rolls carries a projected
+     * target, and both listings must say so — a Team Leader reading the
+     * figure has to be able to tell it apart from a settled one.
+     */
+    public function test_a_projected_joiner_target_is_explained_in_both_listings(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 9, 10));
+
+        $teamLeader = Employee::factory()->create([
+            'designation' => Employee::DESIGNATION_TEAM_LEADER,
+        ]);
+
+        // The reported case: reported on the 7th, read on the 10th.
+        $joiner = Employee::factory()->create([
+            'designation' => Employee::DESIGNATION_CALLER,
+            'superviser_id' => $teamLeader->id,
+            'category' => '2500000',
+            'reporting_date' => Carbon::create(2026, 9, 7),
+            'exit_status' => 'no',
+        ]);
+
+        $this->actingAsTeamLeader($teamLeader);
+
+        Livewire::test(ListTeams::class)
+            ->assertTableColumnStateSet('target', 1500000.0, $joiner)
+            ->assertSee('stay to month-end');
+
+        $this->actingAsAdmin();
+
+        Livewire::test(ViewTeam::class, ['record' => $teamLeader])
+            ->assertTableColumnStateSet('target', 1500000.0, $joiner)
+            ->assertSee('stay to month-end');
+
+        Carbon::setTestNow();
+    }
+
+    /**
+     * An established caller's figure needs no caveat, so none is rendered.
+     */
+    public function test_an_established_caller_target_carries_no_projection_note(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 9, 10));
+
+        $teamLeader = Employee::factory()->create([
+            'designation' => Employee::DESIGNATION_TEAM_LEADER,
+        ]);
+
+        Employee::factory()->create([
+            'designation' => Employee::DESIGNATION_CALLER,
+            'superviser_id' => $teamLeader->id,
+            'category' => '2500000',
+            'reporting_date' => Carbon::create(2025, 5, 1),
+            'exit_status' => 'no',
+        ]);
+
+        $this->actingAsTeamLeader($teamLeader);
+
+        Livewire::test(ListTeams::class)->assertDontSee('stay to month-end');
 
         Carbon::setTestNow();
     }

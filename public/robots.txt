@@ -1,2 +1,7 @@
+# FYNN-ON is an authenticated application — the internal LMS, the Academy
+# and the sales sandbox all sit behind a login and none of it should be
+# indexed. Disallowing everything is also what avoids the usual own-goal
+# of publishing sensitive paths (/admin and friends) in a Disallow list
+# for anyone who reads this file.
 User-agent: *
-Disallow:
+Disallow: /
