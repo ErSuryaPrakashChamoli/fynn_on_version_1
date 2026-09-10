@@ -136,6 +136,100 @@ class IdleSessionLogoutTest extends TestCase
 
     /*
     |--------------------------------------------------------------------------
+    | Sessions closed behind the browser's back
+    |--------------------------------------------------------------------------
+    |
+    | A closed row used to leave the browser fully signed in, so the
+    | heartbeat 404'd forever and login-session-heartbeat.js reloaded the
+    | page every few seconds without ever reaching the login screen.
+    */
+
+    public function test_a_session_superseded_by_a_login_elsewhere_is_signed_out(): void
+    {
+        $user = $this->signedInUser();
+        $session = $this->openSessionFor($user);
+
+        $session->forceFill([
+            'logout_at' => now()->subMinute(),
+            'logout_reason' => 'new_login',
+        ])->save();
+
+        $this->actingAs($user)
+            ->withSession(['login_session_id' => $session->id])
+            ->get('/admin')
+            ->assertRedirect('/admin/login');
+
+        $this->assertGuest();
+
+        // The reason it was closed with must survive being acted on.
+        $this->assertSame('new_login', $session->refresh()->logout_reason);
+    }
+
+    public function test_a_session_closed_by_the_sweeper_is_signed_out_on_the_next_request(): void
+    {
+        $user = $this->signedInUser();
+        $session = $this->openSessionFor($user, now()->subMinutes(40));
+
+        $this->artisan('sessions:close-idle')->assertExitCode(0);
+
+        $this->actingAs($user)
+            ->withSession(['login_session_id' => $session->id])
+            ->get('/admin')
+            ->assertRedirect('/admin/login');
+
+        $this->assertGuest();
+    }
+
+    /**
+     * The full loop the browser walks: the heartbeat reports the closed
+     * row, the script reloads ONCE, and that page request is what the
+     * middleware turns into a real sign-out.
+     *
+     * The heartbeat route deliberately does not carry the panel's
+     * authMiddleware — running EnforceIdleTimeout on it would stamp
+     * last_activity_at on every beat and no tab could ever go idle — so
+     * reporting, not signing out, is all it does.
+     */
+    public function test_a_closed_session_is_reported_by_the_heartbeat_and_ended_by_the_next_page_request(): void
+    {
+        $user = $this->signedInUser();
+        $session = $this->openSessionFor($user);
+
+        $session->forceFill([
+            'logout_at' => now()->subMinute(),
+            'logout_reason' => 'new_login',
+        ])->save();
+
+        $this->actingAs($user)
+            ->withSession(['login_session_id' => $session->id])
+            ->postJson('/login-session/heartbeat', ['active' => true, 'interacted' => true])
+            ->assertNotFound();
+
+        $this->actingAs($user)
+            ->withSession(['login_session_id' => $session->id])
+            ->get('/admin')
+            ->assertRedirect('/admin/login');
+
+        $this->assertGuest();
+    }
+
+    /**
+     * A browser that signed in before login sessions were tracked has no
+     * `login_session_id` at all, and must keep working exactly as before.
+     */
+    public function test_a_browser_with_no_tracked_login_session_is_left_alone(): void
+    {
+        $user = $this->signedInUser();
+
+        $this->actingAs($user)
+            ->get('/admin')
+            ->assertOk();
+
+        $this->assertAuthenticated();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Heartbeat
     |--------------------------------------------------------------------------
     */
