@@ -54,6 +54,20 @@ class LoginSessionHeartbeatController extends Controller
          */
         $active = $request->boolean('active');
 
+        /*
+         * Whether the user actually did something (key, pointer, touch or
+         * scroll) since the previous heartbeat.
+         *
+         * This is a separate question from `active`. A tab can be visible
+         * — and so legitimately accruing screen time — while nobody is at
+         * the desk, so idle logout must key off real interaction, not
+         * visibility. Older clients that don't send the flag fall back to
+         * `active`, which keeps their behaviour exactly as before.
+         */
+        $interacted = $request->has('interacted')
+            ? $request->boolean('interacted')
+            : $active;
+
         $now = now();
 
         /*
@@ -94,12 +108,25 @@ class LoginSessionHeartbeatController extends Controller
          * This prevents several hours of hidden browser time from
          * being counted when the user comes back.
          */
+        if ($interacted) {
+            $loginSession->last_activity_at = $now;
+        }
+
         $loginSession->save();
 
+        /*
+         * The countdown is served from here rather than computed in the
+         * browser, so a tab that has been asleep or throttled resyncs to
+         * the server's view of idleness on its next heartbeat instead of
+         * drifting.
+         */
         return response()->json([
             'success' => true,
             'active' => $active,
+            'interacted' => $interacted,
             'screen_time_seconds' => $loginSession->screen_time_seconds,
+            'idle_timeout_minutes' => UserLoginSession::idleTimeoutMinutes(),
+            'seconds_until_logout' => $loginSession->secondsUntilIdleLogout($now),
         ]);
     }
 }

@@ -121,7 +121,7 @@ class CustomerResource extends Resource
             ->unique();
 
         return $query->where(function (Builder $query) use ($employee, $extraIds) {
-            $query->whereIn('assign_to', HierarchyHelper::subordinateIds($employee));
+            $query->whereIn('assign_to', HierarchyHelper::visibleSubordinateIds($employee));
 
             if ($extraIds->isNotEmpty()) {
                 $query->orWhereIn('id', $extraIds);

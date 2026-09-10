@@ -51,7 +51,10 @@ use App\Filament\Widgets\ManagerPPPStats;
 use App\Filament\Widgets\PerformanceStats;
 use App\Filament\Widgets\TargetStats;
 use App\Http\Middleware\EncryptCookies;
+use App\Http\Middleware\EnforceIdleTimeout;
+use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\EnsureMonthlyTargetIsSet;
+use App\Models\UserLoginSession;
 use Filament\Actions\Action;
 use Filament\Enums\ThemeMode;
 use Filament\Facades\Filament;
@@ -293,6 +296,13 @@ class AdminPanelProvider extends PanelProvider
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,
+                // Sits here, not in authMiddleware(), because Laravel's
+                // middleware priority hoists Filament's Authenticate above
+                // anything registered there — and Authenticate answers a
+                // switched-off account with a bare 403. Running first, this
+                // turns that into a clean sign-out with a reason. Harmless
+                // on the login page: it only ever acts on a signed-in user.
+                EnsureAccountIsActive::class,
                 AuthenticateSession::class,
                 ShareErrorsFromSession::class,
                 PreventRequestForgery::class,
@@ -302,6 +312,10 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
+                // Ordered before the module gates on purpose: a user who
+                // has gone idle should be signed out, not redirected to
+                // whichever screen a gate wants them on.
+                EnforceIdleTimeout::class,
                 EnsureMonthlyTargetIsSet::class,
             ]);
     }
@@ -624,6 +638,40 @@ class AdminPanelProvider extends PanelProvider
             fn (): string => Blade::render(
                 '<meta name="csrf-token" content="{{ csrf_token() }}">'
             ),
+        );
+
+        /*
+         * Idle-logout configuration for login-session-heartbeat.js.
+         *
+         * Emitted ONLY for this panel: the Academy and Demo portals share
+         * the globally-registered heartbeat script, and the script treats
+         * a missing tag as "idle logout is off", so they keep their
+         * screen-time tracking without inheriting the LMS's timeout. The
+         * logout URL is read from the panel being rendered rather than
+         * hardcoded, so this survives the panel moving off /admin.
+         */
+        FilamentView::registerRenderHook(
+            'panels::head.end',
+            function (): string {
+                if (Filament::getCurrentPanel()?->getId() !== 'admin') {
+                    return '';
+                }
+
+                if (! UserLoginSession::idleTimeoutEnabled()) {
+                    return '';
+                }
+
+                return Blade::render(
+                    '<meta name="idle-timeout-seconds" content="{{ $seconds }}">'
+                    .'<meta name="idle-warning-seconds" content="{{ $warning }}">'
+                    .'<meta name="idle-logout-url" content="{{ $logoutUrl }}">',
+                    [
+                        'seconds' => UserLoginSession::idleTimeoutMinutes() * 60,
+                        'warning' => max(0, (int) config('session.idle_warning', 60)),
+                        'logoutUrl' => Filament::getLogoutUrl(),
+                    ],
+                );
+            },
         );
 
         FilamentView::registerRenderHook(

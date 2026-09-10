@@ -4,6 +4,7 @@ namespace App\Filament\Resources\UserLoginSessions\Tables;
 
 use App\Filament\Exports\UserLoginSessionExporter;
 use App\Models\Employee;
+use App\Models\UserLoginSession;
 use App\Support\EmployeeOptions;
 use App\Support\HierarchyHelper;
 use App\Support\SelectedMonth;
@@ -53,6 +54,26 @@ class UserLoginSessionsTable
                     ->sortable()
                     ->placeholder('N/A')
                     ->toggleable(),
+
+                /*
+                 * How many times this employee signed in on this row's
+                 * own calendar date. Computed as a correlated subquery in
+                 * modifyQueryUsing() rather than per row, so the listing
+                 * stays one query and the column can be sorted in SQL.
+                 */
+                TextColumn::make('logins_on_day')
+                    ->label('Logins That Day')
+                    ->alignCenter()
+                    ->sortable()
+                    ->badge()
+                    ->color(fn ($state): string => (int) $state > 1 ? 'warning' : 'gray')
+                    ->tooltip(
+                        fn ($record): string => 'Times '
+                            .($record->employee?->emp_name ?? 'this user')
+                            .' signed in on '
+                            .($record->login_at?->format('d M Y') ?? 'this date')
+                    )
+                    ->formatStateUsing(fn ($state): string => (string) ((int) $state ?: 1)),
 
                 /*
                  * Logout
@@ -144,7 +165,7 @@ class UserLoginSessionsTable
 
                 TextColumn::make('last_activity_at')
                     ->label('Last Activity')
-                    ->date('d M Y h:i: A')
+                    ->dateTime('d M Y h:i A')
                     ->sortable()
                     ->placeholder('-')
                     ->toggleable(),
@@ -166,9 +187,12 @@ class UserLoginSessionsTable
 
                 TextColumn::make('activity_status')
                     ->label('Activity')
+                    // `is_active` is a derived accessor, not a column —
+                    // ordering by it threw "Unknown column" until this
+                    // was pointed at the timestamp it derives from.
                     ->sortable(query: fn (Builder $query, string $direction): Builder => $query
                         ->orderByRaw('logout_at IS NOT NULL '.($direction === 'asc' ? 'asc' : 'desc'))
-                        ->orderBy('is_active', $direction))
+                        ->orderBy('last_activity_at', $direction))
                     ->state(function ($record): string {
                         if ($record->logout_at) {
                             return 'Logged Out';
@@ -212,6 +236,7 @@ class UserLoginSessionsTable
                             'logout' => 'gray',
                             'session_timeout' => 'warning',
                             'new_login' => 'info',
+                            'account_deactivated' => 'danger',
                             default => 'gray',
                         }
                     )
@@ -258,6 +283,14 @@ class UserLoginSessionsTable
                     ->multiple()
                     ->options(fn (): array => EmployeeOptions::visibleTo()),
 
+                Filter::make('multiple_logins')
+                    ->label('Signed in more than once that day')
+                    ->query(fn (Builder $query): Builder => $query->whereRaw(
+                        '(select count(*) from user_login_sessions as repeat_check
+                            where repeat_check.user_id = user_login_sessions.user_id
+                              and DATE(repeat_check.login_at) = DATE(user_login_sessions.login_at)) > 1'
+                    )),
+
                 SelectFilter::make('logout_reason')
                     ->label('Logout Reason')
                     ->multiple()
@@ -265,6 +298,7 @@ class UserLoginSessionsTable
                         'logout' => 'Logout',
                         'session_timeout' => 'Session Timeout',
                         'new_login' => 'New Login',
+                        'account_deactivated' => 'Account Deactivated',
                     ]),
 
                 /*
@@ -364,6 +398,22 @@ class UserLoginSessionsTable
                     // Scoped to the globally selected month — supersedes
                     // the previous hardcoded rolling-90-day floor.
                     $query->whereBetween('login_at', SelectedMonth::range());
+
+                    /*
+                     * Logins by the same user on the same calendar date.
+                     * DATE() is used rather than a driver-specific
+                     * expression because the test suite runs on SQLite
+                     * while production is MySQL, and both implement it.
+                     */
+                    $query
+                        ->select('user_login_sessions.*')
+                        ->addSelect([
+                            'logins_on_day' => UserLoginSession::query()
+                                ->from('user_login_sessions as same_day')
+                                ->selectRaw('count(*)')
+                                ->whereColumn('same_day.user_id', 'user_login_sessions.user_id')
+                                ->whereRaw('DATE(same_day.login_at) = DATE(user_login_sessions.login_at)'),
+                        ]);
 
                     /*
                     |--------------------------------------------------------------------------

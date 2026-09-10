@@ -4,6 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Demo\Pages\Auth\DemoLogin;
 use App\Filament\Demo\Pages\DemoDashboard;
+use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\Portal\EnsureDemoAccess;
 use App\Support\Portal\FynnOnBrand;
 use Filament\Enums\ThemeMode;
@@ -89,6 +90,7 @@ class DemoPanelProvider extends PanelProvider
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,
+                EnsureAccountIsActive::class,
                 AuthenticateSession::class,
                 ShareErrorsFromSession::class,
                 PreventRequestForgery::class,

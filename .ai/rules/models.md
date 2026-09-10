@@ -3,6 +3,7 @@ paths:
   - app/Models/FollowUp.php
   - app/Models/DailyCommitmentEntry.php
   - app/Models/User.php
+  - app/Models/UserLoginSession.php
 ---
 
 # Models
@@ -34,3 +35,19 @@ Rules:
 - Portal users are created only via App\Services\Portal\PortalAccountService, which calls syncRoles([]) so they hold no production role.
 
 tests/Feature/Portal/AdminPanelIsolationTest.php asserts all of this.
+
+## last_seen_at is screen time; last_activity_at is idleness — never conflate them
+Two different questions, two columns:
+- last_seen_at: last time the heartbeat counted screen time. Advances whenever the TAB IS VISIBLE, so it keeps moving for a tab left open on an unattended desk. Never use it to decide idleness.
+- last_activity_at (added 2026-09-10): last GENUINE interaction — key, pointer, touch, scroll, or a real panel page request. This is what idle logout measures.
+
+Idle logout after config('session.idle_timeout') minutes (0 disables) is enforced in three places, all needed:
+- EnforceIdleTimeout in AdminPanelProvider->authMiddleware() is the authority; it also refreshes last_activity_at, since loading a page is an interaction.
+- resources/js/login-session-heartbeat.js is UX only (warning banner + clean POST logout). Edit it and you MUST run `php artisan filament:assets` — see js.md.
+- `sessions:close-idle` (scheduled every 5 min) closes rows for browsers that were simply shut, stamping logout_at at lastInteraction + timeout, NOT at sweep time, so session duration is not inflated.
+
+All three write logout_reason = 'session_timeout', the value the login log already filters and colours on.
+
+Traps:
+- Livewire's update endpoint does not carry panel authMiddleware, so widget polling never refreshes the idle clock. That is deliberate.
+- is_active is a derived accessor, not a column. Ordering a table by it throws "Unknown column" — sort by last_activity_at instead.

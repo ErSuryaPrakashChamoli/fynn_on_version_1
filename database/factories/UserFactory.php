@@ -30,6 +30,14 @@ class UserFactory extends Factory
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
+            /*
+             * Mirrors the column's own default. The DB default applies to
+             * the row, not to the model the factory hands back, so
+             * without this a freshly-created User has is_active = null in
+             * memory — which User::isDeactivated() reads as "switched
+             * off", locking factory users out of every panel.
+             */
+            'is_active' => true,
         ];
     }
 

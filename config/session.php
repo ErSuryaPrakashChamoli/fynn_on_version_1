@@ -230,4 +230,38 @@ return [
 
     'serialization' => 'json',
 
+    /*
+    |--------------------------------------------------------------------------
+    | Idle Timeout (minutes)
+    |--------------------------------------------------------------------------
+    |
+    | How long the LMS admin panel tolerates a signed-in user doing nothing
+    | at all before signing them out. "Nothing at all" means no keyboard,
+    | mouse, touch or scroll interaction — a tab left open on an unattended
+    | screen still counts as idle, which is the whole point.
+    |
+    | This is NOT the same as `lifetime` above. `lifetime` is how long
+    | Laravel keeps the session record alive; this is the shorter,
+    | attended-use window enforced by
+    | App\Http\Middleware\EnforceIdleTimeout and swept up by the
+    | `sessions:close-idle` command.
+    |
+    | Set to 0 to disable idle logout entirely.
+    |
+    */
+
+    'idle_timeout' => (int) env('SESSION_IDLE_TIMEOUT', 15),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Idle Warning (seconds)
+    |--------------------------------------------------------------------------
+    |
+    | How long before the idle logout the browser warns the user, giving
+    | them a chance to carry on and not lose unsaved work.
+    |
+    */
+
+    'idle_warning' => (int) env('SESSION_IDLE_WARNING', 60),
+
 ];

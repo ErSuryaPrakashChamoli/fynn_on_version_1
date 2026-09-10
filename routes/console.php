@@ -37,3 +37,12 @@ Schedule::command('daily-commitment:settle')
  */
 Schedule::command('portal:expire-accounts')
     ->hourly();
+
+/*
+ * Close login sessions nobody came back to. EnforceIdleTimeout only
+ * fires when the user makes another request, so a closed laptop would
+ * otherwise leave its row open indefinitely — showing as "Active" in the
+ * login log and inflating session duration.
+ */
+Schedule::command('sessions:close-idle')
+    ->everyFiveMinutes();

@@ -14,8 +14,10 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Filament/** | .ai/rules/filament.md |
 | resources/js/** | .ai/rules/js.md |
 | resources/views/livewire/** | .ai/rules/livewire.md |
-| app/Models/FollowUp.php, app/Models/DailyCommitmentEntry.php, app/Models/User.php | .ai/rules/models.md |
+| app/Http/Middleware/EnsureAccountIsActive.php | .ai/rules/middleware.md |
+| app/Models/FollowUp.php, app/Models/DailyCommitmentEntry.php, app/Models/User.php, app/Models/UserLoginSession.php | .ai/rules/models.md |
 | app/Filament/Pages/DailyCommitment*.php | .ai/rules/pages.md |
 | app/Providers/Filament/AdminPanelProvider.php | .ai/rules/providers-filament.md |
 | app/Services/DailyCommitmentService.php, app/Services/MonthlyTargetGate.php, app/Services/DailyCommitmentGate.php, app/Services/AchievementCalculatorService.php | .ai/rules/services.md |
+| app/Support/HierarchyHelper.php | .ai/rules/support.md |
 | app/Filament/Resources/**/Tables/*.php | .ai/rules/tables.md |
