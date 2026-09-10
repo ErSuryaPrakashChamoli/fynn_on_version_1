@@ -110,6 +110,27 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
     }
 
     /**
+     * Whether this account is switched off, either directly
+     * (users.is_active) or because the employee behind it has come off
+     * the rolls (employees.exit_status).
+     *
+     * An exit only ever sets exit_status — it never deletes the user row
+     * or reassigns their book — so without this check an exited caller
+     * kept a working login and full sight of their own leads and
+     * customers. Their records stay visible to the hierarchy above them
+     * (see HierarchyHelper::visibleSubordinateIds()); the person does not.
+     */
+    public function isDeactivated(): bool
+    {
+        // `?? true` on purpose: a row created in this same request has no
+        // is_active loaded yet (the column's default lives in the
+        // database), and a missing value must never read as "switched
+        // off" — only an explicit false does.
+        return ! ($this->is_active ?? true)
+            || $this->employee?->exit_status === 'yes';
+    }
+
+    /**
      * Filament's per-panel gate, also applied to every Livewire
      * round-trip via Filament's persistent Authenticate middleware.
      *
@@ -131,6 +152,14 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
      */
     public function canAccessPanel(Panel $panel): bool
     {
+        // Checked ahead of the portal branches, and deliberately without
+        // touching them: somebody who has left the company (or whose
+        // account has been switched off) reaches no panel at all, whether
+        // they are an internal LMS user or a portal one.
+        if ($this->isDeactivated()) {
+            return false;
+        }
+
         $account = $this->portalAccount;
 
         if ($account === null) {

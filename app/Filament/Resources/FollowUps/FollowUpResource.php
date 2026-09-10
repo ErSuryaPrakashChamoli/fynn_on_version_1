@@ -95,7 +95,7 @@ class FollowUpResource extends Resource
         |
         */
 
-        $employeeIds = HierarchyHelper::subordinateIds($employee);
+        $employeeIds = HierarchyHelper::visibleSubordinateIds($employee);
 
         return parent::getEloquentQuery()
             ->whereIn('employee_id', $employeeIds)

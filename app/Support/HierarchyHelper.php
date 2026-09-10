@@ -437,6 +437,109 @@ class HierarchyHelper
     }
 
     /**
+     * Every employee id whose records $employee may SEE.
+     *
+     * The same tree as subordinateIds(), except it does not stop at an
+     * exited Team Leader / Manager. Marking somebody inactive only sets
+     * employees.exit_status — it never reassigns their customers, leads or
+     * follow-ups — so a tree that skipped an exited level made every case
+     * under that level (including those of the callers still working under
+     * them) invisible to everyone but the Admin. The exited employee's own
+     * assigned cases stay visible here too, since somebody still on the
+     * rolls has to be able to pick them up.
+     *
+     * Use this for visibility only. Target, incentive and target-setting
+     * maths deliberately stop at an exited level and must keep calling
+     * subordinateIds()/callerIds() — see AchievementCalculatorService and
+     * MonthlyTargetGate.
+     *
+     * @return Collection<int, int>
+     */
+    public static function visibleSubordinateIds(Employee $employee): Collection
+    {
+        return match ($employee->designation) {
+
+            Employee::DESIGNATION_TEAM_LEADER => self::callerIdsUnder([$employee->id])
+                ->push($employee->id)
+                ->unique()
+                ->values(),
+
+            Employee::DESIGNATION_MANAGER => self::visibleIdsUnderManagers([$employee->id])
+                ->push($employee->id)
+                ->unique()
+                ->values(),
+
+            Employee::DESIGNATION_CLUSTER => self::visibleIdsUnderCluster($employee)
+                ->push($employee->id)
+                ->unique()
+                ->values(),
+
+            default => collect([$employee->id]),
+        };
+    }
+
+    /**
+     * Team Leaders under the given Managers, plus their Callers.
+     *
+     * @param  Collection<int, int>|array<int, int>  $managerIds
+     * @return Collection<int, int>
+     */
+    private static function visibleIdsUnderManagers(Collection|array $managerIds): Collection
+    {
+        $teamLeaderIds = self::teamLeaderIdsUnder($managerIds);
+
+        return self::callerIdsUnder($teamLeaderIds)->merge($teamLeaderIds);
+    }
+
+    /**
+     * Managers under the given Cluster Manager, plus their whole branch.
+     *
+     * @return Collection<int, int>
+     */
+    private static function visibleIdsUnderCluster(Employee $cluster): Collection
+    {
+        $managerIds = self::managerIdsUnder([$cluster->id]);
+
+        return self::visibleIdsUnderManagers($managerIds)->merge($managerIds);
+    }
+
+    /**
+     * @param  Collection<int, int>|array<int, int>  $clusterIds
+     * @return Collection<int, int>
+     */
+    private static function managerIdsUnder(Collection|array $clusterIds): Collection
+    {
+        return Employee::query()
+            ->whereIn('cluster_id', $clusterIds)
+            ->where('designation', Employee::DESIGNATION_MANAGER)
+            ->pluck('id');
+    }
+
+    /**
+     * @param  Collection<int, int>|array<int, int>  $managerIds
+     * @return Collection<int, int>
+     */
+    private static function teamLeaderIdsUnder(Collection|array $managerIds): Collection
+    {
+        return Employee::query()
+            ->whereIn('manager_id', $managerIds)
+            ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
+            ->pluck('id');
+    }
+
+    /**
+     * @param  Collection<int, int>|array<int, int>  $teamLeaderIds
+     * @return Collection<int, int>
+     */
+    private static function callerIdsUnder(Collection|array $teamLeaderIds): Collection
+    {
+        return Employee::query()
+            ->whereIn('superviser_id', $teamLeaderIds)
+            ->where('designation', Employee::DESIGNATION_CALLER)
+            ->pluck('id');
+    }
+
+    /**
      * Get employee IDs visible in Login & Screen Time module.
      *
      * Rules:

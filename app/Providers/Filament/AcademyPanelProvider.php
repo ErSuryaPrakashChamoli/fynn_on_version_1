@@ -5,6 +5,7 @@ namespace App\Providers\Filament;
 use App\Filament\Academy\Pages\AcademyDashboard;
 use App\Filament\Academy\Pages\Auth\AcademyLogin;
 use App\Http\Controllers\Academy\TrainingDocumentDownloadController;
+use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\Portal\EnsureAcademyAccess;
 use App\Support\Portal\FynnOnBrand;
 use Filament\Enums\ThemeMode;
@@ -107,6 +108,7 @@ class AcademyPanelProvider extends PanelProvider
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,
+                EnsureAccountIsActive::class,
                 AuthenticateSession::class,
                 ShareErrorsFromSession::class,
                 PreventRequestForgery::class,

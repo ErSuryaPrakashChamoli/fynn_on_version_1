@@ -29,10 +29,9 @@ class UserLoginSessionExporter extends Exporter
             ExportColumn::make('login_at')
                 ->label('Login')
                 ->formatStateUsing(
-                    fn($state): string =>
-                    $state
+                    fn ($state): string => $state
                         ? Carbon::parse($state)
-                        ->format('d M Y, h:i:s A')
+                            ->format('d M Y, h:i:s A')
                         : '-'
                 ),
 
@@ -42,12 +41,25 @@ class UserLoginSessionExporter extends Exporter
             ExportColumn::make('logout_at')
                 ->label('Logout')
                 ->formatStateUsing(
-                    fn($state): string =>
-                    $state
+                    fn ($state): string => $state
                         ? Carbon::parse($state)
-                        ->format('d M Y, h:i:s A')
+                            ->format('d M Y, h:i:s A')
                         : 'Still Logged In'
                 ),
+
+            /*
+             * Logins that day
+             *
+             * The export runs its own query, so unlike the table this
+             * cannot lean on the listing's correlated subquery — it
+             * counts per row instead.
+             */
+            ExportColumn::make('logins_on_day')
+                ->label('Logins That Day')
+                ->state(fn (UserLoginSession $record): int => UserLoginSession::query()
+                    ->where('user_id', $record->user_id)
+                    ->whereDate('login_at', $record->login_at)
+                    ->count()),
 
             /*
              * Session Duration
@@ -78,8 +90,7 @@ class UserLoginSessionExporter extends Exporter
             ExportColumn::make('screen_time_seconds')
                 ->label('Screen Time')
                 ->formatStateUsing(
-                    fn($state): string =>
-                    self::formatDuration(
+                    fn ($state): string => self::formatDuration(
                         (int) $state
                     )
                 ),
@@ -143,10 +154,9 @@ class UserLoginSessionExporter extends Exporter
             ExportColumn::make('last_activity_at')
                 ->label('Last Activity')
                 ->formatStateUsing(
-                    fn($state): string =>
-                    $state
+                    fn ($state): string => $state
                         ? Carbon::parse($state)
-                        ->format('d M Y, h:i:s A')
+                            ->format('d M Y, h:i:s A')
                         : '-'
                 ),
 
@@ -156,8 +166,7 @@ class UserLoginSessionExporter extends Exporter
             ExportColumn::make('logout_reason')
                 ->label('Logout Reason')
                 ->formatStateUsing(
-                    fn($state): string =>
-                    $state
+                    fn ($state): string => $state
                         ? ucfirst(
                             str_replace(
                                 '_',
@@ -249,7 +258,7 @@ class UserLoginSessionExporter extends Exporter
         Export $export
     ): string {
 
-        return 'user-login-sessions-' .
+        return 'user-login-sessions-'.
             now()->format('d-m-Y-H-i-s');
     }
 
@@ -257,17 +266,17 @@ class UserLoginSessionExporter extends Exporter
         Export $export
     ): string {
         $body = 'Your user login sessions export has completed and '
-            . number_format($export->successful_rows)
-            . ' '
-            . str('row')->plural($export->successful_rows)
-            . ' were exported.';
+            .number_format($export->successful_rows)
+            .' '
+            .str('row')->plural($export->successful_rows)
+            .' were exported.';
 
         if ($failedRowsCount = $export->getFailedRowsCount()) {
             $body .= ' '
-                . number_format($failedRowsCount)
-                . ' '
-                . str('row')->plural($failedRowsCount)
-                . ' failed to export.';
+                .number_format($failedRowsCount)
+                .' '
+                .str('row')->plural($failedRowsCount)
+                .' failed to export.';
         }
 
         return $body;

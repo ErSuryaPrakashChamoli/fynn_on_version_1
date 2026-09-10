@@ -43,6 +43,10 @@ class RestrictPortalUsers
         'livewire-*/*',
         'up',
         'logout',
+        // Screen-time tracking is application-wide (the heartbeat script
+        // is registered globally, not per panel) and the endpoint only
+        // ever touches the caller's own login session row.
+        'login-session/heartbeat',
     ];
 
     public function handle(Request $request, Closure $next): Response

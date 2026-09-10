@@ -53,6 +53,12 @@ class StartLoginSession
 
             'last_seen_at' => now(),
 
+            /*
+             * Signing in is itself an interaction, so the idle clock
+             * starts here rather than at the first heartbeat.
+             */
+            'last_activity_at' => now(),
+
             'screen_time_seconds' => 0,
 
             'ip_address' => request()->ip(),

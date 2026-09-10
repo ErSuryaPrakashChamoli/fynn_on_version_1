@@ -103,7 +103,7 @@ class CustomerJourneyAccessService
             return false;
         }
 
-        return HierarchyHelper::subordinateIds($employee)->contains((int) $customer->assign_to);
+        return HierarchyHelper::visibleSubordinateIds($employee)->contains((int) $customer->assign_to);
     }
 
     public function activeDelegationFor(Employee $employee, Customer $customer, JourneyModule $module): ?CustomerJourneyDelegation
