@@ -176,18 +176,27 @@ class AchievementCalculatorDisbursalDateScopeTest extends TestCase
     {
         // No customers at all this month — achievement fallback would kick
         // in for getCountAchievement(), but a caller's own hierarchy
-        // target boundary (joining-date worked-days rule) must still be
-        // evaluated against the REAL current month, not silently moved.
+        // target boundary (the joining-date rule) must still be evaluated
+        // against the REAL current month, not silently moved.
         Carbon::setTestNow(Carbon::create(2026, 8, 15));
 
         $newJoiner = Employee::factory()->create([
             'category' => '3000000',
-            'reporting_date' => Carbon::create(2026, 8, 14), // 2 worked days -> 0 target
+            'reporting_date' => Carbon::create(2026, 8, 14),
             'exit_status' => 'no',
         ]);
 
         $target = (new AchievementCalculatorService)->getHierarchyCallerTarget($newJoiner);
 
-        $this->assertSame(0.0, $target);
+        /*
+         * 14 Aug to 31 Aug is 18 days on the rolls, so August returns the
+         * partial-month target. July — the month the achievement fallback
+         * would have shifted to — would return 0, because the caller had
+         * not joined by the end of it. Asserting the August figure is
+         * therefore what proves the boundary logic did not follow the
+         * fallback.
+         */
+        $this->assertSame(1500000.0, $target);
+        $this->assertSame('2026-07', (new AchievementCalculatorService)->resolveReferenceMonth()->format('Y-m'));
     }
 }

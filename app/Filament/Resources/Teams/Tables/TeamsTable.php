@@ -120,6 +120,34 @@ class TeamsTable
 
                         return $performanceCache[$record->id]['target'];
                     })
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Why a partial-month figure looks the way it does
+                    |--------------------------------------------------------------------------
+                    |
+                    | A caller who joined (or left) mid-month carries the flat
+                    | partial-month target rather than their category, and while
+                    | they are still on the rolls that figure rests on them
+                    | staying to month-end. Saying so here is the point of the
+                    | 2026-09-10 change: a Team Leader was previously left
+                    | guessing whether a 0 meant "no target set" or "genuinely
+                    | nil". The wording lives on the service, next to the rule.
+                    |
+                    */
+                    ->tooltip(function (Employee $record) use ($calculator): ?string {
+
+                        if ($record->designation !== Employee::DESIGNATION_CALLER) {
+                            return null;
+                        }
+
+                        // The caller's own row shows their flat category
+                        // target, which the note would not describe.
+                        if (auth()->user()?->employee?->id === $record->id) {
+                            return null;
+                        }
+
+                        return $calculator->hierarchyCallerTargetNote($record);
+                    })
                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null),
 
                 TextColumn::make('actual')

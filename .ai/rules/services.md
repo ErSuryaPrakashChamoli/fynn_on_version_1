@@ -3,6 +3,7 @@ paths:
   - app/Services/DailyCommitmentService.php
   - app/Services/MonthlyTargetGate.php
   - app/Services/DailyCommitmentGate.php
+  - app/Services/AchievementCalculatorService.php
 ---
 
 # Services
@@ -80,3 +81,14 @@ The monthly-target gate DOES still close the panel, and DailyCommitmentGate stan
 Three places write fulfilment — My Commitment, the prompt, and the Admin's editAchievement action — and all three go through DailyCommitmentService::reasonMobilesCannotBeSaved() then replaceFulfilment(). Validate before calling replaceFulfilment: it rebuilds by delete-then-insert.
 
 Trap: Filament's ->callAction() in tests MERGES passed data into the fillForm() defaults, so repeater rows APPEND rather than replace. A test that "corrects" an existing row ends up sending both rows and trips the duplicate-mobile guard. Test admin corrections against a commitment with no entries, or assert the guard.
+
+## A caller's hierarchy target projects to month-end, not to today
+activeWindowForMonth() reduces a month to the slice a caller is on the rolls for, and the target follows from that window: whole month -> category target; partial month (joined and/or left inside it) -> PARTIAL_MONTH_TARGET if the window spans >= MIN_TARGET_DAYS (10) CALENDAR days, else 0.
+
+Changed 2026-09-10. The window used to end at TODAY, so a mid-month joiner contributed 0 to their Team Leader's rollup until ten days had physically passed — indistinguishable from an unset target. It now ends at month-end for anyone still on the rolls. The projection is self-correcting: record an exit date and the window ends there instead, so an early leaver drops back to 0 on the next read. Nothing is cached; there is no recalculation job.
+
+Two traps:
+- The exit window starts at the reporting date, not day 1. The old rule only checked $exitDate->day >= 10 and credited a full partial target to someone who joined on the 7th and left on the 12th.
+- Counting is calendar days on purpose. PerformancePeriod::workingDays() exists but switching to it would silently restate targets for already-closed months.
+
+hierarchyCallerTargetNote() is the user-facing wording (Teams list + Team View tooltips) and lives here so it cannot drift from the rule. getTarget() for a caller is unaffected — their own screen has always shown the flat category target.
