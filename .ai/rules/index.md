@@ -12,9 +12,9 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Filament/Demo/** | .ai/rules/demo.md |
 | app/Enums/CommitmentStage.php, app/Enums/CommitmentResult.php | .ai/rules/enums.md |
 | app/Filament/** | .ai/rules/filament.md |
-| resources/js/** | .ai/rules/js.md |
+| resources/js/**, resources/js/login-session-heartbeat.js | .ai/rules/js.md |
 | resources/views/livewire/** | .ai/rules/livewire.md |
-| app/Http/Middleware/EnsureAccountIsActive.php | .ai/rules/middleware.md |
+| app/Http/Middleware/EnsureAccountIsActive.php, app/Http/Middleware/EnforceIdleTimeout.php | .ai/rules/middleware.md |
 | app/Models/FollowUp.php, app/Models/DailyCommitmentEntry.php, app/Models/User.php, app/Models/UserLoginSession.php | .ai/rules/models.md |
 | app/Filament/Pages/DailyCommitment*.php | .ai/rules/pages.md |
 | app/Providers/Filament/AdminPanelProvider.php | .ai/rules/providers-filament.md |

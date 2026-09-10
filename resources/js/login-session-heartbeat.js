@@ -74,6 +74,91 @@
     let warningShown = false;
     let loggingOut = false;
 
+    /*
+     * Interval handles, so the timers can be stopped outright once the
+     * server tells us this login session is over. Leaving them running
+     * would keep firing requests at a session that no longer exists.
+     */
+    let heartbeatTimer = null;
+    let idleCountdownTimer = null;
+
+    /*
+     * A reload is only ever worth doing ONCE.
+     *
+     * The server ending a login session (the idle sweeper, or a login
+     * from another device) does not by itself end this browser's auth
+     * session, so the page that comes back can easily be the same
+     * authenticated page we were already on. Reloading again on the next
+     * heartbeat is what produced an endless refresh every few seconds.
+     * The flag lives in sessionStorage precisely because it has to
+     * survive the reload it is guarding.
+     */
+    const RELOADED_KEY = 'fynnon.session-ended-reload';
+
+    function stopHeartbeat() {
+
+        if (heartbeatTimer !== null) {
+            clearInterval(heartbeatTimer);
+            heartbeatTimer = null;
+        }
+
+        if (idleCountdownTimer !== null) {
+            clearInterval(idleCountdownTimer);
+            idleCountdownTimer = null;
+        }
+
+        dismissWarning();
+    }
+
+    function hasAlreadyReloaded() {
+        try {
+            return sessionStorage.getItem(RELOADED_KEY) === '1';
+        } catch (error) {
+            /*
+             * Private mode or blocked storage: without somewhere to keep
+             * the flag we cannot prove we have not reloaded already, so
+             * treat it as "yes" and never reload. A stale page is a far
+             * smaller problem than a refresh loop.
+             */
+            return true;
+        }
+    }
+
+    function rememberReload() {
+        try {
+            sessionStorage.setItem(RELOADED_KEY, '1');
+        } catch (error) {
+            // Nothing to do — hasAlreadyReloaded() fails closed.
+        }
+    }
+
+    function forgetReload() {
+        try {
+            sessionStorage.removeItem(RELOADED_KEY);
+        } catch (error) {
+            // Nothing to do.
+        }
+    }
+
+    /**
+     * The server says this login session is finished. Stop beating, and
+     * reload once so the panel's own middleware can send the user to the
+     * login page — but never more than once per browser session.
+     */
+    function handleSessionEnded() {
+
+        stopHeartbeat();
+
+        if (loggingOut || hasAlreadyReloaded()) {
+            return;
+        }
+
+        loggingOut = true;
+        rememberReload();
+
+        window.location.reload();
+    }
+
     function markInteraction() {
         interactedSinceLastBeat = true;
         secondsUntilLogout = idleTimeoutSeconds;
@@ -207,7 +292,7 @@
      * warning is accurate to the second without a request per second.
      */
     if (idleLogoutEnabled) {
-        setInterval(() => {
+        idleCountdownTimer = setInterval(() => {
 
             if (loggingOut) {
                 return;
@@ -263,21 +348,13 @@
             });
 
             /*
-             * If Laravel says the session no longer exists,
-             * stop sending heartbeats.
+             * The server has already closed this login session — most
+             * likely the idle sweeper, or a login from another device —
+             * or the request was not authenticated at all. Either way
+             * there is nothing left to beat against.
              */
             if (response.status === 401 || response.status === 404) {
-
-                /*
-                 * The server has already closed this session — most
-                 * likely the idle sweeper, or a login from another
-                 * device. Reload so the user lands on the login page
-                 * instead of staring at a screen that no longer works.
-                 */
-                if (idleLogoutEnabled && !loggingOut) {
-                    loggingOut = true;
-                    window.location.reload();
-                }
+                handleSessionEnded();
 
                 return;
             }
@@ -292,6 +369,12 @@
             }
 
             const data = await response.json();
+
+            /*
+             * A healthy heartbeat means this is a live session, so arm
+             * the reload again for whenever this one genuinely ends.
+             */
+            forgetReload();
 
             /*
              * Only cleared once the server has actually been told, so a
@@ -336,7 +419,7 @@
     /*
      * Regular heartbeat.
      */
-    setInterval(() => {
+    heartbeatTimer = setInterval(() => {
         sendHeartbeat();
     }, HEARTBEAT_INTERVAL);
 
