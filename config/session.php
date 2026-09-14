@@ -250,7 +250,7 @@ return [
     |
     */
 
-    'idle_timeout' => (int) env('SESSION_IDLE_TIMEOUT', 15),
+    'idle_timeout' => (int) env('SESSION_IDLE_TIMEOUT', 30),
 
     /*
     |--------------------------------------------------------------------------

@@ -66,7 +66,7 @@ class UserLoginSession extends Model
      */
     public static function idleTimeoutMinutes(): int
     {
-        return max(0, (int) config('session.idle_timeout', 15));
+        return max(0, (int) config('session.idle_timeout', 30));
     }
 
     public static function idleTimeoutEnabled(): bool

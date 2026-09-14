@@ -9,7 +9,7 @@ use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 /**
- * Idle logout: fifteen minutes with nobody at the keyboard ends the
+ * Idle logout: thirty minutes with nobody at the keyboard ends the
  * session.
  *
  * The browser countdown is only UX — these tests exercise the server
@@ -43,7 +43,7 @@ class IdleSessionLogoutTest extends TestCase
     public function test_an_idle_session_is_signed_out_and_recorded_as_a_timeout(): void
     {
         $user = $this->signedInUser();
-        $session = $this->openSessionFor($user, now()->subMinutes(16));
+        $session = $this->openSessionFor($user, now()->subMinutes(31));
 
         $response = $this->actingAs($user)
             ->withSession(['login_session_id' => $session->id])
@@ -61,7 +61,7 @@ class IdleSessionLogoutTest extends TestCase
     public function test_a_session_just_inside_the_window_is_left_alone(): void
     {
         $user = $this->signedInUser();
-        $session = $this->openSessionFor($user, now()->subMinutes(14));
+        $session = $this->openSessionFor($user, now()->subMinutes(29));
 
         $this->actingAs($user)
             ->withSession(['login_session_id' => $session->id])
@@ -289,15 +289,15 @@ class IdleSessionLogoutTest extends TestCase
         $this->freezeSecond();
 
         $user = $this->signedInUser();
-        $session = $this->openSessionFor($user, now()->subMinutes(10));
+        $session = $this->openSessionFor($user, now()->subMinutes(20));
 
         $this->actingAs($user)
             ->withSession(['login_session_id' => $session->id])
             ->postJson('/login-session/heartbeat', ['active' => true, 'interacted' => false])
             ->assertOk()
             ->assertJson([
-                'idle_timeout_minutes' => 15,
-                'seconds_until_logout' => 300,
+                'idle_timeout_minutes' => 30,
+                'seconds_until_logout' => 600,
             ]);
     }
 
@@ -310,7 +310,7 @@ class IdleSessionLogoutTest extends TestCase
     public function test_the_sweeper_closes_abandoned_sessions_at_the_moment_they_went_idle(): void
     {
         $user = $this->signedInUser();
-        $wentIdleAt = now()->subMinutes(40);
+        $wentIdleAt = now()->subMinutes(50);
         $session = $this->openSessionFor($user, $wentIdleAt);
 
         $this->artisan('sessions:close-idle')->assertExitCode(0);
@@ -319,10 +319,10 @@ class IdleSessionLogoutTest extends TestCase
 
         $this->assertSame(UserLoginSession::REASON_SESSION_TIMEOUT, $session->logout_reason);
 
-        // Closed at last interaction + 15 minutes, NOT at "now" — the
+        // Closed at last interaction + 30 minutes, NOT at "now" — the
         // sweeper must not credit the gap until it happened to run.
         $this->assertSame(
-            $wentIdleAt->copy()->addMinutes(15)->format('Y-m-d H:i'),
+            $wentIdleAt->copy()->addMinutes(30)->format('Y-m-d H:i'),
             $session->logout_at->format('Y-m-d H:i'),
         );
     }
@@ -362,6 +362,6 @@ class IdleSessionLogoutTest extends TestCase
         $user = $this->signedInUser();
 
         $this->assertTrue($this->openSessionFor($user, now()->subMinutes(2))->is_active);
-        $this->assertFalse($this->openSessionFor($user, now()->subMinutes(30))->is_active);
+        $this->assertFalse($this->openSessionFor($user, now()->subMinutes(40))->is_active);
     }
 }
