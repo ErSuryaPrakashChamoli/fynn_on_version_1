@@ -24,7 +24,7 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 gap-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700 md:grid-cols-3">
+    <div class="grid grid-cols-1 gap-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700 md:grid-cols-2 lg:grid-cols-4">
         <div>
             <div class="text-xs font-medium text-gray-500">Current Team Leader</div>
             <div class="font-semibold text-gray-950 dark:text-white">
@@ -41,6 +41,12 @@
             <div class="text-xs font-medium text-gray-500">Current Cluster Manager</div>
             <div class="font-semibold text-gray-950 dark:text-white">
                 {{ $employee->clusterManager?->emp_name ?? '-' }}
+            </div>
+        </div>
+        <div>
+            <div class="text-xs font-medium text-gray-500">Current Business Head</div>
+            <div class="font-semibold text-gray-950 dark:text-white">
+                {{ $employee->businessHead?->emp_name ?? '-' }}
             </div>
         </div>
     </div>
@@ -60,6 +66,7 @@
                         <th class="px-4 py-3 font-semibold">Team Leader</th>
                         <th class="px-4 py-3 font-semibold">Manager</th>
                         <th class="px-4 py-3 font-semibold">Cluster Manager</th>
+                        <th class="px-4 py-3 font-semibold">Business Head</th>
                         <th class="px-4 py-3 font-semibold">Updated By</th>
                     </tr>
                 </thead>
@@ -80,6 +87,7 @@
                             $teamLeader = $history->newSupervisor?->emp_name;
                             $manager = $history->newManager?->emp_name;
                             $cluster = $history->newCluster?->emp_name;
+                            $businessHead = $history->newBusinessHead?->emp_name;
                         @endphp
 
                         <tr>
@@ -102,25 +110,30 @@
                                 {{ $cluster ?? '-' }}
                             </td>
                             <td class="px-4 py-3">
+                                {{ $businessHead ?? '-' }}
+                            </td>
+                            <td class="px-4 py-3">
                                 {{ $history->updatedBy?->name ?? 'System' }}
                             </td>
                         </tr>
 
                         @if ($history->change_type === 'transfer')
                             <tr class="bg-gray-50/60 dark:bg-gray-900/40">
-                                <td colspan="7" class="px-4 pb-3 pt-0 text-xs text-gray-500">
+                                <td colspan="8" class="px-4 pb-3 pt-0 text-xs text-gray-500">
                                     Previous reporting:
                                     {{ $history->oldSupervisor?->emp_name ?? '-' }}
                                     →
                                     {{ $history->oldManager?->emp_name ?? '-' }}
                                     →
                                     {{ $history->oldCluster?->emp_name ?? '-' }}
+                                    →
+                                    {{ $history->oldBusinessHead?->emp_name ?? '-' }}
                                 </td>
                             </tr>
                         @endif
                     @empty
                         <tr>
-                            <td colspan="7" class="px-4 py-6 text-center text-gray-500">
+                            <td colspan="8" class="px-4 py-6 text-center text-gray-500">
                                 No reporting history found.
                             </td>
                         </tr>

@@ -34,6 +34,14 @@ class AchievementCalculatorService
     private const PARTIAL_MONTH_TARGET = 1500000.0;
 
     /**
+     * A Team Leader with fewer callers than this adds UNDERSTAFFED_TEAM_TOP_UP
+     * to every target that counts them.
+     */
+    private const UNDERSTAFFED_TEAM_CALLERS = 3;
+
+    private const UNDERSTAFFED_TEAM_TOP_UP = 3000000.0;
+
+    /**
      * Fallback when employees.category holds something non-numeric
      * (e.g. 'team_leader') or is blank.
      */
@@ -264,96 +272,26 @@ class AchievementCalculatorService
 
         /*
     |--------------------------------------------------------------------------
-    | Team Leader
+    | Team Leader, Manager, Cluster Manager, Business Head
     |--------------------------------------------------------------------------
+    |
+    | Every caller the branch counts, plus the ₹30L understaffed-team top-up
+    | for each Team Leader in it — themselves included — with fewer than
+    | three callers. Levels may be skipped: a Team Leader reporting straight
+    | to a Cluster Manager carries their callers and their top-up into that
+    | Cluster Manager's target, and never into a Manager's.
+    |
     */
 
-        if ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
+        if (Employee::designationRank($employee->designation) > 0) {
 
-            $callerIds = HierarchyHelper::callerIds($employee);
-
-            $target = Employee::whereIn('id', $callerIds)
-                ->get()
-                ->sum(
-                    fn (Employee $caller) => $this->getHierarchyCallerTargetForPeriod($caller, $start, $end)
-                );
-
-            if ($callerIds->count() < 3) {
-                $target += 3000000;
-            }
-
-            return $target;
-        }
-
-        /*
-    |--------------------------------------------------------------------------
-    | Manager
-    |--------------------------------------------------------------------------
-    */
-
-        if ($employee->designation === Employee::DESIGNATION_MANAGER) {
-
-            $target = Employee::whereIn(
-                'id',
-                HierarchyHelper::callerIds($employee)
-            )
+            $target = Employee::whereIn('id', HierarchyHelper::callerIds($employee))
                 ->get()
                 ->sum(fn (Employee $caller) => $this->getHierarchyCallerTargetForPeriod($caller, $start, $end));
 
-            $teamLeaderIds = Employee::where('manager_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                ->where('exit_status', '!=', 'yes')
-                ->pluck('id');
-
-            foreach ($teamLeaderIds as $tlId) {
-
-                $callerCount = Employee::where('superviser_id', $tlId)
-                    ->where('designation', Employee::DESIGNATION_CALLER)
-                    ->count();
-
-                if ($callerCount < 3) {
-                    $target += 3000000;
-                }
-            }
-
-            return $target;
-        }
-
-        /*
-    |--------------------------------------------------------------------------
-    | Cluster Manager
-    |--------------------------------------------------------------------------
-    */
-
-        if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
-
-            $target = Employee::whereIn(
-                'id',
-                HierarchyHelper::callerIds($employee)
-            )
-                ->get()
-                ->sum(
-                    fn (Employee $caller) => $this->getHierarchyCallerTargetForPeriod($caller, $start, $end)
-                );
-
-            $managerIds = Employee::where('cluster_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_MANAGER)
-                ->where('exit_status', '!=', 'yes')
-                ->pluck('id');
-
-            $teamLeaderIds = Employee::whereIn('manager_id', $managerIds)
-                ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                ->where('exit_status', '!=', 'yes')
-                ->pluck('id');
-
-            foreach ($teamLeaderIds as $tlId) {
-
-                $callerCount = Employee::where('superviser_id', $tlId)
-                    ->where('designation', Employee::DESIGNATION_CALLER)
-                    ->count();
-
-                if ($callerCount < 3) {
-                    $target += 3000000;
+            foreach (HierarchyHelper::teamLeaderCallerCounts($employee) as $callerCount) {
+                if ($callerCount < self::UNDERSTAFFED_TEAM_CALLERS) {
+                    $target += self::UNDERSTAFFED_TEAM_TOP_UP;
                 }
             }
 

@@ -237,9 +237,11 @@
                         <p class="mx-auto mt-2 max-w-md text-sm text-gray-500 dark:text-gray-400">
                             @if ($status['setter'])
                                 Please ask <span class="font-medium text-gray-950 dark:text-white">{{ $status['setter']->emp_name }}</span>
-                                ({{ $status['setter']->emp_id }}), your Manager, to fix your monthly commitment target.
+                                ({{ $status['setter']->emp_id }}), your {{ \App\Models\Employee::designationOptions()[$status['setter']->designation] ?? 'Manager' }}, to fix your monthly commitment target.
+                            @elseif (\Filament\Facades\Filament::auth()->user()?->employee?->designation === \App\Models\Employee::DESIGNATION_CALLER)
+                                Nobody above you in the reporting line can set it yet. Please ask the Admin to assign your Team Leader or Manager.
                             @else
-                                Please ask your Manager to have the Admin fix your monthly commitment target.
+                                Please ask the Admin to fix your monthly commitment target.
                             @endif
                             The LMS opens again as soon as it is set.
                         </p>

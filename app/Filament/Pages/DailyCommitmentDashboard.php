@@ -47,6 +47,7 @@ class DailyCommitmentDashboard extends Page
             'from' => today()->toDateString(),
             'to' => today()->toDateString(),
             'role' => null,
+            'business_head_id' => null,
             'cluster_id' => null,
             'manager_id' => null,
             'team_leader_id' => null,
@@ -93,6 +94,13 @@ class DailyCommitmentDashboard extends Page
                     ->native(false)
                     ->placeholder('Everyone (by hierarchy)')
                     ->helperText('Pick a level to list only that level.')
+                    ->live(),
+
+                Select::make('business_head_id')
+                    ->label('Business Head')
+                    ->options(fn (): array => $service->employeeOptions($user, Employee::DESIGNATION_BUSINESS_HEAD))
+                    ->native(false)
+                    ->placeholder('All')
                     ->live(),
 
                 Select::make('cluster_id')

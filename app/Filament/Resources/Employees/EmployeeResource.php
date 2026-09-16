@@ -11,9 +11,11 @@ use App\Filament\Resources\Employees\Schemas\EmployeeForm;
 use App\Filament\Resources\Employees\Schemas\EmployeeInfolist;
 use App\Filament\Resources\Employees\Tables\EmployeesTable;
 use App\Models\Employee;
+use App\Services\ReportingLineService;
 use App\Support\EmployeeOptions;
 use App\Support\SelectedMonth;
 use BackedEnum;
+use Closure;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -73,24 +75,23 @@ class EmployeeResource extends Resource
                         ->required()
                         ->searchable()
                         ->live()
-                        ->afterStateUpdated(function (Set $set, $state) {
-                            if ($state != Employee::DESIGNATION_CALLER) {
-                                $set('superviser_id', null);
-                            }
+                        ->afterStateUpdated(function (Set $set, Get $get, $state): void {
+                            // Drop a boss who is not senior to the new level.
+                            $bossId = $get('reports_to');
 
-                            if (! in_array($state, [
-                                Employee::DESIGNATION_TEAM_LEADER,
-                                Employee::DESIGNATION_CALLER,
-                            ])) {
-                                $set('manager_id', null);
+                            if (filled($bossId) && app(ReportingLineService::class)->bossProblem(self::designationOf($state), (int) $bossId) !== null) {
+                                $set('reports_to', null);
                             }
+                        })
+                        // A demotion must not leave anybody reporting to
+                        // somebody who is no longer senior to them.
+                        ->rule(fn (?Employee $record): Closure => function (string $attribute, $value, Closure $fail) use ($record): void {
+                            $problem = $record
+                                ? app(ReportingLineService::class)->designationProblem($record, self::designationOf($value))
+                                : null;
 
-                            if (! in_array($state, [
-                                Employee::DESIGNATION_MANAGER,
-                                Employee::DESIGNATION_TEAM_LEADER,
-                                Employee::DESIGNATION_CALLER,
-                            ])) {
-                                $set('cluster_id', null);
+                            if ($problem !== null) {
+                                $fail($problem);
                             }
                         })
                         ->native(false),
@@ -105,149 +106,44 @@ class EmployeeResource extends Resource
                             'manager' => 'Beta',
                             'cluster_manager' => 'Delta',
                         ])
-                        ->required()
+                        // Only in-tree seats carry an LMS target. Admin and
+                        // Other Bank Support sit outside the hierarchy
+                        // (designationRank 0) and never read this value —
+                        // Other Bank Support targets live in their own module.
+                        ->required(fn (Get $get): bool => Employee::designationRank(self::designationOf($get('designation'))) > 0)
+                        ->helperText(fn (Get $get): ?string => Employee::designationRank(self::designationOf($get('designation'))) > 0
+                            ? null
+                            : 'Not used for this position — it carries no LMS target.')
                         ->native(false),
 
-                    Select::make('superviser_id')
-                        ->label('Superviser')
-                        ->relationship(
-                            'superviser',
-                            'emp_name',
-                            modifyQueryUsing: fn (Builder $query): Builder => $query
-                                ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                                ->where('exit_status', '!=', 'yes')
-                        )
-                        ->searchable()
-                        ->getOptionLabelFromRecordUsing(fn ($record) => "{$record->emp_name} - ({$record->emp_id})")
-                        ->visible(fn (Get $get) => $get('designation') === Employee::DESIGNATION_CALLER)
-                        ->required(fn (Get $get) => $get('designation') === Employee::DESIGNATION_CALLER)
-                        ->live()
-                        ->afterStateUpdated(function (Set $set, $state): void {
-                            if (! $state) {
-                                $set('manager_id', null);
-                                $set('cluster_id', null);
+                    // The one reporting choice. Every reporting column
+                    // (superviser_id, manager_id, cluster_id,
+                    // business_head_id) is derived from it on save — see
+                    // ReportingLineService.
+                    Select::make('reports_to')
+                        ->label('Reports To')
+                        ->options(fn (Get $get, ?Employee $record): array => app(ReportingLineService::class)
+                            ->bossOptions(self::designationOf($get('designation')), $record?->id))
+                        ->helperText(fn (Get $get): string => filled($get('reports_to'))
+                            ? 'Reporting line: '.app(ReportingLineService::class)->lineSummary((int) $get('reports_to'))
+                            : 'Anyone more senior may be chosen; the levels in between can be skipped.')
+                        ->visible(fn (Get $get): bool => Employee::designationRank(self::designationOf($get('designation'))) > 0
+                            && self::designationOf($get('designation')) !== Employee::DESIGNATION_BUSINESS_HEAD)
+                        ->required(fn (Get $get): bool => app(ReportingLineService::class)
+                            ->requiresBoss(self::designationOf($get('designation'))))
+                        ->rule(fn (Get $get, ?Employee $record): Closure => function (string $attribute, $value, Closure $fail) use ($get, $record): void {
+                            $problem = app(ReportingLineService::class)->bossProblem(
+                                self::designationOf($get('designation')),
+                                filled($value) ? (int) $value : null,
+                                $record?->id,
+                            );
 
-                                return;
+                            if ($problem !== null) {
+                                $fail($problem);
                             }
-
-                            $supervisor = Employee::query()
-                                ->with('manager')
-                                ->whereKey($state)
-                                ->first();
-
-                            $set('manager_id', $supervisor?->manager_id);
-                            $set('cluster_id', $supervisor?->manager?->cluster_id);
                         })
-                        ->preload(),
-
-                    Select::make('manager_id')
-                        ->label('Manager')
-                        ->relationship(
-                            'manager',
-                            'emp_name',
-                            modifyQueryUsing: function (Builder $query, Get $get): Builder {
-                                $query
-                                    ->where('designation', Employee::DESIGNATION_MANAGER)
-                                    ->where('exit_status', '!=', 'yes');
-
-                                // Caller: only the Manager to whom the selected Team Leader reports.
-                                if ($get('designation') === Employee::DESIGNATION_CALLER) {
-                                    $superviserId = $get('superviser_id');
-
-                                    if (! $superviserId) {
-                                        return $query->whereRaw('1 = 0');
-                                    }
-
-                                    $managerId = Employee::query()
-                                        ->whereKey($superviserId)
-                                        ->value('manager_id');
-
-                                    return $managerId
-                                        ? $query->whereKey($managerId)
-                                        : $query->whereRaw('1 = 0');
-                                }
-
-                                // Team Leader: Manager is selected directly.
-                                return $query;
-                            }
-                        )
-                        ->searchable()
-                        ->getOptionLabelFromRecordUsing(fn ($record) => "{$record->emp_name} - ({$record->emp_id})")
-                        ->visible(fn (Get $get) => in_array($get('designation'), [
-                            Employee::DESIGNATION_CALLER,
-                            Employee::DESIGNATION_TEAM_LEADER,
-                        ]))
-                        ->required(fn (Get $get) => in_array($get('designation'), [
-                            Employee::DESIGNATION_CALLER,
-                            Employee::DESIGNATION_TEAM_LEADER,
-                        ]))
                         ->live()
-                        ->afterStateUpdated(function (Set $set, $state): void {
-                            if (! $state) {
-                                $set('cluster_id', null);
-
-                                return;
-                            }
-
-                            $set('cluster_id', Employee::query()
-                                ->whereKey($state)
-                                ->value('cluster_id'));
-                        })
-                        ->disabled(fn (Get $get) => $get('designation') === Employee::DESIGNATION_CALLER && ! $get('superviser_id')
-                        )
-                        ->preload(),
-
-                    Select::make('cluster_id')
-                        ->label('Cluster Manager')
-                        ->relationship(
-                            'clusterManager',
-                            'emp_name',
-                            modifyQueryUsing: function (Builder $query, Get $get): Builder {
-                                $query
-                                    ->where('designation', Employee::DESIGNATION_CLUSTER)
-                                    ->where('exit_status', '!=', 'yes');
-
-                                // Caller / Team Leader: only the Cluster Manager of the selected Manager.
-                                if (in_array($get('designation'), [
-                                    Employee::DESIGNATION_CALLER,
-                                    Employee::DESIGNATION_TEAM_LEADER,
-                                ])) {
-                                    $managerId = $get('manager_id');
-
-                                    if (! $managerId) {
-                                        return $query->whereRaw('1 = 0');
-                                    }
-
-                                    $clusterId = Employee::query()
-                                        ->whereKey($managerId)
-                                        ->value('cluster_id');
-
-                                    return $clusterId
-                                        ? $query->whereKey($clusterId)
-                                        : $query->whereRaw('1 = 0');
-                                }
-
-                                // Manager: Cluster Manager is selected directly.
-                                return $query;
-                            }
-                        )
-                        ->searchable()
-                        ->getOptionLabelFromRecordUsing(fn ($record) => "{$record->emp_name} - ({$record->emp_id})")
-                        ->visible(fn (Get $get) => in_array($get('designation'), [
-                            Employee::DESIGNATION_CALLER,
-                            Employee::DESIGNATION_MANAGER,
-                            Employee::DESIGNATION_TEAM_LEADER,
-                        ]))
-                        ->required(fn (Get $get) => in_array($get('designation'), [
-                            Employee::DESIGNATION_CALLER,
-                            Employee::DESIGNATION_MANAGER,
-                            Employee::DESIGNATION_TEAM_LEADER,
-                        ]))
-                        ->disabled(fn (Get $get) => in_array($get('designation'), [
-                            Employee::DESIGNATION_CALLER,
-                            Employee::DESIGNATION_TEAM_LEADER,
-                        ]) && ! $get('manager_id'))
-                        ->preload(),
+                        ->native(false),
 
                     DatePicker::make('doj')
                         ->displayFormat('d F Y')
@@ -325,6 +221,14 @@ class EmployeeResource extends Resource
         // return EmployeeForm::configure($schema);
     }
 
+    /**
+     * The form's designation state as an int, or null when none is chosen.
+     */
+    private static function designationOf(mixed $state): ?int
+    {
+        return filled($state) ? (int) $state : null;
+    }
+
     public static function infolist(Schema $schema): Schema
     {
         return EmployeeInfolist::configure($schema);
@@ -375,6 +279,12 @@ class EmployeeResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->toggleable(),
+
+                Tables\Columns\TextColumn::make('businessHead.emp_name')
+                    ->label('Business Head')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('cost_center')
                     ->searchable()
@@ -432,6 +342,11 @@ class EmployeeResource extends Resource
                     ->label('Cluster Manager')
                     ->multiple()
                     ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_CLUSTER)),
+
+                SelectFilter::make('business_head_id')
+                    ->label('Business Head')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_BUSINESS_HEAD)),
 
                 SelectFilter::make('exit_status')
                     ->label('Exit Status')

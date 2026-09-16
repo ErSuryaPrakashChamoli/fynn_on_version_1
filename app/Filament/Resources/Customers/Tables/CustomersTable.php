@@ -7,6 +7,7 @@ use App\Filament\Exports\CustomerExporter;
 use App\Filament\Imports\CustomerImporter;
 use App\Filament\Resources\FollowUps\FollowUpResource;
 use App\Models\Employee;
+use App\Services\OtherBankSupportService;
 use App\Support\EmployeeOptions;
 use App\Support\SelectedMonth;
 use Carbon\Carbon;
@@ -238,6 +239,20 @@ class CustomersTable
                         );
                     }),
 
+                SelectFilter::make('business_head_id')
+                    ->label('Business Head')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_BUSINESS_HEAD))
+                    ->query(
+                        fn (Builder $query, array $data) => $query->when(
+                            filled($data['values'] ?? null),
+                            fn ($query) => $query->whereHas(
+                                'employee',
+                                fn ($q) => $q->whereIn('business_head_id', $data['values'])
+                            )
+                        )
+                    ),
+
                 SelectFilter::make('cluster_id')
                     ->label('Cluster Manager')
                     ->multiple()
@@ -380,7 +395,8 @@ class CustomersTable
                     ->label('Import Customers')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('primary')
-                    ->importer(CustomerImporter::class),
+                    ->importer(CustomerImporter::class)
+                    ->visible(fn (): bool => ! OtherBankSupportService::isScopedSupportUser(Filament::auth()->user())),
             ])
             ->toolbarActions([
                 // BulkActionGroup::make([

@@ -6,6 +6,8 @@ use App\Enums\JourneyModule;
 use App\Models\Customer;
 use App\Models\CustomerSlaBreach;
 use App\Models\CustomerStageHistory;
+use App\Models\Employee;
+use App\Support\HierarchyHelper;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -70,11 +72,20 @@ class JourneySlaService
 
             if (! $breach->escalated_at && $minutesInStage >= $escalationThreshold) {
                 $naturalManager = app(CustomerJourneyAccessService::class)->naturalManagerFor($customer);
-                $clusterManagerId = $naturalManager?->cluster_id;
+
+                // The level above the natural manager: their Cluster
+                // Manager, or their Business Head where that level is
+                // skipped.
+                $escalatedToId = $naturalManager
+                    ? HierarchyHelper::nearestAncestor($naturalManager, [
+                        Employee::DESIGNATION_CLUSTER,
+                        Employee::DESIGNATION_BUSINESS_HEAD,
+                    ])?->id
+                    : null;
 
                 $breach->forceFill([
                     'escalated_at' => now(),
-                    'escalated_to_employee_id' => $clusterManagerId,
+                    'escalated_to_employee_id' => $escalatedToId,
                 ])->save();
 
                 $escalations++;
@@ -83,7 +94,7 @@ class JourneySlaService
                     'customer_id' => $customer->id,
                     'module' => $module->value,
                     'minutes_in_stage' => $minutesInStage,
-                    'escalated_to_employee_id' => $clusterManagerId,
+                    'escalated_to_employee_id' => $escalatedToId,
                 ]);
             }
         }

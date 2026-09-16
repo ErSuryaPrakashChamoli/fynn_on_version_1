@@ -3,8 +3,8 @@
 namespace App\Services;
 
 use App\Models\Employee;
-use App\Models\EmployeeReportingHistory;
 use App\Models\HierarchyTransferLog;
+use App\Support\ReportingTree;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -13,11 +13,15 @@ use Throwable;
 
 class HierarchyReassignmentService
 {
+    public function __construct(private ReportingLineService $reportingLines) {}
+
     /**
      * Transfer employees from one Cluster Manager to another.
      *
-     * The service deliberately changes only cluster_id. Existing
-     * manager_id and superviser_id relationships are preserved.
+     * Moves the source Cluster Manager's direct reports — every one of them
+     * for a full cluster transfer, or only the selected Managers and Team
+     * Leaders — to the target. ReportingLineService re-fills the columns of
+     * everyone below each moved employee, so their teams go with them.
      *
      * @param array{
      *     source_cluster_manager_id:int|string,
@@ -88,66 +92,32 @@ class HierarchyReassignmentService
                 $this->validationError('effective_date', 'Effective date cannot be in the future.');
             }
 
-            $affectedIds = $transferType === 'full_cluster'
-                ? $this->resolveFullClusterEmployeeIds($sourceId)
-                : $this->resolveSelectiveEmployeeIds($sourceId, $selectedIds);
+            $movedEmployees = $transferType === 'full_cluster'
+                ? $this->fullClusterReports($sourceId)
+                : $this->selectedReports($sourceId, $selectedIds);
 
-            if ($affectedIds->isEmpty()) {
-                $this->validationError('selected_employee_ids', 'There are no active employees eligible for this transfer.');
+            if ($movedEmployees->isEmpty()) {
+                $this->validationError('selected_employee_ids', 'There are no employees reporting to the source Cluster Manager to transfer.');
             }
 
-            /**
-             * Lock every affected employee before changing anything. This
-             * protects against concurrent hierarchy edits while this batch runs.
-             */
-            $affectedEmployees = Employee::query()
-                ->whereIn('id', $affectedIds)
-                ->where('id', '!=', $sourceId)
-                ->lockForUpdate()
-                ->get();
+            // reporting_date is deliberately left untouched (see
+            // ReportingLineService): a hierarchy transfer moves existing
+            // employees and must not make them look like new joiners.
+            $historyRemarks = $remarks ?: "Cluster transfer from {$source->emp_name} to {$target->emp_name}.";
 
-            if ($affectedEmployees->isEmpty()) {
-                $this->validationError('selected_employee_ids', 'No eligible employees were found after locking the selected hierarchy.');
-            }
-
-            $affectedIds = $affectedEmployees
-                ->pluck('id')
+            $affectedIds = $movedEmployees
+                ->flatMap(fn (Employee $employee): Collection => $this->reportingLines->reportTo(
+                    $employee,
+                    $targetId,
+                    $effectiveDate,
+                    ReportingLineService::CHANGE_TRANSFER,
+                    $historyRemarks,
+                    $performedBy,
+                ))
+                ->merge($movedEmployees->pluck('id'))
                 ->map(fn ($id): int => (int) $id)
                 ->unique()
                 ->values();
-
-            $this->closeOpenReportingHistory($affectedIds, $effectiveDate);
-
-            $now = now();
-
-            foreach ($affectedEmployees as $employee) {
-                $oldClusterId = $employee->cluster_id;
-
-                // Only the cluster assignment changes. The existing manager
-                // and team-leader relationships remain intact. reporting_date
-                // is deliberately left untouched: a hierarchy transfer moves
-                // an existing, active employee — it must not make
-                // AchievementCalculatorService's "new joiner" worked-days
-                // rule treat them as newly hired for the transfer month.
-                $employee->forceFill([
-                    'cluster_id' => $targetId,
-                    'updated_at' => $now,
-                ])->save();
-
-                EmployeeReportingHistory::query()->create([
-                    'employee_id' => $employee->id,
-                    'old_superviser_id' => $employee->superviser_id,
-                    'old_manager_id' => $employee->manager_id,
-                    'old_cluster_id' => $oldClusterId,
-                    'new_superviser_id' => $employee->superviser_id,
-                    'new_manager_id' => $employee->manager_id,
-                    'new_cluster_id' => $targetId,
-                    'effective_date' => $effectiveDate->toDateString(),
-                    'change_type' => 'transfer',
-                    'updated_by' => $performedBy,
-                    'remarks' => $remarks ?: "Cluster transfer from {$source->emp_name} to {$target->emp_name}.",
-                ]);
-            }
 
             /** @var HierarchyTransferLog $log */
             $log = HierarchyTransferLog::query()->create([
@@ -169,10 +139,12 @@ class HierarchyReassignmentService
     }
 
     /**
-     * Flexible reassignment: move individual Callers to any active Team Leader
-     * or individual Team Leaders to any active Manager. Each row may have a
-     * different destination, so one manager's team can be split across several
-     * managers without changing the overall hierarchy architecture.
+     * Flexible reassignment: move individual employees to anyone more
+     * senior who is still on the rolls. Levels may be skipped — a caller
+     * straight to a Manager, a Team Leader straight to a Cluster Manager —
+     * and each row may have a different destination, so one team can be
+     * split across several bosses. Everyone below a moved employee follows
+     * them.
      *
      * @param  array<int, array{employee_id:int|string,target_id:int|string}>  $assignments
      */
@@ -223,6 +195,8 @@ class HierarchyReassignmentService
                 $this->validationError('assignments', 'One or more selected destinations are inactive or no longer exist.');
             }
 
+            $tree = ReportingTree::load();
+
             foreach ($rows as $row) {
                 $employee = $employees->get($row['employee_id']);
                 $target = $targets->get($row['target_id']);
@@ -231,101 +205,47 @@ class HierarchyReassignmentService
                     $this->validationError('assignments', "{$employee->emp_name} cannot be moved to itself.");
                 }
 
-                if ($employee->designation === Employee::DESIGNATION_CALLER) {
-                    if ($target->designation !== Employee::DESIGNATION_TEAM_LEADER) {
-                        $this->validationError('assignments', "Caller {$employee->emp_name} can only be assigned to a Team Leader.");
-                    }
-
-                    if ((int) $employee->superviser_id === (int) $target->id) {
-                        $this->validationError('assignments', "Caller {$employee->emp_name} is already under {$target->emp_name}.");
-                    }
-
-                    if (! $this->isActiveManager($target->manager_id)) {
-                        $this->validationError('assignments', "The destination Team Leader {$target->emp_name} does not have an active Manager.");
-                    }
-                } elseif ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
-                    if ($target->designation !== Employee::DESIGNATION_MANAGER) {
-                        $this->validationError('assignments', "Team Leader {$employee->emp_name} can only be assigned to a Manager.");
-                    }
-
-                    if ((int) $employee->manager_id === (int) $target->id) {
-                        $this->validationError('assignments', "Team Leader {$employee->emp_name} is already under {$target->emp_name}.");
-                    }
-                } else {
-                    $this->validationError('assignments', "{$employee->emp_name} cannot be moved through this flexible transfer. Only Callers and Team Leaders are supported.");
+                if ($tree->bossId($employee->id) === $target->id) {
+                    $this->validationError('assignments', "{$employee->emp_name} already reports to {$target->emp_name}.");
                 }
 
-                if ($target->designation === Employee::DESIGNATION_TEAM_LEADER && ! $this->isActiveManager($target->manager_id)) {
-                    $this->validationError('assignments', "Destination Team Leader {$target->emp_name} has no active Manager.");
-                }
+                $problem = $this->reportingLines->bossProblem($employee->designation, $target->id, $employee->id);
 
-                $targetCluster = $target->designation === Employee::DESIGNATION_MANAGER
-                    ? $target->cluster_id
-                    : $target->cluster_id;
-
-                if (! $this->isActiveClusterManager($targetCluster)) {
-                    $this->validationError('assignments', "Destination {$target->emp_name} belongs to an inactive or invalid Cluster Manager.");
+                if ($problem !== null) {
+                    $this->validationError('assignments', "{$employee->emp_name}: {$problem}");
                 }
             }
 
-            $affectedIds = $employeeIds->values();
-            $this->closeOpenReportingHistory($affectedIds, $effective);
+            // Worked out before anything moves, so the log records where
+            // the employees came from.
+            $sourceClusters = $employees->keys()->map(fn (int $id): ?int => $this->clusterOf($tree, $id))->filter()->unique()->values();
+            $targetClusters = $targets->keys()->map(fn (int $id): ?int => $this->clusterOf($tree, $id))->filter()->unique()->values();
 
-            $now = now();
+            $affectedIds = $rows
+                ->flatMap(function (array $row) use ($employees, $targets, $effective, $remarks, $performedBy): Collection {
+                    $target = $targets->get($row['target_id']);
 
-            foreach ($rows as $row) {
-                $employee = $employees->get($row['employee_id']);
-                $target = $targets->get($row['target_id']);
-
-                $oldSupervisorId = $employee->superviser_id;
-                $oldManagerId = $employee->manager_id;
-                $oldClusterId = $employee->cluster_id;
-
-                if ($employee->designation === Employee::DESIGNATION_CALLER) {
-                    $newSupervisorId = $target->id;
-                    $newManagerId = $target->manager_id;
-                } else {
-                    $newSupervisorId = null;
-                    $newManagerId = $target->id;
-                }
-
-                // reporting_date is deliberately left untouched: a flexible
-                // reassignment moves an existing, active employee — it must
-                // not make AchievementCalculatorService's "new joiner"
-                // worked-days rule treat them as newly hired for the
-                // reassignment month.
-                $employee->forceFill([
-                    'superviser_id' => $newSupervisorId,
-                    'manager_id' => $newManagerId,
-                    'cluster_id' => $target->cluster_id,
-                    'updated_at' => $now,
-                ])->save();
-
-                EmployeeReportingHistory::query()->create([
-                    'employee_id' => $employee->id,
-                    'old_superviser_id' => $oldSupervisorId,
-                    'old_manager_id' => $oldManagerId,
-                    'old_cluster_id' => $oldClusterId,
-                    'new_superviser_id' => $newSupervisorId,
-                    'new_manager_id' => $newManagerId,
-                    'new_cluster_id' => $target->cluster_id,
-                    'effective_date' => $effective->toDateString(),
-                    'change_type' => 'transfer',
-                    'updated_by' => $performedBy,
-                    'remarks' => $remarks ?: "Flexible hierarchy reassignment to {$target->emp_name}.",
-                ]);
-            }
-
-            $sourceClusters = $employees->pluck('cluster_id')->filter()->unique()->values();
-            $targetClusters = $targets->pluck('cluster_id')->filter()->unique()->values();
-
-            $sourceClusterId = $sourceClusters->count() === 1 ? (int) $sourceClusters->first() : null;
-            $targetClusterId = $targetClusters->count() === 1 ? (int) $targetClusters->first() : null;
+                    // reporting_date is deliberately left untouched: a
+                    // flexible reassignment moves an existing, active
+                    // employee — it must not make them a new joiner.
+                    return $this->reportingLines->reportTo(
+                        $employees->get($row['employee_id']),
+                        $target->id,
+                        $effective,
+                        ReportingLineService::CHANGE_TRANSFER,
+                        $remarks ?: "Flexible hierarchy reassignment to {$target->emp_name}.",
+                        $performedBy,
+                    );
+                })
+                ->merge($employeeIds)
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->values();
 
             /** @var HierarchyTransferLog $log */
             $log = HierarchyTransferLog::query()->create([
-                'source_cluster_manager_id' => $sourceClusterId,
-                'target_cluster_manager_id' => $targetClusterId,
+                'source_cluster_manager_id' => $sourceClusters->count() === 1 ? $sourceClusters->first() : null,
+                'target_cluster_manager_id' => $targetClusters->count() === 1 ? $targetClusters->first() : null,
                 'transfer_type' => 'flexible_reassignment',
                 'selected_employee_ids' => $rows->all(),
                 'affected_employee_ids' => $affectedIds->all(),
@@ -355,48 +275,29 @@ class HierarchyReassignmentService
         }, 3);
     }
 
-    private function isActiveManager(?int $managerId): bool
-    {
-        return $managerId !== null && Employee::query()
-            ->whereKey($managerId)
-            ->where('designation', Employee::DESIGNATION_MANAGER)
-            ->where('exit_status', '!=', 'yes')
-            ->exists();
-    }
-
-    private function isActiveClusterManager(?int $clusterId): bool
-    {
-        return $clusterId !== null && Employee::query()
-            ->whereKey($clusterId)
-            ->where('designation', Employee::DESIGNATION_CLUSTER)
-            ->where('exit_status', '!=', 'yes')
-            ->exists();
-    }
-
     /**
-     * Full cluster: transfer every active non-CM employee whose cluster_id
-     * points at the source CM. This also safely catches active orphaned
-     * hierarchy rows whose intermediate manager/TL relation is incomplete.
+     * Full cluster: everybody reporting straight to the source Cluster
+     * Manager, at whatever level — including those who have left, so the
+     * people still working under them are not split from their team.
+     *
+     * @return Collection<int, Employee>
      */
-    private function resolveFullClusterEmployeeIds(int $sourceId): Collection
+    private function fullClusterReports(int $sourceId): Collection
     {
         return Employee::query()
-            ->where('cluster_id', $sourceId)
-            ->where('id', '!=', $sourceId)
-            ->where('exit_status', '!=', 'yes')
-            ->pluck('id')
-            ->map(fn ($id): int => (int) $id)
-            ->unique()
-            ->values();
+            ->whereIn('id', ReportingTree::load()->childIds($sourceId))
+            ->lockForUpdate()
+            ->get();
     }
 
     /**
-     * Selective transfer accepts Managers and Team Leaders only. A Manager
-     * selection transfers the Manager, its Team Leaders, their Callers and
-     * any active employees below the selected branch. A Team Leader selection
-     * transfers the Team Leader and its Callers.
+     * Selective transfer: the chosen Managers and Team Leaders reporting
+     * straight to the source Cluster Manager, each taking their team along.
+     *
+     * @param  Collection<int, int>  $selectedIds
+     * @return Collection<int, Employee>
      */
-    private function resolveSelectiveEmployeeIds(int $sourceId, Collection $selectedIds): Collection
+    private function selectedReports(int $sourceId, Collection $selectedIds): Collection
     {
         if ($selectedIds->isEmpty()) {
             $this->validationError('selected_employee_ids', 'Select at least one Manager or Team Leader.');
@@ -406,12 +307,9 @@ class HierarchyReassignmentService
             ->whereIn('id', $selectedIds)
             ->where('exit_status', '!=', 'yes')
             ->lockForUpdate()
-            ->get()
-            ->keyBy('id');
+            ->get();
 
-        $missingIds = $selectedIds->diff($selected->keys());
-
-        if ($missingIds->isNotEmpty()) {
+        if ($selectedIds->diff($selected->pluck('id'))->isNotEmpty()) {
             $this->validationError('selected_employee_ids', 'One or more selected employees are inactive or no longer exist. Please reopen the transfer form and select again.');
         }
 
@@ -427,82 +325,21 @@ class HierarchyReassignmentService
             $this->validationError('selected_employee_ids', 'Only Managers and Team Leaders can be selected for a selective cluster transfer.');
         }
 
-        $outsideSource = $selected->contains(
-            fn (Employee $employee): bool => (int) $employee->cluster_id !== $sourceId
-        );
+        $tree = ReportingTree::load();
 
-        if ($outsideSource) {
-            $this->validationError('selected_employee_ids', 'One or more selected employees no longer belong to the selected source Cluster Manager.');
+        if ($selected->contains(fn (Employee $employee): bool => $tree->bossId($employee->id) !== $sourceId)) {
+            $this->validationError('selected_employee_ids', 'One or more selected employees no longer report to the selected source Cluster Manager.');
         }
 
-        $affected = collect();
-
-        foreach ($selected as $employee) {
-            $affected = $affected->merge($this->descendantIds($employee));
-        }
-
-        return $affected
-            ->merge($selected->keys())
-            ->unique()
-            ->values();
+        return $selected;
     }
 
-    /**
-     * Walk the hierarchy by manager_id / superviser_id rather than trusting
-     * only cluster_id. This makes selective transfers safe even if the data
-     * contains incomplete intermediate relationships.
-     */
-    private function descendantIds(Employee $root): Collection
+    /** The Cluster Manager an employee sits under — or is. */
+    private function clusterOf(ReportingTree $tree, int $employeeId): ?int
     {
-        $ids = collect([$root->id]);
-        $frontier = collect([$root->id]);
-
-        while ($frontier->isNotEmpty()) {
-            $managerIds = Employee::query()
-                ->whereIn('manager_id', $frontier)
-                ->where('exit_status', '!=', 'yes')
-                ->pluck('id');
-
-            $superviserIds = Employee::query()
-                ->whereIn('superviser_id', $frontier)
-                ->where('exit_status', '!=', 'yes')
-                ->pluck('id');
-
-            $children = $managerIds
-                ->merge($superviserIds)
-                ->map(fn ($id): int => (int) $id)
-                ->diff($ids)
-                ->unique()
-                ->values();
-
-            if ($children->isEmpty()) {
-                break;
-            }
-
-            $ids = $ids->merge($children)->unique()->values();
-            $frontier = $children;
-        }
-
-        // Selective branches must still be constrained to the source cluster.
-        return Employee::query()
-            ->whereIn('id', $ids)
-            ->where('cluster_id', $root->cluster_id)
-            ->where('exit_status', '!=', 'yes')
-            ->pluck('id')
-            ->map(fn ($id): int => (int) $id)
-            ->unique()
-            ->values();
-    }
-
-    private function closeOpenReportingHistory(Collection $employeeIds, Carbon $effectiveDate): void
-    {
-        EmployeeReportingHistory::query()
-            ->whereIn('employee_id', $employeeIds)
-            ->whereNull('effective_to')
-            ->update([
-                'effective_to' => $effectiveDate->toDateString(),
-                'updated_at' => now(),
-            ]);
+        return $tree->designation($employeeId) === Employee::DESIGNATION_CLUSTER
+            ? $employeeId
+            : $tree->nearestAncestorId($employeeId, [Employee::DESIGNATION_CLUSTER]);
     }
 
     private function validationError(string $key, string $message): never

@@ -17,6 +17,7 @@ use App\Filament\Pages\JourneyContinuityDashboard;
 use App\Filament\Pages\LoginPageSettings;
 use App\Filament\Pages\MyDailyCommitment;
 use App\Filament\Pages\MyProfile;
+use App\Filament\Pages\OtherBankSupportDashboard;
 use App\Filament\Pages\TeamPerformance;
 use App\Filament\Resources\AccountVerifications\AccountVerificationResource;
 use App\Filament\Resources\ActivityLogs\ActivityLogResource;
@@ -39,6 +40,8 @@ use App\Filament\Resources\LeadAssignmentReports\LeadAssignmentReportResource;
 use App\Filament\Resources\Leads\LeadResource;
 use App\Filament\Resources\MonthlyCommitmentTargets\MonthlyCommitmentTargetResource;
 use App\Filament\Resources\OcrDocuments\OcrDocumentResource;
+use App\Filament\Resources\OtherBankIncentiveSlabs\OtherBankIncentiveSlabResource;
+use App\Filament\Resources\OtherBankSupportTargets\OtherBankSupportTargetResource;
 use App\Filament\Resources\PendingManagerCases\PendingManagerCaseResource;
 use App\Filament\Resources\PerformanceMetricRatios\PerformanceMetricRatioResource;
 use App\Filament\Resources\Teams\TeamResource;
@@ -517,6 +520,15 @@ class AdminPanelProvider extends PanelProvider
             // takeover, SLA escalation, permanent reassignment) without ever
             // touching Customer::assign_to except through an explicit,
             // audited reassignment. See CustomerJourneyAccessService.
+            // Files eligible for a bank other than the in-house BFL products,
+            // worked by the Other Bank Support role, plus that team's own
+            // Admin-set targets and incentive slabs. See OtherBankSupportService.
+            NavigationGroup::make('Other Bank Support')->items([
+                ...$this->navigationItemsFor(OtherBankSupportDashboard::class),
+                ...$this->navigationItemsFor(OtherBankSupportTargetResource::class),
+                ...$this->navigationItemsFor(OtherBankIncentiveSlabResource::class),
+            ]),
+
             NavigationGroup::make('Customer Journey Continuity')->items([
                 ...$this->navigationItemsFor(JourneyContinuityDashboard::class),
                 ...$this->navigationItemsFor(CustomerJourneyDelegationResource::class),

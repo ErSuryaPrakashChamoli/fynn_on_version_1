@@ -5,6 +5,10 @@ namespace App\Filament\Resources\Employees\Pages;
 use App\Filament\Resources\Employees\EmployeeResource;
 use App\Models\Employee;
 use App\Models\EmployeeReportingHistory;
+use App\Services\ReportingLineService;
+use App\Support\HierarchyHelper;
+use App\Support\ReportingTree;
+use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\ViewAction;
@@ -14,13 +18,37 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
-use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 
 class EditEmployee extends EditRecord
 {
     protected static string $resource = EmployeeResource::class;
 
+    /**
+     * The employee's own reporting line, a designation change and the
+     * re-filling of the team below all land together or not at all.
+     */
+    protected ?bool $hasDatabaseTransactions = true;
+
     protected array $oldReporting = [];
+
+    /** The boss chosen in the form's Reports To field. */
+    protected ?int $newBossId = null;
+
+    /**
+     * Who reported straight to this employee before the save. After a
+     * promotion or demotion they belong in a different reporting column.
+     *
+     * @var array<int, int>
+     */
+    protected array $directReportIds = [];
+
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        $data['reports_to'] = HierarchyHelper::directBossId($this->record);
+
+        return $data;
+    }
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
@@ -32,10 +60,18 @@ class EditEmployee extends EditRecord
             'superviser_id' => $this->record->superviser_id,
             'manager_id' => $this->record->manager_id,
             'cluster_id' => $this->record->cluster_id,
+            'business_head_id' => $this->record->business_head_id,
+            'designation' => $this->record->designation,
             'reporting_date' => $this->record->reporting_date,
             'exit_status' => $this->record->exit_status,
             'exit_date' => $this->record->exit_date,
         ];
+
+        $this->newBossId = filled($data['reports_to'] ?? null) ? (int) $data['reports_to'] : null;
+        $this->directReportIds = ReportingTree::load()->childIds($this->record->id);
+
+        // Not a column: the reporting columns are derived from it in afterSave().
+        unset($data['reports_to']);
 
         return $data;
     }
@@ -43,57 +79,41 @@ class EditEmployee extends EditRecord
     protected function afterSave(): void
     {
         $employee = $this->record;
+        $reportingLines = app(ReportingLineService::class);
 
         /*
         |--------------------------------------------------------------------------
-        | REPORTING CHANGE
+        | REPORTING LINE
         |--------------------------------------------------------------------------
+        |
+        | Always re-applied: it writes nothing when nothing moved, and it
+        | also tidies columns that had drifted from the chosen boss (e.g. a
+        | Manager filed in superviser_id). Everyone below follows.
+        |
         */
 
-        if (
-            $this->oldReporting['superviser_id'] != $employee->superviser_id ||
-            $this->oldReporting['manager_id'] != $employee->manager_id ||
-            $this->oldReporting['cluster_id'] != $employee->cluster_id
-        ) {
-            $effectiveDate = $employee->reporting_date;
+        $effectiveDate = $this->reportingEffectiveDate();
 
-            // A reporting-hierarchy change moves an existing,
-            // active employee — it must never reset reporting_date
-            // merely because the admin didn't type a new one here,
-            // since that would make AchievementCalculatorService's
-            // "new joiner" worked-days rule wrongly treat them as
-            // newly hired for the current month. $effectiveDate is
-            // still computed (defaulting to today when the admin
-            // didn't change it) and used below for the history
-            // entries' own effective_date/effective_to — it is just
-            // no longer persisted onto the employee record itself.
-            if (
-                blank($effectiveDate) ||
-                (string) $effectiveDate === (string) $this->oldReporting['reporting_date']
-            ) {
-                $effectiveDate = now()->toDateString();
+        $reportingLines->reportTo(
+            $employee,
+            $this->newBossId,
+            $effectiveDate,
+            ReportingLineService::CHANGE_REPORTING,
+            'Reporting hierarchy updated from Employee Edit.',
+            auth()->id(),
+        );
+
+        if ((int) ($this->oldReporting['designation'] ?? $employee->designation) !== (int) $employee->designation) {
+            foreach (Employee::query()->whereIn('id', $this->directReportIds)->get() as $report) {
+                $reportingLines->reportTo(
+                    $report,
+                    $employee->id,
+                    $effectiveDate,
+                    ReportingLineService::CHANGE_REPORTING,
+                    "Follows {$employee->emp_name}'s designation change.",
+                    auth()->id(),
+                );
             }
-
-            EmployeeReportingHistory::where('employee_id', $employee->id)
-                ->whereNull('effective_to')
-                ->update([
-                    'effective_to' => $effectiveDate,
-                    'updated_at' => now(),
-                ]);
-
-            EmployeeReportingHistory::create([
-                'employee_id' => $employee->id,
-                'old_superviser_id' => $this->oldReporting['superviser_id'],
-                'old_manager_id' => $this->oldReporting['manager_id'],
-                'old_cluster_id' => $this->oldReporting['cluster_id'],
-                'new_superviser_id' => $employee->superviser_id,
-                'new_manager_id' => $employee->manager_id,
-                'new_cluster_id' => $employee->cluster_id,
-                'effective_date' => $effectiveDate,
-                'change_type' => 'reporting_change',
-                'updated_by' => auth()->id(),
-                'remarks' => 'Reporting hierarchy updated from Employee Edit.',
-            ]);
         }
 
         /*
@@ -120,15 +140,41 @@ class EditEmployee extends EditRecord
                 'old_superviser_id' => $employee->superviser_id,
                 'old_manager_id' => $employee->manager_id,
                 'old_cluster_id' => $employee->cluster_id,
+                'old_business_head_id' => $employee->business_head_id,
                 'new_superviser_id' => null,
                 'new_manager_id' => null,
                 'new_cluster_id' => null,
+                'new_business_head_id' => null,
                 'effective_date' => $exitDate,
                 'change_type' => 'exit',
                 'updated_by' => auth()->id(),
                 'remarks' => 'Employee exited.',
             ]);
         }
+    }
+
+    /**
+     * The date a reporting change made on this form takes effect.
+     *
+     * A reporting-hierarchy change moves an existing, active employee — it
+     * must never reset reporting_date merely because the admin didn't type
+     * a new one here, since that would make AchievementCalculatorService's
+     * "new joiner" worked-days rule wrongly treat them as newly hired for
+     * the current month. A reporting date the admin did change dates the
+     * history entries; otherwise they take effect today.
+     */
+    private function reportingEffectiveDate(): string
+    {
+        $reportingDate = $this->record->reporting_date;
+
+        if (
+            blank($reportingDate) ||
+            (string) $reportingDate === (string) ($this->oldReporting['reporting_date'] ?? null)
+        ) {
+            return now()->toDateString();
+        }
+
+        return Carbon::parse($reportingDate)->toDateString();
     }
 
     protected function getHeaderActions(): array
@@ -141,60 +187,36 @@ class EditEmployee extends EditRecord
                 ->label('Transfer Employee')
                 ->icon('heroicon-o-arrow-path')
                 ->color('warning')
-                ->fillForm(fn () => [
-
-                    'current_superviser' => $this->record->superviser?->emp_name,
-
-                    'current_manager' => $this->record->manager?->emp_name,
-
-                    'current_cluster' => $this->record->clusterManager?->emp_name,
-
+                ->visible(fn (): bool => Employee::designationRank($this->record->designation) > 0
+                    && $this->record->designation !== Employee::DESIGNATION_BUSINESS_HEAD)
+                ->fillForm(fn (): array => [
+                    'current_reporting' => ($bossId = HierarchyHelper::directBossId($this->record))
+                        ? app(ReportingLineService::class)->lineSummary($bossId)
+                        : 'Nobody',
                     'effective_date' => now()->toDateString(),
-
                 ])
                 ->form([
 
-                    TextInput::make('current_superviser')
-                        ->label('Current Team Leader')
+                    TextInput::make('current_reporting')
+                        ->label('Currently Reports To')
                         ->disabled()
                         ->dehydrated(false),
 
-                    TextInput::make('current_manager')
-                        ->label('Current Manager')
-                        ->disabled()
-                        ->dehydrated(false),
-
-                    TextInput::make('current_cluster')
-                        ->label('Current Cluster')
-                        ->disabled()
-                        ->dehydrated(false),
-
-                    // Select::make('new_superviser_id')
-                    //     ->label('New Team Leader')
-                    //     ->options(
-                    //         Employee::query()
-                    //             ->where('designation', 'Team Leader')
-                    //             ->orderBy('emp_name')
-                    //             ->pluck('emp_name', 'id')
-                    //     )
-                    //     ->searchable()
-                    //     ->live()
-                    //     ->required(),
-
-                    Select::make('new_superviser_id')
-                        ->label('New Team Leader')
-                        ->relationship(
-                            'superviser',
-                            'emp_name',
-                            modifyQueryUsing: fn (Builder $query): Builder => $query
-                                ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                                ->where('exit_status', '!=', 'yes')
-                        )
-                        ->searchable()
-                        ->live()
-                        ->getOptionLabelFromRecordUsing(fn ($record) => "{$record->emp_name} - ({$record->emp_id})")
+                    Select::make('reports_to')
+                        ->label('New Boss')
+                        ->options(fn (): array => app(ReportingLineService::class)
+                            ->bossOptions($this->record->designation, $this->record->id))
+                        ->helperText('Anyone more senior may be chosen; the levels in between can be skipped.')
                         ->required()
-                        ->preload(),
+                        ->rule(fn (): Closure => function (string $attribute, $value, Closure $fail): void {
+                            $problem = app(ReportingLineService::class)
+                                ->bossProblem($this->record->designation, (int) $value, $this->record->id);
+
+                            if ($problem !== null) {
+                                $fail($problem);
+                            }
+                        })
+                        ->native(false),
 
                     DatePicker::make('effective_date')
                         ->required(),
@@ -205,95 +227,26 @@ class EditEmployee extends EditRecord
                 ])
                 ->action(function (array $data) {
 
-                    $employee = $this->record;
-
-                    $newTL = Employee::findOrFail($data['new_superviser_id']);
-
-                    $newManager = $newTL->manager;
-
-                    $newCluster = $newTL->clusterManager;
-
-                    /*
-    |--------------------------------------------------------------------------
-    | Close Previous Reporting History
-    |--------------------------------------------------------------------------
-    */
-
-                    EmployeeReportingHistory::where('employee_id', $employee->id)
-                        ->whereNull('effective_to')
-                        ->update([
-                            'effective_to' => $data['effective_date'],
-                        ]);
-
-                    /*
-    |--------------------------------------------------------------------------
-    | Update Employee
-    |--------------------------------------------------------------------------
-    */
-
-                    $oldSupervisor = $employee->superviser_id;
-                    $oldManager = $employee->manager_id;
-                    $oldCluster = $employee->cluster_id;
-
                     // reporting_date is deliberately left untouched here: this transfer
                     // moves an existing, active employee — it must not make
                     // AchievementCalculatorService's "new joiner" worked-days rule treat
                     // them as newly hired for the transfer month. $data['effective_date']
-                    // is still recorded below on the EmployeeReportingHistory entry.
-                    $employee->update([
-
-                        'superviser_id' => $newTL->id,
-
-                        'manager_id' => $newManager?->id,
-
-                        'cluster_id' => $newCluster?->id,
-
-                    ]);
-
-                    /*
-    |--------------------------------------------------------------------------
-    | Create Reporting History
-    |--------------------------------------------------------------------------
-    */
-
-                    EmployeeReportingHistory::create([
-
-                        'employee_id' => $employee->id,
-
-                        'old_superviser_id' => $oldSupervisor,
-
-                        'old_manager_id' => $oldManager,
-
-                        'old_cluster_id' => $oldCluster,
-
-                        'new_superviser_id' => $newTL->id,
-
-                        'new_manager_id' => $newManager?->id,
-
-                        'new_cluster_id' => $newCluster?->id,
-
-                        'effective_date' => $data['effective_date'],
-
-                        'effective_to' => null,
-
-                        'change_type' => 'transfer',
-
-                        'updated_by' => auth()->id(),
-
-                        'remarks' => $data['remarks'],
-
-                    ]);
+                    // is still recorded on the EmployeeReportingHistory entries.
+                    app(ReportingLineService::class)->reportTo(
+                        $this->record,
+                        (int) $data['reports_to'],
+                        $data['effective_date'],
+                        ReportingLineService::CHANGE_TRANSFER,
+                        filled($data['remarks'] ?? null) ? $data['remarks'] : 'Transferred from Employee Edit.',
+                        auth()->id(),
+                    );
 
                     Notification::make()
                         ->title('Employee transferred successfully.')
                         ->success()
                         ->send();
 
-                    $this->refreshFormData([
-                        'superviser_id',
-                        'manager_id',
-                        'cluster_id',
-                    ]);
+                    $this->data['reports_to'] = HierarchyHelper::directBossId($this->record);
 
                 }),
         ];

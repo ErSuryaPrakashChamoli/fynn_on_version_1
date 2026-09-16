@@ -7,6 +7,7 @@ use App\Models\CustomerReassignment;
 use App\Models\Employee;
 use App\Services\Journey\CustomerReassignmentService;
 use App\Support\EmployeeOptions;
+use App\Support\HierarchyHelper;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -14,6 +15,7 @@ use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -108,9 +110,27 @@ class CustomerReassignmentsTable
                             ->required(),
                     ])
                     ->action(function (array $data): void {
+                        $branchIds = self::branchEmployeeIds();
+                        $customer = Customer::query()->findOrFail($data['customer_id']);
+
+                        // Re-checked here: a crafted request never runs the pickers.
+                        if ($branchIds !== null && (
+                            ! $branchIds->contains((int) $customer->assign_to)
+                            || ! $branchIds->contains((int) $data['new_owner_id'])
+                        )) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Could not reassign customer')
+                                ->body('You can only reassign customers and owners inside your own branch.')
+                                ->persistent()
+                                ->send();
+
+                            return;
+                        }
+
                         try {
                             app(CustomerReassignmentService::class)->reassign(
-                                Customer::query()->findOrFail($data['customer_id']),
+                                $customer,
                                 (int) $data['new_owner_id'],
                                 (int) auth()->id(),
                                 $data['reason'],
@@ -161,6 +181,22 @@ class CustomerReassignmentsTable
                             ->required(),
                     ])
                     ->action(function (array $data): void {
+                        $branchIds = self::branchEmployeeIds();
+
+                        if ($branchIds !== null && (
+                            ! $branchIds->contains((int) $data['outgoing_manager_id'])
+                            || ! $branchIds->contains((int) $data['target_manager_id'])
+                        )) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Could not complete bulk reassignment')
+                                ->body('Both Managers must be inside your own branch.')
+                                ->persistent()
+                                ->send();
+
+                            return;
+                        }
+
                         try {
                             $outgoing = Employee::query()->findOrFail($data['outgoing_manager_id']);
                             $target = Employee::query()->findOrFail($data['target_manager_id']);
@@ -198,11 +234,33 @@ class CustomerReassignmentsTable
     }
 
     /**
+     * The employees whose customers and seats the current user may reassign
+     * — their own branch — or null for the Admin, who may reassign anyone.
+     *
+     * @return Collection<int, int>|null
+     */
+    private static function branchEmployeeIds(): ?Collection
+    {
+        $user = auth()->user();
+
+        if ($user?->hasRole('Admin')) {
+            return null;
+        }
+
+        $employee = $user?->employee;
+
+        return $employee ? HierarchyHelper::visibleSubordinateIds($employee) : collect();
+    }
+
+    /**
      * @return array<int, string>
      */
     private static function customerOptions(?string $search = null): array
     {
+        $branchIds = self::branchEmployeeIds();
+
         return Customer::query()
+            ->when($branchIds !== null, fn ($query) => $query->whereIn('assign_to', $branchIds))
             ->when(
                 filled($search),
                 fn ($query) => $query->where(
@@ -225,7 +283,10 @@ class CustomerReassignmentsTable
      */
     private static function ownerOptions(): array
     {
+        $branchIds = self::branchEmployeeIds();
+
         return Employee::query()
+            ->when($branchIds !== null, fn ($query) => $query->whereIn('id', $branchIds))
             ->whereIn('designation', [Employee::DESIGNATION_MANAGER, Employee::DESIGNATION_TEAM_LEADER])
             ->where('exit_status', '!=', 'yes')
             ->orderBy('emp_name')
@@ -241,7 +302,10 @@ class CustomerReassignmentsTable
      */
     private static function managerOptions(): array
     {
+        $branchIds = self::branchEmployeeIds();
+
         return Employee::query()
+            ->when($branchIds !== null, fn ($query) => $query->whereIn('id', $branchIds))
             ->where('designation', Employee::DESIGNATION_MANAGER)
             ->orderBy('emp_name')
             ->get()

@@ -9,6 +9,7 @@ use App\Filament\Resources\CustomerPanRequests\Schemas\CustomerPanRequestForm;
 use App\Filament\Resources\CustomerPanRequests\Tables\CustomerPanRequestsTable;
 use App\Models\CustomerPanRequest;
 use App\Models\Employee;
+use App\Support\HierarchyHelper;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -56,7 +57,10 @@ class CustomerPanRequestResource extends Resource
      * the request at creation time): Admin sees everything, a caller (or
      * any other non-hierarchy role) sees only requests they raised
      * themselves, and each of Team Leader/Manager/Cluster Manager sees the
-     * requests that were made under them specifically.
+     * requests that were made under them specifically. A Business Head
+     * sees their branch's requests: those snapshotted under them, plus
+     * older requests raised below them before the snapshot carried a
+     * Business Head.
      */
     public static function getEloquentQuery(): Builder
     {
@@ -79,6 +83,9 @@ class CustomerPanRequestResource extends Resource
         }
 
         return match ($employee->designation) {
+            Employee::DESIGNATION_BUSINESS_HEAD => $query->where(fn (Builder $query): Builder => $query
+                ->where('business_head_id', $employee->id)
+                ->orWhereIn('requested_by', HierarchyHelper::visibleSubordinateIds($employee))),
             Employee::DESIGNATION_CLUSTER => $query->where('cluster_manager_id', $employee->id),
             Employee::DESIGNATION_MANAGER => $query->where('manager_id', $employee->id),
             Employee::DESIGNATION_TEAM_LEADER => $query->where('team_leader_id', $employee->id),

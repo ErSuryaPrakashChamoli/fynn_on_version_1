@@ -5,6 +5,8 @@ namespace App\Filament\Resources\Employees\Pages;
 use App\Filament\Resources\Employees\EmployeeResource;
 use App\Models\Employee;
 use App\Services\HierarchyReassignmentService;
+use App\Services\ReportingLineService;
+use App\Support\ReportingTree;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Forms\Components\DatePicker;
@@ -33,7 +35,7 @@ class ListEmployees extends ListRecords
                 ->color('warning')
                 ->visible(fn (): bool => auth()->user()?->hasRole('Admin') === true)
                 ->modalHeading('Transfer / Reassign Employees')
-                ->modalDescription('Use Full Cluster for a complete cluster move. Use Flexible Reassignment to move individual Callers to any Team Leader and Team Leaders to any Manager. Each row can have a different destination.')
+                ->modalDescription('Use Full Cluster to move a Cluster Manager\'s direct reports, with their teams, to another Cluster Manager. Use Flexible Reassignment to move any employee to anyone more senior — levels in between may be skipped, and each row can have a different destination.')
                 ->modalSubmitActionLabel('Confirm Transfer')
                 ->modalWidth('5xl')
                 ->form([
@@ -73,7 +75,7 @@ class ListEmployees extends ListRecords
                         ->visible(fn (Get $get): bool => $get('transfer_type') === 'full_cluster'),
 
                     Select::make('selected_employee_ids')
-                        ->label('Managers / Team Leaders to Transfer')
+                        ->label('Managers / Team Leaders to Transfer (with their teams)')
                         ->options(fn (Get $get): array => $this->selectableHierarchyOptions(
                             (int) ($get('source_cluster_manager_id') ?: 0),
                         ))
@@ -101,7 +103,7 @@ class ListEmployees extends ListRecords
                             $employee = Employee::find($state['employee_id']);
 
                             return $employee
-                                ? "{$employee->emp_name} → " . ($state['target_id'] ? (Employee::find($state['target_id'])?->emp_name ?? 'Destination') : 'Select destination')
+                                ? "{$employee->emp_name} → ".($state['target_id'] ? (Employee::find($state['target_id'])?->emp_name ?? 'Destination') : 'Select destination')
                                 : 'New Transfer';
                         })
                         ->schema([
@@ -124,7 +126,7 @@ class ListEmployees extends ListRecords
                                         ->count() > 1;
                                 })
                                 ->afterStateUpdated(fn (Set $set): mixed => $set('target_id', null))
-                                ->helperText('Caller = move to a Team Leader. Team Leader = move to a Manager.'),
+                                ->helperText('Everyone below the employee moves with them.'),
 
                             Select::make('target_id')
                                 ->label('Move To')
@@ -139,15 +141,9 @@ class ListEmployees extends ListRecords
                                 ->live()
                                 ->required()
                                 ->disableOptionWhen(fn (string $value, Get $get): bool => (int) $value === (int) ($get('employee_id') ?: 0))
-                                ->helperText(function (Get $get): string {
-                                    $employee = Employee::find((int) ($get('employee_id') ?: 0));
-
-                                    return match ($employee?->designation) {
-                                        Employee::DESIGNATION_CALLER => 'Select the Team Leader who will become this Caller\'s new supervisor.',
-                                        Employee::DESIGNATION_TEAM_LEADER => 'Select the Manager who will become this Team Leader\'s new manager.',
-                                        default => 'Select an employee first.',
-                                    };
-                                }),
+                                ->helperText(fn (Get $get): string => filled($get('employee_id'))
+                                    ? 'Choose anyone more senior. The levels in between can be skipped.'
+                                    : 'Select an employee first.'),
                         ])
                         ->columnSpanFull(),
 
@@ -228,62 +224,61 @@ class ListEmployees extends ListRecords
             ->all();
     }
 
+    /**
+     * The Managers and Team Leaders reporting straight to the source
+     * Cluster Manager — the only ones a selective transfer can move.
+     */
     private function selectableHierarchyOptions(int $sourceId): array
     {
         if ($sourceId <= 0) {
             return [];
         }
 
-        $managers = Employee::query()
-            ->where('cluster_id', $sourceId)
-            ->where('designation', Employee::DESIGNATION_MANAGER)
-            ->where('exit_status', '!=', 'yes')
-            ->orderBy('emp_name')
-            ->get();
+        $labels = Employee::designationOptions();
 
-        $teamLeaders = Employee::query()
-            ->where('cluster_id', $sourceId)
-            ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-            ->where('exit_status', '!=', 'yes')
-            ->orderBy('emp_name')
-            ->get();
-
-        $options = [];
-
-        foreach ($managers as $manager) {
-            $options[(string) $manager->id] = "Manager: {$manager->emp_name} - ({$manager->emp_id})";
-        }
-
-        foreach ($teamLeaders as $teamLeader) {
-            $options[(string) $teamLeader->id] = "Team Leader / ARO Group: {$teamLeader->emp_name} - ({$teamLeader->emp_id})";
-        }
-
-        return $options;
-    }
-
-    private function flexibleSourceOptions(): array
-    {
         return Employee::query()
+            ->whereIn('id', ReportingTree::load()->childIds($sourceId))
             ->whereIn('designation', [
-                Employee::DESIGNATION_CALLER,
+                Employee::DESIGNATION_MANAGER,
                 Employee::DESIGNATION_TEAM_LEADER,
             ])
             ->where('exit_status', '!=', 'yes')
             ->orderBy('designation')
             ->orderBy('emp_name')
             ->get()
-            ->mapWithKeys(function (Employee $employee): array {
-                $type = $employee->designation === Employee::DESIGNATION_CALLER
-                    ? 'Caller'
-                    : 'Team Leader';
-
-                return [
-                    $employee->id => "{$type}: {$employee->emp_name} - ({$employee->emp_id})",
-                ];
-            })
+            ->mapWithKeys(fn (Employee $employee): array => [
+                (string) $employee->id => ($labels[$employee->designation] ?? 'Employee').": {$employee->emp_name} - ({$employee->emp_id})",
+            ])
             ->all();
     }
 
+    /**
+     * Everyone who reports to somebody and can therefore be moved.
+     */
+    private function flexibleSourceOptions(): array
+    {
+        $labels = Employee::designationOptions();
+
+        return Employee::query()
+            ->whereIn('designation', [
+                Employee::DESIGNATION_CALLER,
+                Employee::DESIGNATION_TEAM_LEADER,
+                Employee::DESIGNATION_MANAGER,
+                Employee::DESIGNATION_CLUSTER,
+            ])
+            ->where('exit_status', '!=', 'yes')
+            ->orderBy('designation')
+            ->orderBy('emp_name')
+            ->get()
+            ->mapWithKeys(fn (Employee $employee): array => [
+                $employee->id => ($labels[$employee->designation] ?? 'Employee').": {$employee->emp_name} - ({$employee->emp_id})",
+            ])
+            ->all();
+    }
+
+    /**
+     * Anyone more senior than the employee being moved, grouped by level.
+     */
     private function flexibleTargetOptions(int $employeeId): array
     {
         if ($employeeId <= 0) {
@@ -296,25 +291,6 @@ class ListEmployees extends ListRecords
             return [];
         }
 
-        $targetDesignation = match ($employee->designation) {
-            Employee::DESIGNATION_CALLER => Employee::DESIGNATION_TEAM_LEADER,
-            Employee::DESIGNATION_TEAM_LEADER => Employee::DESIGNATION_MANAGER,
-            default => null,
-        };
-
-        if ($targetDesignation === null) {
-            return [];
-        }
-
-        return Employee::query()
-            ->where('designation', $targetDesignation)
-            ->where('exit_status', '!=', 'yes')
-            ->where('id', '!=', $employeeId)
-            ->orderBy('emp_name')
-            ->get()
-            ->mapWithKeys(fn (Employee $target): array => [
-                $target->id => ($targetDesignation === Employee::DESIGNATION_TEAM_LEADER ? 'Team Leader' : 'Manager') . ": {$target->emp_name} - ({$target->emp_id})",
-            ])
-            ->all();
+        return app(ReportingLineService::class)->bossOptions($employee->designation, $employee->id);
     }
 }

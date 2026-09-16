@@ -17,6 +17,7 @@ use App\Models\UserLoginSession;
 use App\Support\EmployeeOptions;
 use App\Support\HierarchyHelper;
 use App\Support\Performance\PerformancePeriod;
+use App\Support\ReportingTree;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -529,13 +530,13 @@ class DailyCommitmentService
      * filter is applied against the user's own visible set, so a filter
      * can never widen what someone is allowed to see.
      *
-     * @param  array{cluster_id?: int|string|null, manager_id?: int|string|null, team_leader_id?: int|string|null, caller_id?: int|string|null}  $filters
+     * @param  array{business_head_id?: int|string|null, cluster_id?: int|string|null, manager_id?: int|string|null, team_leader_id?: int|string|null, caller_id?: int|string|null}  $filters
      */
     public function filterEmployeeIds(User $user, array $filters = []): Collection
     {
         $ids = $this->visibleEmployeeIds($user);
 
-        foreach (['caller_id', 'team_leader_id', 'manager_id', 'cluster_id'] as $key) {
+        foreach (['caller_id', 'team_leader_id', 'manager_id', 'cluster_id', 'business_head_id'] as $key) {
             $id = $filters[$key] ?? null;
 
             if (blank($id)) {
@@ -726,53 +727,46 @@ class DailyCommitmentService
     }
 
     /**
-     * Order employees down the reporting tree: each Cluster Manager, then
-     * their Managers, then each Manager's Team Leaders, then that Team
-     * Leader's callers. A caller's manager/cluster is resolved through
-     * their Team Leader rather than from their own columns, which are not
-     * always populated.
+     * Order employees down the reporting tree: each Business Head, their
+     * Cluster Managers, each Cluster Manager's Managers, each Manager's
+     * Team Leaders, then that Team Leader's callers. Bosses come from the
+     * reporting tree rather than a caller's own copied columns, which are
+     * not always populated. A skipped level sorts after the filled ones at
+     * that level, so a Team Leader reporting straight to a Cluster Manager
+     * follows that Cluster Manager's Managers.
      *
      * @param  Collection<int, Employee>  $employees
      * @return Collection<int, Employee>
      */
     public function hierarchicalOrder(Collection $employees): Collection
     {
-        $all = Employee::query()
-            ->get(['id', 'emp_name', 'designation', 'superviser_id', 'manager_id', 'cluster_id'])
-            ->keyBy('id');
+        $tree = ReportingTree::load();
 
-        $level = fn (?int $designation): int => match ($designation) {
-            Employee::DESIGNATION_CLUSTER => 0,
-            Employee::DESIGNATION_MANAGER => 1,
-            Employee::DESIGNATION_TEAM_LEADER => 2,
-            Employee::DESIGNATION_CALLER => 3,
-            default => 4,
-        };
+        $slots = [
+            Employee::DESIGNATION_BUSINESS_HEAD,
+            Employee::DESIGNATION_CLUSTER,
+            Employee::DESIGNATION_MANAGER,
+            Employee::DESIGNATION_TEAM_LEADER,
+        ];
 
-        return $employees->sortBy(function (Employee $employee) use ($all, $level): string {
-            $leader = $employee->designation === Employee::DESIGNATION_TEAM_LEADER
-                ? $employee
-                : ($all[$employee->superviser_id] ?? null);
+        return $employees->sortBy(function (Employee $employee) use ($tree, $slots): string {
+            $ownRank = Employee::designationRank($employee->designation);
 
-            $manager = $employee->designation === Employee::DESIGNATION_MANAGER
-                ? $employee
-                : ($all[$leader?->manager_id ?? $employee->manager_id] ?? null);
-
-            $cluster = $employee->designation === Employee::DESIGNATION_CLUSTER
-                ? $employee
-                : ($all[$manager?->cluster_id ?? $employee->cluster_id] ?? null);
+            // One segment per level above callers: the boss at that level,
+            // the employee's own name at their level, blank below it.
+            $segments = array_map(fn (int $slot): string => match (true) {
+                Employee::designationRank($slot) < $ownRank => '',
+                Employee::designationRank($slot) === $ownRank => (string) $employee->emp_name,
+                default => $tree->name($tree->nearestAncestorId($employee->id, [$slot]) ?? 0) ?? '~',
+            }, $slots);
 
             // Joined with a control character rather than a printable one:
             // an empty segment (a Cluster Manager has no manager above it)
             // must sort BEFORE a filled one, and every printable character
             // outranks \x1f.
             return implode("\x1f", [
-                $cluster?->emp_name ?? '~',
-                $employee->designation === Employee::DESIGNATION_CLUSTER ? '' : ($manager?->emp_name ?? '~'),
-                in_array($employee->designation, [Employee::DESIGNATION_CLUSTER, Employee::DESIGNATION_MANAGER], true)
-                    ? ''
-                    : ($leader?->emp_name ?? '~'),
-                $level($employee->designation),
+                ...$segments,
+                count(Employee::DESIGNATION_RANKS) - $ownRank,
                 $employee->emp_name,
             ]);
         })->values();
@@ -860,11 +854,12 @@ class DailyCommitmentService
     }
 
     /**
-     * The order the four hierarchy levels are always reported in.
+     * The order the hierarchy levels are always reported in.
      *
      * @var array<int, int>
      */
     public const LEVELS = [
+        Employee::DESIGNATION_BUSINESS_HEAD,
         Employee::DESIGNATION_CLUSTER,
         Employee::DESIGNATION_MANAGER,
         Employee::DESIGNATION_TEAM_LEADER,

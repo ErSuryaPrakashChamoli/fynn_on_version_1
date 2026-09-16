@@ -2,15 +2,14 @@
 
 namespace App\Filament\Pages;
 
+use BackedEnum;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
-use Filament\Notifications\Notification;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rules\Password;
 use Filament\Support\Icons\Heroicon;
-use BackedEnum;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 
 class ChangePassword extends Page
 {
@@ -31,7 +30,7 @@ class ChangePassword extends Page
     public function mount(): void
     {
         abort_unless(
-            auth()->user()->hasAnyRole(['Caller', 'Team Leader', 'Manager', 'Cluster Manager', 'Admin']),
+            auth()->user()->hasAnyRole(['Caller', 'Team Leader', 'Manager', 'Cluster Manager', 'Business Head', 'Admin']),
             403
         );
 
@@ -81,14 +80,12 @@ class ChangePassword extends Page
         // request()->session()->invalidate();
         // request()->session()->regenerateToken();
 
-
         $this->form->fill();
 
         Notification::make()
             ->title('Password changed successfully')
             ->success()
             ->send();
-
 
         // Logout user
         Auth::logout();
@@ -109,7 +106,8 @@ class ChangePassword extends Page
                 'Team Leader',
                 'Manager',
                 'Cluster Manager',
-                'Admin'
+                'Business Head',
+                'Admin',
             ]);
     }
 }

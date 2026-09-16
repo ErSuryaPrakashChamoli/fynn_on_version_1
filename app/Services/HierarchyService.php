@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Employee;
 use App\Models\User;
+use App\Support\HierarchyHelper;
 
 class HierarchyService
 {
@@ -76,7 +77,14 @@ class HierarchyService
     //     return [$employee->id];
     // }
 
-
+    /**
+     * Employee ids whose leads and assignments the user may see: themselves
+     * and their whole branch, exited levels included (see
+     * HierarchyHelper::visibleSubordinateIds()). A caller reporting
+     * straight to a Manager is part of that branch, as it always was here.
+     *
+     * @return array<int, int>
+     */
     public static function visibleEmployeeIds(User $user): array
     {
         if ($user->hasRole('Admin')) {
@@ -85,158 +93,18 @@ class HierarchyService
 
         $employee = $user->employee;
 
-        if (! $employee) {
+        if (! $employee || Employee::designationRank($employee->designation) === 0) {
             return [];
         }
 
-        switch ($employee->designation) {
-
-            /*
-        |--------------------------------------------------------------------------
-        | CLUSTER MANAGER
-        |--------------------------------------------------------------------------
-        */
-            case Employee::DESIGNATION_CLUSTER:
-
-                $managerIds = Employee::where('cluster_id', $employee->id)
-                    ->where('designation', Employee::DESIGNATION_MANAGER)
-                    ->pluck('id')
-                    ->toArray();
-
-                $teamLeaderIds = Employee::whereIn('manager_id', $managerIds)
-                    ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                    ->pluck('id')
-                    ->toArray();
-
-                $callerIds = Employee::whereIn('superviser_id', $teamLeaderIds)
-                    ->where('designation', Employee::DESIGNATION_CALLER)
-                    ->pluck('id')
-                    ->toArray();
-
-                return array_unique(array_merge(
-                    [$employee->id],
-                    $managerIds,
-                    $teamLeaderIds,
-                    $callerIds
-                ));
-
-                /*
-        |--------------------------------------------------------------------------
-        | MANAGER
-        |--------------------------------------------------------------------------
-        */
-            case Employee::DESIGNATION_MANAGER:
-
-                $teamLeaderIds = Employee::where('manager_id', $employee->id)
-                    ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                    ->pluck('id')
-                    ->toArray();
-
-                $callerIds = Employee::whereIn('superviser_id', $teamLeaderIds)
-                    ->where('designation', Employee::DESIGNATION_CALLER)
-                    ->pluck('id')
-                    ->toArray();
-
-                $directCallers = Employee::where('manager_id', $employee->id)
-                    ->where('designation', Employee::DESIGNATION_CALLER)
-                    ->pluck('id')
-                    ->toArray();
-
-                return array_unique(array_merge(
-                    [$employee->id],
-                    $teamLeaderIds,
-                    $callerIds,
-                    $directCallers
-                ));
-
-                /*
-        |--------------------------------------------------------------------------
-        | TEAM LEADER
-        |--------------------------------------------------------------------------
-        */
-            case Employee::DESIGNATION_TEAM_LEADER:
-
-                $callerIds = Employee::where('superviser_id', $employee->id)
-                    ->where('designation', Employee::DESIGNATION_CALLER)
-                    ->pluck('id')
-                    ->toArray();
-
-                return array_unique(array_merge(
-                    [$employee->id],
-                    $callerIds
-                ));
-
-                /*
-        |--------------------------------------------------------------------------
-        | CALLER
-        |--------------------------------------------------------------------------
-        */
-            case Employee::DESIGNATION_CALLER:
-
-                return [$employee->id];
-
-            default:
-
-                return [];
-        }
+        return HierarchyHelper::visibleSubordinateIds($employee)->all();
     }
 
-
+    /**
+     * @return array<int, int>
+     */
     public static function subordinateEmployeeIds(Employee $employee): array
     {
-        switch ($employee->designation) {
-
-            case Employee::DESIGNATION_CALLER:
-                return [$employee->id];
-
-            case Employee::DESIGNATION_TEAM_LEADER:
-
-                return Employee::where('superviser_id', $employee->id)
-                    ->where('designation', Employee::DESIGNATION_CALLER)
-                    ->pluck('id')
-                    ->push($employee->id)
-                    ->toArray();
-
-            case Employee::DESIGNATION_MANAGER:
-
-                $teamLeaderIds = Employee::where('manager_id', $employee->id)
-                    ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                    ->pluck('id')
-                    ->toArray();
-
-                $callerIds = Employee::whereIn('superviser_id', $teamLeaderIds)
-                    ->where('designation', Employee::DESIGNATION_CALLER)
-                    ->pluck('id')
-                    ->toArray();
-
-                return array_merge([$employee->id], $teamLeaderIds, $callerIds);
-
-            case Employee::DESIGNATION_CLUSTER:
-
-                $managerIds = Employee::where('cluster_id', $employee->id)
-                    ->where('designation', Employee::DESIGNATION_MANAGER)
-                    ->pluck('id')
-                    ->toArray();
-
-                $teamLeaderIds = Employee::whereIn('manager_id', $managerIds)
-                    ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                    ->pluck('id')
-                    ->toArray();
-
-                $callerIds = Employee::whereIn('superviser_id', $teamLeaderIds)
-                    ->where('designation', Employee::DESIGNATION_CALLER)
-                    ->pluck('id')
-                    ->toArray();
-
-                return array_merge(
-                    [$employee->id],
-                    $managerIds,
-                    $teamLeaderIds,
-                    $callerIds
-                );
-
-            default:
-                return [$employee->id];
-        }
+        return HierarchyHelper::visibleSubordinateIds($employee)->all();
     }
 }

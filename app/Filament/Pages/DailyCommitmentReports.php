@@ -95,6 +95,13 @@ class DailyCommitmentReports extends Page
                     ->default(today()->startOfMonth())
                     ->live(),
 
+                Select::make('business_head_id')
+                    ->label('Business Head')
+                    ->options(fn (): array => $service->employeeOptions($user, Employee::DESIGNATION_BUSINESS_HEAD))
+                    ->native(false)
+                    ->placeholder('All')
+                    ->live(),
+
                 Select::make('cluster_id')
                     ->label('Cluster Manager')
                     ->options(fn (): array => $service->employeeOptions($user, Employee::DESIGNATION_CLUSTER))

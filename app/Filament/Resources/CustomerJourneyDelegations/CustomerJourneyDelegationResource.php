@@ -42,7 +42,9 @@ class CustomerJourneyDelegationResource extends Resource
         $query = parent::getEloquentQuery();
         $user = auth()->user();
 
-        if ($user->hasAnyRole(['Admin', 'Business Head'])) {
+        // Only Admin sees every rule. A Business Head is a level in the
+        // reporting tree like any other and sees their own branch below.
+        if ($user->hasRole('Admin')) {
             return $query;
         }
 
@@ -78,7 +80,7 @@ class CustomerJourneyDelegationResource extends Resource
     {
         $user = auth()->user();
 
-        if ($user->hasAnyRole(['Admin', 'Business Head'])) {
+        if ($user->hasRole('Admin')) {
             return true;
         }
 

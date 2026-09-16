@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -11,16 +12,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $old_superviser_id
  * @property int|null $old_manager_id
  * @property int|null $old_cluster_id
+ * @property int|null $old_business_head_id
  * @property int|null $new_superviser_id
  * @property int|null $new_manager_id
  * @property int|null $new_cluster_id
- * @property \Illuminate\Support\Carbon $effective_date
+ * @property int|null $new_business_head_id
+ * @property Carbon $effective_date
  * @property string|null $effective_to
  * @property string $change_type
  * @property int|null $updated_by
  * @property string|null $remarks
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|EmployeeReportingHistory newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|EmployeeReportingHistory newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|EmployeeReportingHistory query()
@@ -39,6 +43,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|EmployeeReportingHistory whereRemarks($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|EmployeeReportingHistory whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|EmployeeReportingHistory whereUpdatedBy($value)
+ *
  * @mixin \Eloquent
  */
 class EmployeeReportingHistory extends Model
@@ -50,16 +55,17 @@ class EmployeeReportingHistory extends Model
         'old_superviser_id',
         'old_manager_id',
         'old_cluster_id',
+        'old_business_head_id',
         'new_superviser_id',
         'new_manager_id',
         'new_cluster_id',
+        'new_business_head_id',
         'effective_date',
         'effective_to',
         'change_type',
         'updated_by',
         'remarks',
     ];
-
 
     public function employee(): BelongsTo
     {
@@ -94,6 +100,16 @@ class EmployeeReportingHistory extends Model
     public function newCluster(): BelongsTo
     {
         return $this->belongsTo(Employee::class, 'new_cluster_id');
+    }
+
+    public function oldBusinessHead(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'old_business_head_id');
+    }
+
+    public function newBusinessHead(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'new_business_head_id');
     }
 
     public function updatedBy(): BelongsTo

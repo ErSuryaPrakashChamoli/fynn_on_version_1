@@ -236,7 +236,7 @@ class DailyCommitmentTeamView extends Page
     {
         $user = Filament::auth()->user();
 
-        return (bool) $user?->hasAnyRole(['Admin', 'Cluster Manager', 'Manager', 'Team Leader']);
+        return (bool) $user?->hasAnyRole(['Admin', 'Business Head', 'Cluster Manager', 'Manager', 'Team Leader']);
     }
 
     public static function canAccess(): bool

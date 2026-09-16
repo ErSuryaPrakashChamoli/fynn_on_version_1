@@ -121,11 +121,15 @@ class EmployeeHierarchy extends Page
             return [];
         }
 
-        return array_values(array_filter([
-            $this->employee->superviser,
-            $this->employee->manager,
-            $this->employee->clusterManager,
-        ]));
+        // Every boss above, immediate first — whichever levels exist.
+        $ancestorIds = HierarchyHelper::ancestorIds($this->employee);
+        $ancestors = Employee::query()->whereIn('id', $ancestorIds)->get()->keyBy('id');
+
+        return $ancestorIds
+            ->map(fn (int $id): ?Employee => $ancestors->get($id))
+            ->filter()
+            ->values()
+            ->all();
     }
 
     public function getDownwardTreeProperty(): ?array
@@ -195,6 +199,7 @@ class EmployeeHierarchy extends Page
         }
 
         return in_array($employee->designation, [
+            Employee::DESIGNATION_BUSINESS_HEAD,
             Employee::DESIGNATION_CLUSTER,
             Employee::DESIGNATION_MANAGER,
             Employee::DESIGNATION_TEAM_LEADER,

@@ -18,7 +18,7 @@ class ViewEmployee extends ViewRecord
                 ->label('Employee Lifecycle')
                 ->icon('heroicon-o-clock')
                 ->color('info')
-                ->modalHeading(fn () => 'Employee Lifecycle — ' . $this->record->emp_name)
+                ->modalHeading(fn () => 'Employee Lifecycle — '.$this->record->emp_name)
                 ->modalWidth('7xl')
                 ->modalSubmitAction(false)
                 ->modalCancelActionLabel('Close')
@@ -27,6 +27,7 @@ class ViewEmployee extends ViewRecord
                         'superviser',
                         'manager',
                         'clusterManager',
+                        'businessHead',
                     ]);
 
                     $histories = $employee->reportingHistories()
@@ -37,6 +38,8 @@ class ViewEmployee extends ViewRecord
                             'newSupervisor',
                             'newManager',
                             'newCluster',
+                            'oldBusinessHead',
+                            'newBusinessHead',
                             'updatedBy',
                         ])
                         ->orderBy('effective_date')

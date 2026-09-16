@@ -8,33 +8,30 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
+/**
+ * Who reports to whom, for the whole app.
+ *
+ * Every walk here is answered by ReportingTree, which links each employee
+ * to their direct boss — the nearest filled reporting column. A skipped
+ * level (a Team Leader with no Manager, a caller with no Team Leader) is a
+ * null column, so that branch hangs straight off the next boss up and is
+ * counted and seen there.
+ */
 class HierarchyHelper
 {
     /**
      * Get all visible employee IDs for the logged-in user.
+     *
+     * Admin sees every caller plus every Team Leader, Manager, Cluster
+     * Manager and Business Head still on the rolls. Anybody else sees
+     * themselves and their whole branch, exited levels included.
+     *
+     * @return Collection<int, int>
      */
     public static function visibleEmployeeIds(User $user): Collection
     {
-        /*
-        |--------------------------------------------------------------------------
-        | ADMIN
-        |--------------------------------------------------------------------------
-        */
-
         if ($user->hasRole('Admin')) {
-            return Employee::query()
-                ->where(function ($query) {
-                    $query->where('designation', Employee::DESIGNATION_CALLER)
-                        ->orWhere(function ($query) {
-                            $query->whereIn('designation', [
-                                Employee::DESIGNATION_CLUSTER,
-                                Employee::DESIGNATION_MANAGER,
-                                Employee::DESIGNATION_TEAM_LEADER,
-                            ])
-                                ->where('exit_status', '!=', 'yes');
-                        });
-                })
-                ->pluck('id');
+            return self::adminVisibleIds(ReportingTree::load());
         }
 
         $employee = $user->employee;
@@ -43,46 +40,7 @@ class HierarchyHelper
             return collect();
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | CLUSTER MANAGER
-        |--------------------------------------------------------------------------
-        */
-
-        if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
-
-            return self::ids('cluster_id', $employee->id);
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | MANAGER
-        |--------------------------------------------------------------------------
-        */
-
-        if ($employee->designation === Employee::DESIGNATION_MANAGER) {
-
-            return self::ids('manager_id', $employee->id);
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | TEAM LEADER
-        |--------------------------------------------------------------------------
-        */
-
-        if ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
-
-            return self::ids('superviser_id', $employee->id);
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | CALLER
-        |--------------------------------------------------------------------------
-        */
-
-        return collect([$employee->id]);
+        return self::visibleSubordinateIds($employee);
     }
 
     /**
@@ -130,21 +88,22 @@ class HierarchyHelper
      */
     public static function getReportingChain(Employee $employee): array
     {
-        // We will implement this in the next step.
-        // return [];
         return [
             'caller' => $employee,
-            'team_leader' => $employee->supervisor,
+            'team_leader' => $employee->superviser,
             'manager' => $employee->manager,
             'cluster' => $employee->cluster,
+            'business_head' => $employee->businessHead,
         ];
     }
 
     /**
      * Employee IDs the user is allowed to look up in the Reporting Hierarchy
-     * page: their own downward team (self + subordinates) plus their upward
-     * chain of superiors (team leader, manager, cluster manager). Admin
-     * sees everyone. Nobody sees another team's hierarchy.
+     * page: their own downward team (self + subordinates) plus every boss
+     * above them, whichever levels exist. Admin sees everyone. Nobody sees
+     * another team's hierarchy.
+     *
+     * @return Collection<int, int>
      */
     public static function ownHierarchyIds(User $user): Collection
     {
@@ -158,229 +117,142 @@ class HierarchyHelper
             return collect();
         }
 
-        $downward = self::subordinateIds($employee);
+        $tree = ReportingTree::load();
 
-        $upward = collect([
-            $employee->superviser_id,
-            $employee->manager_id,
-            $employee->cluster_id,
-        ])->filter();
-
-        return $downward->merge($upward)->unique()->values();
+        return collect($tree->descendantIds($employee->id, skipExitedLevels: true))
+            ->push($employee->id)
+            ->merge($tree->ancestorIds($employee->id))
+            ->unique()
+            ->values();
     }
 
     /**
      * The eligible-backup pool for Team Continuity: every employee within
      * the SAME top-level branch (cluster) as $employee — i.e. the whole
-     * subordinate tree of $employee's own Cluster Manager (or of
-     * $employee themselves if they have no cluster/manager/supervisor
-     * above them, e.g. a Cluster Manager). This deliberately includes
-     * sibling Managers/Team Leaders under the same cluster (a legitimate
-     * backup per spec section 12's own example — "eligible Manager",
-     * "another eligible employee within the permitted hierarchy"), while
-     * excluding anyone in a different Cluster. Reuses subordinateIds() for
-     * the actual tree walk rather than inventing a second hierarchy engine.
+     * subordinate tree of $employee's own Cluster Manager (or of the
+     * highest boss below Business Head level when the Cluster Manager
+     * level is skipped). This deliberately includes sibling Managers/Team
+     * Leaders under the same cluster (a legitimate backup per spec section
+     * 12's own example — "eligible Manager", "another eligible employee
+     * within the permitted hierarchy"), while excluding anyone in a
+     * different Cluster. The climb never goes past a Cluster Manager to
+     * their Business Head, which would widen the pool to every cluster.
+     *
+     * @return Collection<int, int>
      */
     public static function employeeHierarchyIds(Employee $employee): Collection
     {
-        return self::subordinateIds(self::topAncestor($employee));
-    }
+        $tree = ReportingTree::load();
+        $rootId = $tree->branchRootId($employee->id);
 
-    /**
-     * Walks up cluster_id → manager_id → superviser_id repeatedly until
-     * reaching an actual Cluster Manager (or running out of links). A
-     * single hop isn't enough: some existing data has a Manager's
-     * cluster_id pointing at another Manager rather than the real Cluster
-     * Manager (denormalized data drift, not this method's concern to fix),
-     * and stopping at that first hop would silently shrink the eligible
-     * backup pool to that intermediate Manager's own small branch instead
-     * of the intended full cluster. Bounded to 10 hops and tracks visited
-     * ids so a cyclic/corrupted chain can never loop forever. Falls back
-     * to $employee itself once there's nowhere further to go (e.g. the
-     * Cluster Manager already, or an orphaned row with no links at all —
-     * Admin's Organisation-wide Handover exists for that latter case).
-     */
-    private static function topAncestor(Employee $employee): Employee
-    {
-        $current = $employee;
-        $visited = [$employee->id];
-
-        for ($hop = 0; $hop < 10; $hop++) {
-            if ($current->designation === Employee::DESIGNATION_CLUSTER) {
-                break;
-            }
-
-            $next = $current->cluster ?? $current->manager ?? $current->superviser;
-
-            if (! $next || in_array($next->id, $visited, true)) {
-                break;
-            }
-
-            $current = $next;
-            $visited[] = $next->id;
-        }
-
-        return $current;
-    }
-
-    private static function ids(string $column, int $id): Collection
-    {
-        return Employee::query()
-            ->where(function ($query) use ($column, $id) {
-                $query->where($column, $id)
-                    ->orWhere('id', $id);
-            })
-            ->pluck('id')
-            ->unique()
-            ->values();
+        return collect($tree->descendantIds($rootId, skipExitedLevels: true))
+            ->push($rootId);
     }
 
     public static function directReportees(User $user): Builder
     {
-
-        // Admin sees Cluster Managers
+        // Admin starts at the top of every branch: each Business Head, and
+        // each Cluster Manager with no Business Head on the rolls above.
         if ($user->hasRole('Admin')) {
-            return Employee::query()
-                ->where('designation', Employee::DESIGNATION_CLUSTER)
-                ->where('exit_status', '!=', 'yes');
+            $tree = ReportingTree::load();
+
+            $topIds = array_filter(
+                $tree->employeeIds(),
+                fn (int $id): bool => in_array($tree->designation($id), [
+                    Employee::DESIGNATION_BUSINESS_HEAD,
+                    Employee::DESIGNATION_CLUSTER,
+                ], true)
+                    && ! $tree->isExited($id)
+                    && ($tree->bossId($id) === null || $tree->isExited($tree->bossId($id))),
+            );
+
+            return Employee::query()->whereIn('id', array_values($topIds));
         }
 
         $employee = $user->employee;
-        // dd($user);
-        // dd($employee->designation);
 
         if (! $employee) {
             return Employee::query()->whereRaw('1 = 0');
         }
 
-        // Cluster Manager sees Managers
-        if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
-            return Employee::query()
-                ->where('cluster_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_MANAGER)
-                ->where('exit_status', '!=', 'yes');
-        }
-
-        // Manager sees Team Leaders
-        if ($employee->designation === Employee::DESIGNATION_MANAGER) {
-            return Employee::query()
-                ->where('manager_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                ->where('exit_status', '!=', 'yes');
-        }
-
-        // Team Leader sees Callers
-        if ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
-            // dd("enter here");
-            return Employee::query()
-                ->where('superviser_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_CALLER);
-        }
-
-        // Caller sees nobody in Team module
-        return Employee::query()->whereRaw('1 = 0');
+        return self::children($employee);
     }
 
+    /**
+     * The people reporting straight to $employee, at whatever level they
+     * sit — a Cluster Manager's direct reports can be Managers and also
+     * Team Leaders who skip the Manager level. An exited Team Leader,
+     * Manager or Cluster Manager is left out; callers never are.
+     */
     public static function children(Employee $employee): Builder
     {
-
-        if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
-
-            return Employee::query()
-                ->where('cluster_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_MANAGER)
-                ->where('exit_status', '!=', 'yes');
-        }
-
-        if ($employee->designation === Employee::DESIGNATION_MANAGER) {
-
-            return Employee::query()
-                ->where('manager_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                ->where('exit_status', '!=', 'yes');
-        }
-
-        if ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
-
-            return Employee::query()
-                ->where('superviser_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_CALLER);
-        }
-
-        return Employee::query()->whereRaw('1=0');
+        return Employee::query()->whereIn(
+            'id',
+            ReportingTree::load()->childIds($employee->id, skipExitedLevels: true)
+        );
     }
 
+    /**
+     * Every caller $employee's figures count: their whole branch, stopping
+     * at an exited Team Leader, Manager or Cluster Manager.
+     *
+     * @return Collection<int, int>
+     */
     public static function callerIds(Employee $employee): Collection
     {
         if ($employee->designation === Employee::DESIGNATION_CALLER) {
             return collect([$employee->id]);
         }
 
-        if ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
-            return Employee::where('superviser_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_CALLER)
-                ->pluck('id');
-        }
+        $tree = ReportingTree::load();
 
-        if ($employee->designation === Employee::DESIGNATION_MANAGER) {
-
-            $teamLeaderIds = Employee::where('manager_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                ->where('exit_status', '!=', 'yes')
-                ->pluck('id');
-
-            return Employee::whereIn('superviser_id', $teamLeaderIds)
-                ->where('designation', Employee::DESIGNATION_CALLER)
-                ->pluck('id');
-        }
-
-        if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
-
-            $managerIds = Employee::where('cluster_id', $employee->id)
-                ->where('designation', Employee::DESIGNATION_MANAGER)
-                ->where('exit_status', '!=', 'yes')
-                ->pluck('id');
-
-            $teamLeaderIds = Employee::whereIn('manager_id', $managerIds)
-                ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                ->where('exit_status', '!=', 'yes')
-                ->pluck('id');
-
-            return Employee::whereIn('superviser_id', $teamLeaderIds)
-                ->where('designation', Employee::DESIGNATION_CALLER)
-                ->pluck('id');
-        }
-
-        return collect();
+        return collect($tree->descendantIds($employee->id, skipExitedLevels: true))
+            ->filter(fn (int $id): bool => $tree->designation($id) === Employee::DESIGNATION_CALLER)
+            ->values();
     }
 
+    /**
+     * For every Team Leader $employee's target counts — themselves too, if
+     * they are one — how many callers report straight to them. Exited
+     * callers are included: the understaffed-team top-up has always counted
+     * them.
+     *
+     * @return array<int, int> team leader id => caller count
+     */
+    public static function teamLeaderCallerCounts(Employee $employee): array
+    {
+        $tree = ReportingTree::load();
+        $counts = [];
+
+        foreach ([$employee->id, ...$tree->descendantIds($employee->id, skipExitedLevels: true)] as $id) {
+            if ($tree->designation($id) !== Employee::DESIGNATION_TEAM_LEADER) {
+                continue;
+            }
+
+            $counts[$id] = count(array_filter(
+                $tree->childIds($id),
+                fn (int $childId): bool => $tree->designation($childId) === Employee::DESIGNATION_CALLER,
+            ));
+        }
+
+        return $counts;
+    }
+
+    /**
+     * Every boss above $employee, top first, then $employee themselves.
+     *
+     * @return array<int, array{label: string, url: ?string}>
+     */
     public static function breadcrumb(Employee $employee): array
     {
+        $tree = ReportingTree::load();
         $items = [];
 
-        if ($employee->cluster) {
+        foreach (array_reverse($tree->ancestorIds($employee->id)) as $ancestorId) {
             $items[] = [
-                'label' => $employee->cluster->emp_name,
+                'label' => (string) $tree->name($ancestorId),
                 'url' => TeamResource::getUrl('view-team', [
-                    'record' => $employee->cluster,
-                ]),
-            ];
-        }
-
-        if ($employee->manager) {
-            $items[] = [
-                'label' => $employee->manager->emp_name,
-                'url' => TeamResource::getUrl('view-team', [
-                    'record' => $employee->manager,
-                ]),
-            ];
-        }
-
-        if ($employee->superviser) {
-            $items[] = [
-                'label' => $employee->superviser->emp_name,
-                'url' => TeamResource::getUrl('view-team', [
-                    'record' => $employee->superviser,
+                    'record' => $ancestorId,
                 ]),
             ];
         }
@@ -393,47 +265,17 @@ class HierarchyHelper
         return $items;
     }
 
+    /**
+     * $employee plus everyone their target, incentive and target-setting
+     * maths counts. Stops at an exited Team Leader / Manager / Cluster
+     * Manager — see visibleSubordinateIds() for why the two walks differ.
+     *
+     * @return Collection<int, int>
+     */
     public static function subordinateIds(Employee $employee): Collection
     {
-        return match ($employee->designation) {
-
-            Employee::DESIGNATION_CALLER => collect([$employee->id]),
-
-            Employee::DESIGNATION_TEAM_LEADER => self::callerIds($employee)
-                ->push($employee->id),
-
-            Employee::DESIGNATION_MANAGER => self::callerIds($employee)
-                ->merge(
-                    Employee::where('manager_id', $employee->id)
-                        ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                        ->where('exit_status', '!=', 'yes')
-                        ->pluck('id')
-                )
-                ->push($employee->id),
-
-            Employee::DESIGNATION_CLUSTER => self::callerIds($employee)
-                ->merge(
-                    Employee::where('cluster_id', $employee->id)
-                        ->where('designation', Employee::DESIGNATION_MANAGER)
-                        ->where('exit_status', '!=', 'yes')
-                        ->pluck('id')
-                )
-                ->merge(
-                    Employee::whereIn(
-                        'manager_id',
-                        Employee::where('cluster_id', $employee->id)
-                            ->where('designation', Employee::DESIGNATION_MANAGER)
-                            ->where('exit_status', '!=', 'yes')
-                            ->pluck('id')
-                    )
-                        ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-                        ->where('exit_status', '!=', 'yes')
-                        ->pluck('id')
-                )
-                ->push($employee->id),
-
-            default => collect([$employee->id]),
-        };
+        return collect(ReportingTree::load()->descendantIds($employee->id, skipExitedLevels: true))
+            ->push($employee->id);
     }
 
     /**
@@ -457,86 +299,40 @@ class HierarchyHelper
      */
     public static function visibleSubordinateIds(Employee $employee): Collection
     {
-        return match ($employee->designation) {
-
-            Employee::DESIGNATION_TEAM_LEADER => self::callerIdsUnder([$employee->id])
-                ->push($employee->id)
-                ->unique()
-                ->values(),
-
-            Employee::DESIGNATION_MANAGER => self::visibleIdsUnderManagers([$employee->id])
-                ->push($employee->id)
-                ->unique()
-                ->values(),
-
-            Employee::DESIGNATION_CLUSTER => self::visibleIdsUnderCluster($employee)
-                ->push($employee->id)
-                ->unique()
-                ->values(),
-
-            default => collect([$employee->id]),
-        };
+        return collect(ReportingTree::load()->descendantIds($employee->id))
+            ->push($employee->id)
+            ->unique()
+            ->values();
     }
 
     /**
-     * Team Leaders under the given Managers, plus their Callers.
-     *
-     * @param  Collection<int, int>|array<int, int>  $managerIds
-     * @return Collection<int, int>
+     * The employee $employee reports to directly, or null at the top.
      */
-    private static function visibleIdsUnderManagers(Collection|array $managerIds): Collection
+    public static function directBossId(Employee $employee): ?int
     {
-        $teamLeaderIds = self::teamLeaderIdsUnder($managerIds);
-
-        return self::callerIdsUnder($teamLeaderIds)->merge($teamLeaderIds);
+        return ReportingTree::load()->bossId($employee->id);
     }
 
     /**
-     * Managers under the given Cluster Manager, plus their whole branch.
+     * Every boss above $employee, nearest first.
      *
      * @return Collection<int, int>
      */
-    private static function visibleIdsUnderCluster(Employee $cluster): Collection
+    public static function ancestorIds(Employee $employee): Collection
     {
-        $managerIds = self::managerIdsUnder([$cluster->id]);
-
-        return self::visibleIdsUnderManagers($managerIds)->merge($managerIds);
+        return collect(ReportingTree::load()->ancestorIds($employee->id));
     }
 
     /**
-     * @param  Collection<int, int>|array<int, int>  $clusterIds
-     * @return Collection<int, int>
+     * The nearest boss above $employee holding one of $designations.
+     *
+     * @param  array<int, int>  $designations
      */
-    private static function managerIdsUnder(Collection|array $clusterIds): Collection
+    public static function nearestAncestor(Employee $employee, array $designations, bool $activeOnly = false): ?Employee
     {
-        return Employee::query()
-            ->whereIn('cluster_id', $clusterIds)
-            ->where('designation', Employee::DESIGNATION_MANAGER)
-            ->pluck('id');
-    }
+        $ancestorId = ReportingTree::load()->nearestAncestorId($employee->id, $designations, $activeOnly);
 
-    /**
-     * @param  Collection<int, int>|array<int, int>  $managerIds
-     * @return Collection<int, int>
-     */
-    private static function teamLeaderIdsUnder(Collection|array $managerIds): Collection
-    {
-        return Employee::query()
-            ->whereIn('manager_id', $managerIds)
-            ->where('designation', Employee::DESIGNATION_TEAM_LEADER)
-            ->pluck('id');
-    }
-
-    /**
-     * @param  Collection<int, int>|array<int, int>  $teamLeaderIds
-     * @return Collection<int, int>
-     */
-    private static function callerIdsUnder(Collection|array $teamLeaderIds): Collection
-    {
-        return Employee::query()
-            ->whereIn('superviser_id', $teamLeaderIds)
-            ->where('designation', Employee::DESIGNATION_CALLER)
-            ->pluck('id');
+        return $ancestorId !== null ? Employee::find($ancestorId) : null;
     }
 
     /**
@@ -545,44 +341,20 @@ class HierarchyHelper
      * Rules:
      *
      * Admin
-     *     → All employees
+     *     → Every caller, and every level above still on the rolls
      *
-     * Cluster Manager
-     *     → Managers + Team Leaders + Callers
-     *
-     * Manager
-     *     → Team Leaders + Callers
-     *
-     * Team Leader
-     *     → Callers
+     * Team Leader, Manager, Cluster Manager, Business Head
+     *     → Their counted branch, WITHOUT themselves
      *
      * Caller
      *     → Self
+     *
+     * @return Collection<int, int>
      */
     public static function loginVisibleEmployeeIds(User $user): Collection
     {
-        /*
-        |--------------------------------------------------------------------------
-        | ADMIN
-        |--------------------------------------------------------------------------
-        */
-
         if ($user->hasRole('Admin')) {
-            return Employee::query()
-                ->where(function ($query) {
-                    $query->where('designation', Employee::DESIGNATION_CALLER)
-                        ->orWhere(function ($query) {
-                            $query->whereIn('designation', [
-                                Employee::DESIGNATION_CLUSTER,
-                                Employee::DESIGNATION_MANAGER,
-                                Employee::DESIGNATION_TEAM_LEADER,
-                            ])
-                                ->where('exit_status', '!=', 'yes');
-                        });
-                })
-                ->pluck('id')
-                ->unique()
-                ->values();
+            return self::adminVisibleIds(ReportingTree::load());
         }
 
         $employee = $user->employee;
@@ -591,136 +363,24 @@ class HierarchyHelper
             return collect();
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | CLUSTER MANAGER
-        |--------------------------------------------------------------------------
-        |
-        | Cluster Manager sees:
-        | Managers
-        | Team Leaders
-        | Callers
-        |
-        | Does NOT include the Cluster Manager itself.
-        */
-
-        if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
-
-            $managerIds = Employee::query()
-                ->where('cluster_id', $employee->id)
-                ->where(
-                    'designation',
-                    Employee::DESIGNATION_MANAGER
-                )
-                ->where('exit_status', '!=', 'yes')
-                ->pluck('id');
-
-            $teamLeaderIds = Employee::query()
-                ->whereIn('manager_id', $managerIds)
-                ->where(
-                    'designation',
-                    Employee::DESIGNATION_TEAM_LEADER
-                )
-                ->where('exit_status', '!=', 'yes')
-                ->pluck('id');
-
-            $callerIds = Employee::query()
-                ->whereIn('superviser_id', $teamLeaderIds)
-                ->where(
-                    'designation',
-                    Employee::DESIGNATION_CALLER
-                )
-                ->pluck('id');
-
-            return $managerIds
-                ->merge($teamLeaderIds)
-                ->merge($callerIds)
-                ->unique()
-                ->values();
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | MANAGER
-        |--------------------------------------------------------------------------
-        |
-        | Manager sees:
-        | Team Leaders
-        | Callers
-        |
-        | Does NOT include Manager itself.
-        */
-
-        if ($employee->designation === Employee::DESIGNATION_MANAGER) {
-
-            $teamLeaderIds = Employee::query()
-                ->where('manager_id', $employee->id)
-                ->where(
-                    'designation',
-                    Employee::DESIGNATION_TEAM_LEADER
-                )
-                ->where('exit_status', '!=', 'yes')
-                ->pluck('id');
-
-            $callerIds = Employee::query()
-                ->whereIn('superviser_id', $teamLeaderIds)
-                ->where(
-                    'designation',
-                    Employee::DESIGNATION_CALLER
-                )
-                ->pluck('id');
-
-            return $teamLeaderIds
-                ->merge($callerIds)
-                ->unique()
-                ->values();
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | TEAM LEADER
-        |--------------------------------------------------------------------------
-        |
-        | Team Leader sees:
-        | Callers only.
-        */
-
-        if ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
-
-            return Employee::query()
-                ->where(
-                    'superviser_id',
-                    $employee->id
-                )
-                ->where(
-                    'designation',
-                    Employee::DESIGNATION_CALLER
-                )
-                ->pluck('id')
-                ->unique()
-                ->values();
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | CALLER
-        |--------------------------------------------------------------------------
-        |
-        | Caller sees only himself.
-        */
-
         if ($employee->designation === Employee::DESIGNATION_CALLER) {
-            return collect([
-                $employee->id,
-            ]);
+            return collect([$employee->id]);
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | FALLBACK
-        |--------------------------------------------------------------------------
-        */
+        return collect(ReportingTree::load()->descendantIds($employee->id, skipExitedLevels: true));
+    }
 
-        return collect();
+    /**
+     * Every caller, plus every Team Leader, Manager, Cluster Manager and
+     * Business Head still on the rolls.
+     *
+     * @return Collection<int, int>
+     */
+    private static function adminVisibleIds(ReportingTree $tree): Collection
+    {
+        return collect($tree->employeeIds())
+            ->filter(fn (int $id): bool => $tree->designation($id) === Employee::DESIGNATION_CALLER
+                || (Employee::designationRank($tree->designation($id)) > 0 && ! $tree->isExited($id)))
+            ->values();
     }
 }
