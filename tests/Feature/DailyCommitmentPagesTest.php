@@ -865,9 +865,12 @@ class DailyCommitmentPagesTest extends TestCase
         $admin->assignRole('Admin');
         $this->actingAs($admin);
 
+        // Dated inside last calendar month. It used to be "10 days ago", which
+        // only lands in last month during the first ten days of a month, so
+        // the "last month" assertion below failed for the other twenty.
         DailyCommitment::create([
             'employee_id' => $this->caller->id,
-            'date' => today()->subDays(10),
+            'date' => today()->subMonthNoOverflow()->startOfMonth()->addDays(9),
             'commitment_stage' => CommitmentStage::Approved,
             'commitment_amount' => 500000,
         ]);

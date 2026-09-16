@@ -89,6 +89,7 @@ class TeamResource extends Resource
         }
 
         return in_array($employee->designation, [
+            Employee::DESIGNATION_BUSINESS_HEAD,
             Employee::DESIGNATION_CLUSTER,
             Employee::DESIGNATION_MANAGER,
             Employee::DESIGNATION_TEAM_LEADER,

@@ -132,6 +132,7 @@ class JourneyContinuityStats extends StatsOverviewWidget
                 Employee::DESIGNATION_MANAGER,
                 Employee::DESIGNATION_TEAM_LEADER,
                 Employee::DESIGNATION_CLUSTER,
+                Employee::DESIGNATION_BUSINESS_HEAD,
             ])
             ->where('exit_status', '!=', 'yes')
             ->whereNotIn('id', $coveredIds)

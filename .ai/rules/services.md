@@ -4,6 +4,7 @@ paths:
   - app/Services/MonthlyTargetGate.php
   - app/Services/DailyCommitmentGate.php
   - app/Services/AchievementCalculatorService.php
+  - app/Services/OtherBankSupportService.php
 ---
 
 # Services
@@ -36,7 +37,7 @@ Trap: `daily_commitments.date` uses the `date` cast, which writes "Y-m-d H:i:s".
 ## Monthly commitment targets are mandatory and gate the whole panel
 From the 1st of every calendar month the Daily Commitment module's monthly_commitment_targets rows do not exist yet, and MonthlyTargetGate closes the panel until they do.
 
-Who owns whose target (responsibleFor()): a Manager owns their callers; the Admin line — role Admin/Business Head, plus a Cluster Manager inside their own branch — owns Managers and Team Leaders. A Team Leader or Caller owns nobody: they wait and are told who to chase. assignableEmployeeIds() is the wider "may set" list used for record-level writes; isTargetSetter() is seat-based (Admin/Business Head role, or designation Cluster/Manager) and is what MonthlyCommitmentTargetResource::canAccess() and the middleware landing page use — a Manager with an empty team must still reach the screen, so never gate access on the assignable list being non-empty.
+Who owns whose target (responsibleFor()): superseded by "Target owner is the nearest active setter seat" below — a Manager owns their callers; the Admin (role Admin only), plus the nearest Cluster Manager or Business Head inside their own branch, owns Managers and Team Leaders. A Team Leader or Caller owns nobody: they wait and are told who to chase. assignableEmployeeIds() is the wider "may set" list used for record-level writes; isTargetSetter() is seat-based (Admin/Business Head role, or designation Cluster/Manager) and is what MonthlyCommitmentTargetResource::canAccess() and the middleware landing page use — a Manager with an empty team must still reach the screen, so never gate access on the assignable list being non-empty.
 
 Only employees who are still on the rolls AND have a user account are waited on (activeEmployees()). Demanding a target for a login-less row would deadlock whoever owns them.
 
@@ -60,7 +61,7 @@ Nobody invents a target for somebody who has stopped turning up. A target setter
 
 A ticket counts from the moment it is raised (pending OR approved — see scopeSkipping), not once reviewed: waiting for the Admin would keep the whole team locked out of the panel. Rejecting puts the target back. Approving is what sets employees.exit_status = 'yes'. Tickets are per (employee, month) — look them up with EmployeeInactivityRequest::forMonth(), never a bare "Y-m-d" match, because the `month` cast writes "Y-m-d H:i:s".
 
-assignableEmployeeIds() for Admin/Business Head is now every employee at any level (not just REQUIRES_TARGET, not filtered by exit status) — the Admin may correct anyone's target. responsibleFor() (the duty) is deliberately still narrow. Call forget() after any write.
+assignableEmployeeIds() for the Admin (a Business Head is limited to their own branch since 2026-09-15) is now every employee at any level (not just REQUIRES_TARGET, not filtered by exit status) — the Admin may correct anyone's target. responsibleFor() (the duty) is deliberately still narrow. Call forget() after any write.
 
 ## The daily gate must stand down while the monthly target gate is closed
 Two panel-wide blocks exist in this module and they land users on different pages: EnsureMonthlyTargetIsSet sends blocked users to the Monthly Target resource (setters) or the dashboard, EnsureDailyCommitmentIsDeclared sends them to My Commitment. If both are in force the user bounces between the two landing pages forever, because neither middleware permits the other's target route.
@@ -92,3 +93,11 @@ Two traps:
 - Counting is calendar days on purpose. PerformancePeriod::workingDays() exists but switching to it would silently restate targets for already-closed months.
 
 hierarchyCallerTargetNote() is the user-facing wording (Teams list + Team View tooltips) and lives here so it cannot drift from the rule. getTarget() for a caller is unaffected — their own screen has always shown the flat category target.
+
+## Target owner is the nearest active setter seat
+Supersedes "a Manager owns their callers; the Admin line owns Managers and Team Leaders" (2026-09-15). OWNER_SEATS: a caller's target belongs to the nearest boss ON THE ROLLS who is a Manager, Cluster Manager or Business Head; a Team Leader's or Manager's to the nearest Cluster Manager or Business Head. A skipped or exited level passes the duty up. Admin still owns every Manager and Team Leader, as before — but NEVER a caller. Nobody reports directly to the Admin (user decision 2026-09-15): a caller with no setter on the rolls above them has a broken reporting line to fix, not an Admin duty, and must not lock the Admin out of the panel. They still can't get past the gate themselves, and the prompt tells them to have their Team Leader or Manager assigned.
+
+isAdminLine() is the Admin role ONLY (changed 2026-09-15): the 'Business Head' role never widens data anywhere — a Business Head is scoped to their own branch through their employee record, and HierarchyRoleService keeps that role in step with the Business Head designation. assignableEmployeeIds() for seats uses visibleSubordinateIds() so a setter can fix targets under an exited level they now own. targetSetterFor() feeds the prompt's "ask X, your <designation>" line.
+
+## Other Bank Support role: scope, attribution and incentive rules
+Spatie role 'Other Bank Support' (OtherBankSupportService::ROLE), keyed on user_id, outside the reporting tree — employee_id is optional in UserForm for this role. If an employee record IS wanted (HR/emp id), use designation Employee::DESIGNATION_OTHER_BANK_SUPPORT = 11: deliberately absent from DESIGNATION_RANKS (rank 0, like Admin) and from REPORTING_COLUMNS, so it reports to nobody, never enters a hierarchy walk, and is excluded from MonthlyTargetGate::REQUIRES_TARGET / DailyCommitmentGate — never give them Caller/Team Leader/Manager, which would lock them behind the monthly-target gate. Target Category (employees.category) is required only for in-tree seats and is never read for this one. A file is "other bank" when eligibility_status='eligible' and bank_eligible_for is filled and not BFL Prime/Growth/RSL/SOL (normalised case/space/hyphen). Support users see/edit ONLY those files (CustomerResource query/canEdit, CustomerJourneyAccessService::decide), never delete; ownership and LMS figures are untouched. Remarks: other_bank_support_remarks per step, shown to owner hierarchy via OtherBankSupportRemarksSection on form+infolist. Decided with user 2026-09-15: whole-team attribution (every support user is credited the full other-bank count achievement); slabs on count achievement ₹ (LMS formula, deductions x100/x50), fixed ₹ or %; a slab ladder applies from effective_month until a later month replaces it; targets are strict per user per month (0 if unset). Other-bank business is a subset shown only to support + Admin, never added to LMS totals.

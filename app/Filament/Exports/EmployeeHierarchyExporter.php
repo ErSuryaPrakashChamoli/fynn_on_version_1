@@ -64,6 +64,13 @@ class EmployeeHierarchyExporter extends Exporter
             ExportColumn::make('cluster_manager_target')
                 ->label('Cluster Manager Target (Current Month)')
                 ->state(fn (Employee $record) => static::targetFor($record->clusterManager)),
+
+            ExportColumn::make('businessHead.emp_name')
+                ->label('Business Head'),
+
+            ExportColumn::make('business_head_target')
+                ->label('Business Head Target (Current Month)')
+                ->state(fn (Employee $record) => static::targetFor($record->businessHead)),
         ];
     }
 
@@ -79,10 +86,10 @@ class EmployeeHierarchyExporter extends Exporter
 
     public static function getCompletedNotificationBody(Export $export): string
     {
-        $body = 'Your employee hierarchy export has completed and ' . Number::format($export->successful_rows) . ' ' . str('row')->plural($export->successful_rows) . ' exported.';
+        $body = 'Your employee hierarchy export has completed and '.Number::format($export->successful_rows).' '.str('row')->plural($export->successful_rows).' exported.';
 
         if ($failedRowsCount = $export->getFailedRowsCount()) {
-            $body .= ' ' . Number::format($failedRowsCount) . ' ' . str('row')->plural($failedRowsCount) . ' failed to export.';
+            $body .= ' '.Number::format($failedRowsCount).' '.str('row')->plural($failedRowsCount).' failed to export.';
         }
 
         return $body;
@@ -91,7 +98,7 @@ class EmployeeHierarchyExporter extends Exporter
     public static function modifyQuery(Builder $query): Builder
     {
         return $query
-            ->with(['superviser', 'manager', 'clusterManager'])
+            ->with(['superviser', 'manager', 'clusterManager', 'businessHead'])
             ->orderBy('emp_name');
     }
 }

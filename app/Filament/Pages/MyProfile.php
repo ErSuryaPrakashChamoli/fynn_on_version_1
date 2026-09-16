@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Models\Employee;
+use App\Support\HierarchyHelper;
 use Carbon\Carbon;
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
 use Filament\Forms\Components\FileUpload;
@@ -123,7 +124,8 @@ class MyProfile extends BaseEditProfile
             return [];
         }
 
-        $reportsTo = $employee->superviser ?? $employee->manager ?? $employee->clusterManager;
+        $bossId = HierarchyHelper::directBossId($employee);
+        $reportsTo = $bossId !== null ? Employee::query()->find($bossId) : null;
 
         return [
             Placeholder::make('org_reports_to')->label('Reporting To')->content($reportsTo?->emp_name ?? '—'),

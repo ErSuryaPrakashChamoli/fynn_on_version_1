@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Services\HierarchyRoleService;
+use App\Support\HierarchyHelper;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -20,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $superviser_id
  * @property int|null $manager_id
  * @property int|null $cluster_id
+ * @property int|null $business_head_id
  * @property string|null $cost_center
  * @property string|null $unit_name
  * @property string $exit_status
@@ -89,9 +92,11 @@ class Employee extends Model
                 'old_superviser_id' => null,
                 'old_manager_id' => null,
                 'old_cluster_id' => null,
+                'old_business_head_id' => null,
                 'new_superviser_id' => $employee->superviser_id,
                 'new_manager_id' => $employee->manager_id,
                 'new_cluster_id' => $employee->cluster_id,
+                'new_business_head_id' => $employee->business_head_id,
                 'effective_date' => $employee->reporting_date
                     ?? $employee->doj
                     ?? now()->toDateString(),
@@ -99,6 +104,14 @@ class Employee extends Model
                 'updated_by' => auth()->id(),
                 'remarks' => 'Employee joining / initial reporting hierarchy.',
             ]);
+        });
+
+        // A login's hierarchy role follows the seat, so a promoted or
+        // demoted employee never keeps the access of their old level.
+        static::updated(function (Employee $employee): void {
+            if ($employee->wasChanged('designation') && $employee->user) {
+                app(HierarchyRoleService::class)->syncUserRole($employee->user, $employee->designation);
+            }
         });
     }
 
@@ -112,6 +125,46 @@ class Employee extends Model
 
     public const DESIGNATION_CALLER = 7;
 
+    public const DESIGNATION_BUSINESS_HEAD = 9;
+
+    /**
+     * Other Bank Support. Deliberately OUTSIDE the reporting tree: it is not
+     * in DESIGNATION_RANKS (so designationRank() is 0, like Admin), reports
+     * to nobody and carries no LMS target. Their targets and incentives live
+     * in the Other Bank Support module, keyed on the user — see
+     * OtherBankSupportService.
+     */
+    public const DESIGNATION_OTHER_BANK_SUPPORT = 11;
+
+    /**
+     * Seniority of each hierarchy designation, lowest first. The designation
+     * codes themselves are not in seniority order (Manager = 2, Cluster = 5),
+     * so always compare levels through this map. Admin sits outside the tree.
+     *
+     * @var array<int, int>
+     */
+    public const DESIGNATION_RANKS = [
+        self::DESIGNATION_CALLER => 1,
+        self::DESIGNATION_TEAM_LEADER => 2,
+        self::DESIGNATION_MANAGER => 3,
+        self::DESIGNATION_CLUSTER => 4,
+        self::DESIGNATION_BUSINESS_HEAD => 5,
+    ];
+
+    /**
+     * The column holding an employee's boss at each level, nearest level
+     * first, keyed to the designation that column must point at. A level
+     * the employee skips is left null.
+     *
+     * @var array<string, int>
+     */
+    public const REPORTING_COLUMNS = [
+        'superviser_id' => self::DESIGNATION_TEAM_LEADER,
+        'manager_id' => self::DESIGNATION_MANAGER,
+        'cluster_id' => self::DESIGNATION_CLUSTER,
+        'business_head_id' => self::DESIGNATION_BUSINESS_HEAD,
+    ];
+
     //
     protected $fillable = [
         'emp_id',
@@ -123,6 +176,7 @@ class Employee extends Model
         'superviser_id',
         'manager_id',
         'cluster_id',
+        'business_head_id',
         'cost_center',
         'unit_name',
         'category',
@@ -178,6 +232,21 @@ class Employee extends Model
     public function cluster()
     {
         return $this->belongsTo(Employee::class, 'cluster_id');
+    }
+
+    public function businessHead()
+    {
+        return $this->belongsTo(Employee::class, 'business_head_id');
+    }
+
+    /**
+     * The employee this person reports to directly: the nearest filled
+     * reporting column that points at that column's level, so a Team Leader
+     * with no Manager reports to their Cluster Manager. See ReportingTree.
+     */
+    public function directBossId(): ?int
+    {
+        return HierarchyHelper::directBossId($this);
     }
 
     // public function callers() {
@@ -240,12 +309,24 @@ class Employee extends Model
             self::DESIGNATION_TEAM_LEADER => 'Team Leader',
             self::DESIGNATION_CLUSTER => 'Cluster Manager',
             self::DESIGNATION_CALLER => 'Caller',
+            self::DESIGNATION_BUSINESS_HEAD => 'Business Head',
+            self::DESIGNATION_OTHER_BANK_SUPPORT => 'Other Bank Support',
         ];
+    }
+
+    /**
+     * Seniority of a designation (see DESIGNATION_RANKS); 0 for Admin or an
+     * unknown code, which sit outside the reporting tree.
+     */
+    public static function designationRank(?int $designation): int
+    {
+        return $designation === null ? 0 : (self::DESIGNATION_RANKS[$designation] ?? 0);
     }
 
     public static function designationColorClass(?int $designation): string
     {
         return match ($designation) {
+            self::DESIGNATION_BUSINESS_HEAD => 'text-amber-600 dark:text-amber-400',
             self::DESIGNATION_CLUSTER => 'text-violet-600 dark:text-violet-400',
             self::DESIGNATION_MANAGER => 'text-blue-600 dark:text-blue-400',
             self::DESIGNATION_TEAM_LEADER => 'text-teal-600 dark:text-teal-400',

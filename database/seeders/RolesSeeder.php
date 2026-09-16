@@ -24,6 +24,7 @@ class RolesSeeder extends Seeder
             'Caller',
             'MIS',
             'Accounts',
+            'Other Bank Support',
         ];
 
         foreach ($roles as $role) {

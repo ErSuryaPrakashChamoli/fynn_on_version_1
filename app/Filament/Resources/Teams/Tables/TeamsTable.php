@@ -264,6 +264,7 @@ class TeamsTable
                 SelectFilter::make('designation')
                     ->multiple()
                     ->options([
+                        Employee::DESIGNATION_BUSINESS_HEAD => 'Business Head',
                         Employee::DESIGNATION_CLUSTER => 'Cluster Manager',
                         Employee::DESIGNATION_MANAGER => 'Manager',
                         Employee::DESIGNATION_TEAM_LEADER => 'Team Leader',
@@ -280,13 +281,13 @@ class TeamsTable
                     //         HierarchyHelper::visibleEmployeeIds(auth()->user())
                     //     )
                     // )
+                    // Was bound to 'superviser', so "Cluster Manager" filtered by Team Leader.
                     ->relationship(
-                        'superviser',
+                        'cluster',
                         'emp_name',
-                        fn ($query) => $query->whereIn(
-                            'id',
-                            HierarchyHelper::visibleEmployeeIds(auth()->user())
-                        )
+                        fn ($query) => $query
+                            ->where('designation', Employee::DESIGNATION_CLUSTER)
+                            ->whereIn('id', HierarchyHelper::visibleEmployeeIds(auth()->user()))
                     )
                     ->searchable()
                     ->preload(),

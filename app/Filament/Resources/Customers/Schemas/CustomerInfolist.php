@@ -64,6 +64,8 @@ class CustomerInfolist
                             ]),
                     ]),
 
+                OtherBankSupportRemarksSection::make(),
+
                 Section::make('👤 Customer Overview')
                     ->columnSpanFull()
                     ->schema([

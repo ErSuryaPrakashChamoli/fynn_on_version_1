@@ -4,6 +4,7 @@ paths:
   - app/Models/DailyCommitmentEntry.php
   - app/Models/User.php
   - app/Models/UserLoginSession.php
+  - app/Models/Employee.php
 ---
 
 # Models
@@ -51,3 +52,10 @@ All three write logout_reason = 'session_timeout', the value the login log alrea
 Traps:
 - Livewire's update endpoint does not carry panel authMiddleware, so widget polling never refreshes the idle clock. That is deliberate.
 - is_active is a derived accessor, not a column. Ordering a table by it throws "Unknown column" — sort by last_activity_at instead.
+
+## Skip-level reporting: one column per level, skipped levels stay null
+Hierarchy is Caller < Team Leader < Manager < Cluster Manager < Business Head (DESIGNATION_BUSINESS_HEAD = 9, added 2026-09-15). Anyone may report to ANY higher level. Each employee keeps one column per level above them (Employee::REPORTING_COLUMNS: superviser_id, manager_id, cluster_id, business_head_id); a skipped level is left NULL, never filled with a different designation. The direct boss is directBossId() = first filled column reading upward.
+
+Designation codes are NOT in seniority order (Manager=2, Cluster=5) — compare levels only via designationRank()/DESIGNATION_RANKS. Admin (1) has rank 0 and sits outside the tree.
+
+Decided with the user: reporting changes restate old months (no monthly snapshot); callers under a skipped Manager get their monthly target from the nearest boss allowed to set targets; a Business Head sees only their own Cluster Managers' branches (Admin still sees all); a skip-level Team Leader with < 3 callers still adds the 30L top-up to whoever they report to; nobody reports directly to the Admin — an employee with no boss is a data error to fix, never an Admin duty; callers newly reachable through the tree (e.g. a Manager filed in superviser_id) count from the month the change ships.

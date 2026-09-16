@@ -190,21 +190,15 @@ class CustomerJourneyDelegationService
             $this->validationError('delegating_manager_id', 'Your account has no employee profile linked, so you cannot create continuity rules.');
         }
 
-        // Business Head sits above the Employee hierarchy tree in this app
-        // (a Spatie role, not an Employee::designation level) — it has no
-        // superviser_id/manager_id/cluster_id slot to structurally test
-        // "superior of $original" against, so that half of the check is
-        // skipped for it specifically. The backup-must-stay-within-the-
-        // original's-own-branch restriction below still applies regardless
-        // — Business Head is senior enough to nominate across its own
-        // reporting lines, not an org-wide bypass like Admin.
-        if (! $creator->hasRole('Business Head')) {
-            $creatorIsOriginal = $creatorEmployee->id === $original->id;
-            $creatorIsSuperiorOfOriginal = HierarchyHelper::subordinateIds($creatorEmployee)->contains($original->id);
+        // Business Head is a level in the reporting tree (business_head_id),
+        // so the same "yourself or somebody below you" check covers them:
+        // a Business Head nominates across their own branch, never the
+        // whole company. Only Admin reaches across branches.
+        $creatorIsOriginal = $creatorEmployee->id === $original->id;
+        $creatorIsSuperiorOfOriginal = HierarchyHelper::subordinateIds($creatorEmployee)->contains($original->id);
 
-            if (! $creatorIsOriginal && ! $creatorIsSuperiorOfOriginal) {
-                $this->validationError('delegating_manager_id', 'You can only create continuity coverage for yourself or an employee within your own hierarchy.');
-            }
+        if (! $creatorIsOriginal && ! $creatorIsSuperiorOfOriginal) {
+            $this->validationError('delegating_manager_id', 'You can only create continuity coverage for yourself or an employee within your own hierarchy.');
         }
 
         $backupWithinOriginalBranch = HierarchyHelper::employeeHierarchyIds($original)->contains($backup->id);

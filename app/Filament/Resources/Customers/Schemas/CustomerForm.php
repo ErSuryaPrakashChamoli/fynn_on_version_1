@@ -13,6 +13,8 @@ use App\Models\CustomerStageHistory;
 use App\Models\Employee;
 use App\Models\User;
 use App\Services\CustomerJourneyService;
+use App\Services\OtherBankSupportService;
+use App\Support\HierarchyHelper;
 use Filament\Actions\Action;
 use Filament\Actions\Action as FormAction;
 use Filament\Facades\Filament;
@@ -141,6 +143,8 @@ class CustomerForm
                         'class' => 'sticky top-0 z-50 self-start',
                     ]),
 
+                OtherBankSupportRemarksSection::make(),
+
                 Section::make('Existing Customer')
                     ->key('existingCustomerSection')
                     // ->visible(function (Get $get, $livewire): bool {
@@ -225,6 +229,9 @@ class CustomerForm
 
                                     'cluster_manager_id' => $employee->cluster_id,
                                     'cluster_manager_name' => optional($employee->cluster)->emp_name,
+
+                                    'business_head_id' => $employee->business_head_id,
+                                    'business_head_name' => optional($employee->businessHead)->emp_name,
 
                                     'requested_bank_id' => $data['requested_bank_id'],
                                     'requested_bank_name' => $bank?->bank_name,
@@ -351,7 +358,14 @@ class CustomerForm
                                 |--------------------------------------------------------------------------
                                 */
 
-                                if ($employee->designation === Employee::DESIGNATION_CLUSTER) {
+                                if ($employee->designation === Employee::DESIGNATION_BUSINESS_HEAD) {
+
+                                    // Their branch's requests: snapshotted under them, or raised by
+                                    // somebody below them before the snapshot carried a Business Head.
+                                    $query->where(fn ($query) => $query
+                                        ->where('business_head_id', $employee->id)
+                                        ->orWhereIn('requested_by', HierarchyHelper::visibleSubordinateIds($employee)));
+                                } elseif ($employee->designation === Employee::DESIGNATION_CLUSTER) {
 
                                     $query->where('cluster_manager_id', $employee->id);
                                 }
@@ -918,6 +932,7 @@ class CustomerForm
                                             'Manager',
                                             'Team Leader',
                                             'Cluster Manager',
+                                            'Business Head',
                                         ]) && $get('eligibility_status') === 'eligible'
                                     )
                                     ->afterStateUpdated(fn ($state, callable $set) => $set('company_category', Str::title($state)))
@@ -945,6 +960,7 @@ class CustomerForm
                                             'Manager',
                                             'Team Leader',
                                             'Cluster Manager',
+                                            'Business Head',
                                         ])
                                             && $get('eligibility_status') === 'eligible'
                                     )
@@ -982,6 +998,7 @@ class CustomerForm
                                             'Manager',
                                             'Team Leader',
                                             'Cluster Manager',
+                                            'Business Head',
                                         ]) && $get('eligibility_status') === 'eligible'
                                     )
                                     ->live()
@@ -1173,7 +1190,7 @@ class CustomerForm
                                     ])
                                     ->live()
                                     ->required(function (Get $get) {
-                                        return auth()->user()->hasAnyRole(['Admin', 'Team Leader', 'Manager', 'Cluster Manager'])
+                                        return auth()->user()->hasAnyRole(['Admin', 'Team Leader', 'Manager', 'Cluster Manager', 'Business Head', OtherBankSupportService::ROLE])
                                             && $get('documentation_status') === 'complete';
                                     }),
                                 // ->required(fn(Get $get) => $get('documentation_status') === 'complete'),
@@ -1313,7 +1330,7 @@ class CustomerForm
                             ->columns(2)
                             ->visible(function (Get $get): bool {
 
-                                return auth()->user()->hasAnyRole(['Admin', 'Team Leader', 'Manager', 'Cluster Manager'])
+                                return auth()->user()->hasAnyRole(['Admin', 'Team Leader', 'Manager', 'Cluster Manager', 'Business Head', OtherBankSupportService::ROLE])
                                     && (
                                         in_array(
                                             strtolower((string) $get('journey_status')),
@@ -1486,6 +1503,7 @@ class CustomerForm
                                             && (
                                                 auth()->user()->hasRole('Admin')
                                                 || auth()->user()->hasRole('Manager')
+                                                || auth()->user()->hasRole(OtherBankSupportService::ROLE)
                                             )
                                     )
                                     ->hintAction(
@@ -1538,6 +1556,7 @@ class CustomerForm
                                 fn (Get $get) => (
                                     auth()->user()->hasRole('Admin')
                                     || auth()->user()->hasRole('Manager')
+                                    || auth()->user()->hasRole(OtherBankSupportService::ROLE)
                                 )
                                     && (
                                         ($get('credit_approval_completed') ?? false)

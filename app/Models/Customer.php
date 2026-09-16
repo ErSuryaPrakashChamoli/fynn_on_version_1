@@ -7,9 +7,12 @@ use App\Services\Journey\CustomerJourneyAccessService;
 // use Spatie\Activitylog\Traits\LogsActivity;
 // use Spatie\Activitylog\LogOptions;
 
+use App\Services\OtherBankSupportService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
@@ -398,5 +401,19 @@ class Customer extends Model
     public function journeyAudits()
     {
         return $this->hasMany(CustomerJourneyAudit::class);
+    }
+
+    public function otherBankSupportRemarks(): HasMany
+    {
+        return $this->hasMany(OtherBankSupportRemark::class);
+    }
+
+    /**
+     * Files eligible for a bank other than the in-house BFL products — the
+     * Other Bank Support pool. See OtherBankSupportService.
+     */
+    public function scopeEligibleForOtherBank(Builder $query): Builder
+    {
+        return OtherBankSupportService::applyOtherBankScope($query);
     }
 }

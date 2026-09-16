@@ -37,6 +37,7 @@ class IncentiveStats extends StatsOverviewWidget
             Employee::DESIGNATION_TEAM_LEADER,
             Employee::DESIGNATION_MANAGER,
             Employee::DESIGNATION_CLUSTER,
+            Employee::DESIGNATION_BUSINESS_HEAD,
         ], true);
 
         /*
@@ -494,6 +495,7 @@ class IncentiveStats extends StatsOverviewWidget
             Employee::DESIGNATION_TEAM_LEADER,
             Employee::DESIGNATION_MANAGER,
             Employee::DESIGNATION_CLUSTER,
+            Employee::DESIGNATION_BUSINESS_HEAD,
         ], true);
     }
 }

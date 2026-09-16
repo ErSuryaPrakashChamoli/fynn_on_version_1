@@ -6,6 +6,7 @@ use App\Filament\Resources\PendingManagerCases\Pages\ListPendingManagerCases;
 use App\Filament\Resources\PendingManagerCases\Tables\PendingManagerCasesTable;
 use App\Models\Customer;
 use App\Services\Journey\JourneySlaService;
+use App\Support\HierarchyHelper;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
@@ -37,9 +38,24 @@ class PendingManagerCaseResource extends Resource
         return PendingManagerCasesTable::configure($table);
     }
 
+    /**
+     * Admin sees every case in flight; a Cluster Manager or Business Head
+     * only the cases owned inside their own branch.
+     */
     public static function getEloquentQuery(): Builder
     {
-        return JourneySlaService::activeCustomersQuery();
+        $query = JourneySlaService::activeCustomersQuery();
+        $user = auth()->user();
+
+        if ($user?->hasRole('Admin')) {
+            return $query;
+        }
+
+        $employee = $user?->employee;
+
+        return $employee
+            ? $query->whereIn('customers.assign_to', HierarchyHelper::visibleSubordinateIds($employee))
+            : $query->whereRaw('1 = 0');
     }
 
     public static function canCreate(): bool

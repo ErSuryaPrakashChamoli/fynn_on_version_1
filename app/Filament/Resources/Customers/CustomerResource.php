@@ -15,6 +15,7 @@ use App\Models\Customer;
 use App\Models\Employee;
 use App\Models\User;
 use App\Services\Journey\CustomerJourneyAccessService;
+use App\Services\OtherBankSupportService;
 use App\Support\HierarchyHelper;
 use BackedEnum;
 use Filament\Resources\Resource;
@@ -111,6 +112,11 @@ class CustomerResource extends Resource
             return $query;
         }
 
+        // Other Bank Support sees every other-bank file and nothing else.
+        if (OtherBankSupportService::isSupportUser($user)) {
+            return OtherBankSupportService::applyOtherBankScope($query);
+        }
+
         if (! $employee) {
             return $query->whereRaw('1 = 0');
         }
@@ -141,6 +147,10 @@ class CustomerResource extends Resource
     {
         $user = auth()->user();
         $employee = $user->employee;
+
+        if (OtherBankSupportService::isScopedSupportUser($user)) {
+            return OtherBankSupportService::isOtherBankCase($record);
+        }
 
         if (
             $employee?->designation === Employee::DESIGNATION_CALLER
@@ -176,6 +186,10 @@ class CustomerResource extends Resource
 
     public static function canDelete(Model $record): bool
     {
+        if (OtherBankSupportService::isScopedSupportUser(auth()->user())) {
+            return false;
+        }
+
         return auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
             && ! $record->documents_submitted;
     }

@@ -11,6 +11,7 @@ use App\Models\CustomerJourneyDelegation;
 use App\Models\Employee;
 use App\Models\JourneyTakeover;
 use App\Models\User;
+use App\Services\OtherBankSupportService;
 use App\Support\HierarchyHelper;
 use Illuminate\Support\Collection;
 use Throwable;
@@ -44,6 +45,17 @@ class CustomerJourneyAccessService
                 accessType: JourneyAccessType::Normal,
                 originalOwnerId: $originalOwnerId,
                 actingEmployeeId: null,
+            );
+        }
+
+        // Other Bank Support works every other-bank file, whoever owns it.
+        // Ownership is untouched; the owner's hierarchy keeps its own access.
+        if (OtherBankSupportService::canWorkOn($user, $customer)) {
+            return new JourneyAccessDecision(
+                allowed: true,
+                accessType: JourneyAccessType::Normal,
+                originalOwnerId: $originalOwnerId,
+                actingEmployeeId: $user->employee?->id,
             );
         }
 
@@ -138,7 +150,8 @@ class CustomerJourneyAccessService
     /**
      * Every employee id "responsible" for a customer under today's
      * hierarchy — the assign_to employee itself plus its full upward chain
-     * (team leader, manager, cluster manager). Generalizes naturalManagerFor()
+     * (team leader, manager, cluster manager, business head — whichever
+     * levels exist, skipped ones simply absent). Generalizes naturalManagerFor()
      * beyond Manager-only so a continuity rule created for a Caller, Team
      * Leader, or Cluster Manager can also match. Order is closest-first.
      */
@@ -155,19 +168,10 @@ class CustomerJourneyAccessService
             return collect();
         }
 
-        $chain = collect([$owner->id]);
-
-        foreach ([$owner, $owner->superviser, $owner->superviser?->manager] as $link) {
-            if (! $link) {
-                continue;
-            }
-
-            $chain->push($link->superviser_id);
-            $chain->push($link->manager_id);
-            $chain->push($link->cluster_id);
-        }
-
-        return $chain->filter()->unique()->values();
+        return collect([$owner->id])
+            ->merge(HierarchyHelper::ancestorIds($owner))
+            ->unique()
+            ->values();
     }
 
     /**
@@ -218,9 +222,15 @@ class CustomerJourneyAccessService
             return null;
         }
 
+        // The nearest boss at Manager level or above: where the Manager
+        // level is skipped, the Cluster Manager (or Business Head) the
+        // branch reports to picks up the Manager-stage work.
         return match ($owner->designation) {
-            Employee::DESIGNATION_CALLER => $owner->superviser?->manager,
-            Employee::DESIGNATION_TEAM_LEADER => $owner->manager,
+            Employee::DESIGNATION_CALLER, Employee::DESIGNATION_TEAM_LEADER => HierarchyHelper::nearestAncestor($owner, [
+                Employee::DESIGNATION_MANAGER,
+                Employee::DESIGNATION_CLUSTER,
+                Employee::DESIGNATION_BUSINESS_HEAD,
+            ]),
             Employee::DESIGNATION_MANAGER => $owner,
             default => null,
         };

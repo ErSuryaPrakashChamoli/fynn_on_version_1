@@ -6,8 +6,11 @@ use App\Filament\Widgets\DailyCommitmentStats;
 use App\Filament\Widgets\DashboardFollowUpCalendarWidget;
 use App\Filament\Widgets\IncentiveStats;
 use App\Filament\Widgets\ManagerPPPStats;
+use App\Filament\Widgets\OtherBankSupportStats;
 use App\Filament\Widgets\PerformanceStats;
 use App\Filament\Widgets\CustomerStats;
+use App\Services\OtherBankSupportService;
+use Filament\Facades\Filament;
 use Filament\Pages\Dashboard as BaseDashboard;
 
 /**
@@ -23,6 +26,14 @@ class Dashboard extends BaseDashboard
 {
     public function getWidgets(): array
     {
+        // Other Bank Support sits outside the reporting tree, so every
+        // hierarchy widget below would only tell them their profile is missing.
+        if (OtherBankSupportService::isScopedSupportUser(Filament::auth()->user())) {
+            return [
+                OtherBankSupportStats::class,
+            ];
+        }
+
         // getWidgetsSchemaComponents() renders widgets in this exact array
         // order (it doesn't re-sort by each widget's $sort), so this list
         // is ordered to match each widget's own $sort value and preserve

@@ -62,4 +62,46 @@ class EmployeeOptions
             ? "{$employee->emp_name} ({$employee->emp_id})"
             : (string) $employee->emp_name;
     }
+
+    /**
+     * The same label plus whoever this employee reports to — "Asha Rao
+     * (FYN-0142) - Reports to: Nitin Thakur (Team Leader)" — so a name picked
+     * from a dropdown can be placed in the hierarchy without opening the
+     * employee record.
+     *
+     * Pass a ReportingTree when labelling a list: building one costs a single
+     * query, and leaving it out loads a fresh tree for every row.
+     */
+    public static function labelWithReportingLine(Employee $employee, ?ReportingTree $tree = null): string
+    {
+        return self::label($employee).' - Reports to: '.(self::reportingBossLabel($employee, $tree) ?? 'Not assigned');
+    }
+
+    /**
+     * The direct boss — "Nitin Thakur (Team Leader)" — at whatever level they
+     * sit, so a skipped level reads as the Manager or Cluster Manager the
+     * branch actually hangs off. Null when nobody is above them: a Business
+     * Head, an out-of-tree seat such as Other Bank Support, or a broken
+     * reporting line to fix.
+     *
+     * Resolved through ReportingTree so this agrees with every other
+     * hierarchy walk: a reporting column is honoured only when it points at
+     * an employee of that column's own level, because live data has callers
+     * with a Manager, or even another Caller, in superviser_id.
+     */
+    public static function reportingBossLabel(Employee $employee, ?ReportingTree $tree = null): ?string
+    {
+        $tree ??= ReportingTree::load();
+
+        $bossId = $tree->bossId($employee->id);
+
+        if ($bossId === null) {
+            return null;
+        }
+
+        $name = (string) $tree->name($bossId);
+        $designation = Employee::designationOptions()[$tree->designation($bossId)] ?? null;
+
+        return $designation !== null ? "{$name} ({$designation})" : $name;
+    }
 }

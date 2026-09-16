@@ -348,7 +348,7 @@ class CustomerJourneyDelegationsTable
 
         $query = Employee::query()->where('exit_status', '!=', 'yes');
 
-        if (! $user->hasRole('Admin') && ! $user->hasRole('Business Head')) {
+        if (! $user->hasRole('Admin')) {
             $employee = $user->employee;
 
             if (! $employee) {

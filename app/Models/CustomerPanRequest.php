@@ -10,7 +10,6 @@ class CustomerPanRequest extends Model
     protected $fillable = [
         'request_no',
 
-
         'customer_id',
         'ai_customer_record_id',
         'lead_id',
@@ -27,6 +26,9 @@ class CustomerPanRequest extends Model
 
         'cluster_manager_id',
         'cluster_manager_name',
+
+        'business_head_id',
+        'business_head_name',
 
         'requested_bank_id',
         'requested_bank_name',
@@ -55,13 +57,11 @@ class CustomerPanRequest extends Model
         static::created(function (CustomerPanRequest $request) {
             if (! $request->request_no) {
                 $request->updateQuietly([
-                    'request_no' => 'PR' . str_pad($request->id, 6, '0', STR_PAD_LEFT),
+                    'request_no' => 'PR'.str_pad($request->id, 6, '0', STR_PAD_LEFT),
                 ]);
             }
         });
     }
-
-
 
     /**
      * Existing Customer
@@ -119,6 +119,14 @@ class CustomerPanRequest extends Model
     public function clusterManager(): BelongsTo
     {
         return $this->belongsTo(Employee::class, 'cluster_manager_id');
+    }
+
+    /**
+     * Business Head
+     */
+    public function businessHead(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'business_head_id');
     }
 
     /**

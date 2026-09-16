@@ -74,14 +74,17 @@ class EditEmployeeReportingDateTest extends TestCase
             'superviser_id' => $caller->superviser_id,
             'manager_id' => $caller->manager_id,
             'cluster_id' => $caller->cluster_id,
+            'business_head_id' => $caller->business_head_id,
+            'designation' => $caller->designation,
             'reporting_date' => $caller->reporting_date,
             'exit_status' => $caller->exit_status,
             'exit_date' => $caller->exit_date,
         ]);
 
-        // Simulate the admin changing the Team Leader on the edit form.
-        $caller->superviser_id = $newTeamLeader->id;
-        $caller->save();
+        // Simulate the admin choosing the new Team Leader in Reports To.
+        $newBossProperty = new ReflectionProperty($page, 'newBossId');
+        $newBossProperty->setAccessible(true);
+        $newBossProperty->setValue($page, $newTeamLeader->id);
 
         $afterSave = new ReflectionMethod($page, 'afterSave');
         $afterSave->setAccessible(true);
@@ -122,7 +125,7 @@ class EditEmployeeReportingDateTest extends TestCase
 
         Livewire::test(EditEmployee::class, ['record' => $caller->getRouteKey()])
             ->callAction('transferEmployee', data: [
-                'new_superviser_id' => $newTeamLeader->id,
+                'reports_to' => $newTeamLeader->id,
                 'effective_date' => now()->toDateString(),
                 'remarks' => 'Test transfer.',
             ]);

@@ -6,6 +6,7 @@ use App\Models\Customer;
 use App\Models\JourneyTakeover;
 use App\Services\Journey\JourneyTakeoverService;
 use App\Support\EmployeeOptions;
+use App\Support\HierarchyHelper;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -14,6 +15,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -31,11 +33,33 @@ class JourneyTakeoversTable
     ];
 
     /**
+     * The employees whose customers the current user may take over — their
+     * own branch — or null for the Admin, who may take over anybody's.
+     *
+     * @return Collection<int, int>|null
+     */
+    private static function branchEmployeeIds(): ?Collection
+    {
+        $user = auth()->user();
+
+        if ($user?->hasRole('Admin')) {
+            return null;
+        }
+
+        $employee = $user?->employee;
+
+        return $employee ? HierarchyHelper::visibleSubordinateIds($employee) : collect();
+    }
+
+    /**
      * @return array<int, string>
      */
     private static function customerOptions(?string $search = null): array
     {
+        $branchIds = self::branchEmployeeIds();
+
         return Customer::query()
+            ->when($branchIds !== null, fn ($query) => $query->whereIn('assign_to', $branchIds))
             ->when(
                 filled($search),
                 fn ($query) => $query->where(
@@ -154,9 +178,9 @@ class JourneyTakeoversTable
                     ->form([
                         Select::make('customer_id')
                             ->label('Customer')
-                            // Typing searches every customer; without a search
-                            // term we still show the newest few so the field is
-                            // never an empty dropdown.
+                            // Typing searches the customers the viewer may
+                            // take over; without a search term we still show the
+                            // newest few so the field is never an empty dropdown.
                             ->options(fn (): array => self::customerOptions())
                             ->getSearchResultsUsing(fn (string $search): array => self::customerOptions($search))
                             ->getOptionLabelUsing(function ($value): ?string {
@@ -185,6 +209,21 @@ class JourneyTakeoversTable
 
                         if (! $employee) {
                             Notification::make()->danger()->title('No employee profile linked to your account.')->send();
+
+                            return;
+                        }
+
+                        $branchIds = self::branchEmployeeIds();
+                        $customer = Customer::find($data['customer_id'] ?? null);
+
+                        // Re-checked here: a crafted request never runs the picker.
+                        if ($branchIds !== null && ! $branchIds->contains((int) $customer?->assign_to)) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Could not take over journey')
+                                ->body('You can only take over customers inside your own branch.')
+                                ->persistent()
+                                ->send();
 
                             return;
                         }

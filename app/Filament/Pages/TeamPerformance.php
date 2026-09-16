@@ -65,7 +65,7 @@ class TeamPerformance extends Page
         return $schema
             ->components([
                 Select::make('team_lead_id')
-                    ->label('Team Lead / Manager / Cluster Manager')
+                    ->label('Team Lead / Manager / Cluster Manager / Business Head')
                     ->placeholder('Select a team…')
                     ->options(fn () => $this->teamLeadOptions())
                     ->searchable()
@@ -119,6 +119,7 @@ class TeamPerformance extends Page
         return Employee::query()
             ->whereIn('id', HierarchyHelper::visibleEmployeeIds($user))
             ->whereIn('designation', [
+                Employee::DESIGNATION_BUSINESS_HEAD,
                 Employee::DESIGNATION_CLUSTER,
                 Employee::DESIGNATION_MANAGER,
                 Employee::DESIGNATION_TEAM_LEADER,
@@ -203,6 +204,7 @@ class TeamPerformance extends Page
         }
 
         return in_array($employee->designation, [
+            Employee::DESIGNATION_BUSINESS_HEAD,
             Employee::DESIGNATION_CLUSTER,
             Employee::DESIGNATION_MANAGER,
             Employee::DESIGNATION_TEAM_LEADER,
