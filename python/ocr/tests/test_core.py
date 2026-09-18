@@ -157,5 +157,126 @@ class TableExtractionTests(unittest.TestCase):
         self.assertEqual(result["rows"], [])
 
 
+class UnequalColumnTableTests(unittest.TestCase):
+    """A born-digital enquiry list (Name | State | Mobile | Loan Amount) whose
+    name column is far wider than the rest. Splitting each row's span into
+    equal slots put the state in the mobile field (where digit-only
+    normalisation wiped it) and the mobile in the loan-amount field; the
+    column boundaries must come from the gutters shared across all rows."""
+
+    SCHEMA = [
+        {"key": "customer_name", "label": "Customer Name", "type": "text"},
+        {"key": "state", "label": "State", "type": "text"},
+        {"key": "mobile_number", "label": "Mobile Number", "type": "mobile"},
+        {"key": "loan_amount", "label": "Loan Amount", "type": "decimal"},
+    ]
+
+    ROWS = [
+        ("Mrs. MEGHA S", "karnataka", "7829077476", "22,00,000"),
+        ("Mr. CHANDRA PRAKASH TOMAR", "haryana", "7011974208", "25,00,000"),
+        ("Kanaka Suryakanth Kanaka Suryakanth", "telangana", "8328294347", "15,00,000"),
+        ("G HARIKA", "andhrapradesh", "9550566019", "20,00,000"),
+        ("Mr. PRAJAPATI KALPESHKUMAR JAYANTIBHAI", "gujarat", "9879152911", "15,00,000"),
+        ("Mr. V ERANNA", "karnataka", "8310202595", "1,00,000"),
+        ("Mrs. DEEPIKA DOGRA", "haryana", "8920284019", "15,00,000"),
+    ]
+
+    # Column x-ranges in PDF points, mirroring an Excel export: text is
+    # left-aligned in the two text columns and right-aligned in the numbers.
+    COLUMNS = [(52, 270), (270, 347), (347, 437), (437, 487)]
+
+    @staticmethod
+    def _words(text: str, x: float, y: float, char_width: float = 5.0, space: float = 2.5) -> list[OcrLine]:
+        boxes = []
+        for word in text.split():
+            width = len(word) * char_width
+            boxes.append(OcrLine(word, 1.0, x, y, x + width, y + 10))
+            x += width + space
+        return boxes
+
+    def _page(self) -> list[OcrLine]:
+        page: list[OcrLine] = []
+        for index, (name, state, mobile, amount) in enumerate(self.ROWS):
+            y = 80 + index * 16
+            page += self._words(name, self.COLUMNS[0][0] + 3, y)
+            page += self._words(state, self.COLUMNS[1][0] + 3, y)
+            page += self._words(mobile, self.COLUMNS[2][1] - 3 - len(mobile) * 5.0, y)
+            page += self._words(amount, self.COLUMNS[3][1] - 3 - len(amount) * 5.0, y)
+        return page
+
+    def test_word_boxes_land_in_their_own_columns(self):
+        result = extract_table([self._page()], self.SCHEMA)
+
+        self.assertEqual(len(result["rows"]), len(self.ROWS))
+        for row, (name, state, mobile, amount) in zip(result["rows"], self.ROWS):
+            self.assertEqual(row["data"], {
+                "customer_name": name,
+                "state": state,
+                "mobile_number": mobile,
+                "loan_amount": amount.replace(",", ""),
+            })
+
+    def test_title_line_spanning_columns_does_not_hide_gutters(self):
+        page = self._words("Axis Bank enquiry list for September 2026 all branches combined", 52, 40)
+        page += self._page()
+
+        result = extract_table([page], self.SCHEMA)
+
+        data_rows = [row for row in result["rows"] if row["data"]["mobile_number"]]
+        self.assertEqual(len(data_rows), len(self.ROWS))
+        self.assertEqual(data_rows[-1]["data"]["state"], "haryana")
+        self.assertEqual(data_rows[-1]["data"]["mobile_number"], "8920284019")
+
+    def test_single_row_without_gutters_still_recovers_by_type(self):
+        """One row on its own gives no cross-row gutters, so the even split
+        is used; a state that then falls into the mobile slot must move to
+        the empty text field, and a mobile glued to the amount must be
+        pulled apart by pattern."""
+        page = []
+        y = 80
+        page += self._words("Mrs. DEEPIKA DOGRA", 55, y)
+        page += self._words("haryana", 273, y)
+        page += self._words("8920284019", 384, y)
+        page += self._words("15,00,000", 439, y)
+
+        result = extract_table([page], self.SCHEMA)
+
+        self.assertEqual(result["rows"][0]["data"], {
+            "customer_name": "Mrs. DEEPIKA DOGRA",
+            "state": "haryana",
+            "mobile_number": "8920284019",
+            "loan_amount": "1500000",
+        })
+
+    def test_merged_mobile_and_amount_box_is_split(self):
+        page = [
+            OcrLine("Mrs. DEEPIKA DOGRA", 0.9, 55, 80, 150, 90),
+            OcrLine("haryana", 0.9, 273, 80, 310, 90),
+            OcrLine("8920284019 15,00,000", 0.9, 384, 80, 484, 90),
+        ]
+
+        result = extract_table([page], self.SCHEMA)
+
+        self.assertEqual(result["rows"][0]["data"]["mobile_number"], "8920284019")
+        self.assertEqual(result["rows"][0]["data"]["loan_amount"], "1500000")
+        self.assertEqual(result["rows"][0]["data"]["state"], "haryana")
+
+    def test_amount_never_takes_the_mobile_number(self):
+        schema = [
+            {"key": "customer_name", "label": "Customer Name", "type": "text"},
+            {"key": "loan_amount", "label": "Loan Amount", "type": "decimal"},
+            {"key": "mobile_number", "label": "Mobile Number", "type": "mobile"},
+        ]
+        page = [OcrLine("RAHUL KUMAR 9876543210", 0.9, 10, 10, 200, 20)]
+
+        result = extract_table([page], schema)
+
+        self.assertEqual(result["rows"][0]["data"], {
+            "customer_name": "RAHUL KUMAR",
+            "loan_amount": None,
+            "mobile_number": "9876543210",
+        })
+
+
 if __name__ == "__main__":
     unittest.main()

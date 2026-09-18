@@ -2,9 +2,8 @@
 
 namespace App\Filament\Actions;
 
-use App\Models\CustomerAssignment;
-use App\Models\CustomerAssignmentBatch;
 use App\Models\Employee;
+use App\Services\CustomerAssignmentService;
 use Closure;
 use Filament\Actions\BulkAction;
 use Filament\Forms\Components\Select;
@@ -22,8 +21,7 @@ class AssignCustomersToUserBulkAction
     public static function make(?Closure $idResolver = null, string $targetType = 'customer'): BulkAction
     {
         $idResolver ??= fn ($record) => $record->id;
-        $column = $targetType === 'ai_customer_record' ? 'ai_customer_record_id' : 'customer_id';
-        $noun = $targetType === 'ai_customer_record' ? 'record(s)' : 'customer(s)';
+        $noun = $targetType === CustomerAssignmentService::TARGET_AI_RECORD ? 'record(s)' : 'customer(s)';
 
         return BulkAction::make('assignToUser')
             ->label('Assign to User')
@@ -44,9 +42,7 @@ class AssignCustomersToUserBulkAction
                     ->searchable()
                     ->required(),
             ])
-            ->action(function (Collection $records, array $data) use ($idResolver, $column, $noun): void {
-                $assignedBy = auth()->user()->employee?->id;
-
+            ->action(function (Collection $records, array $data) use ($idResolver, $targetType, $noun): void {
                 $targetIds = $records->map($idResolver)->filter()->unique()->values();
 
                 if ($targetIds->isEmpty()) {
@@ -59,11 +55,14 @@ class AssignCustomersToUserBulkAction
                     return;
                 }
 
-                $alreadyAssignedIds = CustomerAssignment::whereIn($column, $targetIds)->pluck($column);
+                $result = app(CustomerAssignmentService::class)->assign(
+                    $targetIds,
+                    (int) $data['employee_id'],
+                    $targetType,
+                    auth()->user()->employee?->id,
+                );
 
-                $toAssign = $targetIds->diff($alreadyAssignedIds);
-
-                if ($toAssign->isEmpty()) {
+                if ($result['assigned'] === 0) {
                     Notification::make()
                         ->title('Nothing assigned')
                         ->body('All selected rows are already assigned to a user.')
@@ -73,28 +72,11 @@ class AssignCustomersToUserBulkAction
                     return;
                 }
 
-                $batch = CustomerAssignmentBatch::create([
-                    'assigned_by' => $assignedBy,
-                    'employee_id' => $data['employee_id'],
-                    'customer_count' => $toAssign->count(),
-                ]);
-
-                foreach ($toAssign as $id) {
-                    CustomerAssignment::create([
-                        'batch_id' => $batch->id,
-                        $column => $id,
-                        'employee_id' => $data['employee_id'],
-                        'assigned_by' => $assignedBy,
-                    ]);
-                }
-
-                $skipped = $targetIds->count() - $toAssign->count();
-
                 Notification::make()
                     ->title('Assigned')
                     ->body(
-                        $toAssign->count() . " {$noun} assigned."
-                        . ($skipped ? " {$skipped} were already assigned and skipped." : '')
+                        $result['assigned']." {$noun} assigned."
+                        .($result['skipped'] ? " {$result['skipped']} were already assigned and skipped." : '')
                     )
                     ->success()
                     ->send();
