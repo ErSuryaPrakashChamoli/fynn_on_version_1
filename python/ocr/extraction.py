@@ -19,7 +19,7 @@ import re
 from typing import Any, Optional
 
 from . import validators
-from .types import OcrLine
+from .ocr_types import OcrLine
 
 # Universal, format-detectable fields only — see module docstring.
 LABEL_KEYWORDS: dict[str, list[str]] = {
