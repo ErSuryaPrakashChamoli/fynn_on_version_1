@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .types import OcrLine, mean_confidence
+from .ocr_types import OcrLine, mean_confidence
 
 _ocr_instance = None
 

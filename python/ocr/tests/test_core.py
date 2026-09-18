@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from ocr import validators
 from ocr.extraction import extract_fields, extract_table
-from ocr.types import OcrLine
+from ocr.ocr_types import OcrLine
 
 
 class ValidatorTests(unittest.TestCase):
