@@ -5,6 +5,8 @@ Before planning or editing, find the row whose globs match the file's path and r
 | Applies to | Rule file |
 | --- | --- |
 | app/Filament/Academy/** | .ai/rules/academy.md |
+| app/Filament/Actions/AssignCustomersToUserBulkAction.php, app/Filament/Resources/AiCustomerRecords/**, app/Services/CustomerAssignmentService.php | .ai/rules/ai-customer-records-services.md |
+| app/Filament/Resources/AiCustomerRecords/** | .ai/rules/ai-customer-records.md |
 | app/Livewire/** | .ai/rules/app-livewire.md |
 | app/**/Customer*.php | .ai/rules/app.md |
 | resources/views/components/daily-commitment/** | .ai/rules/components-daily-commitment.md |
@@ -17,6 +19,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/views/livewire/** | .ai/rules/livewire.md |
 | app/Http/Middleware/EnsureAccountIsActive.php, app/Http/Middleware/EnforceIdleTimeout.php | .ai/rules/middleware.md |
 | app/Models/FollowUp.php, app/Models/DailyCommitmentEntry.php, app/Models/User.php, app/Models/UserLoginSession.php, app/Models/Employee.php | .ai/rules/models.md |
+| python/ocr/** | .ai/rules/ocr.md |
 | app/Filament/Pages/DailyCommitment*.php | .ai/rules/pages.md |
 | app/Providers/Filament/AdminPanelProvider.php | .ai/rules/providers-filament.md |
 | app/Filament/Resources/** | .ai/rules/resources.md |

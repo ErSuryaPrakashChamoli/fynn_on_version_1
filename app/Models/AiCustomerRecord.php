@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class AiCustomerRecord extends Model
 {
@@ -30,6 +32,7 @@ class AiCustomerRecord extends Model
             'is_duplicate' => 'boolean',
         ];
     }
+
     public function duplicateOf(): BelongsTo
     {
         return $this->belongsTo(self::class, 'duplicate_of_id');
@@ -55,12 +58,21 @@ class AiCustomerRecord extends Model
         return $this->belongsTo(User::class, 'reviewed_by');
     }
 
-    public function assignments()
+    public function assignments(): HasMany
     {
         return $this->hasMany(CustomerAssignment::class);
     }
 
-    public function followUps()
+    /**
+     * The assignment that currently owns this record. The bulk assign action
+     * skips records that already have one, so this is normally the only one.
+     */
+    public function latestAssignment(): HasOne
+    {
+        return $this->hasOne(CustomerAssignment::class)->latestOfMany();
+    }
+
+    public function followUps(): HasMany
     {
         return $this->hasMany(FollowUp::class);
     }

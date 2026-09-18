@@ -18,6 +18,10 @@ return new class extends Migration
 
         if (DB::getDriverName() === 'mysql') {
             DB::statement('ALTER TABLE customer_assignments MODIFY customer_id BIGINT UNSIGNED NULL');
+        } else {
+            Schema::table('customer_assignments', function (Blueprint $table) {
+                $table->unsignedBigInteger('customer_id')->nullable()->change();
+            });
         }
 
         Schema::table('customer_assignments', function (Blueprint $table) {
