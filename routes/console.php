@@ -30,6 +30,15 @@ Schedule::command('daily-commitment:settle')
     ->dailyAt('00:30');
 
 /*
+ * The client demo is seeded relative to today, so it is rebuilt every
+ * night to keep targets, commitments and follow-ups current. Only the
+ * demo environment ever runs it (the command refuses anywhere else too).
+ */
+Schedule::command('demo-environment:refresh --force')
+    ->dailyAt('00:10')
+    ->when(fn (): bool => app()->environment('demo') && (bool) config('demo.enabled'));
+
+/*
  * Academy / Demo portals: deactivate demo and training accounts whose
  * expiry has passed. An expired account is already refused at request
  * time by PortalAccount::isUsable(), so this only keeps the stored

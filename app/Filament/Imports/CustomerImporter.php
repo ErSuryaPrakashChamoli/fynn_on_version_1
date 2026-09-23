@@ -3,6 +3,7 @@
 namespace App\Filament\Imports;
 
 use App\Models\Customer;
+use App\Services\CustomerEligibilityService;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
@@ -93,15 +94,26 @@ class CustomerImporter extends Importer
 
     public function resolveRecord(): Customer
     {
-        return new Customer();
+        return new Customer;
+    }
+
+    /**
+     * Imported files start their eligibility log the same way files created
+     * in the UI do (CreateCustomer::afterCreate), so the log never begins
+     * mid-story. The importer only ever creates, never updates, so it can
+     * never move a file's eligibility behind the service's back.
+     */
+    protected function afterSave(): void
+    {
+        app(CustomerEligibilityService::class)->logCreation($this->record, $this->import->user);
     }
 
     public static function getCompletedNotificationBody(Import $import): string
     {
-        $body = 'Your customer import has completed and ' . Number::format($import->successful_rows) . ' ' . str('row')->plural($import->successful_rows) . ' imported.';
+        $body = 'Your customer import has completed and '.Number::format($import->successful_rows).' '.str('row')->plural($import->successful_rows).' imported.';
 
         if ($failedRowsCount = $import->getFailedRowsCount()) {
-            $body .= ' ' . Number::format($failedRowsCount) . ' ' . str('row')->plural($failedRowsCount) . ' failed to import.';
+            $body .= ' '.Number::format($failedRowsCount).' '.str('row')->plural($failedRowsCount).' failed to import.';
         }
 
         return $body;

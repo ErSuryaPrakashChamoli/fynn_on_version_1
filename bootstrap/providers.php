@@ -1,6 +1,7 @@
 <?php
 
 use App\Providers\AppServiceProvider;
+use App\Providers\DemoModeServiceProvider;
 use App\Providers\Filament\AcademyPanelProvider;
 use App\Providers\Filament\AdminPanelProvider;
 use App\Providers\Filament\DemoPanelProvider;
@@ -12,4 +13,5 @@ return [
     AdminPanelProvider::class,
     AcademyPanelProvider::class,
     DemoPanelProvider::class,
+    DemoModeServiceProvider::class,
 ];

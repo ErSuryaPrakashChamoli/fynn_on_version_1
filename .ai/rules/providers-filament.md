@@ -13,3 +13,6 @@ Two traps behind the implementation:
 - ->alpineClickHandler() calls ->livewireClickHandlerEnabled(false) internally, which would strip wire:click="applyTableFilters" and stop filters applying at all. Re-enable it explicitly afterwards.
 
 Tables with ->deferFilters(false) (Employees, Users, EmployeePerformanceReports) have no apply button and are unaffected.
+
+## New resources and pages must be added to buildNavigation()
+The /admin sidebar is a hand-written list in AdminPanelProvider::buildNavigation(). discoverResources() only registers routes, so a new resource or page is reachable by URL but appears in nobody's sidebar until you add it via navigationItemsFor(). The resource's $navigationGroup is ignored; the NavigationGroup::make() it is placed in decides where it shows. Cover each addition with a test that GETs /admin and assertSee()s the item's URL. Use followingRedirects(), because the monthly-target gate redirects callers and setters who have no target.

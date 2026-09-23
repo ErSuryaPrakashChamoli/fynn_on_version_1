@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Customers\Schemas;
 use App\Enums\JourneyAccessType;
 use App\Enums\JourneyModule;
 use App\Models\Customer;
+use App\Services\CustomerEligibilityService;
 use App\Services\Journey\CustomerJourneyAccessService;
 use Carbon\Carbon;
 use Filament\Infolists\Components\RepeatableEntry;
@@ -65,6 +66,8 @@ class CustomerInfolist
                     ]),
 
                 OtherBankSupportRemarksSection::make(),
+
+                CustomerEligibilitySection::make(),
 
                 Section::make('👤 Customer Overview')
                     ->columnSpanFull()
@@ -168,7 +171,9 @@ class CustomerInfolist
                                     ->money('INR'),
 
                                 TextEntry::make('eligibility_status')
-                                    ->badge(),
+                                    ->badge()
+                                    ->formatStateUsing(fn (?string $state): string => CustomerEligibilityService::statusLabel($state))
+                                    ->color(fn (?string $state): string => CustomerEligibilityService::statusColor($state)),
 
                             ]),
                     ]),

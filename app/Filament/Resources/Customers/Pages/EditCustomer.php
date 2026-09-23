@@ -3,13 +3,11 @@
 namespace App\Filament\Resources\Customers\Pages;
 
 use App\Filament\Resources\Customers\CustomerResource;
+use App\Models\Employee;
+use App\Services\CustomerEligibilityService;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\ViewAction;
 use Filament\Resources\Pages\EditRecord;
-use App\Models\CustomerStageHistory;
-use Filament\Actions\Action;
-use Filament\Notifications\Notification;
-use App\Models\Employee;
 
 class EditCustomer extends EditRecord
 {
@@ -36,6 +34,31 @@ class EditCustomer extends EditRecord
                 'record' => $this->record,
             ]));
         }
+    }
+
+    /**
+     * journey_status is a disabled-but-dehydrated field, so a page opened
+     * before an eligibility change would write the stale stage back on save
+     * (e.g. leaving a now-Eligible file at not_started, out of SFL). The
+     * stage the eligibility implies always wins over the stale form value.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        $isEligible = $this->record->eligibility_status === CustomerEligibilityService::ELIGIBLE;
+        $submitted = $data['journey_status'] ?? null;
+
+        if ($isEligible && $submitted === 'not_started') {
+            $data['journey_status'] = $this->record->journey_status;
+        }
+
+        if (! $isEligible && $submitted !== 'not_started') {
+            $data['journey_status'] = $this->record->journey_status;
+        }
+
+        return $data;
     }
 
     protected function getRedirectUrl(): string

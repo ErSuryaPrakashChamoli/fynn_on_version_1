@@ -25,6 +25,7 @@ use App\Filament\Resources\AiCustomerRecords\AiCustomerRecordResource;
 use App\Filament\Resources\AiDocumentSchemas\AiDocumentSchemaResource;
 use App\Filament\Resources\AssignedLeads\AssignedLeadResource;
 use App\Filament\Resources\Cities\CityResource;
+use App\Filament\Resources\CustomerEligibilityRequests\CustomerEligibilityRequestResource;
 use App\Filament\Resources\CustomerJourneyAudits\CustomerJourneyAuditResource;
 use App\Filament\Resources\CustomerJourneyDelegations\CustomerJourneyDelegationResource;
 use App\Filament\Resources\CustomerPanRequests\CustomerPanRequestResource;
@@ -586,9 +587,10 @@ class AdminPanelProvider extends PanelProvider
                 ...$this->navigationItemsFor(UserLoginSessionResource::class),
             ]),
 
-            NavigationGroup::make('Request')->items(
-                $this->navigationItemsFor(CustomerPanRequestResource::class),
-            ),
+            NavigationGroup::make('Request')->items([
+                ...$this->navigationItemsFor(CustomerPanRequestResource::class),
+                ...$this->navigationItemsFor(CustomerEligibilityRequestResource::class),
+            ]),
 
             NavigationGroup::make('Setting')->items([
                 ...$this->navigationItemsFor(CityResource::class),
