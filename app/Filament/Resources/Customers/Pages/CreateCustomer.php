@@ -3,36 +3,37 @@
 namespace App\Filament\Resources\Customers\Pages;
 
 use App\Filament\Resources\Customers\CustomerResource;
-use Filament\Resources\Pages\CreateRecord;
+use App\Filament\Resources\Leads\LeadResource;
 use App\Models\AiCustomerRecord;
 use App\Models\Customer;
 use App\Models\CustomerAssignment;
+use App\Models\CustomerPanRequest;
+use App\Models\Employee;
 use App\Models\FollowUp;
 use App\Models\Lead;
-use App\Filament\Resources\Leads\LeadResource;
-use Filament\Notifications\Notification;
+use App\Services\CustomerEligibilityService;
 use Filament\Actions\Action;
-use App\Models\CustomerPanRequest;
-use Filament\Forms\Components\TextInput;
-
-use App\Models\Employee;
-
-
+use Filament\Notifications\Notification;
+use Filament\Resources\Pages\CreateRecord;
 
 class CreateCustomer extends CreateRecord
 {
     protected static string $resource = CustomerResource::class;
 
-
     public ?Customer $existingCustomer = null;
+
     public bool $panExists = false;
+
     public bool $panVerified = false;
+
     public bool $approvalRequested = false;
 
     public bool $isDuplicatePanFlow = false;
+
     public bool $isApprovedPanRequest = false;
 
     public bool $showPanRequests = false;
+
     public bool $isDirectCustomer = false;
 
     public ?CustomerPanRequest $panRequest = null;
@@ -40,9 +41,6 @@ class CreateCustomer extends CreateRecord
     public ?int $aiCustomerRecordId = null;
 
     public ?int $leadId = null;
-
-
-
 
     public function mount(): void
     {
@@ -226,13 +224,10 @@ class CreateCustomer extends CreateRecord
             403
         );
 
-
         abort_unless(
             $this->panRequest->requested_by === auth()->user()->employee->id,
             403
         );
-
-
 
         if (filled($this->panRequest?->application_id)) {
             Notification::make()
@@ -247,7 +242,6 @@ class CreateCustomer extends CreateRecord
 
             return;
         }
-
 
         $customer = $this->panRequest->customer;
 
@@ -279,7 +273,6 @@ class CreateCustomer extends CreateRecord
             'loan_applied' => $this->panRequest->requested_loan_type,
         ]);
     }
-
 
     protected function getCreateFormAction(): Action
     {
@@ -361,7 +354,6 @@ class CreateCustomer extends CreateRecord
             $this->halt();
         }
 
-
         switch ($data['eligibility_status']) {
 
             case 'eligible':
@@ -379,7 +371,6 @@ class CreateCustomer extends CreateRecord
     // protected function mutateFormDataBeforeCreate(array $data): array
     // {
 
-
     //     $user = auth()->user();
     //     $data['employee_id'] = $user->employee_id;
 
@@ -391,7 +382,6 @@ class CreateCustomer extends CreateRecord
 
     //         $this->halt();
     //     }
-
 
     //     switch ($data['eligibility_status']) {
 
@@ -409,7 +399,6 @@ class CreateCustomer extends CreateRecord
     //     }
 
     //     // $data['journey_status'] = 'sfl';
-
 
     //     return $data;
     // }
@@ -444,9 +433,9 @@ class CreateCustomer extends CreateRecord
                 'converted_customer_id' => $this->record->id,
             ]);
         }
+
+        app(CustomerEligibilityService::class)->logCreation($this->record, auth()->user());
     }
-
-
 
     protected function getRedirectUrl(): string
     {

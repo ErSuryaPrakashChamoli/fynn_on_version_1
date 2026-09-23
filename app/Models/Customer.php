@@ -408,6 +408,16 @@ class Customer extends Model
         return $this->hasMany(OtherBankSupportRemark::class);
     }
 
+    public function eligibilityRequests(): HasMany
+    {
+        return $this->hasMany(CustomerEligibilityRequest::class);
+    }
+
+    public function eligibilityLogs(): HasMany
+    {
+        return $this->hasMany(CustomerEligibilityLog::class);
+    }
+
     /**
      * Files eligible for a bank other than the in-house BFL products — the
      * Other Bank Support pool. See OtherBankSupportService.
