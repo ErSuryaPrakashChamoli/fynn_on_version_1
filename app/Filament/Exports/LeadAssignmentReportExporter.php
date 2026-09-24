@@ -23,8 +23,19 @@ class LeadAssignmentReportExporter extends Exporter
                 ->label('Role')
                 ->formatStateUsing(fn ($state) => Employee::designationOptions()[$state] ?? $state),
             ExportColumn::make('assigned_count')->label('Assigned'),
+            ExportColumn::make('untouched_count')->label('Not Touched'),
             ExportColumn::make('opened_count')->label('Opened'),
-            ExportColumn::make('contacted_count')->label('Contacted'),
+            ExportColumn::make('followed_up_count')->label('Followed Up'),
+            ExportColumn::make('converted_count')->label('Converted'),
+            ExportColumn::make('overdue_count')->label('Overdue Follow-Ups'),
+            ExportColumn::make('reassigned_out_count')->label('Reassigned Away'),
+            ExportColumn::make('interested_count')->label('Interested'),
+            ExportColumn::make('not_interested_count')->label('Not Interested'),
+            ExportColumn::make('busy_count')->label('Busy'),
+            ExportColumn::make('no_response_count')->label('No Response'),
+            ExportColumn::make('not_eligible_remark_count')->label('Not Eligible (Remark)'),
+            ExportColumn::make('other_bank_count')->label('Eligible for Other Bank'),
+            ExportColumn::make('pending_count')->label('Pending'),
             ExportColumn::make('eligible_count')->label('Eligible'),
             ExportColumn::make('not_eligible_count')->label('Not Eligible'),
             ExportColumn::make('sfl_count')->label('SFL'),
@@ -35,22 +46,33 @@ class LeadAssignmentReportExporter extends Exporter
             ExportColumn::make('carry_forward_count')->label('Carry Forward'),
             ExportColumn::make('dropped_count')->label('Dropped'),
             ExportColumn::make('not_approved_count')->label('Not Approved'),
+            ExportColumn::make('last_activity_at')->label('Last Follow-Up'),
+            ExportColumn::make('work_status')
+                ->label('Work Status')
+                ->state(fn (Employee $record): string => LeadAssignmentReportsTable::workStatus($record)),
+            ExportColumn::make('suggested_action')
+                ->label('Suggested Action')
+                ->state(fn (Employee $record): string => LeadAssignmentReportsTable::suggestedAction($record)),
         ];
     }
 
     public static function getCompletedNotificationBody(Export $export): string
     {
-        $body = 'Your lead assignment report has completed and ' . Number::format($export->successful_rows) . ' ' . str('row')->plural($export->successful_rows) . ' exported.';
+        $body = 'Your lead assignment report has completed and '.Number::format($export->successful_rows).' '.str('row')->plural($export->successful_rows).' exported.';
 
         if ($failedRowsCount = $export->getFailedRowsCount()) {
-            $body .= ' ' . Number::format($failedRowsCount) . ' ' . str('row')->plural($failedRowsCount) . ' failed to export.';
+            $body .= ' '.Number::format($failedRowsCount).' '.str('row')->plural($failedRowsCount).' failed to export.';
         }
 
         return $body;
     }
 
+    /**
+     * The table query handed to the export already carries every count,
+     * scoped by the filters that were active when it was downloaded.
+     */
     public static function modifyQuery(Builder $query): Builder
     {
-        return $query->withCount(LeadAssignmentReportsTable::funnelWithCount());
+        return $query;
     }
 }

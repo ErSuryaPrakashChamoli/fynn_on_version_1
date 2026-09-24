@@ -424,6 +424,7 @@ class CreateCustomer extends CreateRecord
             CustomerAssignment::where('ai_customer_record_id', $this->aiCustomerRecordId)->update([
                 'customer_id' => $this->record->id,
                 'ai_customer_record_id' => null,
+                'converted_at' => now(),
             ]);
         }
 

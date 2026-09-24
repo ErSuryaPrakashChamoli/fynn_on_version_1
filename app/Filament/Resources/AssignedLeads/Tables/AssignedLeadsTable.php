@@ -6,16 +6,26 @@ use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\Customer;
 use App\Models\CustomerAssignment;
 use App\Models\Employee;
+use App\Models\User;
+use App\Services\CustomerAssignmentService;
+use App\Services\HierarchyService;
 use App\Support\EmployeeOptions;
-use App\Support\SelectedMonth;
+use App\Support\LeadAssignmentFilters;
 use Filament\Actions\Action;
+use Filament\Actions\BulkAction;
+use Filament\Actions\BulkActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 class AssignedLeadsTable
 {
@@ -36,13 +46,12 @@ class AssignedLeadsTable
                         $direction,
                     )),
 
-                TextColumn::make('source_label')
-                    ->label('Source')
+                TextColumn::make('template.name')
+                    ->label('Template')
                     ->badge()
-                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderByRaw(
-                        'customer_assignments.customer_id IS NULL '.($direction === 'asc' ? 'asc' : 'desc')
-                    ))
-                    ->color(fn (string $state): string => $state === 'Customer' ? 'success' : 'gray'),
+                    ->color('info')
+                    ->placeholder('-')
+                    ->sortable(),
 
                 TextColumn::make('employee.emp_name')
                     ->label('Case Owner')
@@ -50,8 +59,7 @@ class AssignedLeadsTable
                     ->description(fn (CustomerAssignment $record): ?string => $record->employee?->emp_id)
                     ->searchable()
                     ->sortable()
-                    ->visible(fn () => Filament::auth()->user()?->hasRole('Admin')
-                        || Filament::auth()->user()?->employee?->designation !== Employee::DESIGNATION_CALLER),
+                    ->visible(fn (): bool => self::canSeeTeam()),
 
                 TextColumn::make('employee.emp_id')
                     ->label('Emp ID')
@@ -59,8 +67,7 @@ class AssignedLeadsTable
                     ->searchable()
                     ->sortable()
                     ->toggleable()
-                    ->visible(fn () => Filament::auth()->user()?->hasRole('Admin')
-                        || Filament::auth()->user()?->employee?->designation !== Employee::DESIGNATION_CALLER),
+                    ->visible(fn (): bool => self::canSeeTeam()),
 
                 TextColumn::make('status')
                     ->label('Status')
@@ -77,6 +84,10 @@ class AssignedLeadsTable
                     ->label('Follow-Up Status')
                     ->badge()
                     ->state(fn (CustomerAssignment $record) => $record->latestFollowUpStatus() ?? 'Pending')
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy(
+                        CustomerAssignment::latestFollowUpValueQuery('status'),
+                        $direction,
+                    ))
                     ->color(fn (string $state): string => match ($state) {
                         'Interested' => 'success',
                         'Not Interested', 'Not Eligible' => 'danger',
@@ -110,10 +121,30 @@ class AssignedLeadsTable
                         default => 'gray',
                     }),
 
+                TextColumn::make('assignedBy.emp_name')
+                    ->label('Assigned By')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(),
+
                 TextColumn::make('created_at')
                     ->label('Assigned On')
                     ->dateTime('d M Y h:i A')
                     ->sortable(),
+
+                TextColumn::make('reassign_count')
+                    ->label('Reassigned')
+                    ->formatStateUsing(fn (int $state): string => $state > 0 ? "{$state}x" : '-')
+                    ->description(fn (CustomerAssignment $record): ?string => $record->last_reassigned_at?->format('d M Y h:i A'))
+                    ->sortable()
+                    ->toggleable(),
+
+                TextColumn::make('converted_at')
+                    ->label('Converted On')
+                    ->dateTime('d M Y h:i A')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('last_opened_at')
                     ->label('Last Opened')
@@ -123,38 +154,96 @@ class AssignedLeadsTable
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
+                LeadAssignmentFilters::assignedOnFilter(),
+
+                LeadAssignmentFilters::assignedByFilter(),
+
                 SelectFilter::make('employee_id')
                     ->label('Case Owner')
                     ->multiple()
                     ->options(fn (): array => EmployeeOptions::visibleTo(Filament::auth()->user()))
-                    ->visible(fn () => Filament::auth()->user()?->hasRole('Admin')
-                        || Filament::auth()->user()?->employee?->designation !== Employee::DESIGNATION_CALLER),
+                    ->visible(fn (): bool => self::canSeeTeam()),
 
-                SelectFilter::make('source')
-                    ->label('Source')
-                    ->options([
-                        'customer' => 'Customer',
-                        'ai_record' => 'AI Record',
-                    ])
+                SelectFilter::make('emp_id')
+                    ->label('Emp ID')
+                    ->multiple()
+                    ->options(fn (): array => Employee::query()
+                        ->whereIn('id', array_keys(EmployeeOptions::visibleTo(Filament::auth()->user())))
+                        ->whereNotNull('emp_id')
+                        ->orderBy('emp_id')
+                        ->pluck('emp_id', 'id')
+                        ->all())
                     ->query(fn (Builder $query, array $data): Builder => $query->when(
-                        filled($data['value'] ?? null),
-                        fn (Builder $query) => $data['value'] === 'customer'
-                            ? $query->whereNotNull('customer_id')
-                            : $query->whereNull('customer_id')
-                    )),
+                        filled($data['values'] ?? null),
+                        fn (Builder $query) => $query->whereIn('customer_assignments.employee_id', $data['values'])
+                    ))
+                    ->visible(fn (): bool => self::canSeeTeam()),
+
+                LeadAssignmentFilters::templateFilter(),
 
                 SelectFilter::make('open_status')
                     ->label('Status')
                     ->options([
                         'opened' => 'Opened',
                         'pending' => 'Pending',
+                        'untouched' => 'Not Touched (never opened, no follow-up)',
                     ])
                     ->query(fn (Builder $query, array $data): Builder => $query->when(
                         filled($data['value'] ?? null),
-                        fn (Builder $query) => $data['value'] === 'opened'
-                            ? $query->where('opens_count', '>', 0)
-                            : $query->where('opens_count', 0)
+                        fn (Builder $query) => match ($data['value']) {
+                            'opened' => $query->where('opens_count', '>', 0),
+                            'untouched' => $query->untouched(),
+                            default => $query->where('opens_count', 0),
+                        }
                     )),
+
+                SelectFilter::make('follow_up_status')
+                    ->label('Follow-Up Status')
+                    ->multiple()
+                    ->options(CustomerAssignment::FOLLOW_UP_STATUSES)
+                    ->query(fn (Builder $query, array $data): Builder => $query->when(
+                        filled($data['values'] ?? null),
+                        fn (Builder $query) => $query->whereLatestFollowUpStatus(array_values($data['values']))
+                    )),
+
+                SelectFilter::make('journey_status')
+                    ->label('Journey')
+                    ->multiple()
+                    ->options([
+                        'sfl' => 'SFL',
+                        'underwriting' => 'Underwriting',
+                        'approved' => 'Approved',
+                        'sanctioned' => 'Disbursed',
+                        'completed' => 'Completed',
+                        'carry_forward' => 'Carry Forward',
+                        'dropped' => 'Dropped',
+                        'not_approved' => 'Not Approved',
+                    ])
+                    ->query(fn (Builder $query, array $data): Builder => $query->when(
+                        filled($data['values'] ?? null),
+                        fn (Builder $query) => $query->whereHas('customer', fn (Builder $query) => $query->whereIn('journey_status', $data['values']))
+                    )),
+
+                TernaryFilter::make('converted')
+                    ->label('Converted')
+                    ->queries(
+                        true: fn (Builder $query) => $query->whereNotNull('customer_assignments.converted_at'),
+                        false: fn (Builder $query) => $query->whereNull('customer_assignments.converted_at'),
+                    ),
+
+                TernaryFilter::make('reassigned')
+                    ->label('Reassigned')
+                    ->queries(
+                        true: fn (Builder $query) => $query->where('customer_assignments.reassign_count', '>', 0),
+                        false: fn (Builder $query) => $query->where('customer_assignments.reassign_count', 0),
+                    ),
+
+                TernaryFilter::make('overdue')
+                    ->label('Follow-Up Overdue')
+                    ->queries(
+                        true: fn (Builder $query) => $query->overdueFollowUp(),
+                        false: fn (Builder $query) => $query->whereNotIn('customer_assignments.id', CustomerAssignment::query()->overdueFollowUp()->select('customer_assignments.id')),
+                    ),
             ])
             ->recordActions([
                 EditAction::make(),
@@ -168,10 +257,109 @@ class AssignedLeadsTable
                         'ai_customer_record' => $record->ai_customer_record_id,
                     ])),
 
+                self::reassignAction(),
+
                 ViewAction::make(),
             ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    self::reassignBulkAction(),
+                ]),
+            ])
             ->modifyQueryUsing(
-                fn (Builder $query) => $query->whereBetween('created_at', SelectedMonth::range())
+                fn (Builder $query, $livewire): Builder => $query->whereBetween(
+                    'customer_assignments.created_at',
+                    LeadAssignmentFilters::assignedRange(data_get($livewire, 'tableFilters')),
+                )
             );
+    }
+
+    /**
+     * Callers only see their own leads, so team columns, filters and
+     * reassignment are for Admin and the supervisory designations.
+     */
+    public static function canSeeTeam(): bool
+    {
+        $user = Filament::auth()->user();
+
+        return (bool) ($user?->hasRole('Admin')
+            || ($user?->employee && $user->employee->designation !== Employee::DESIGNATION_CALLER));
+    }
+
+    public static function reassignAction(): Action
+    {
+        return Action::make('reassign')
+            ->label('Reassign')
+            ->icon('heroicon-o-arrow-path-rounded-square')
+            ->color('warning')
+            ->visible(fn (): bool => self::canSeeTeam())
+            ->modalHeading('Reassign Lead')
+            ->modalDescription(fn (CustomerAssignment $record): string => "Currently with {$record->employee?->emp_name}. The lead can be reassigned again later; every move is logged.")
+            ->schema(fn (CustomerAssignment $record): array => self::reassignSchema([$record->employee_id]))
+            ->action(fn (CustomerAssignment $record, array $data) => self::performReassign(collect([$record]), $data));
+    }
+
+    public static function reassignBulkAction(): BulkAction
+    {
+        return BulkAction::make('reassign')
+            ->label('Reassign Selected')
+            ->icon('heroicon-o-arrow-path-rounded-square')
+            ->color('warning')
+            ->visible(fn (): bool => self::canSeeTeam())
+            ->modalHeading('Reassign Selected Leads')
+            ->schema(self::reassignSchema())
+            ->deselectRecordsAfterCompletion()
+            ->action(fn (Collection $records, array $data) => self::performReassign($records, $data));
+    }
+
+    /**
+     * @param  list<int|null>  $excludedEmployeeIds
+     * @return array<int, Select|Textarea>
+     */
+    protected static function reassignSchema(array $excludedEmployeeIds = []): array
+    {
+        return [
+            Select::make('employee_id')
+                ->label('Reassign To')
+                ->options(fn (): array => collect(EmployeeOptions::visibleTo(Filament::auth()->user()))
+                    ->except(array_filter($excludedEmployeeIds))
+                    ->all())
+                ->required(),
+
+            Textarea::make('reason')
+                ->label('Reason')
+                ->rows(3),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, CustomerAssignment>  $records
+     * @param  array{employee_id: int|string, reason?: string|null}  $data
+     */
+    protected static function performReassign(Collection $records, array $data): void
+    {
+        $user = Filament::auth()->user();
+        $targetId = (int) $data['employee_id'];
+
+        // The dropdown is already limited to the viewer's branch; re-check so
+        // a tampered request cannot hand leads outside it.
+        if (! $user instanceof User || ! self::canSeeTeam() || ! in_array($targetId, HierarchyService::visibleEmployeeIds($user))) {
+            Notification::make()->title('You cannot reassign leads to that employee.')->danger()->send();
+
+            return;
+        }
+
+        $result = app(CustomerAssignmentService::class)->reassign(
+            $records,
+            $targetId,
+            $user->employee?->id,
+            $data['reason'] ?? null,
+        );
+
+        Notification::make()
+            ->title("{$result['reassigned']} lead(s) reassigned")
+            ->body($result['skipped'] ? "{$result['skipped']} already belonged to that employee." : null)
+            ->success()
+            ->send();
     }
 }
