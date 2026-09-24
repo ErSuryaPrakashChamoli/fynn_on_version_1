@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Demo\DemoUser;
 use App\Models\User;
 
 return [
@@ -42,6 +43,13 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // The /demo panel's guard — authenticates against demo_users on
+        // the demo database, never the main users table.
+        'demo' => [
+            'driver' => 'session',
+            'provider' => 'demo_users',
+        ],
     ],
 
     /*
@@ -65,6 +73,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+
+        'demo_users' => [
+            'driver' => 'eloquent',
+            'model' => DemoUser::class,
         ],
 
         // 'users' => [

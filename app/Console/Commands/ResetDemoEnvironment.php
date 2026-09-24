@@ -2,67 +2,39 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Tenant;
-use App\Services\Demo\DemoResetService;
 use Illuminate\Console\Command;
-use RuntimeException;
 
 /**
- * Restores the sandbox after a prospect has been clicking around in it.
+ * Restores the demo environment after a prospect has been clicking around
+ * in it.
  *
  *     php artisan demo:reset
  *
- * Refuses to run against anything but a demo tenant (DemoResetService
- * checks both the tenant type and that every table it will clear is a
- * demo_ table), so there is no invocation of this command that can
- * touch production data.
+ * Rebuilds the DEMO database from scratch — drops its tables, re-runs the
+ * application migrations on it and re-seeds the demo dataset and logins —
+ * through `demo:migrate --fresh --seed`, which refuses to run at all if the
+ * demo connection resolves to the main database. The main database is
+ * never touched.
  */
 class ResetDemoEnvironment extends Command
 {
     protected $signature = 'demo:reset
-        {--tenant= : Demo tenant slug (defaults to the standard FYNN-ON demo tenant)}
         {--force : Skip the confirmation prompt}';
 
-    protected $description = 'Wipe and reseed the FYNN-ON demo sandbox';
+    protected $description = 'Rebuild and reseed the DEMO database (demo environment only)';
 
-    public function handle(DemoResetService $reset): int
+    public function handle(): int
     {
-        $slug = $this->option('tenant') ?: Tenant::DEMO_SLUG;
-
-        $tenant = Tenant::query()->where('slug', $slug)->first();
-
-        if ($tenant === null) {
-            $this->error("No tenant found with slug [{$slug}].");
-
-            return self::FAILURE;
-        }
-
-        if (! $tenant->isDemo()) {
-            $this->error("Tenant [{$slug}] is not a demo tenant. Refusing to reset.");
-
-            return self::FAILURE;
-        }
-
-        if (! $this->option('force') && ! $this->confirm("Reset all sandbox data for [{$tenant->name}]?", true)) {
+        if (! $this->option('force') && ! $this->confirm('Rebuild the DEMO database? All demo data will be replaced with the seeded dataset.', true)) {
             $this->comment('Aborted.');
 
             return self::SUCCESS;
         }
 
-        try {
-            $counts = $reset->reset($tenant);
-        } catch (RuntimeException $exception) {
-            $this->error($exception->getMessage());
-
-            return self::FAILURE;
-        }
-
-        $this->info("Sandbox restored for [{$tenant->name}].");
-        $this->table(
-            ['Table', 'Rows'],
-            collect($counts)->map(fn (int $count, string $table): array => [$table, $count])->values()->all(),
-        );
-
-        return self::SUCCESS;
+        return $this->call('demo:migrate', [
+            '--fresh' => true,
+            '--seed' => true,
+            '--force' => true,
+        ]);
     }
 }

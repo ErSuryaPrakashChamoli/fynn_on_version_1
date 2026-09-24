@@ -8,7 +8,8 @@ use App\Services\Portal\PortalAccountService;
 use Illuminate\Database\Seeder;
 
 /**
- * The Academy and Demo logins.
+ * The Academy logins. (/demo logins live only in the demo database —
+ * see Database\Seeders\Demo\DemoOrganisationSeeder.)
  *
  * Every account is minted through PortalAccountService, which is what
  * guarantees none of them receives a Spatie role — a seeded trainee must
@@ -25,11 +26,7 @@ class PortalUserSeeder extends Seeder
 
     public const TRAINEE_EMAIL = 'trainee@fynnedge.com';
 
-    public const DEMO_EMAIL = 'demo@fynnedge.com';
-
     public const DEFAULT_PASSWORD = 'Academy@123';
-
-    public const DEMO_PASSWORD = 'Demo@123';
 
     /** @var list<string> */
     public const TRAINEE_NAMES = [
@@ -45,7 +42,6 @@ class PortalUserSeeder extends Seeder
     public function run(): void
     {
         $production = Tenant::production();
-        $demo = Tenant::demo();
 
         $this->accounts->create(
             [
@@ -79,23 +75,5 @@ class PortalUserSeeder extends Seeder
                 PortalRole::Trainee,
             );
         }
-
-        /*
-         * The sales demo login, deliberately given a 90-day expiry so
-         * the expiry mechanism is exercised in a normal install rather
-         * than only in tests. Extend it with:
-         *   php artisan portal:expire-accounts --report
-         * and PortalAccountService::extend().
-         */
-        $this->accounts->create(
-            [
-                'name' => 'FYNN-ON Demo User',
-                'email' => self::DEMO_EMAIL,
-                'password' => self::DEMO_PASSWORD,
-            ],
-            $demo,
-            PortalRole::Demo,
-            now()->addDays(90),
-        );
     }
 }

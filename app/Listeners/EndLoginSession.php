@@ -2,6 +2,7 @@
 
 namespace App\Listeners;
 
+use App\Models\User;
 use App\Models\UserLoginSession;
 use Illuminate\Auth\Events\Logout;
 
@@ -14,7 +15,12 @@ class EndLoginSession
     {
         $user = $event->user;
 
-        if (! $user || ! $user->id) {
+        /*
+         * Only track main LMS users. A /demo login (App\Models\Demo\DemoUser
+         * on the `demo` guard) fires the same event, but must never write a
+         * user_login_sessions row into the main database.
+         */
+        if (! $user instanceof User || ! $user->id) {
             return;
         }
 

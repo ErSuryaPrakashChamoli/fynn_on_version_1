@@ -8,7 +8,14 @@
         return;
     }
 
-    const heartbeatUrl = '/login-session/heartbeat';
+    /*
+     * A panel can point the heartbeat at its own endpoint: /demo emits
+     * <meta name="login-session-heartbeat-url"> so its beats reach the
+     * demo copy of the route (demo guard, demo database).
+     */
+    const heartbeatUrl = document
+        .querySelector('meta[name="login-session-heartbeat-url"]')
+        ?.getAttribute('content') || '/login-session/heartbeat';
 
     /*
      * Send heartbeat every 30 seconds.
@@ -43,8 +50,8 @@
      * server (App\Http\Middleware\EnforceIdleTimeout) is the authority
      * and will refuse a stale session regardless of what this does.
      *
-     * The meta tags are emitted for the LMS panel only, so this whole
-     * block stays dormant in the Academy and Demo portals.
+     * The meta tags are emitted for the LMS panel (and its /demo copy)
+     * only, so this whole block stays dormant in the Academy portal.
      */
     function metaContent(name) {
         return document

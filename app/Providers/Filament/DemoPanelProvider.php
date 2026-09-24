@@ -2,90 +2,95 @@
 
 namespace App\Providers\Filament;
 
-use App\Filament\Demo\Pages\Auth\DemoLogin;
-use App\Filament\Demo\Pages\DemoDashboard;
+use App\Http\Middleware\EncryptCookies;
+use App\Http\Middleware\EnforceIdleTimeout;
 use App\Http\Middleware\EnsureAccountIsActive;
+use App\Http\Middleware\EnsureMonthlyTargetIsSet;
 use App\Http\Middleware\Portal\EnsureDemoAccess;
-use App\Support\Portal\FynnOnBrand;
-use Filament\Enums\ThemeMode;
+use App\Http\Middleware\Portal\EnsureDemoIsAvailable;
+use App\Http\Middleware\Portal\UseDemoContext;
+use App\Support\Demo\DemoContext;
+use App\Support\Demo\DemoDatabaseQueue;
+use Filament\Facades\Filament;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Navigation\NavigationGroup;
 use Filament\Panel;
-use Filament\PanelProvider;
-use Filament\Support\Enums\Width;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
-use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Queue\Connectors\DatabaseConnector;
+use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Queue\QueueManager;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Event;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use RuntimeException;
 
 /**
- * FYNN-ON Demo — the external sandbox shown to prospects.
+ * /demo — the SAME admin application, running against the demo
+ * environment.
  *
- * Presents FYNN-ON as an independent SaaS product: no FynnEdge company
- * branding, no internal terminology, no link back to /admin. Every
- * resource in it is bound to a demo_* model, so the panel has no
- * reachable path to a production row (see the demo_banks migration for
- * why isolation is schema-level rather than query-level).
+ * Extends AdminPanelProvider and builds the panel from the same
+ * configureSharedPanel(): every resource, page, widget, relation manager,
+ * render hook, theme, navigation group and user-menu item of /admin is
+ * here too, and anything added to /admin later appears here without a
+ * second implementation. The only differences are:
  *
- * Mounted at /demo, moved to demo.fynnedge.com later by adding
- * ->domain() here alone.
+ *  - identity: id/path `demo`, the `demo` auth guard (DemoUser rows in the
+ *    demo database) — a main login is a guest here and vice versa;
+ *  - context: EnsureDemoIsAvailable + UseDemoContext run first on every
+ *    request and Livewire round-trip, switching database, queue, cache,
+ *    storage and mail to the demo side (see DemoContext);
+ *  - a persistent "Demo environment" badge and a one-click "View as"
+ *    role switcher (SwitchDemoRoleController).
  */
-class DemoPanelProvider extends PanelProvider
+class DemoPanelProvider extends AdminPanelProvider
 {
     public function panel(Panel $panel): Panel
     {
-        return $panel
-            ->id('demo')
-            ->path('demo')
-            ->login(DemoLogin::class)
-            ->brandName('FYNN-ON')
-            ->favicon(asset('images/favicon.png'))
-            ->colors(FynnOnBrand::colors())
-            ->defaultThemeMode(ThemeMode::Light)
-            ->maxContentWidth(Width::Full)
-            ->sidebarCollapsibleOnDesktop()
-            ->globalSearch(false)
-            ->discoverResources(
-                in: app_path('Filament/Demo/Resources'),
-                for: 'App\Filament\Demo\Resources',
-            )
-            ->discoverPages(
-                in: app_path('Filament/Demo/Pages'),
-                for: 'App\Filament\Demo\Pages',
-            )
-            ->discoverWidgets(
-                in: app_path('Filament/Demo/Widgets'),
-                for: 'App\Filament\Demo\Widgets',
-            )
-            ->pages([
-                DemoDashboard::class,
-            ])
-            ->navigationGroups([
-                NavigationGroup::make('Sales'),
-                NavigationGroup::make('Operations'),
-                NavigationGroup::make('Organisation'),
-                NavigationGroup::make('Configuration'),
-            ])
+        return $this->configureSharedPanel(
+            $panel
+                ->id('demo')
+                ->path('demo')
+        )
+            ->authGuard('demo')
             /*
-             * A persistent "sandbox data" banner. A prospect must never
-             * be in any doubt that the numbers in front of them are
-             * fabricated, and a render hook puts it on every page
-             * without each page having to remember.
+             * The demo marker and one-click "View as" switcher float in the
+             * bottom-right corner, so the admin layout (topbar marquee,
+             * sidebar) stays exactly as on /admin. A thin amber line along
+             * the topbar keeps "this is the demo" visible at a glance.
              */
             ->renderHook(
-                PanelsRenderHook::TOPBAR_END,
-                fn (): string => view('filament.demo.sandbox-badge')->render(),
+                PanelsRenderHook::BODY_END,
+                fn (): string => Filament::auth()->check()
+                    ? view('filament.demo.role-switcher')->render()
+                    : '',
             )
             ->renderHook(
                 PanelsRenderHook::STYLES_AFTER,
-                fn (): string => view('filament.demo.styles')->render(),
+                fn (): string => '<style>.fi-topbar{box-shadow:inset 0 3px 0 rgb(245 158 11)}</style>',
             )
+            ->renderHook(
+                PanelsRenderHook::AUTH_LOGIN_FORM_BEFORE,
+                fn (): string => view('filament.demo.environment-badge')->render(),
+            )
+            /*
+             * The globally-registered login-session heartbeat posts to the
+             * main /login-session/heartbeat route by default; on /demo it
+             * must hit the demo copy, which runs in the demo context.
+             */
+            ->renderHook(
+                PanelsRenderHook::HEAD_END,
+                fn (): string => '<meta name="login-session-heartbeat-url" content="'
+                    .e(route('demo.login-session.heartbeat', absolute: false)).'">',
+            )
+            ->middleware([
+                EnsureDemoIsAvailable::class,
+                UseDemoContext::class,
+            ], isPersistent: true)
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
@@ -99,8 +104,56 @@ class DemoPanelProvider extends PanelProvider
                 DispatchServingFilamentEvent::class,
             ])
             ->authMiddleware([
-                Authenticate::class,
                 EnsureDemoAccess::class,
+            ], isPersistent: true)
+            ->authMiddleware([
+                Authenticate::class,
+                EnforceIdleTimeout::class,
+                EnsureMonthlyTargetIsSet::class,
             ]);
+    }
+
+    /**
+     * The panel-wide registrations in AdminPanelProvider::boot() are
+     * global (they apply to every panel) and must run once, so they are
+     * not repeated here.
+     *
+     * What IS registered here is the queue boundary: a job pushed from
+     * the demo environment sits on the `demo` queue connection (the demo
+     * database), and may only ever be processed inside the demo context —
+     * i.e. by `php artisan demo:queue-work`. DemoDatabaseQueue refuses to
+     * hand out a job anywhere else (a plain `queue:work demo` would run it
+     * against the MAIN database), and a demo worker refuses anything that
+     * is not a demo job.
+     */
+    public function boot(): void
+    {
+        $this->callAfterResolving('queue', function (QueueManager $manager): void {
+            $manager->addConnector('demo-database', fn (): DatabaseConnector => new class(app('db')) extends DatabaseConnector
+            {
+                public function connect(array $config): DemoDatabaseQueue
+                {
+                    return new DemoDatabaseQueue(
+                        $this->connections->connection($config['connection']),
+                        $config['table'],
+                        $config['queue'],
+                        $config['retry_after'] ?? 60,
+                        $config['after_commit'] ?? null,
+                    );
+                }
+            });
+        });
+
+        Event::listen(JobProcessing::class, function (JobProcessing $event): void {
+            $isDemoJob = $event->connectionName === 'demo';
+
+            if ($isDemoJob && ! DemoContext::isActive()) {
+                throw new RuntimeException('Demo queue jobs must be processed by `php artisan demo:queue-work`, never by a main-database worker.');
+            }
+
+            if (! $isDemoJob && DemoContext::isActive() && $event->connectionName !== 'sync') {
+                throw new RuntimeException("A demo worker must not process jobs from the [{$event->connectionName}] queue connection.");
+            }
+        });
     }
 }

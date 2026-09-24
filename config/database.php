@@ -64,6 +64,37 @@ return [
             ]) : [],
         ],
 
+        /*
+         * The /demo sandbox's own database. Every App\Models\Demo\* model
+         * is bound to this connection and nothing else, so the sandbox
+         * cannot read or write the main database.
+         *
+         * Deliberately no fallback to the DB_* values: an unset
+         * DEMO_DB_DATABASE must fail loudly rather than quietly point the
+         * sandbox at production. App\Support\Demo\DemoDatabase refuses to
+         * run at all if this ends up naming the main database.
+         */
+        'demo' => [
+            'driver' => env('DEMO_DB_DRIVER', 'mysql'),
+            'url' => env('DEMO_DB_URL'),
+            'host' => env('DEMO_DB_HOST', '127.0.0.1'),
+            'port' => env('DEMO_DB_PORT', '3306'),
+            'database' => env('DEMO_DB_DATABASE'),
+            'username' => env('DEMO_DB_USERNAME'),
+            'password' => env('DEMO_DB_PASSWORD', ''),
+            'unix_socket' => env('DEMO_DB_SOCKET', ''),
+            'charset' => env('DB_CHARSET', 'utf8mb4'),
+            'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'foreign_key_constraints' => true,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                Mysql::ATTR_SSL_CA => env('DEMO_MYSQL_ATTR_SSL_CA'),
+            ]) : [],
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

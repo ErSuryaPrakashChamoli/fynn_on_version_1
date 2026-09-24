@@ -2,13 +2,6 @@
 
 namespace App\Providers;
 
-use App\Models\Demo\DemoApplication;
-use App\Models\Demo\DemoBank;
-use App\Models\Demo\DemoCustomer;
-use App\Models\Demo\DemoEmployee;
-use App\Models\Demo\DemoFollowUp;
-use App\Models\Demo\DemoLead;
-use App\Models\Demo\DemoLoanProduct;
 use App\Models\Training\TrainingAttendance;
 use App\Models\Training\TrainingBatch;
 use App\Models\Training\TrainingCertificate;
@@ -21,7 +14,6 @@ use App\Models\Training\TrainingQuiz;
 use App\Models\Training\TrainingQuizAttempt;
 use App\Models\Training\TrainingRemark;
 use App\Models\Training\TrainingSession;
-use App\Policies\Demo\DemoRecordPolicy;
 use App\Policies\Training\TrainingAttendancePolicy;
 use App\Policies\Training\TrainingBatchPolicy;
 use App\Policies\Training\TrainingCertificatePolicy;
@@ -66,13 +58,6 @@ class PortalServiceProvider extends ServiceProvider
         TrainingAttendance::class => TrainingAttendancePolicy::class,
         TrainingCertificate::class => TrainingCertificatePolicy::class,
         TrainingRemark::class => TrainingRemarkPolicy::class,
-        DemoLead::class => DemoRecordPolicy::class,
-        DemoCustomer::class => DemoRecordPolicy::class,
-        DemoEmployee::class => DemoRecordPolicy::class,
-        DemoApplication::class => DemoRecordPolicy::class,
-        DemoBank::class => DemoRecordPolicy::class,
-        DemoLoanProduct::class => DemoRecordPolicy::class,
-        DemoFollowUp::class => DemoRecordPolicy::class,
     ];
 
     public function register(): void
