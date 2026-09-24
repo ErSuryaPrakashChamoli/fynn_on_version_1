@@ -1,14 +1,94 @@
 <?php
 
+/*
+|--------------------------------------------------------------------------
+| Demo configuration
+|--------------------------------------------------------------------------
+|
+| Two independent demo setups share this file:
+|
+|  1. DEMO MODE (`enabled`, `password`, `personas`) — a separate demo
+|     deployment where /admin itself runs against a demo database
+|     (APP_ENV=demo, DEMO_MODE=true; see .env.demo.example and
+|     App\Providers\DemoModeServiceProvider). Dormant everywhere else.
+|
+|  2. THE /demo PANEL (`panel_enabled` and everything below it) — the same
+|     application, in the SAME deployment, serving the admin UI at /demo
+|     against its own demo database (see App\Support\Demo\DemoContext).
+|
+*/
+
 return [
+
+    'enabled' => (bool) env('DEMO_MODE', false),
+
+    'password' => env('DEMO_PASSWORD', 'Demo@123'),
+
+    /*
+     * Keyed by the slug the switch route takes. The order here is the
+     * order the login page and the topbar switcher list them in.
+     */
+    'personas' => [
+        'admin' => [
+            'label' => 'Admin',
+            'email' => 'admin@fynnon-demo.test',
+            'description' => 'Company-wide view of every module and setting.',
+        ],
+        'business-head' => [
+            'label' => 'Business Head',
+            'email' => 'business.head@fynnon-demo.test',
+            'description' => 'Runs a business line of clusters.',
+        ],
+        'cluster-manager' => [
+            'label' => 'Cluster Manager',
+            'email' => 'cluster.manager@fynnon-demo.test',
+            'description' => 'Oversees several managers and their teams.',
+        ],
+        'manager' => [
+            'label' => 'Manager',
+            'email' => 'manager@fynnon-demo.test',
+            'description' => 'Owns team leaders, callers and their targets.',
+        ],
+        'team-leader' => [
+            'label' => 'Team Leader',
+            'email' => 'team.leader@fynnon-demo.test',
+            'description' => 'Leads a team of callers day to day.',
+        ],
+        'caller' => [
+            'label' => 'Caller',
+            'email' => 'caller@fynnon-demo.test',
+            'description' => 'Works leads, follow-ups and customer journeys.',
+        ],
+        'accounts' => [
+            'label' => 'Accounts',
+            'email' => 'accounts@fynnon-demo.test',
+            'description' => 'Account verification and settlements.',
+        ],
+        'mis' => [
+            'label' => 'MIS',
+            'email' => 'mis@fynnon-demo.test',
+            'description' => 'Reporting, imports and data management.',
+        ],
+        'other-bank-support' => [
+            'label' => 'Other Bank Support',
+            'email' => 'other.bank@fynnon-demo.test',
+            'description' => 'Customers routed to partner banks.',
+        ],
+        'it' => [
+            'label' => 'IT',
+            'email' => 'it@fynnon-demo.test',
+            'description' => 'Users, access and system settings.',
+        ],
+    ],
 
     /*
     |--------------------------------------------------------------------------
     | Demo Panel
     |--------------------------------------------------------------------------
     |
-    | The /demo sandbox. Switching `enabled` off makes every /demo URL answer
-    | 404 without touching the main /admin panel or either database.
+    | The /demo panel: the admin application on its own demo database (see
+    | App\Support\Demo\DemoContext). Switching `panel_enabled` off makes every
+    | /demo URL answer 404 without touching /admin or either database.
     |
     | `connection` names the entry in config/database.php that holds the
     | sandbox's data. `main_connection` is the main application's connection,
@@ -19,7 +99,7 @@ return [
     |
     */
 
-    'enabled' => (bool) env('DEMO_PANEL_ENABLED', true),
+    'panel_enabled' => (bool) env('DEMO_PANEL_ENABLED', true),
 
     /*
      * Whether the scheduler also runs the demo counterparts of the
@@ -74,5 +154,4 @@ return [
         'email' => env('DEMO_USER_EMAIL', 'demo@example.com'),
         'password' => env('DEMO_USER_PASSWORD'),
     ],
-
 ];

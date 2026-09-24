@@ -497,7 +497,7 @@ class DemoEnvironmentIsolationTest extends PortalBoundaryTestCase
 
     public function test_the_demo_panel_can_be_switched_off_without_affecting_admin(): void
     {
-        config(['demo.enabled' => false]);
+        config(['demo.panel_enabled' => false]);
 
         $this->get('/demo/login')->assertNotFound();
 

@@ -23,7 +23,10 @@ class DemoPanelParityTest extends PortalBoundaryTestCase
         $admin = Filament::getPanel('admin');
         $demo = Filament::getPanel('demo');
 
-        $this->assertCount(29, $admin->getResources());
+        // No fixed count: every resource added to /admin must simply appear
+        // on /demo too (e.g. the Customer Eligibility Requests resource that
+        // arrived from main without any demo-side change).
+        $this->assertNotEmpty($admin->getResources());
         $this->assertEqualsCanonicalizing($admin->getResources(), $demo->getResources());
         $this->assertEqualsCanonicalizing($admin->getPages(), $demo->getPages());
         $this->assertEqualsCanonicalizing($admin->getWidgets(), $demo->getWidgets());

@@ -12,6 +12,7 @@ use App\Models\CustomerPanRequest;
 use App\Models\CustomerStageHistory;
 use App\Models\Employee;
 use App\Models\User;
+use App\Services\CustomerEligibilityService;
 use App\Services\CustomerJourneyService;
 use App\Services\OtherBankSupportService;
 use App\Support\HierarchyHelper;
@@ -144,6 +145,8 @@ class CustomerForm
                     ]),
 
                 OtherBankSupportRemarksSection::make(),
+
+                CustomerEligibilitySection::make(),
 
                 Section::make('Existing Customer')
                     ->key('existingCustomerSection')
@@ -767,25 +770,17 @@ class CustomerForm
                                         break;
                                 }
                             })
-                            ->disabled(function (Get $get, ?Customer $record, string $operation, $livewire): bool {
-
-                                return (
+                            // After creation eligibility only changes through the
+                            // Eligibility section (CustomerEligibilityService), which
+                            // enforces the lock/request rules and writes the log.
+                            ->helperText(fn (string $operation): ?string => $operation === 'edit'
+                                ? 'Change it from the Eligibility section above.'
+                                : null)
+                            ->disabled(fn (Get $get, string $operation, $livewire): bool => $operation === 'edit'
+                                || (
                                     filled($get('existing_customer_id'))
                                     && ! $livewire->isApprovedPanRequest
-                                )
-                                    || (
-                                        $operation === 'edit'
-                                        && in_array($record?->eligibility_status, [
-                                            'not_eligible',
-                                            'consent_pending',
-                                        ])
-                                    )
-                                    || self::lockCallerFields($record)
-                                    || (
-                                        $operation === 'edit'
-                                        && ! auth()->user()->hasAnyRole(['Admin', 'Manager'])
-                                    );
-                            }),
+                                )),
 
                         // Select::make('assign_to')
                         //     ->label('Assign To')
@@ -845,16 +840,9 @@ class CustomerForm
 
                         Select::make('eligibility_reason')
                             ->label('Not Eligible Reason')
-                            ->options([
-                                'company_not_listed' => 'Company Not Listed',
-                                'cibil_score' => 'CIBIL Score',
-                                'defaulter_bounces' => 'Defaulter / Bounces',
-                                'no_residence_proof' => 'No Residence Proof',
-                                'low_salary' => 'Low Salary',
-                                'location_issue' => 'Location',
-                            ])
+                            ->options(CustomerEligibilityService::NOT_ELIGIBLE_REASONS)
                             ->disabled(
-                                fn (Get $get, ?Customer $record) => self::lockCallerFields($record)
+                                fn (Get $get, string $operation) => $operation === 'edit'
                                     || filled($get('existing_customer_id'))
                             )
                             ->visible(fn (Get $get): bool => $get('eligibility_status') === 'not_eligible')

@@ -19,7 +19,7 @@ class EnsureDemoIsAvailable
 {
     public function handle(Request $request, Closure $next): Response
     {
-        abort_unless((bool) config('demo.enabled'), 404);
+        abort_unless((bool) config('demo.panel_enabled'), 404);
 
         DemoDatabase::assertIsolated();
 
