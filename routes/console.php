@@ -55,3 +55,30 @@ Schedule::command('portal:expire-accounts')
  */
 Schedule::command('sessions:close-idle')
     ->everyFiveMinutes();
+
+/*
+ * /demo counterparts of the jobs above.
+ *
+ * /demo runs the same application against the demo database, so its data
+ * needs the same upkeep (SLA escalations, commitment settlement, idle
+ * sessions, stuck OCR documents). Each runs through `demo:run`, which
+ * executes the unchanged command inside the demo context — the demo
+ * database only. Switched off with DEMO_PANEL_ENABLED=false or
+ * DEMO_SCHEDULE_ENABLED=false.
+ */
+if (config('demo.panel_enabled') && config('demo.schedule_enabled')) {
+    Schedule::command('demo:run queue:monitor demo:default --max=20')
+        ->everyFiveMinutes();
+
+    Schedule::command('demo:run ocr:check-stuck')
+        ->everyThirtyMinutes();
+
+    Schedule::command('demo:run journey:check-sla-breaches')
+        ->everyFiveMinutes();
+
+    Schedule::command('demo:run daily-commitment:settle')
+        ->dailyAt('00:35');
+
+    Schedule::command('demo:run sessions:close-idle')
+        ->everyFiveMinutes();
+}

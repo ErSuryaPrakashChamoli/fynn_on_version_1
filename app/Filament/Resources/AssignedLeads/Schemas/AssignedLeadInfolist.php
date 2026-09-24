@@ -133,8 +133,61 @@ class AssignedLeadInfolist
                                     ->label('Last Opened')
                                     ->dateTime('d M Y h:i A')
                                     ->placeholder('Never'),
+
+                                TextEntry::make('template_name')
+                                    ->label('Template')
+                                    ->badge()
+                                    ->placeholder('-'),
+
+                                TextEntry::make('employee.emp_name')
+                                    ->label('Case Owner')
+                                    ->placeholder('Unassigned'),
+
+                                TextEntry::make('assignedBy.emp_name')
+                                    ->label('Assigned By')
+                                    ->placeholder('-'),
+
+                                TextEntry::make('reassign_count')
+                                    ->label('Times Reassigned'),
+
+                                TextEntry::make('converted_at')
+                                    ->label('Converted On')
+                                    ->dateTime('d M Y h:i A')
+                                    ->placeholder('Not converted'),
                             ]),
                     ]),
+
+                Section::make('Reassignment History')
+                    ->columnSpanFull()
+                    ->schema([
+                        RepeatableEntry::make('transfers')
+                            ->label('')
+                            ->contained(true)
+                            ->schema([
+                                TextEntry::make('fromEmployee.emp_name')
+                                    ->label('From')
+                                    ->placeholder('-'),
+
+                                TextEntry::make('toEmployee.emp_name')
+                                    ->label('To')
+                                    ->placeholder('-'),
+
+                                TextEntry::make('transferredBy.emp_name')
+                                    ->label('By')
+                                    ->placeholder('-'),
+
+                                TextEntry::make('created_at')
+                                    ->label('On')
+                                    ->dateTime('d M Y h:i A'),
+
+                                TextEntry::make('reason')
+                                    ->label('Reason')
+                                    ->placeholder('-')
+                                    ->columnSpanFull(),
+                            ])
+                            ->columns(4),
+                    ])
+                    ->visible(fn ($record) => $record->transfers()->exists()),
 
                 Section::make('Remarks')
                     ->columnSpanFull()

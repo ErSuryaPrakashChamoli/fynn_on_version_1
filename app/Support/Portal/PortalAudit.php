@@ -3,7 +3,6 @@
 namespace App\Support\Portal;
 
 use App\Models\PortalAccount;
-use App\Models\Tenant;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -88,17 +87,6 @@ class PortalAudit
         self::record('Portal account revoked', $account, [
             'portal' => $account->portal->value,
             'user_id' => $account->user_id,
-        ]);
-    }
-
-    /**
-     * @param  array<string, int>  $counts
-     */
-    public static function demoReset(Tenant $tenant, array $counts): void
-    {
-        self::record('Demo environment reset', $tenant, [
-            'tenant' => $tenant->slug,
-            'row_counts' => $counts,
         ]);
     }
 

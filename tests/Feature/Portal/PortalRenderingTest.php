@@ -9,19 +9,12 @@ use App\Filament\Academy\Widgets\BatchProgressTable;
 use App\Filament\Academy\Widgets\MyLearningPath;
 use App\Filament\Academy\Widgets\TraineeStatsOverview;
 use App\Filament\Academy\Widgets\TrainerStatsOverview;
-use App\Filament\Demo\Widgets\DisbursalTrendChart;
-use App\Filament\Demo\Widgets\LeadFunnelChart;
-use App\Filament\Demo\Widgets\LeadTrendChart;
-use App\Filament\Demo\Widgets\PipelineStats;
-use App\Filament\Demo\Widgets\ProductMixChart;
-use App\Filament\Demo\Widgets\TeamPerformanceChart;
 use App\Models\Training\TrainingCourse;
 use App\Models\Training\TrainingEnrollment;
 use App\Models\Training\TrainingLesson;
 use App\Models\Training\TrainingQuiz;
 use App\Models\User;
 use App\Services\Training\TrainingProgressService;
-use Database\Seeders\Demo\DemoDataSeeder;
 use Database\Seeders\Training\TrainingContentSeeder;
 use Livewire\Livewire;
 
@@ -174,94 +167,6 @@ class PortalRenderingTest extends PortalBoundaryTestCase
         $this->assertSame(100, $graded->percentage);
         $this->assertTrue($graded->passed);
         $this->assertSame($trainee->id, $graded->trainee_id);
-    }
-
-    public function test_the_demo_dashboard_renders_its_headline_metrics_and_sandbox_badge(): void
-    {
-        app(DemoDataSeeder::class)->seedFor($this->demoTenant);
-
-        $this->actingAsPortalUser($this->makePortalUser(PortalRole::Demo));
-
-        $this->get('/demo')
-            ->assertOk()
-            // The sandbox badge is a render hook and the strapline a page
-            // subheading, so both are in the first response.
-            ->assertSee('Sandbox data')
-            ->assertSee('Powering Every Lead');
-
-        Livewire::test(PipelineStats::class)
-            ->assertSee('Total Leads')
-            ->assertSee('Qualified Leads')
-            ->assertSee('Disbursal Amount')
-            ->assertSee('Conversion Rate');
-    }
-
-    /**
-     * Every chart builds a valid Chart.js payload against the seeded
-     * sandbox — a chart that silently returns an empty dataset would
-     * still render an (empty) canvas on the page.
-     */
-    public function test_every_demo_chart_produces_data(): void
-    {
-        app(DemoDataSeeder::class)->seedFor($this->demoTenant);
-
-        $this->actingAsPortalUser($this->makePortalUser(PortalRole::Demo));
-
-        /*
-         * ChartWidget::mount() hashes its own payload into the public
-         * dataChecksum property. Comparing that against the hash of the
-         * empty payload our widgets fall back to (see
-         * UsesDemoMetrics::emptyChart) proves each chart produced real
-         * series — without reaching past the class's protected API.
-         */
-        $emptyChecksum = md5(json_encode(['datasets' => [], 'labels' => []]));
-
-        foreach ([
-            LeadTrendChart::class,
-            LeadFunnelChart::class,
-            ProductMixChart::class,
-            DisbursalTrendChart::class,
-            TeamPerformanceChart::class,
-        ] as $chart) {
-            $checksum = Livewire::test($chart)->get('dataChecksum');
-
-            $this->assertNotNull($checksum, "{$chart} rendered no data at all.");
-            $this->assertNotSame($emptyChecksum, $checksum, "{$chart} produced an empty chart.");
-        }
-    }
-
-    public function test_every_demo_screen_renders(): void
-    {
-        app(DemoDataSeeder::class)->seedFor($this->demoTenant);
-
-        $this->actingAsPortalUser($this->makePortalUser(PortalRole::Demo));
-
-        foreach ([
-            '/demo/leads',
-            '/demo/customers',
-            '/demo/applications',
-            '/demo/follow-ups',
-            '/demo/employees',
-            '/demo/banks',
-            '/demo/loan-products',
-            '/demo/reports',
-            '/demo/training',
-        ] as $url) {
-            $this->get($url)->assertOk();
-        }
-    }
-
-    public function test_the_demo_reports_page_shows_the_funnel_and_leaderboard(): void
-    {
-        app(DemoDataSeeder::class)->seedFor($this->demoTenant);
-
-        $this->actingAsPortalUser($this->makePortalUser(PortalRole::Demo));
-
-        $this->get('/demo/reports')
-            ->assertOk()
-            ->assertSee('Pipeline Funnel')
-            ->assertSee('Team Leaderboard')
-            ->assertSee('Lender Performance');
     }
 
     public function test_every_trainer_screen_renders(): void

@@ -2,8 +2,11 @@
 
 namespace App\Models;
 
+use App\Support\Demo\DemoContext;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Storage;
 
 class OcrDocument extends Model
@@ -51,12 +54,12 @@ class OcrDocument extends Model
         return $this->belongsTo(AiDocumentSchema::class, 'schema_id');
     }
 
-    public function aiCustomerRecord(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function aiCustomerRecord(): HasOne
     {
         return $this->hasOne(AiCustomerRecord::class, 'ocr_document_id')->latestOfMany();
     }
 
-    public function aiCustomerRecords(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function aiCustomerRecords(): HasMany
     {
         return $this->hasMany(AiCustomerRecord::class, 'ocr_document_id');
     }
@@ -71,9 +74,16 @@ class OcrDocument extends Model
         return $this->belongsTo(User::class, 'uploaded_by');
     }
 
+    /**
+     * On /demo the file lives in demo storage and the record in the demo
+     * database, so the link goes to the demo copy of the route.
+     */
     public function getFileUrlAttribute(): string
     {
-        return route('ocr-documents.file', ['ocrDocument' => $this->id]);
+        return route(
+            DemoContext::isActive() ? 'demo.ocr-documents.file' : 'ocr-documents.file',
+            ['ocrDocument' => $this->id],
+        );
     }
 
     public function getIsPdfAttribute(): bool
@@ -85,7 +95,7 @@ class OcrDocument extends Model
     {
         return $this->confidence_score === null
             ? '-'
-            : number_format($this->confidence_score * 100, 1) . '%';
+            : number_format($this->confidence_score * 100, 1).'%';
     }
 
     public function deleteOriginalFile(): void

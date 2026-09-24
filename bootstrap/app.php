@@ -1,6 +1,9 @@
 <?php
 
+use App\Http\Middleware\Portal\DetectDemoContext;
 use App\Http\Middleware\Portal\RestrictPortalUsers;
+use App\Http\Middleware\Portal\UseDemoContext;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -38,6 +41,24 @@ return Application::configure(basePath: dirname(__DIR__))
         // account — the entire existing LMS population — pass through
         // untouched. See App\Http\Middleware\Portal\RestrictPortalUsers.
         $middleware->appendToGroup('web', RestrictPortalUsers::class);
+
+        // /demo runs the admin application against the demo database (see
+        // App\Support\Demo\DemoContext). The switch has to happen before
+        // route-model binding and authentication resolve anything, so it
+        // is placed ahead of both in the priority list. DetectDemoContext
+        // does the same for Filament's panel-less export/import download
+        // routes when they are called from /demo (?authGuard=demo).
+        $middleware->prependToPriorityList(
+            before: AuthenticatesRequests::class,
+            prepend: UseDemoContext::class,
+        );
+        $middleware->prependToGroup('web', DetectDemoContext::class);
+
+        // A guest on one of the plain /demo routes is sent to the demo
+        // login. Every other route keeps Laravel's default target.
+        $middleware->redirectGuestsTo(
+            fn (Request $request): string => $request->is('demo', 'demo/*') ? '/demo/login' : route('login'),
+        );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
