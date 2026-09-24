@@ -6,6 +6,13 @@ use App\Models\Employee;
 new class extends Component
 {
     public string $message = '';
+
+    /**
+     * Seconds for the ticker to scroll one copy of the message — scaled to
+     * its length so a long leaderboard moves at the same readable speed as
+     * a short one. See render().
+     */
+    public int $duration = 30;
     public bool $readyToLoad = false; // Add a flag to delay calculation
 
 
@@ -18,6 +25,14 @@ new class extends Component
 
 
     public function loadPerformers(TopPerformerService $service){
+
+        $this->buildMessage($service);
+
+        $this->duration = max(20, (int) ceil(mb_strlen($this->message) / 8));
+    }
+
+    private function buildMessage(TopPerformerService $service): void
+    {
 
         $user = auth()->user();
         $employee = $user->employee;
@@ -178,9 +193,17 @@ new class extends Component
         return <<<'HTML'
             <div wire:poll.60s="loadPerformers" class="fi-top-marquee-wrapper">
                 <div class="ticker-container">
-                    <div class="marquee-text">
-                        <span>{{ $message }}</span>
-                        <span class="ml-24">{{ $message }}</span>
+                    {{-- Two identical copies scrolled by exactly one copy's
+                         width (-50%): the text is on screen from the first
+                         frame and loops without a gap. wire:key restarts the
+                         animation only when the message itself changes. --}}
+                    <div
+                        class="marquee-text"
+                        style="animation-duration: {{ $duration }}s"
+                        wire:key="marquee-{{ md5($message) }}"
+                    >
+                        <span class="marquee-copy">{{ $message }}</span>
+                        <span class="marquee-copy" aria-hidden="true">{{ $message }}</span>
                     </div>
                 </div>
             </div>
@@ -207,11 +230,16 @@ new class extends Component
             .marquee-text {
                 display: inline-flex;
                 white-space: nowrap;
-                animation: marquee 160s linear infinite;
+                will-change: transform;
+                animation: marquee 60s linear infinite;
                 font-weight: 900;
                 font-size: 0.8rem;
                 color: #ffffff;
                 text-shadow: 0 0 10px rgb(45 212 191 / 60%), 0 1px 2px rgb(0 0 0 / 50%);
+            }
+
+            .marquee-copy {
+                padding-right: 6rem;
             }
 
             .marquee-text:hover {
@@ -220,10 +248,10 @@ new class extends Component
 
             @keyframes marquee {
                 from {
-                    transform: translateX(100%);
+                    transform: translateX(0);
                 }
                 to {
-                    transform: translateX(-100%);
+                    transform: translateX(-50%);
                 }
             }
             </style>
