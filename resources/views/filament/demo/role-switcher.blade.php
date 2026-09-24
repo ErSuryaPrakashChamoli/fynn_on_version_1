@@ -1,14 +1,14 @@
 {{--
-    /demo only: the "View as" card at the top of the sidebar.
+    /demo only: the floating "View as" switcher, pinned bottom-right.
 
-    Shows that this is the demo environment and who is signed in, and a
-    "Switch user" menu listing every active demo login grouped by role
-    (Admin, Business Head, Cluster Manager, Manager, Team Leader, Caller,
-    ...), with a search box and a "Back to Admin" shortcut. Each item POSTs
-    to demo.switch-user / demo.switch-role — see SwitchDemoRoleController.
+    A compact pill showing that this is the demo and who is signed in; a
+    click opens (upwards) every active demo login grouped by role (Admin,
+    Business Head, Cluster Manager, Manager, Team Leader, Caller, ...), with
+    a search box and a "Back to Admin" shortcut. Each item POSTs to
+    demo.switch-user / demo.switch-role — see SwitchDemoRoleController.
 
-    Lives in the sidebar (not the topbar) so it never crowds the
-    top-performer marquee.
+    Floating rather than in the topbar or sidebar, so the admin layout
+    (and its top-performer marquee) is left exactly as it is on /admin.
 --}}
 @php
     $user = filament()->auth()->user();
@@ -19,22 +19,24 @@
 @endphp
 
 <div class="demo-view-as">
-    <div class="demo-view-as__badge">
-        <span class="demo-view-as__dot"></span>
-        Demo environment
-    </div>
-
-    <div class="demo-view-as__label">Viewing as</div>
-    <div class="demo-view-as__name" title="{{ $user?->email }}">{{ $user?->name }}</div>
-    <div class="demo-view-as__role">{{ $currentRole }}</div>
-
-    <x-filament::dropdown placement="bottom-start" max-height="30rem" width="sm" teleport>
+    <x-filament::dropdown placement="top-end" max-height="26rem" width="sm" teleport>
         <x-slot name="trigger">
-            <button type="button" class="demo-view-as__button">
-                <x-filament::icon icon="heroicon-m-arrows-right-left" class="h-4 w-4" />
-                Switch user
+            <button type="button" class="demo-view-as__pill" title="Demo environment — switch user">
+                <span class="demo-view-as__demo">
+                    <span class="demo-view-as__dot"></span>
+                    Demo
+                </span>
+                <span class="demo-view-as__who">
+                    <span class="demo-view-as__name">{{ $user?->name }}</span>
+                    <span class="demo-view-as__role">{{ $currentRole }}</span>
+                </span>
+                <x-filament::icon icon="heroicon-m-arrows-right-left" class="demo-view-as__icon" />
             </button>
         </x-slot>
+
+        <x-filament::dropdown.header icon="heroicon-m-user-circle">
+            Viewing as {{ $user?->name }} ({{ $currentRole }})
+        </x-filament::dropdown.header>
 
         <div x-data="{ search: '' }">
             <div class="p-2">
@@ -111,77 +113,86 @@
 
 <style>
     .demo-view-as {
-        margin: 0.75rem 0.75rem 0.5rem;
-        padding: 0.75rem 0.875rem;
-        border-radius: 0.75rem;
-        background: rgb(245 158 11 / 0.10);
-        border: 1px solid rgb(245 158 11 / 0.45);
-        color: rgb(255 255 255);
+        position: fixed;
+        right: 1.25rem;
+        bottom: 1.25rem;
+        z-index: 30;
     }
 
-    .demo-view-as__badge {
+    .demo-view-as__pill {
+        display: flex;
+        align-items: center;
+        gap: 0.625rem;
+        padding: 0.4rem 0.9rem 0.4rem 0.45rem;
+        border-radius: 9999px;
+        background: rgb(17 24 39);
+        border: 1px solid rgb(245 158 11 / 0.7);
+        box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.35);
+        color: rgb(255 255 255);
+        transition: transform 150ms, box-shadow 150ms;
+    }
+
+    .demo-view-as__pill:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 14px 30px -6px rgb(0 0 0 / 0.45);
+    }
+
+    .demo-view-as__demo {
         display: inline-flex;
         align-items: center;
-        gap: 0.375rem;
-        margin-bottom: 0.5rem;
+        gap: 0.3rem;
+        padding: 0.2rem 0.55rem;
+        border-radius: 9999px;
+        background: rgb(251 191 36);
+        color: rgb(17 24 39);
         font-size: 0.6875rem;
-        font-weight: 700;
-        letter-spacing: 0.06em;
+        font-weight: 800;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
-        color: rgb(252 211 77);
     }
 
     .demo-view-as__dot {
-        width: 0.4375rem;
-        height: 0.4375rem;
+        width: 0.375rem;
+        height: 0.375rem;
         border-radius: 9999px;
-        background: rgb(245 158 11);
+        background: rgb(17 24 39);
     }
 
-    .demo-view-as__label {
-        font-size: 0.6875rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: rgb(255 255 255 / 0.6);
+    .demo-view-as__who {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        line-height: 1.15;
+        text-align: left;
     }
 
     .demo-view-as__name {
-        font-size: 0.9375rem;
-        font-weight: 700;
-        line-height: 1.3;
+        max-width: 11rem;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        font-size: 0.8125rem;
+        font-weight: 700;
     }
 
     .demo-view-as__role {
-        margin-bottom: 0.625rem;
-        font-size: 0.8125rem;
+        font-size: 0.6875rem;
         color: rgb(252 211 77);
     }
 
-    .demo-view-as__button {
-        display: flex;
-        width: 100%;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-        padding: 0.5rem 0.75rem;
-        border-radius: 0.5rem;
-        font-size: 0.875rem;
-        font-weight: 600;
-        color: rgb(17 24 39);
-        background: rgb(251 191 36);
-        transition: background 150ms;
-    }
-
-    .demo-view-as__button:hover {
-        background: rgb(252 211 77);
+    .demo-view-as__icon {
+        width: 1rem;
+        height: 1rem;
+        color: rgb(252 211 77);
     }
 
     .demo-view-as__error {
         margin-top: 0.5rem;
+        max-width: 16rem;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.5rem;
+        background: rgb(127 29 29);
+        color: rgb(254 226 226);
         font-size: 0.75rem;
-        color: rgb(254 202 202);
     }
 </style>

@@ -12,7 +12,7 @@ use App\Models\Demo\DemoUser;
  */
 class DemoRoleSwitcherTest extends PortalBoundaryTestCase
 {
-    public function test_the_switcher_card_is_shown_in_the_demo_sidebar_with_every_role(): void
+    public function test_the_floating_switcher_is_shown_on_demo_with_every_role(): void
     {
         $this->makeDemoUser(['name' => 'Priya Caller', 'email' => 'priya@demo-fynnon.test'], 'Caller');
         $this->makeDemoUser(['name' => 'Tarun Leader', 'email' => 'tarun@demo-fynnon.test'], 'Team Leader');
@@ -20,7 +20,7 @@ class DemoRoleSwitcherTest extends PortalBoundaryTestCase
 
         $this->get('/demo')
             ->assertOk()
-            ->assertSeeInOrder(['Demo environment', 'Viewing as', 'Ada Admin', 'Admin', 'Switch user'])
+            ->assertSeeInOrder(['Demo', 'Ada Admin', 'Admin', 'Viewing as Ada Admin (Admin)'])
             // Every demo user, grouped under their role.
             ->assertSee('Caller (1)')
             ->assertSee('Priya Caller')
@@ -37,7 +37,7 @@ class DemoRoleSwitcherTest extends PortalBoundaryTestCase
         $this->post('/demo/switch-user/'.$caller->id)->assertRedirect('/demo');
         $this->assertSame($caller->id, auth('demo')->id());
 
-        $this->get('/demo')->assertOk()->assertSeeInOrder(['Viewing as', 'Priya Caller', 'Caller'])->assertSee('Back to Admin');
+        $this->get('/demo')->assertOk()->assertSee('Viewing as Priya Caller (Caller)')->assertSee('Back to Admin');
         $this->get('/demo/users')->assertForbidden();
 
         $this->post('/demo/switch-role/admin')->assertRedirect('/demo');
@@ -65,7 +65,7 @@ class DemoRoleSwitcherTest extends PortalBoundaryTestCase
         $this->assertSame(config('demo.role_logins.cluster-manager.email'), auth('demo')->user()->email);
         $this->assertGuest('web');
 
-        $this->get('/demo')->assertOk()->assertSeeInOrder(['Viewing as', auth('demo')->user()->name, 'Cluster Manager']);
+        $this->get('/demo')->assertOk()->assertSee('Viewing as '.auth('demo')->user()->name.' (Cluster Manager)');
     }
 
     public function test_after_switching_the_roles_own_permissions_apply(): void
@@ -117,6 +117,6 @@ class DemoRoleSwitcherTest extends PortalBoundaryTestCase
     {
         $this->actingAsPortalUser($this->makeInternalUser('Admin'));
 
-        $this->get('/admin')->assertOk()->assertDontSee('Viewing as')->assertDontSee('Switch user');
+        $this->get('/admin')->assertOk()->assertDontSee('Viewing as')->assertDontSee('demo-view-as');
     }
 }

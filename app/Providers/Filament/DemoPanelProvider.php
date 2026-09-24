@@ -58,14 +58,13 @@ class DemoPanelProvider extends AdminPanelProvider
         )
             ->authGuard('demo')
             /*
-             * The demo marker and the one-click "View as" switcher live in a
-             * card at the top of the sidebar, so the topbar (and its
-             * top-performer marquee) stays exactly as on /admin. A thin
-             * amber line along the topbar keeps "this is the demo" visible
-             * even with the sidebar collapsed.
+             * The demo marker and one-click "View as" switcher float in the
+             * bottom-right corner, so the admin layout (topbar marquee,
+             * sidebar) stays exactly as on /admin. A thin amber line along
+             * the topbar keeps "this is the demo" visible at a glance.
              */
             ->renderHook(
-                PanelsRenderHook::SIDEBAR_NAV_START,
+                PanelsRenderHook::BODY_END,
                 fn (): string => Filament::auth()->check()
                     ? view('filament.demo.role-switcher')->render()
                     : '',
