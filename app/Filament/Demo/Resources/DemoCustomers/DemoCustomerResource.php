@@ -3,11 +3,15 @@
 namespace App\Filament\Demo\Resources\DemoCustomers;
 
 use App\Filament\Demo\Resources\Concerns\SandboxResource;
+use App\Filament\Demo\Resources\DemoCustomers\Pages\CreateDemoCustomer;
+use App\Filament\Demo\Resources\DemoCustomers\Pages\EditDemoCustomer;
 use App\Filament\Demo\Resources\DemoCustomers\Pages\ListDemoCustomers;
+use App\Filament\Demo\Resources\DemoCustomers\Schemas\DemoCustomerForm;
 use App\Filament\Demo\Resources\DemoCustomers\Tables\DemoCustomersTable;
 use App\Models\Demo\DemoCustomer;
 use BackedEnum;
 use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use UnitEnum;
@@ -35,20 +39,22 @@ class DemoCustomerResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
+    public static function form(Schema $schema): Schema
+    {
+        return DemoCustomerForm::configure($schema);
+    }
+
     public static function table(Table $table): Table
     {
         return DemoCustomersTable::configure($table);
-    }
-
-    public static function canCreate(): bool
-    {
-        return false;
     }
 
     public static function getPages(): array
     {
         return [
             'index' => ListDemoCustomers::route('/'),
+            'create' => CreateDemoCustomer::route('/create'),
+            'edit' => EditDemoCustomer::route('/{record}/edit'),
         ];
     }
 }

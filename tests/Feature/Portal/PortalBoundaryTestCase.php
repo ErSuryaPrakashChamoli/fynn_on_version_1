@@ -3,6 +3,7 @@
 namespace Tests\Feature\Portal;
 
 use App\Enums\PortalRole;
+use App\Models\Demo\DemoUser;
 use App\Models\PortalAccount;
 use App\Models\Tenant;
 use App\Models\User;
@@ -10,6 +11,7 @@ use App\Services\Portal\PortalAccountService;
 use App\Support\Portal\PortalContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
+use Tests\RefreshDemoDatabase;
 use Tests\TestCase;
 
 /**
@@ -20,10 +22,15 @@ use Tests\TestCase;
  * test that acts as two different users in one process would otherwise
  * see the first user's portal for the second user's request — which
  * would make these tests pass for the wrong reason.
+ *
+ * The demo database (a separate SQLite :memory: connection, see
+ * phpunit.xml) is migrated too, so /demo tests run against the same
+ * two-database split as production.
  */
 abstract class PortalBoundaryTestCase extends TestCase
 {
     use RefreshDatabase;
+    use RefreshDemoDatabase;
 
     protected Tenant $production;
 
@@ -85,6 +92,37 @@ abstract class PortalBoundaryTestCase extends TestCase
         $this->flushSession();
         $this->forgetPortalContext();
         $this->actingAs($user);
+
+        return $this;
+    }
+
+    /**
+     * A /demo login: a DemoUser on the demo database, signed in on the
+     * `demo` guard — never a row in the main users table.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    protected function makeDemoUser(array $attributes = []): DemoUser
+    {
+        return DemoUser::factory()->create($attributes);
+    }
+
+    protected function actingAsDemoUser(DemoUser $user): static
+    {
+        $this->flushSession();
+        $this->forgetPortalContext();
+        // A fresh browser: nobody left signed in on the `web` guard from
+        // an earlier actingAsPortalUser() in the same test.
+        $this->app['auth']->forgetGuards();
+
+        $defaultGuard = $this->app['auth']->getDefaultDriver();
+
+        $this->actingAs($user, 'demo');
+
+        // actingAs() also makes `demo` the default guard for the rest of
+        // the test, which a real request never does — every request
+        // starts on `web`, and only the /demo panel switches to `demo`.
+        $this->app['auth']->shouldUse($defaultGuard);
 
         return $this;
     }

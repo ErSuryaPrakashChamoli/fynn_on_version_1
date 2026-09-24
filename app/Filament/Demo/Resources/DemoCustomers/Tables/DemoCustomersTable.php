@@ -4,6 +4,7 @@ namespace App\Filament\Demo\Resources\DemoCustomers\Tables;
 
 use App\Models\Demo\DemoCustomer;
 use App\Support\Portal\IndianFaker;
+use Filament\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -88,6 +89,9 @@ class DemoCustomersTable
                 SelectFilter::make('demo_employee_id')
                     ->label('Owner')
                     ->relationship('employee', 'name'),
+            ])
+            ->recordActions([
+                EditAction::make(),
             ])
             ->defaultSort('created_at', 'desc');
     }

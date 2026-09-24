@@ -4,8 +4,8 @@ namespace App\Providers\Filament;
 
 use App\Filament\Demo\Pages\Auth\DemoLogin;
 use App\Filament\Demo\Pages\DemoDashboard;
-use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\Portal\EnsureDemoAccess;
+use App\Http\Middleware\Portal\EnsureDemoIsAvailable;
 use App\Support\Portal\FynnOnBrand;
 use Filament\Enums\ThemeMode;
 use Filament\Http\Middleware\Authenticate;
@@ -28,10 +28,17 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
  * FYNN-ON Demo — the external sandbox shown to prospects.
  *
  * Presents FYNN-ON as an independent SaaS product: no FynnEdge company
- * branding, no internal terminology, no link back to /admin. Every
- * resource in it is bound to a demo_* model, so the panel has no
- * reachable path to a production row (see the demo_banks migration for
- * why isolation is schema-level rather than query-level).
+ * branding, no internal terminology, no link back to /admin.
+ *
+ * Isolated from /admin at every layer:
+ *  - data: every resource is bound to an App\Models\Demo model, all of
+ *    which live on the separate `demo` database connection;
+ *  - identity: the panel authenticates on the `demo` guard against
+ *    demo_users in that database, so a main LMS session is a guest here
+ *    and a demo session is a guest on /admin;
+ *  - configuration: EnsureDemoIsAvailable refuses every request if the
+ *    demo connection resolves to the main database (or the panel is
+ *    switched off with DEMO_PANEL_ENABLED=false).
  *
  * Mounted at /demo, moved to demo.fynnedge.com later by adding
  * ->domain() here alone.
@@ -44,6 +51,7 @@ class DemoPanelProvider extends PanelProvider
             ->id('demo')
             ->path('demo')
             ->login(DemoLogin::class)
+            ->authGuard('demo')
             ->brandName('FYNN-ON')
             ->favicon(asset('images/favicon.png'))
             ->colors(FynnOnBrand::colors())
@@ -86,11 +94,26 @@ class DemoPanelProvider extends PanelProvider
                 PanelsRenderHook::STYLES_AFTER,
                 fn (): string => view('filament.demo.styles')->render(),
             )
+            /*
+             * The login-session heartbeat script is registered globally,
+             * but a DemoUser has no main-database login session to beat
+             * against. This tag makes the script stay dormant here.
+             */
+            ->renderHook(
+                PanelsRenderHook::HEAD_END,
+                fn (): string => '<meta name="login-session-heartbeat" content="off">',
+            )
+            /*
+             * Persistent: re-applied by Livewire on every component
+             * round-trip too, not only on full page loads.
+             */
+            ->middleware([
+                EnsureDemoIsAvailable::class,
+            ], isPersistent: true)
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,
-                EnsureAccountIsActive::class,
                 AuthenticateSession::class,
                 ShareErrorsFromSession::class,
                 PreventRequestForgery::class,
@@ -101,6 +124,6 @@ class DemoPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
                 EnsureDemoAccess::class,
-            ]);
+            ], isPersistent: true);
     }
 }

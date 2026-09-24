@@ -26,13 +26,7 @@ class ProductMixChart extends ChartWidget
 
     protected function getData(): array
     {
-        $tenant = $this->tenant();
-
-        if ($tenant === null) {
-            return $this->emptyChart();
-        }
-
-        $distribution = $this->metrics()->productDistribution($tenant);
+        $distribution = $this->metrics()->productDistribution();
 
         return [
             'datasets' => [

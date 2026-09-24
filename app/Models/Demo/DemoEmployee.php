@@ -15,7 +15,6 @@ class DemoEmployee extends DemoModel
     protected $table = 'demo_employees';
 
     protected $fillable = [
-        'tenant_id',
         'emp_code',
         'name',
         'email',

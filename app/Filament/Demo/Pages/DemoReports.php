@@ -3,16 +3,17 @@
 namespace App\Filament\Demo\Pages;
 
 use App\Models\Demo\DemoApplication;
+use App\Models\Demo\DemoUser;
 use App\Services\Demo\DemoMetricsService;
-use App\Support\Portal\PortalContext;
 use BackedEnum;
+use Filament\Facades\Filament;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use UnitEnum;
 
 /**
  * The sandbox's reporting view — funnel, product mix, lender mix and
- * team leaderboard in one page, all from demo_* tables.
+ * team leaderboard in one page, all from the demo database.
  */
 class DemoReports extends Page
 {
@@ -32,7 +33,7 @@ class DemoReports extends Page
 
     public static function canAccess(): bool
     {
-        return app(PortalContext::class)->isDemo();
+        return Filament::auth()->user() instanceof DemoUser;
     }
 
     /**
@@ -40,21 +41,14 @@ class DemoReports extends Page
      */
     public function getReport(): array
     {
-        $tenant = app(PortalContext::class)->tenant();
-
-        if ($tenant === null) {
-            return ['funnel' => [], 'products' => [], 'team' => [], 'lenders' => [], 'headline' => []];
-        }
-
         $metrics = app(DemoMetricsService::class);
 
         return [
-            'headline' => $metrics->headline($tenant),
-            'funnel' => $metrics->funnel($tenant),
-            'products' => $metrics->productDistribution($tenant),
-            'team' => $metrics->teamPerformance($tenant),
+            'headline' => $metrics->headline(),
+            'funnel' => $metrics->funnel(),
+            'products' => $metrics->productDistribution(),
+            'team' => $metrics->teamPerformance(),
             'lenders' => DemoApplication::query()
-                ->where('demo_applications.tenant_id', $tenant->getKey())
                 ->where('demo_applications.status', 'disbursed')
                 ->join('demo_banks', 'demo_banks.id', '=', 'demo_applications.demo_bank_id')
                 ->selectRaw('demo_banks.name as lender, count(*) as cases, sum(demo_applications.disbursed_amount) as amount')

@@ -3,7 +3,6 @@
 namespace Database\Factories\Demo;
 
 use App\Models\Demo\DemoLead;
-use App\Models\Tenant;
 use App\Support\Portal\IndianFaker;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -23,7 +22,6 @@ class DemoLeadFactory extends Factory
         $salary = fake()->numberBetween(25000, 250000);
 
         return [
-            'tenant_id' => Tenant::factory()->demo(),
             'lead_code' => 'LD'.fake()->unique()->numberBetween(100000, 999999),
             'customer_name' => $name,
             'mobile_no' => IndianFaker::mobile(),

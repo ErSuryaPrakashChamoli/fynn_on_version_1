@@ -3,7 +3,6 @@
 namespace Database\Factories\Demo;
 
 use App\Models\Demo\DemoLoanProduct;
-use App\Models\Tenant;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -23,7 +22,6 @@ class DemoLoanProductFactory extends Factory
         ]);
 
         return [
-            'tenant_id' => Tenant::factory()->demo(),
             'name' => $name,
             'code' => strtoupper(substr(str_replace(' ', '', $name), 0, 3)),
             'description' => fake()->sentence(14),

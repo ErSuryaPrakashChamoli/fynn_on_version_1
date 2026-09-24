@@ -26,13 +26,7 @@ class TeamPerformanceChart extends ChartWidget
 
     protected function getData(): array
     {
-        $tenant = $this->tenant();
-
-        if ($tenant === null) {
-            return $this->emptyChart();
-        }
-
-        $performance = $this->metrics()->teamPerformance($tenant);
+        $performance = $this->metrics()->teamPerformance();
 
         return [
             'datasets' => [

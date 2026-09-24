@@ -11,7 +11,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/**/Customer*.php | .ai/rules/app.md |
 | resources/views/components/daily-commitment/** | .ai/rules/components-daily-commitment.md |
 | resources/views/**/daily-commitment/** | .ai/rules/daily-commitment.md |
-| app/Filament/Demo/** | .ai/rules/demo.md |
+| app/Filament/Demo/**, app/Models/Demo/**, app/Services/Demo/**, database/migrations/demo/**, database/seeders/Demo/**, config/demo.php | .ai/rules/demo.md |
 | app/Filament/Resources/Employees/** | .ai/rules/employees.md |
 | app/Enums/CommitmentStage.php, app/Enums/CommitmentResult.php | .ai/rules/enums.md |
 | app/Filament/** | .ai/rules/filament.md |

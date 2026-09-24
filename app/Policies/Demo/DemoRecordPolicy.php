@@ -3,61 +3,54 @@
 namespace App\Policies\Demo;
 
 use App\Models\Demo\DemoModel;
-use App\Models\User;
-use App\Support\Portal\PortalContext;
+use App\Models\Demo\DemoUser;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
  * One policy for every sandbox model.
  *
- * Demo records carry no per-user ownership — a prospect exploring the
- * sandbox is meant to see all of it — so the only questions are "is this
- * a demo portal user?" and "is this row in their tenant?". Deletes are
- * refused outright: a prospect clicking through the product should never
- * be able to empty the dataset they are being shown. Everything else
- * they change is reverted by DemoResetService.
+ * before() refuses anyone who is not a DemoUser, so a main
+ * App\Models\User — even an Admin — is denied every sandbox ability
+ * before any method below is consulted. Demo records carry no per-user
+ * ownership: a prospect exploring the sandbox is meant to see all of
+ * it. Deletes are refused
+ * outright so the dataset cannot be emptied mid-demonstration; anything
+ * else they change is reverted by `php artisan demo:reset`.
  */
 class DemoRecordPolicy
 {
-    public function viewAny(User $user): bool
+    public function before(Authenticatable $user): ?bool
     {
-        return $this->isDemoUser($user);
+        return $user instanceof DemoUser ? null : false;
     }
 
-    public function view(User $user, DemoModel $record): bool
+    public function viewAny(DemoUser $user): bool
     {
-        return $this->isDemoUser($user) && $this->sharesTenant($user, $record->tenant_id);
+        return $user->isUsable();
     }
 
-    public function create(User $user): bool
+    public function view(DemoUser $user, DemoModel $record): bool
     {
-        return $this->isDemoUser($user);
+        return $user->isUsable();
     }
 
-    public function update(User $user, DemoModel $record): bool
+    public function create(DemoUser $user): bool
     {
-        return $this->view($user, $record);
+        return $user->isUsable();
     }
 
-    public function delete(User $user, DemoModel $record): bool
+    public function update(DemoUser $user, DemoModel $record): bool
+    {
+        return $user->isUsable();
+    }
+
+    public function delete(DemoUser $user, DemoModel $record): bool
     {
         return false;
     }
 
-    public function deleteAny(User $user): bool
+    public function deleteAny(DemoUser $user): bool
     {
         return false;
-    }
-
-    protected function isDemoUser(User $user): bool
-    {
-        $account = app(PortalContext::class)->forUser($user);
-
-        return $account !== null && $account->isUsable() && $account->isDemo();
-    }
-
-    protected function sharesTenant(User $user, ?int $tenantId): bool
-    {
-        return $tenantId !== null
-            && app(PortalContext::class)->forUser($user)?->tenant_id === $tenantId;
     }
 }

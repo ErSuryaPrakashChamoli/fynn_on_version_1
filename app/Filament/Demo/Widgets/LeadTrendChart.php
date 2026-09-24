@@ -26,13 +26,7 @@ class LeadTrendChart extends ChartWidget
 
     protected function getData(): array
     {
-        $tenant = $this->tenant();
-
-        if ($tenant === null) {
-            return $this->emptyChart();
-        }
-
-        $trend = $this->metrics()->leadTrend($tenant);
+        $trend = $this->metrics()->leadTrend();
 
         return [
             'datasets' => [

@@ -6,7 +6,6 @@ use App\Models\Demo\DemoApplication;
 use App\Models\Demo\DemoCustomer;
 use App\Models\Demo\DemoEmployee;
 use App\Models\Demo\DemoLead;
-use App\Models\Tenant;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -15,13 +14,13 @@ use Illuminate\Support\Collection;
  * tables.
  *
  * Nothing here can touch production: the only models it names are
- * demo_* ones. Results are memoized per tenant for the request because
- * several widgets ask for the same headline figures.
+ * Demo ones, which live on the demo database. The headline figures are
+ * memoized on the instance because several widgets ask for them.
  */
 class DemoMetricsService
 {
-    /** @var array<int, array<string, mixed>> */
-    protected array $cache = [];
+    /** @var array<string, mixed>|null */
+    protected ?array $headline = null;
 
     /**
      * @return array{
@@ -31,22 +30,20 @@ class DemoMetricsService
      *     conversion_rate: float, customers: int, employees: int
      * }
      */
-    public function headline(Tenant $tenant): array
+    public function headline(): array
     {
-        return $this->cache[$tenant->getKey()] ??= $this->computeHeadline($tenant);
+        return $this->headline ??= $this->computeHeadline();
     }
 
     /**
      * @return array<string, mixed>
      */
-    protected function computeHeadline(Tenant $tenant): array
+    protected function computeHeadline(): array
     {
-        $tenantId = $tenant->getKey();
-
-        $leads = DemoLead::where('tenant_id', $tenantId);
+        $leads = DemoLead::query();
         $totalLeads = (clone $leads)->count();
 
-        $applications = DemoApplication::where('tenant_id', $tenantId);
+        $applications = DemoApplication::query();
         $totalApplications = (clone $applications)->count();
 
         $sanctioned = (clone $applications)->whereIn('status', ['sanctioned', 'disbursed'])->count();
@@ -62,8 +59,8 @@ class DemoMetricsService
             'sanctioned_amount' => (int) (clone $applications)->sum('sanctioned_amount'),
             'disbursed_amount' => (int) (clone $applications)->sum('disbursed_amount'),
             'conversion_rate' => $totalLeads > 0 ? round(($disbursed / $totalLeads) * 100, 1) : 0.0,
-            'customers' => DemoCustomer::where('tenant_id', $tenantId)->count(),
-            'employees' => DemoEmployee::where('tenant_id', $tenantId)->where('is_active', true)->count(),
+            'customers' => DemoCustomer::query()->count(),
+            'employees' => DemoEmployee::query()->where('is_active', true)->count(),
         ];
     }
 
@@ -72,12 +69,11 @@ class DemoMetricsService
      *
      * @return array{labels: list<string>, values: list<int>}
      */
-    public function leadTrend(Tenant $tenant, int $months = 6): array
+    public function leadTrend(int $months = 6): array
     {
         $start = Carbon::now()->startOfMonth()->subMonths($months - 1);
 
         $rows = DemoLead::query()
-            ->where('tenant_id', $tenant->getKey())
             ->where('created_at', '>=', $start)
             ->get(['created_at'])
             ->groupBy(fn ($lead) => $lead->created_at->format('Y-m'))
@@ -91,12 +87,11 @@ class DemoMetricsService
      *
      * @return array{labels: list<string>, values: list<float>}
      */
-    public function disbursalTrend(Tenant $tenant, int $months = 6): array
+    public function disbursalTrend(int $months = 6): array
     {
         $start = Carbon::now()->startOfMonth()->subMonths($months - 1);
 
         $rows = DemoApplication::query()
-            ->where('tenant_id', $tenant->getKey())
             ->where('status', 'disbursed')
             ->whereNotNull('disbursed_on')
             ->where('disbursed_on', '>=', $start)
@@ -112,9 +107,9 @@ class DemoMetricsService
      *
      * @return array<string, int>
      */
-    public function funnel(Tenant $tenant): array
+    public function funnel(): array
     {
-        $metrics = $this->headline($tenant);
+        $metrics = $this->headline();
 
         return [
             'Leads' => $metrics['total_leads'],
@@ -130,10 +125,9 @@ class DemoMetricsService
      *
      * @return array<string, int>
      */
-    public function productDistribution(Tenant $tenant): array
+    public function productDistribution(): array
     {
         return DemoApplication::query()
-            ->where('demo_applications.tenant_id', $tenant->getKey())
             ->join('demo_loan_products', 'demo_loan_products.id', '=', 'demo_applications.demo_loan_product_id')
             ->selectRaw('demo_loan_products.name as product, count(*) as total')
             ->groupBy('demo_loan_products.name')
@@ -148,10 +142,9 @@ class DemoMetricsService
      *
      * @return array<string, int>
      */
-    public function teamPerformance(Tenant $tenant, int $limit = 8): array
+    public function teamPerformance(int $limit = 8): array
     {
         return DemoApplication::query()
-            ->where('demo_applications.tenant_id', $tenant->getKey())
             ->where('demo_applications.status', 'disbursed')
             ->join('demo_employees', 'demo_employees.id', '=', 'demo_applications.demo_employee_id')
             ->selectRaw('demo_employees.name as employee, sum(demo_applications.disbursed_amount) as total')

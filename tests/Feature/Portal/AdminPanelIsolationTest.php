@@ -48,8 +48,12 @@ class AdminPanelIsolationTest extends PortalBoundaryTestCase
         $this->get($url)->assertForbidden();
     }
 
+    /**
+     * Legacy main-database demo portal accounts (from before /demo moved
+     * to its own database) stay pinned away from /admin.
+     */
     #[DataProvider('adminUrls')]
-    public function test_a_demo_user_cannot_reach_any_admin_url(string $url): void
+    public function test_a_legacy_demo_portal_user_cannot_reach_any_admin_url(string $url): void
     {
         $this->actingAsPortalUser($this->makePortalUser(PortalRole::Demo));
 
@@ -57,20 +61,28 @@ class AdminPanelIsolationTest extends PortalBoundaryTestCase
     }
 
     /**
-     * The refusal is decided by canAccessPanel(), not by navigation, so
-     * it holds for every panel a portal user does not own — including
-     * the other portal's.
+     * A DemoUser is signed in on the `demo` guard only, so on /admin
+     * (the `web` guard) it is simply a guest.
+     */
+    #[DataProvider('adminUrls')]
+    public function test_a_demo_user_is_a_guest_on_every_admin_url(string $url): void
+    {
+        $this->actingAsDemoUser($this->makeDemoUser());
+
+        $this->get($url)->assertRedirect('/admin/login');
+    }
+
+    /**
+     * A main-database login is a guest on /demo (which authenticates on
+     * its own `demo` guard), and a DemoUser is a guest on /academy.
      */
     public function test_a_trainee_cannot_reach_the_demo_panel_and_vice_versa(): void
     {
-        $trainee = $this->makePortalUser(PortalRole::Trainee);
-        $demo = $this->makePortalUser(PortalRole::Demo);
+        $this->actingAsPortalUser($this->makePortalUser(PortalRole::Trainee));
+        $this->get('/demo')->assertRedirect('/demo/login');
 
-        $this->actingAsPortalUser($trainee);
-        $this->get('/demo')->assertForbidden();
-
-        $this->actingAsPortalUser($demo);
-        $this->get('/academy')->assertForbidden();
+        $this->actingAsDemoUser($this->makeDemoUser());
+        $this->get('/academy')->assertRedirect('/academy/login');
     }
 
     /**
@@ -124,11 +136,20 @@ class AdminPanelIsolationTest extends PortalBoundaryTestCase
 
     public function test_a_revoked_portal_account_is_refused_by_its_own_panel(): void
     {
-        $demo = $this->makePortalUser(PortalRole::Demo);
-        $this->accountFor($demo)->forceFill(['is_active' => false])->save();
+        $trainee = $this->makePortalUser(PortalRole::Trainee);
+        $this->accountFor($trainee)->forceFill(['is_active' => false])->save();
 
-        $this->actingAsPortalUser($demo->refresh());
+        $this->actingAsPortalUser($trainee->refresh());
 
+        $this->get('/academy')->assertForbidden();
+    }
+
+    public function test_a_revoked_or_expired_demo_user_is_refused_by_the_demo_panel(): void
+    {
+        $this->actingAsDemoUser($this->makeDemoUser(['is_active' => false]));
+        $this->get('/demo')->assertForbidden();
+
+        $this->actingAsDemoUser($this->makeDemoUser(['expires_at' => now()->subDay()]));
         $this->get('/demo')->assertForbidden();
     }
 
@@ -140,7 +161,7 @@ class AdminPanelIsolationTest extends PortalBoundaryTestCase
         $this->actingAsPortalUser($this->makePortalUser(PortalRole::Trainee));
         $this->get('/academy')->assertOk();
 
-        $this->actingAsPortalUser($this->makePortalUser(PortalRole::Demo));
+        $this->actingAsDemoUser($this->makeDemoUser());
         $this->get('/demo')->assertOk();
     }
 
@@ -165,7 +186,7 @@ class AdminPanelIsolationTest extends PortalBoundaryTestCase
      */
     public function test_the_demo_dashboard_never_mentions_the_admin_panel(): void
     {
-        $this->actingAsPortalUser($this->makePortalUser(PortalRole::Demo));
+        $this->actingAsDemoUser($this->makeDemoUser());
 
         $this->get('/demo')
             ->assertOk()

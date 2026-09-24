@@ -3,7 +3,6 @@
 namespace Database\Factories\Demo;
 
 use App\Models\Demo\DemoFollowUp;
-use App\Models\Tenant;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -19,7 +18,6 @@ class DemoFollowUpFactory extends Factory
     public function definition(): array
     {
         return [
-            'tenant_id' => Tenant::factory()->demo(),
             'demo_lead_id' => null,
             'demo_customer_id' => null,
             'demo_employee_id' => null,

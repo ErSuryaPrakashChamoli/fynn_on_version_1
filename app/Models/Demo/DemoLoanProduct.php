@@ -14,7 +14,6 @@ class DemoLoanProduct extends DemoModel
     protected $table = 'demo_loan_products';
 
     protected $fillable = [
-        'tenant_id',
         'name',
         'code',
         'description',

@@ -178,16 +178,17 @@ class PortalRenderingTest extends PortalBoundaryTestCase
 
     public function test_the_demo_dashboard_renders_its_headline_metrics_and_sandbox_badge(): void
     {
-        app(DemoDataSeeder::class)->seedFor($this->demoTenant);
+        app(DemoDataSeeder::class)->run();
 
-        $this->actingAsPortalUser($this->makePortalUser(PortalRole::Demo));
+        $this->actingAsDemoUser($this->makeDemoUser());
 
         $this->get('/demo')
             ->assertOk()
             // The sandbox badge is a render hook and the strapline a page
             // subheading, so both are in the first response.
             ->assertSee('Sandbox data')
-            ->assertSee('Powering Every Lead');
+            ->assertSee('this is a demonstration environment')
+            ->assertSee('stored in the Demo database');
 
         Livewire::test(PipelineStats::class)
             ->assertSee('Total Leads')
@@ -203,16 +204,15 @@ class PortalRenderingTest extends PortalBoundaryTestCase
      */
     public function test_every_demo_chart_produces_data(): void
     {
-        app(DemoDataSeeder::class)->seedFor($this->demoTenant);
+        app(DemoDataSeeder::class)->run();
 
-        $this->actingAsPortalUser($this->makePortalUser(PortalRole::Demo));
+        $this->actingAsDemoUser($this->makeDemoUser());
 
         /*
          * ChartWidget::mount() hashes its own payload into the public
-         * dataChecksum property. Comparing that against the hash of the
-         * empty payload our widgets fall back to (see
-         * UsesDemoMetrics::emptyChart) proves each chart produced real
-         * series — without reaching past the class's protected API.
+         * dataChecksum property. Comparing that against the hash of an
+         * empty payload proves each chart produced real series —
+         * without reaching past the class's protected API.
          */
         $emptyChecksum = md5(json_encode(['datasets' => [], 'labels' => []]));
 
@@ -232,9 +232,9 @@ class PortalRenderingTest extends PortalBoundaryTestCase
 
     public function test_every_demo_screen_renders(): void
     {
-        app(DemoDataSeeder::class)->seedFor($this->demoTenant);
+        app(DemoDataSeeder::class)->run();
 
-        $this->actingAsPortalUser($this->makePortalUser(PortalRole::Demo));
+        $this->actingAsDemoUser($this->makeDemoUser());
 
         foreach ([
             '/demo/leads',
@@ -245,7 +245,7 @@ class PortalRenderingTest extends PortalBoundaryTestCase
             '/demo/banks',
             '/demo/loan-products',
             '/demo/reports',
-            '/demo/training',
+            '/demo/customers/create',
         ] as $url) {
             $this->get($url)->assertOk();
         }
@@ -253,9 +253,9 @@ class PortalRenderingTest extends PortalBoundaryTestCase
 
     public function test_the_demo_reports_page_shows_the_funnel_and_leaderboard(): void
     {
-        app(DemoDataSeeder::class)->seedFor($this->demoTenant);
+        app(DemoDataSeeder::class)->run();
 
-        $this->actingAsPortalUser($this->makePortalUser(PortalRole::Demo));
+        $this->actingAsDemoUser($this->makeDemoUser());
 
         $this->get('/demo/reports')
             ->assertOk()

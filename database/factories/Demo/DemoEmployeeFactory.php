@@ -3,7 +3,6 @@
 namespace Database\Factories\Demo;
 
 use App\Models\Demo\DemoEmployee;
-use App\Models\Tenant;
 use App\Support\Portal\IndianFaker;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -22,7 +21,6 @@ class DemoEmployeeFactory extends Factory
         $name = IndianFaker::name();
 
         return [
-            'tenant_id' => Tenant::factory()->demo(),
             'emp_code' => 'FE'.fake()->unique()->numberBetween(10000, 99999),
             'name' => $name,
             'email' => IndianFaker::email($name),

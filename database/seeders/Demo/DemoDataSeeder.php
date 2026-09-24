@@ -9,9 +9,7 @@ use App\Models\Demo\DemoEmployee;
 use App\Models\Demo\DemoFollowUp;
 use App\Models\Demo\DemoLead;
 use App\Models\Demo\DemoLoanProduct;
-use App\Models\Tenant;
 use App\Support\Portal\IndianFaker;
-use Database\Seeders\Training\TrainingContentSeeder;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -26,9 +24,10 @@ use Illuminate\Support\Collection;
  * dates. Disconnected random rows would look plausible in a table and
  * fall apart the moment a prospect clicks into one.
  *
- * Also seeds the demo tenant's own copy of the training curriculum, so
- * the sandbox's Training page has content of its own and never reads
- * anything a FynnEdge trainer authored.
+ * Every model written here lives on the demo connection, so this seeder
+ * cannot put a row into the main database. Run it through
+ * DemoDatabaseSeeder (`php artisan demo:migrate --seed`), or let
+ * `php artisan demo:reset` clear and re-run it.
  */
 class DemoDataSeeder extends Seeder
 {
@@ -60,43 +59,33 @@ class DemoDataSeeder extends Seeder
         'Shreya Iyer', 'Nikhil Chauhan', 'Ritu Agarwal', 'Sanjay Reddy', 'Meera Nair',
     ];
 
+    /**
+     * Seed the sandbox dataset. DemoResetService calls this after it has
+     * cleared the demo tables.
+     */
     public function run(): void
     {
-        $this->seedFor(Tenant::demo());
-    }
-
-    /**
-     * Seed (or re-seed) one demo tenant. Called by DemoResetService
-     * after it has cleared the tenant's rows.
-     */
-    public function seedFor(Tenant $tenant): void
-    {
-        $banks = $this->seedBanks($tenant);
-        $products = $this->seedProducts($tenant);
-        $employees = $this->seedEmployees($tenant);
+        $banks = $this->seedBanks();
+        $products = $this->seedProducts();
+        $employees = $this->seedEmployees();
 
         $executives = $employees->where('designation', 'Sales Executive')->values();
 
-        $leads = $this->seedLeads($tenant, $executives, $banks, $products);
-        $customers = $this->seedCustomers($tenant, $leads, $executives);
-        $this->seedApplications($tenant, $customers, $banks, $products);
-        $this->seedFollowUps($tenant, $leads, $customers, $executives);
-
-        // The demo tenant gets its own training content so the sandbox's
-        // Training page never reads production courses.
-        app(TrainingContentSeeder::class)->seedFor($tenant);
+        $leads = $this->seedLeads($executives, $banks, $products);
+        $customers = $this->seedCustomers($leads, $executives);
+        $this->seedApplications($customers, $banks, $products);
+        $this->seedFollowUps($leads, $customers, $executives);
     }
 
     /**
      * @return Collection<int, DemoBank>
      */
-    protected function seedBanks(Tenant $tenant): Collection
+    protected function seedBanks(): Collection
     {
-        return collect(IndianFaker::BANKS)->map(function (array $bank) use ($tenant): DemoBank {
+        return collect(IndianFaker::BANKS)->map(function (array $bank): DemoBank {
             $minRate = fake()->randomFloat(2, 9.5, 12.5);
 
             return DemoBank::create([
-                'tenant_id' => $tenant->getKey(),
                 'name' => $bank['name'],
                 'short_name' => $bank['short'],
                 'type' => $bank['type'],
@@ -112,7 +101,7 @@ class DemoDataSeeder extends Seeder
     /**
      * @return Collection<int, DemoLoanProduct>
      */
-    protected function seedProducts(Tenant $tenant): Collection
+    protected function seedProducts(): Collection
     {
         $definitions = [
             ['Personal Loan', 'PL', 100000, 4000000, 12, 60, 10.49],
@@ -123,7 +112,6 @@ class DemoDataSeeder extends Seeder
         ];
 
         return collect($definitions)->map(fn (array $definition): DemoLoanProduct => DemoLoanProduct::create([
-            'tenant_id' => $tenant->getKey(),
             'name' => $definition[0],
             'code' => $definition[1],
             'description' => "{$definition[0]} offered across the partner lender panel.",
@@ -143,27 +131,26 @@ class DemoDataSeeder extends Seeder
      *
      * @return Collection<int, DemoEmployee>
      */
-    protected function seedEmployees(Tenant $tenant): Collection
+    protected function seedEmployees(): Collection
     {
         $sequence = 10001;
 
         $managers = collect(self::MANAGER_NAMES)->map(fn (string $name): DemoEmployee => $this->employee(
-            $tenant, $name, 'Manager', $sequence++, null, 25000000,
+            $name, 'Manager', $sequence++, null, 25000000,
         ));
 
         $teamLeaders = collect(self::TEAM_LEADER_NAMES)->map(fn (string $name, int $index): DemoEmployee => $this->employee(
-            $tenant, $name, 'Team Leader', $sequence++, $managers[$index % $managers->count()]->id, 12000000,
+            $name, 'Team Leader', $sequence++, $managers[$index % $managers->count()]->id, 12000000,
         ));
 
         $executives = collect(self::EXECUTIVE_NAMES)->map(fn (string $name, int $index): DemoEmployee => $this->employee(
-            $tenant, $name, 'Sales Executive', $sequence++, $teamLeaders[$index % $teamLeaders->count()]->id, 4000000,
+            $name, 'Sales Executive', $sequence++, $teamLeaders[$index % $teamLeaders->count()]->id, 4000000,
         ));
 
         return $managers->concat($teamLeaders)->concat($executives);
     }
 
     protected function employee(
-        Tenant $tenant,
         string $name,
         string $designation,
         int $sequence,
@@ -171,7 +158,6 @@ class DemoDataSeeder extends Seeder
         int $target,
     ): DemoEmployee {
         return DemoEmployee::create([
-            'tenant_id' => $tenant->getKey(),
             'emp_code' => 'FE'.$sequence,
             'name' => $name,
             'email' => IndianFaker::email($name),
@@ -192,7 +178,7 @@ class DemoDataSeeder extends Seeder
      * @param  Collection<int, DemoLoanProduct>  $products
      * @return Collection<int, DemoLead>
      */
-    protected function seedLeads(Tenant $tenant, Collection $executives, Collection $banks, Collection $products): Collection
+    protected function seedLeads(Collection $executives, Collection $banks, Collection $products): Collection
     {
         /*
          * Status weights, not a uniform random pick: a real pipeline is
@@ -208,13 +194,12 @@ class DemoDataSeeder extends Seeder
             array_fill(0, 1, 'invalid'),
         );
 
-        return collect(range(1, self::LEAD_COUNT))->map(function (int $index) use ($tenant, $executives, $banks, $products, $statusPool): DemoLead {
+        return collect(range(1, self::LEAD_COUNT))->map(function (int $index) use ($executives, $banks, $products, $statusPool): DemoLead {
             $name = IndianFaker::name();
             $salary = fake()->numberBetween(25000, 250000);
             $status = $statusPool[($index - 1) % count($statusPool)];
 
             return DemoLead::create([
-                'tenant_id' => $tenant->getKey(),
                 'demo_employee_id' => $executives->random()->id,
                 'demo_bank_id' => $banks->random()->id,
                 'demo_loan_product_id' => $products->random()->id,
@@ -245,7 +230,7 @@ class DemoDataSeeder extends Seeder
      * @param  Collection<int, DemoEmployee>  $executives
      * @return Collection<int, DemoCustomer>
      */
-    protected function seedCustomers(Tenant $tenant, Collection $leads, Collection $executives): Collection
+    protected function seedCustomers(Collection $leads, Collection $executives): Collection
     {
         $sourceLeads = $leads->where('status', 'converted')
             ->concat($leads->where('status', 'qualified'))
@@ -262,11 +247,10 @@ class DemoDataSeeder extends Seeder
             array_fill(0, 6, 'rejected'),
         );
 
-        return $sourceLeads->map(function (DemoLead $lead, int $index) use ($tenant, $journeyPool): DemoCustomer {
+        return $sourceLeads->map(function (DemoLead $lead, int $index) use ($journeyPool): DemoCustomer {
             $journey = $journeyPool[$index % count($journeyPool)];
 
             $customer = DemoCustomer::create([
-                'tenant_id' => $tenant->getKey(),
                 'demo_lead_id' => $lead->id,
                 'demo_employee_id' => $lead->demo_employee_id,
                 'customer_code' => 'CU'.str_pad((string) (200000 + $index), 6, '0', STR_PAD_LEFT),
@@ -302,7 +286,7 @@ class DemoDataSeeder extends Seeder
      * @param  Collection<int, DemoBank>  $banks
      * @param  Collection<int, DemoLoanProduct>  $products
      */
-    protected function seedApplications(Tenant $tenant, Collection $customers, Collection $banks, Collection $products): void
+    protected function seedApplications(Collection $customers, Collection $banks, Collection $products): void
     {
         $eligible = $customers->whereIn('journey_status', [
             'underwriting', 'approved', 'sanctioned', 'disbursed', 'rejected',
@@ -338,7 +322,6 @@ class DemoDataSeeder extends Seeder
                 : null;
 
             DemoApplication::create([
-                'tenant_id' => $tenant->getKey(),
                 'demo_customer_id' => $customer->id,
                 'demo_bank_id' => $bank->id,
                 'demo_loan_product_id' => $product->id,
@@ -381,7 +364,6 @@ class DemoDataSeeder extends Seeder
                 $secondAppliedOn = $appliedOn->copy()->addDays(fake()->numberBetween(10, 25));
 
                 DemoApplication::create([
-                    'tenant_id' => $tenant->getKey(),
                     'demo_customer_id' => $customer->id,
                     'demo_bank_id' => $secondBank->id,
                     'demo_loan_product_id' => $product->id,
@@ -412,11 +394,10 @@ class DemoDataSeeder extends Seeder
      * @param  Collection<int, DemoCustomer>  $customers
      * @param  Collection<int, DemoEmployee>  $executives
      */
-    protected function seedFollowUps(Tenant $tenant, Collection $leads, Collection $customers, Collection $executives): void
+    protected function seedFollowUps(Collection $leads, Collection $customers, Collection $executives): void
     {
         foreach ($leads->take(120) as $lead) {
             DemoFollowUp::create([
-                'tenant_id' => $tenant->getKey(),
                 'demo_lead_id' => $lead->id,
                 'demo_employee_id' => $lead->demo_employee_id,
                 'type' => fake()->randomElement(['call', 'whatsapp', 'email']),
@@ -429,7 +410,6 @@ class DemoDataSeeder extends Seeder
 
         foreach ($customers->take(90) as $customer) {
             DemoFollowUp::create([
-                'tenant_id' => $tenant->getKey(),
                 'demo_customer_id' => $customer->id,
                 'demo_employee_id' => $customer->demo_employee_id,
                 'type' => fake()->randomElement(['call', 'visit', 'whatsapp']),

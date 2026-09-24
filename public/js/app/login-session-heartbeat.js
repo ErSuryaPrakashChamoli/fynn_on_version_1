@@ -8,6 +8,15 @@
         return;
     }
 
+    /*
+     * Panels whose users have no main-database login session (the /demo
+     * sandbox, on its own `demo` guard) opt out explicitly. Without this
+     * every beat would answer 401 and trigger the session-ended reload.
+     */
+    if (document.querySelector('meta[name="login-session-heartbeat"][content="off"]')) {
+        return;
+    }
+
     const heartbeatUrl = '/login-session/heartbeat';
 
     /*

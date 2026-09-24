@@ -1,29 +1,33 @@
 <?php
 
+use App\Support\Demo\DemoDatabase;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * The demo sandbox gets its OWN tables rather than a tenant_id column on
- * the production leads/customers/employees tables.
+ * Demo database only (database/migrations/demo) — run through
+ * `php artisan demo:migrate`, never the plain `migrate`.
  *
- * The brief's requirement is "a demo user must never reach production
- * data". Tenant-scoping the live tables would make that a property of
- * every query — one forgotten global scope, one raw join, one export
- * away from leaking. Separate tables make it a property of the schema:
- * the Demo panel's resources are bound to models that physically cannot
- * name a production row, so there is no query to get wrong. It also
- * leaves the existing LMS schema completely unmodified, and makes
- * DemoResetService a truncate-and-reseed rather than a filtered delete.
+ * The sandbox's tables live in their own database, so "a demo user must
+ * never reach production data" is a property of the connection rather
+ * than of any query: there is no main-database table on it to name.
  */
 return new class extends Migration
 {
+    /**
+     * Pinned to the demo connection, so even a run without
+     * --database=demo creates this table in the demo database.
+     */
+    public function getConnection(): ?string
+    {
+        return DemoDatabase::connectionName();
+    }
+
     public function up(): void
     {
         Schema::create('demo_banks', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->string('name');
             $table->string('short_name')->nullable();
             $table->string('type')->default('private');
@@ -33,8 +37,6 @@ return new class extends Migration
             $table->decimal('payout_rate', 5, 2)->default(0);
             $table->boolean('is_active')->default(true);
             $table->timestamps();
-
-            $table->index('tenant_id');
         });
     }
 

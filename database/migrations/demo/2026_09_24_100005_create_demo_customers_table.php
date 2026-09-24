@@ -1,16 +1,25 @@
 <?php
 
+use App\Support\Demo\DemoDatabase;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Pinned to the demo connection, so even a run without
+     * --database=demo creates this table in the demo database.
+     */
+    public function getConnection(): ?string
+    {
+        return DemoDatabase::connectionName();
+    }
+
     public function up(): void
     {
         Schema::create('demo_customers', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
             $table->foreignId('demo_lead_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('demo_employee_id')->nullable()->constrained()->nullOnDelete();
             $table->string('customer_code');
@@ -27,7 +36,7 @@ return new class extends Migration
             $table->string('eligibility_status')->default('pending');
             $table->timestamps();
 
-            $table->index(['tenant_id', 'journey_status']);
+            $table->index('journey_status');
             $table->index('demo_employee_id');
         });
     }

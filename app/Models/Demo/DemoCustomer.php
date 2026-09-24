@@ -31,7 +31,6 @@ class DemoCustomer extends DemoModel
     ];
 
     protected $fillable = [
-        'tenant_id',
         'demo_lead_id',
         'demo_employee_id',
         'customer_code',

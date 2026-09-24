@@ -26,13 +26,7 @@ class DisbursalTrendChart extends ChartWidget
 
     protected function getData(): array
     {
-        $tenant = $this->tenant();
-
-        if ($tenant === null) {
-            return $this->emptyChart();
-        }
-
-        $trend = $this->metrics()->disbursalTrend($tenant);
+        $trend = $this->metrics()->disbursalTrend();
 
         return [
             'datasets' => [

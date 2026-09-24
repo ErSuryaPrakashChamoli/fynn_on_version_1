@@ -44,6 +44,7 @@ class DemoDashboard extends BaseDashboard
 
     public function getSubheading(): ?string
     {
-        return 'FYNN-ON — Powering Every Lead. All figures below are sandbox data.';
+        return 'Demo Administration — this is a demonstration environment. '
+            .'All records created here are stored in the Demo database, never in the live system.';
     }
 }

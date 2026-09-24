@@ -3,7 +3,6 @@
 namespace Database\Factories\Demo;
 
 use App\Models\Demo\DemoBank;
-use App\Models\Tenant;
 use App\Support\Portal\IndianFaker;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -23,7 +22,6 @@ class DemoBankFactory extends Factory
         $min = fake()->randomFloat(2, 9.5, 12.5);
 
         return [
-            'tenant_id' => Tenant::factory()->demo(),
             'name' => $bank['name'],
             'short_name' => $bank['short'],
             'type' => $bank['type'],

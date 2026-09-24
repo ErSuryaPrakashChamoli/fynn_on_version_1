@@ -14,7 +14,6 @@ class DemoBank extends DemoModel
     protected $table = 'demo_banks';
 
     protected $fillable = [
-        'tenant_id',
         'name',
         'short_name',
         'type',

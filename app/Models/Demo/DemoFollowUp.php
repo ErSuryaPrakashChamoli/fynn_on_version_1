@@ -14,7 +14,6 @@ class DemoFollowUp extends DemoModel
     protected $table = 'demo_follow_ups';
 
     protected $fillable = [
-        'tenant_id',
         'demo_lead_id',
         'demo_customer_id',
         'demo_employee_id',

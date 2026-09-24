@@ -3,7 +3,6 @@
 namespace App\Filament\Demo\Widgets;
 
 use App\Services\Demo\DemoMetricsService;
-use App\Support\Portal\PortalContext;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 
@@ -27,13 +26,7 @@ class PipelineStats extends StatsOverviewWidget
 
     protected function getStats(): array
     {
-        $tenant = app(PortalContext::class)->tenant();
-
-        if ($tenant === null) {
-            return [];
-        }
-
-        $metrics = app(DemoMetricsService::class)->headline($tenant);
+        $metrics = app(DemoMetricsService::class)->headline();
 
         return [
             Stat::make('Total Leads', number_format($metrics['total_leads']))

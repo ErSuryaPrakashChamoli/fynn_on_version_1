@@ -30,7 +30,6 @@ class DemoLead extends DemoModel
     ];
 
     protected $fillable = [
-        'tenant_id',
         'demo_employee_id',
         'demo_bank_id',
         'demo_loan_product_id',

@@ -2,37 +2,23 @@
 
 namespace App\Models\Demo;
 
-use App\Models\Tenant;
-use Illuminate\Database\Eloquent\Builder;
+use App\Support\Demo\DemoDatabase;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * Base for every sandbox model.
  *
- * These map onto the demo_* tables, which have no relationship of any
- * kind to the production leads/customers/employees tables — no shared
- * table, no shared key space, no foreign key crossing between them. A
- * Demo panel resource bound to one of these classes therefore cannot
- * name a production row even if its query were written wrongly.
- *
- * The tenant scope on top is belt-and-braces for the eventual case of
- * more than one sandbox tenant (per-prospect demos), not the primary
- * isolation mechanism.
+ * Isolation is at the database level: every subclass lives on the demo
+ * connection (config/demo.php), a physically separate database from the
+ * main LMS. A Demo panel resource bound to one of these classes cannot
+ * read, write or delete a main-database row even if its query were
+ * written wrongly — there is no main table on that connection to name.
  */
 abstract class DemoModel extends Model
 {
-    public function tenant(): BelongsTo
+    public function getConnectionName(): ?string
     {
-        return $this->belongsTo(Tenant::class);
-    }
-
-    public function scopeForTenant(Builder $query, Tenant|int|null $tenant): Builder
-    {
-        return $query->where(
-            $this->getTable().'.tenant_id',
-            $tenant instanceof Tenant ? $tenant->getKey() : $tenant
-        );
+        return DemoDatabase::connectionName();
     }
 
     /**

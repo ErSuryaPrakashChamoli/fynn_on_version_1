@@ -2,24 +2,28 @@
 
 namespace App\Services\Demo;
 
-use App\Models\Tenant;
-use App\Support\Portal\PortalAudit;
+use App\Support\Demo\DemoDatabase;
 use Database\Seeders\Demo\DemoDataSeeder;
+use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
  * Restores the sandbox to its shipped state.
  *
- * The safety property is structural rather than procedural: the only
- * tables this class will ever touch are the ones listed in TABLES, every
- * one of which is a demo_ table that no production code reads or writes.
- * assertDemoOnly() re-checks that at runtime, so a table added to the
- * list by mistake stops the reset rather than truncating live data.
+ * Every statement runs on the demo connection, never the default one,
+ * and only against the tables listed in TABLES. assertDemoOnly()
+ * re-checks at runtime that the connection is really a separate
+ * database and that every table is a demo_ table, so a misconfigured
+ * .env or a table added to the list by mistake stops the reset rather
+ * than deleting live data.
+ *
+ * demo_users is deliberately not in the list: resetting the dataset
+ * between prospects must not lock the salesperson out.
  *
  * Ordered child-first so the foreign keys hold during the delete without
- * needing to disable constraint checks globally.
+ * needing to disable constraint checks.
  */
 class DemoResetService
 {
@@ -37,31 +41,31 @@ class DemoResetService
     ];
 
     /**
-     * Wipe and reseed the sandbox for one tenant.
+     * Wipe and reseed the sandbox dataset.
      *
      * @return array<string, int> row counts after reseeding
      */
-    public function reset(Tenant $tenant): array
+    public function reset(): array
     {
-        if (! $tenant->isDemo()) {
-            throw new RuntimeException(
-                "Refusing to reset tenant [{$tenant->slug}] — it is not a demo tenant."
-            );
-        }
-
         $this->assertDemoOnly();
 
-        DB::transaction(function () use ($tenant): void {
+        $connection = $this->connection();
+
+        $connection->transaction(function () use ($connection): void {
             foreach (self::TABLES as $table) {
-                DB::table($table)->where('tenant_id', $tenant->getKey())->delete();
+                $connection->table($table)->delete();
             }
         });
 
-        app(DemoDataSeeder::class)->seedFor($tenant);
+        app(DemoDataSeeder::class)->run();
 
-        $counts = $this->counts($tenant);
+        $counts = $this->counts();
 
-        PortalAudit::demoReset($tenant, $counts);
+        Log::info('Demo environment reset', [
+            'connection' => $connection->getName(),
+            'database' => $connection->getDatabaseName(),
+            'row_counts' => $counts,
+        ]);
 
         return $counts;
     }
@@ -69,24 +73,34 @@ class DemoResetService
     /**
      * @return array<string, int>
      */
-    public function counts(Tenant $tenant): array
+    public function counts(): array
     {
         $counts = [];
 
         foreach (self::TABLES as $table) {
-            $counts[$table] = DB::table($table)->where('tenant_id', $tenant->getKey())->count();
+            $counts[$table] = $this->connection()->table($table)->count();
         }
 
         return $counts;
     }
 
+    protected function connection(): Connection
+    {
+        return DB::connection(DemoDatabase::connectionName());
+    }
+
     /**
-     * Every table this service may delete from must be a demo_ table
-     * that actually exists. Anything else is a programming error, and
+     * The connection must be the separate demo database, and every table
+     * this service may delete from must be a demo_ table that exists on
+     * it. Anything else is a configuration or programming error, and
      * finding out here is much cheaper than finding out afterwards.
      */
     protected function assertDemoOnly(): void
     {
+        DemoDatabase::assertIsolated();
+
+        $schema = $this->connection()->getSchemaBuilder();
+
         foreach (self::TABLES as $table) {
             if (! str_starts_with($table, 'demo_')) {
                 throw new RuntimeException(
@@ -94,8 +108,8 @@ class DemoResetService
                 );
             }
 
-            if (! Schema::hasTable($table)) {
-                throw new RuntimeException("Demo table [{$table}] does not exist.");
+            if (! $schema->hasTable($table)) {
+                throw new RuntimeException("Demo table [{$table}] does not exist. Run `php artisan demo:migrate` first.");
             }
         }
     }

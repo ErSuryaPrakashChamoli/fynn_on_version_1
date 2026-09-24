@@ -4,7 +4,6 @@ namespace Database\Factories\Demo;
 
 use App\Models\Demo\DemoApplication;
 use App\Models\Demo\DemoCustomer;
-use App\Models\Tenant;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -22,7 +21,6 @@ class DemoApplicationFactory extends Factory
         $applied = fake()->numberBetween(300000, 4000000);
 
         return [
-            'tenant_id' => Tenant::factory()->demo(),
             'demo_customer_id' => DemoCustomer::factory(),
             'application_no' => 'APP'.fake()->unique()->numberBetween(100000, 999999),
             'lan_no' => null,

@@ -30,13 +30,7 @@ class LeadFunnelChart extends ChartWidget
 
     protected function getData(): array
     {
-        $tenant = $this->tenant();
-
-        if ($tenant === null) {
-            return $this->emptyChart();
-        }
-
-        $funnel = $this->metrics()->funnel($tenant);
+        $funnel = $this->metrics()->funnel();
 
         return [
             'datasets' => [

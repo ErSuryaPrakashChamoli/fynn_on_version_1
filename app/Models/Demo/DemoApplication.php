@@ -23,7 +23,6 @@ class DemoApplication extends DemoModel
     ];
 
     protected $fillable = [
-        'tenant_id',
         'demo_customer_id',
         'demo_bank_id',
         'demo_loan_product_id',
