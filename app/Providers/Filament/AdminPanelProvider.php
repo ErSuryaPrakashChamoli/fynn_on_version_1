@@ -96,10 +96,53 @@ class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
+        return $this->configureSharedPanel(
+            $panel
+                ->default()
+                ->id('admin')
+                ->path('admin')
+        )
+            ->middleware([
+                EncryptCookies::class,
+                AddQueuedCookiesToResponse::class,
+                StartSession::class,
+                // Sits here, not in authMiddleware(), because Laravel's
+                // middleware priority hoists Filament's Authenticate above
+                // anything registered there — and Authenticate answers a
+                // switched-off account with a bare 403. Running first, this
+                // turns that into a clean sign-out with a reason. Harmless
+                // on the login page: it only ever acts on a signed-in user.
+                EnsureAccountIsActive::class,
+                AuthenticateSession::class,
+                ShareErrorsFromSession::class,
+                PreventRequestForgery::class,
+                SubstituteBindings::class,
+                DisableBladeIconComponents::class,
+                DispatchServingFilamentEvent::class,
+            ])
+            ->authMiddleware([
+                Authenticate::class,
+                // Ordered before the module gates on purpose: a user who
+                // has gone idle should be signed out, not redirected to
+                // whichever screen a gate wants them on.
+                EnforceIdleTimeout::class,
+                EnsureMonthlyTargetIsSet::class,
+            ]);
+    }
+
+    /**
+     * Everything the admin UI is made of — theme, branding, navigation,
+     * render hooks, resources, pages, widgets, user menu — minus the
+     * panel's identity (id/path/guard) and its middleware.
+     *
+     * Shared with DemoPanelProvider, which is what makes /demo the same
+     * application as /admin rather than a second implementation of it:
+     * anything added here (or any resource/page/widget added under
+     * app/Filament) appears on both panels.
+     */
+    protected function configureSharedPanel(Panel $panel): Panel
+    {
         return $panel
-            ->default()
-            ->id('admin')
-            ->path('admin')
             ->viteTheme('resources/css/filament/admin/theme.css')
             ->spa()
             // The profile page's FileUpload (avatar) lazily initializes its
@@ -114,7 +157,7 @@ class AdminPanelProvider extends PanelProvider
             // when the app is reached through a different port, e.g. a
             // second `php artisan serve` instance on 8001.
             ->spaUrlExceptions([
-                '*/admin/profile',
+                '*/'.$panel->getPath().'/profile',
             ])
             ->login(Login::class)
             ->profile(MyProfile::class, isSimple: false)
@@ -294,32 +337,6 @@ class AdminPanelProvider extends PanelProvider
                 ManagerPPPStats::class,
                 CustomerStats::class,
 
-            ])
-            ->middleware([
-                EncryptCookies::class,
-                AddQueuedCookiesToResponse::class,
-                StartSession::class,
-                // Sits here, not in authMiddleware(), because Laravel's
-                // middleware priority hoists Filament's Authenticate above
-                // anything registered there — and Authenticate answers a
-                // switched-off account with a bare 403. Running first, this
-                // turns that into a clean sign-out with a reason. Harmless
-                // on the login page: it only ever acts on a signed-in user.
-                EnsureAccountIsActive::class,
-                AuthenticateSession::class,
-                ShareErrorsFromSession::class,
-                PreventRequestForgery::class,
-                SubstituteBindings::class,
-                DisableBladeIconComponents::class,
-                DispatchServingFilamentEvent::class,
-            ])
-            ->authMiddleware([
-                Authenticate::class,
-                // Ordered before the module gates on purpose: a user who
-                // has gone idle should be signed out, not redirected to
-                // whichever screen a gate wants them on.
-                EnforceIdleTimeout::class,
-                EnsureMonthlyTargetIsSet::class,
             ]);
     }
 
@@ -655,17 +672,17 @@ class AdminPanelProvider extends PanelProvider
         /*
          * Idle-logout configuration for login-session-heartbeat.js.
          *
-         * Emitted ONLY for this panel: the Academy and Demo portals share
-         * the globally-registered heartbeat script, and the script treats
-         * a missing tag as "idle logout is off", so they keep their
-         * screen-time tracking without inheriting the LMS's timeout. The
+         * Emitted for this panel and its /demo copy only: the Academy
+         * portal shares the globally-registered heartbeat script, and the
+         * script treats a missing tag as "idle logout is off", so it keeps
+         * its screen-time tracking without inheriting the LMS's timeout. The
          * logout URL is read from the panel being rendered rather than
          * hardcoded, so this survives the panel moving off /admin.
          */
         FilamentView::registerRenderHook(
             'panels::head.end',
             function (): string {
-                if (Filament::getCurrentPanel()?->getId() !== 'admin') {
+                if (! in_array(Filament::getCurrentPanel()?->getId(), ['admin', 'demo'], true)) {
                     return '';
                 }
 

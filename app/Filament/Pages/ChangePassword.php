@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use BackedEnum;
+use Filament\Facades\Filament;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -94,8 +95,8 @@ class ChangePassword extends Page
         request()->session()->invalidate();
         request()->session()->regenerateToken();
 
-        // Redirect to login page
-        $this->redirect(route('filament.admin.auth.login'), navigate: true);
+        // Redirect to the current panel's login page (/admin or /demo)
+        $this->redirect(Filament::getLoginUrl(), navigate: true);
     }
 
     public static function shouldRegisterNavigation(): bool

@@ -2,48 +2,39 @@
 
 namespace App\Console\Commands;
 
-use App\Services\Demo\DemoResetService;
 use Illuminate\Console\Command;
-use RuntimeException;
 
 /**
- * Restores the sandbox after a prospect has been clicking around in it.
+ * Restores the demo environment after a prospect has been clicking around
+ * in it.
  *
  *     php artisan demo:reset
  *
- * Only ever touches the demo database: DemoResetService refuses to run
- * if the demo connection resolves to the main database, and only clears
- * demo_ tables on it. Demo logins (demo_users) are kept.
+ * Rebuilds the DEMO database from scratch — drops its tables, re-runs the
+ * application migrations on it and re-seeds the demo dataset and logins —
+ * through `demo:migrate --fresh --seed`, which refuses to run at all if the
+ * demo connection resolves to the main database. The main database is
+ * never touched.
  */
 class ResetDemoEnvironment extends Command
 {
     protected $signature = 'demo:reset
         {--force : Skip the confirmation prompt}';
 
-    protected $description = 'Wipe and reseed the FYNN-ON demo sandbox (DEMO database only)';
+    protected $description = 'Rebuild and reseed the DEMO database (demo environment only)';
 
-    public function handle(DemoResetService $reset): int
+    public function handle(): int
     {
-        if (! $this->option('force') && ! $this->confirm('Reset all sandbox data in the DEMO database?', true)) {
+        if (! $this->option('force') && ! $this->confirm('Rebuild the DEMO database? All demo data will be replaced with the seeded dataset.', true)) {
             $this->comment('Aborted.');
 
             return self::SUCCESS;
         }
 
-        try {
-            $counts = $reset->reset();
-        } catch (RuntimeException $exception) {
-            $this->error($exception->getMessage());
-
-            return self::FAILURE;
-        }
-
-        $this->info('Sandbox restored.');
-        $this->table(
-            ['Table', 'Rows'],
-            collect($counts)->map(fn (int $count, string $table): array => [$table, $count])->values()->all(),
-        );
-
-        return self::SUCCESS;
+        return $this->call('demo:migrate', [
+            '--fresh' => true,
+            '--seed' => true,
+            '--force' => true,
+        ]);
     }
 }

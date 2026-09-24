@@ -11,28 +11,16 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Panel-level guard for /demo.
  *
- * The panel authenticates on the `demo` guard, so the only user this
- * can ever see is a DemoUser from the demo database — a main LMS user
- * signed in to /admin is simply a guest here. An account that has been
- * switched off or has expired is signed out on its next request.
+ * The panel authenticates on the `demo` guard, whose provider only ever
+ * returns a DemoUser (a user row in the DEMO database). This re-asserts
+ * that on every request and Livewire round-trip, so nothing but a demo
+ * login can ever drive the demo panel.
  */
 class EnsureDemoAccess
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $user = Filament::auth()->user();
-
-        abort_unless($user instanceof DemoUser, 403);
-
-        if (! $user->isUsable()) {
-            Filament::auth()->logout();
-            $request->session()->invalidate();
-            $request->session()->regenerateToken();
-
-            abort(403, 'This demo account is no longer active.');
-        }
-
-        $user->forceFill(['last_seen_at' => now()])->saveQuietly();
+        abort_unless(Filament::auth()->user() instanceof DemoUser, 403);
 
         return $next($request);
     }

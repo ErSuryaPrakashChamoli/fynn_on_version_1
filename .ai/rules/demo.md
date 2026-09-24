@@ -1,23 +1,26 @@
 ---
 paths:
-  - 'app/Filament/Demo/**'
+  - 'app/Support/Demo/**'
   - 'app/Models/Demo/**'
-  - 'app/Services/Demo/**'
-  - 'database/migrations/demo/**'
+  - 'app/Http/Middleware/Portal/*Demo*'
+  - 'app/Providers/Filament/DemoPanelProvider.php'
+  - 'app/Providers/Filament/AdminPanelProvider.php'
   - 'database/seeders/Demo/**'
   - 'config/demo.php'
 ---
 
 # Demo
 
-## /demo runs on its own database and its own guard — never point Demo code at the main connection
-Since 2026-09-24 the sandbox is isolated at the database level: every App\Models\Demo\* model (DemoModel subclasses and DemoUser) returns DemoDatabase::connectionName() ('demo', config/database.php `demo` / DEMO_DB_*). The panel authenticates on the `demo` guard (provider demo_users → DemoUser), so a main LMS session is a guest on /demo and a DemoUser is a guest on /admin.
+## /demo is the SAME admin app on a separate environment — never fork admin code for it
+Since 2026-09-24 /demo registers exactly the admin panel's resources, pages, widgets, hooks and theme: DemoPanelProvider extends AdminPanelProvider and both build from configureSharedPanel(). Anything added to app/Filament appears on both panels. Never create Demo* copies of resources/models/services; put panel-wide UI in configureSharedPanel(), and keep panel identity/middleware in each provider's panel(). AdminPanelProvider::boot() registrations are global and must not be repeated (DemoPanelProvider::boot() is its own).
 
-- Every App\Filament\Demo\Resources\** resource must bind to an App\Models\Demo\* model and use the SandboxResource trait (canAccess = Filament::auth()->user() instanceof DemoUser). Never name a main model (Customer, TrainingCourse, Tenant, ...) from Demo code — the old Training page was removed for exactly that reason.
-- There is no tenant_id on demo tables any more; the demo database itself is the boundary.
-- Demo migrations live in database/migrations/demo and override getConnection(); run them only via `php artisan demo:migrate [--fresh] [--seed] [--rollback]`. The plain `migrate` does not scan that subdirectory.
-- DemoDatabase::assertIsolated() (EnsureDemoIsAvailable on every /demo request, demo:migrate, demo:reset, DemoDatabaseSeeder) refuses a demo connection with no database or one resolving to the main database. It compares against config('demo.main_connection'), NOT database.default — `db:seed --database=demo` switches the runtime default.
-- Deletes are refused panel-wide (DemoRecordPolicy::delete returns false; before() denies any non-DemoUser). DemoResetService::TABLES is the only list demo:reset clears, on the demo connection only; demo_users is kept.
-- The Login/Logout listeners skip non-User logins so a demo login never writes user_login_sessions; the panel emits <meta name="login-session-heartbeat" content="off"> so the global heartbeat script stays dormant.
+Isolation is the runtime DemoContext (app/Support/Demo/DemoContext.php), switched on first (persistent middleware UseDemoContext) for every /demo request and Livewire round-trip: default DB connection → `demo`, queue → `demo` connection (+ batches/failed jobs), cache path/prefix + Spatie permission cache key, local/public disks under storage/app/{private,public}/demo, mail → log, Telescope off. Session store stays on the main connection on purpose. DemoDatabase::assertIsolated() runs on every activation — keep it.
 
-Tests: PortalBoundaryTestCase uses Tests\RefreshDemoDatabase (demo = separate SQLite :memory: via phpunit.xml). actingAsDemoUser() resets the default guard afterwards — actingAs()/Livewire::actingAs() with 'demo' otherwise leaves `demo` as the default guard for the rest of the test. Covered by tests/Feature/Portal/DemoDatabaseIsolationTest.php and DemoSandboxIsolationTest.php.
+- Demo logins: DemoUser extends User, pinned to the demo connection, morph class User, guard_name 'web', getForeignKey 'user_id'. Guard `demo`. Demo users/roles/employees exist only in the demo DB.
+- Demo DB = normal database/migrations via `php artisan demo:migrate [--fresh] [--seed]` (refuses any migration naming a non-demo connection — Telescope's does, the context repoints it). Never run migrate/db:seed on `demo` directly.
+- Queue: jobs from /demo land on the `demo` queue connection (demo DB jobs table). DemoDatabaseQueue::pop() refuses outside the context; the only worker is `php artisan demo:queue-work` (deploy/supervisor/fynn-demo-worker.conf).
+- Scheduled jobs get demo counterparts via `demo:run <command>` in routes/console.php. Add one when adding a scheduled command that maintains business data.
+- Plain routes outside the panel need a demo copy under the `demo.` route group in routes/web.php (heartbeat, OCR file). Code building their URLs must pick the demo route when DemoContext::isActive() (see OcrDocument::getFileUrlAttribute). Never hardcode `filament.admin.*` route names or `/admin` — use Filament::getLoginUrl()/Resource::getUrl() so the current panel is used.
+- Filament export/import download routes are put into the context by DetectDemoContext (?authGuard=demo).
+
+Tests: PortalBoundaryTestCase uses Tests\RefreshDemoDatabase (demo = separate SQLite :memory: with the full schema). Livewire::test() bypasses middleware — wrap demo component tests in DemoContext::run() with Filament::setCurrentPanel('demo'). A test hitting /admin and /demo in one test app sees Filament's scoped navigation from the first panel; hit one panel per test. dispatch() returns a PendingDispatch that pushes on destruct — don't return it out of DemoContext::run(). Covered by tests/Feature/Portal/DemoEnvironmentIsolationTest.php and DemoPanelParityTest.php.

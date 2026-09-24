@@ -3,6 +3,7 @@
 namespace Tests\Feature\Portal;
 
 use App\Enums\PortalRole;
+use Filament\Facades\Filament;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Role;
 
@@ -144,13 +145,17 @@ class AdminPanelIsolationTest extends PortalBoundaryTestCase
         $this->get('/academy')->assertForbidden();
     }
 
-    public function test_a_revoked_or_expired_demo_user_is_refused_by_the_demo_panel(): void
+    /**
+     * /demo runs the admin application, so a switched-off demo login is
+     * signed out exactly like a switched-off /admin login
+     * (EnsureAccountIsActive), back to the demo login page.
+     */
+    public function test_a_deactivated_demo_user_is_signed_out_of_the_demo_panel(): void
     {
         $this->actingAsDemoUser($this->makeDemoUser(['is_active' => false]));
-        $this->get('/demo')->assertForbidden();
 
-        $this->actingAsDemoUser($this->makeDemoUser(['expires_at' => now()->subDay()]));
-        $this->get('/demo')->assertForbidden();
+        $this->get('/demo')->assertRedirect('/demo/login');
+        $this->assertGuest('demo');
     }
 
     public function test_each_portal_user_can_reach_their_own_panel(): void
@@ -181,8 +186,9 @@ class AdminPanelIsolationTest extends PortalBoundaryTestCase
     }
 
     /**
-     * A demo user must not be told the admin panel even exists — the
-     * sandbox is presented as a standalone product.
+     * A demo user is never linked to the admin panel. (Checked against the
+     * panel's URL rather than the bare "/admin" text, which also occurs in
+     * the demo role switcher's /demo/switch-role/admin action.)
      */
     public function test_the_demo_dashboard_never_mentions_the_admin_panel(): void
     {
@@ -190,7 +196,7 @@ class AdminPanelIsolationTest extends PortalBoundaryTestCase
 
         $this->get('/demo')
             ->assertOk()
-            ->assertDontSee('/admin');
+            ->assertDontSee(Filament::getPanel('admin')->getUrl());
     }
 
     /**

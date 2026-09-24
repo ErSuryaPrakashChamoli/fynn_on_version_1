@@ -2,72 +2,72 @@
 
 namespace App\Models\Demo;
 
+use App\Models\User;
 use App\Support\Demo\DemoDatabase;
 use Database\Factories\Demo\DemoUserFactory;
-use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable;
 
 /**
- * A login for the /demo sandbox, stored in demo_users on the demo
- * database and authenticated by the `demo` guard.
+ * The /demo login: a row in the DEMO database's own `users` table,
+ * authenticated by the `demo` guard.
  *
- * Entirely separate from App\Models\User: no Spatie roles, no employee,
- * no login-session tracking, and canAccessPanel() only ever admits the
- * demo panel — a DemoUser can never be a user of /admin.
+ * It extends User so every shared admin resource, page, widget and
+ * service works unchanged — roles, the employee behind the login, the
+ * reporting hierarchy, notifications and login-session tracking all
+ * behave exactly as on /admin. What keeps it apart from the main users:
+ *
+ *  - getConnectionName() is pinned to the demo connection, so the `demo`
+ *    guard can only ever find a user that exists in the demo database —
+ *    main credentials cannot log in here, even outside the demo context.
+ *    Eloquent hands that connection down to related models it loads
+ *    (employee, roles, notifications), so those stay on the demo DB too;
+ *  - canAccessPanel() only admits the demo panel, and the /admin panel's
+ *    `web` guard never resolves a DemoUser.
+ *
+ * getMorphClass() reports App\Models\User and guard_name is `web`, because
+ * the demo database is a copy of the main schema: its role assignments,
+ * notifications and activity rows are keyed the same way the shared code
+ * writes them.
  */
-class DemoUser extends Authenticatable implements FilamentUser
+class DemoUser extends User
 {
-    /** @use HasFactory<DemoUserFactory> */
-    use HasFactory;
+    protected $table = 'users';
 
-    protected $table = 'demo_users';
-
-    protected $fillable = [
-        'name',
-        'email',
-        'password',
-        'is_active',
-        'expires_at',
-    ];
-
-    protected $hidden = [
-        'password',
-        'remember_token',
-    ];
-
-    protected function casts(): array
-    {
-        return [
-            'password' => 'hashed',
-            'is_active' => 'boolean',
-            'expires_at' => 'datetime',
-            'last_seen_at' => 'datetime',
-        ];
-    }
+    /**
+     * Spatie reads this instead of deriving the guard from the auth
+     * provider (which would be `demo`). Demo roles are seeded on `web`,
+     * exactly as the main application's are.
+     *
+     * @var string
+     */
+    protected $guard_name = 'web';
 
     public function getConnectionName(): ?string
     {
         return DemoDatabase::connectionName();
     }
 
-    public function canAccessPanel(Panel $panel): bool
+    public function getMorphClass(): string
     {
-        return $panel->getId() === 'demo' && $this->isUsable();
-    }
-
-    public function hasExpired(): bool
-    {
-        return $this->expires_at !== null && $this->expires_at->isPast();
+        return User::class;
     }
 
     /**
-     * Deactivation and expiry are separate switches so a demo login can
-     * be revoked immediately without disturbing its scheduled end date.
+     * Relations inherited from User (portal account, login sessions, ...)
+     * key on `user_id`, not on a `demo_user_id` derived from this class.
      */
-    public function isUsable(): bool
+    public function getForeignKey(): string
     {
-        return $this->is_active && ! $this->hasExpired();
+        return 'user_id';
+    }
+
+    public function canAccessPanel(Panel $panel): bool
+    {
+        return $panel->getId() === 'demo' && ! $this->isDeactivated();
+    }
+
+    protected static function newFactory(): DemoUserFactory
+    {
+        return DemoUserFactory::new();
     }
 }

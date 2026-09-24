@@ -3,36 +3,20 @@
 namespace Database\Factories\Demo;
 
 use App\Models\Demo\DemoUser;
-use Illuminate\Database\Eloquent\Factories\Factory;
+use Database\Factories\UserFactory;
 
 /**
- * @extends Factory<DemoUser>
+ * A User row in the DEMO database (DemoUser is pinned to the demo
+ * connection), with the same defaults as a main-database user.
+ *
+ * @extends UserFactory<DemoUser>
  */
-class DemoUserFactory extends Factory
+class DemoUserFactory extends UserFactory
 {
     protected $model = DemoUser::class;
-
-    /**
-     * @return array<string, mixed>
-     */
-    public function definition(): array
-    {
-        return [
-            'name' => fake()->name(),
-            'email' => fake()->unique()->safeEmail(),
-            'password' => 'Password@123',
-            'is_active' => true,
-            'expires_at' => null,
-        ];
-    }
 
     public function inactive(): static
     {
         return $this->state(fn (): array => ['is_active' => false]);
-    }
-
-    public function expired(): static
-    {
-        return $this->state(fn (): array => ['expires_at' => now()->subDay()]);
     }
 }

@@ -2,34 +2,38 @@
 
 namespace App\Console\Commands;
 
+use App\Support\Demo\DemoContext;
 use App\Support\Demo\DemoDatabase;
 use Database\Seeders\Demo\DemoDatabaseSeeder;
 use Illuminate\Console\Command;
+use Illuminate\Database\Events\MigrationStarted;
+use Illuminate\Support\Facades\Event;
 use RuntimeException;
 
 /**
- * The only supported way to run the sandbox's migrations.
+ * The only supported way to build the demo database.
  *
- *     php artisan demo:migrate                 # migrate the DEMO database
- *     php artisan demo:migrate --seed          # ... then seed the demo login + dataset
+ *     php artisan demo:migrate                 # run the app's migrations on the DEMO database
+ *     php artisan demo:migrate --seed          # ... then seed the demo dataset and logins
  *     php artisan demo:migrate --fresh --seed  # drop every DEMO table and rebuild
  *     php artisan demo:migrate --rollback      # roll back the last DEMO batch
  *
- * Always passes --database=demo and --path=database/migrations/demo, and
- * refuses to start if the demo connection resolves to the main database,
- * so there is no invocation of this command that can migrate, wipe or
- * seed the main database. The plain `php artisan migrate` never sees
- * these migrations: it does not scan subdirectories.
+ * The demo database carries the SAME schema as the main one — these are
+ * the normal database/migrations files — because /demo runs the same
+ * admin code. Every run is pinned to the demo connection (--database) and
+ * executes inside the demo context, and refuses to start at all if the
+ * demo connection resolves to the main database. There is no invocation
+ * of this command that can migrate, wipe or seed the main database.
  */
 class MigrateDemoDatabase extends Command
 {
     protected $signature = 'demo:migrate
-        {--fresh : Drop all tables in the DEMO database and re-run every demo migration}
-        {--rollback : Roll back the last batch of demo migrations}
-        {--seed : Seed the demo login and sandbox dataset afterwards}
+        {--fresh : Drop all tables in the DEMO database and re-run every migration}
+        {--rollback : Roll back the last batch of migrations on the DEMO database}
+        {--seed : Seed the demo dataset and demo logins afterwards}
         {--force : Run without confirmation in production}';
 
-    protected $description = 'Run the demo sandbox migrations against the DEMO database only';
+    protected $description = 'Run the application migrations against the DEMO database only';
 
     public function handle(): int
     {
@@ -47,28 +51,41 @@ class MigrateDemoDatabase extends Command
 
         $this->components->info("Target: DEMO database [{$database}] on [{$host}] via connection [{$connection}].");
 
-        $command = match (true) {
-            (bool) $this->option('fresh') => 'migrate:fresh',
-            (bool) $this->option('rollback') => 'migrate:rollback',
-            default => 'migrate',
-        };
+        /*
+         * A migration may name its own connection (Telescope's does). Any
+         * that would run anywhere but the demo database stops the run
+         * before its first statement.
+         */
+        Event::listen(MigrationStarted::class, function (MigrationStarted $event) use ($connection): void {
+            $target = $event->migration->getConnection();
 
-        $options = [
-            '--database' => $connection,
-            '--path' => DemoDatabase::MIGRATIONS_PATH,
-            '--force' => (bool) $this->option('force'),
-        ];
+            if ($target !== null && $target !== $connection) {
+                throw new RuntimeException('Refusing to run '.$event->migration::class." on connection [{$target}] — demo:migrate only ever touches [{$connection}].");
+            }
+        });
 
-        $status = $this->call($command, $options);
+        return DemoContext::run(function () use ($connection): int {
+            $command = match (true) {
+                (bool) $this->option('fresh') => 'migrate:fresh',
+                (bool) $this->option('rollback') => 'migrate:rollback',
+                default => 'migrate',
+            };
 
-        if ($status !== self::SUCCESS || ! $this->option('seed') || $this->option('rollback')) {
-            return $status;
-        }
+            $status = $this->call($command, [
+                '--database' => $connection,
+                '--path' => DemoDatabase::MIGRATIONS_PATH,
+                '--force' => (bool) $this->option('force'),
+            ]);
 
-        return $this->call('db:seed', [
-            '--class' => DemoDatabaseSeeder::class,
-            '--database' => $connection,
-            '--force' => (bool) $this->option('force'),
-        ]);
+            if ($status !== self::SUCCESS || ! $this->option('seed') || $this->option('rollback')) {
+                return $status;
+            }
+
+            return $this->call('db:seed', [
+                '--class' => DemoDatabaseSeeder::class,
+                '--database' => $connection,
+                '--force' => (bool) $this->option('force'),
+            ]);
+        });
     }
 }

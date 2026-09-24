@@ -8,6 +8,7 @@ use App\Models\PortalAccount;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\Portal\PortalAccountService;
+use App\Support\Demo\DemoContext;
 use App\Support\Portal\PortalContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -91,20 +92,32 @@ abstract class PortalBoundaryTestCase extends TestCase
     {
         $this->flushSession();
         $this->forgetPortalContext();
+        // A fresh browser: nobody left signed in on the `demo` guard from an
+        // earlier actingAsDemoUser() in the same test.
+        $this->app['auth']->forgetGuards();
         $this->actingAs($user);
 
         return $this;
     }
 
     /**
-     * A /demo login: a DemoUser on the demo database, signed in on the
-     * `demo` guard — never a row in the main users table.
+     * A /demo login: a user row in the DEMO database (DemoUser), holding a
+     * role from the demo database's own roles table — never a row in the
+     * main users or roles tables.
      *
      * @param  array<string, mixed>  $attributes
      */
-    protected function makeDemoUser(array $attributes = []): DemoUser
+    protected function makeDemoUser(array $attributes = [], ?string $role = 'Admin'): DemoUser
     {
-        return DemoUser::factory()->create($attributes);
+        return DemoContext::run(function () use ($attributes, $role): DemoUser {
+            $user = DemoUser::factory()->create($attributes);
+
+            if ($role !== null) {
+                $user->assignRole(Role::findOrCreate($role, 'web'));
+            }
+
+            return $user;
+        });
     }
 
     protected function actingAsDemoUser(DemoUser $user): static

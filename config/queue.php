@@ -44,6 +44,23 @@ return [
             'after_commit' => false,
         ],
 
+        /*
+         * The /demo environment's queue: the `jobs` table of the DEMO
+         * database. App\Support\Demo\DemoContext makes this the default
+         * queue while a /demo request (or `demo:queue-work`) is running.
+         * The `demo-database` driver (App\Support\Demo\DemoDatabaseQueue,
+         * registered in DemoPanelProvider) refuses to hand out a job
+         * outside that context. Worked only by `php artisan demo:queue-work`.
+         */
+        'demo' => [
+            'driver' => 'demo-database',
+            'connection' => 'demo',
+            'table' => env('DB_QUEUE_TABLE', 'jobs'),
+            'queue' => env('DB_QUEUE', 'default'),
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            'after_commit' => false,
+        ],
+
         'beanstalkd' => [
             'driver' => 'beanstalkd',
             'host' => env('BEANSTALKD_QUEUE_HOST', 'localhost'),

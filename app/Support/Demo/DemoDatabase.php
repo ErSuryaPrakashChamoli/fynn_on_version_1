@@ -8,15 +8,20 @@ use RuntimeException;
  * The single answer to "which database does the sandbox use, and is it
  * really separate from the main one?".
  *
- * Every Demo model is hard-bound to connectionName(), so a misconfigured
- * .env is the one remaining way the sandbox could reach main data — for
- * example DEMO_DB_DATABASE copied from DB_DATABASE. assertIsolated() is
- * called by the /demo panel on every request and by every demo artisan
- * command, and refuses to continue rather than fall back.
+ * /demo runs the admin application with this connection as its default
+ * (see DemoContext), so a misconfigured .env is the one way the demo
+ * could reach main data — for example DEMO_DB_DATABASE copied from
+ * DB_DATABASE. assertIsolated() runs on every activation of the demo
+ * context (every /demo request, every demo artisan command, the demo
+ * queue worker) and refuses to continue rather than fall back.
  */
 class DemoDatabase
 {
-    public const MIGRATIONS_PATH = 'database/migrations/demo';
+    /**
+     * The demo database is built from the application's own migrations —
+     * it carries the same schema as the main database.
+     */
+    public const MIGRATIONS_PATH = 'database/migrations';
 
     public static function connectionName(): string
     {

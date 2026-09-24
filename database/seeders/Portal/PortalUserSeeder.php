@@ -8,8 +8,8 @@ use App\Services\Portal\PortalAccountService;
 use Illuminate\Database\Seeder;
 
 /**
- * The Academy logins. (The /demo login is a DemoUser on the demo
- * database — see Database\Seeders\Demo\DemoUserSeeder.)
+ * The Academy logins. (/demo logins live only in the demo database —
+ * see Database\Seeders\Demo\DemoOrganisationSeeder.)
  *
  * Every account is minted through PortalAccountService, which is what
  * guarantees none of them receives a Spatie role — a seeded trainee must
