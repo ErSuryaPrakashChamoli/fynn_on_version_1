@@ -350,6 +350,14 @@ class Employee extends Model
         return $this->hasMany(CustomerAssignment::class, 'employee_id');
     }
 
+    /**
+     * Assigned leads that were taken off this employee and handed to someone else.
+     */
+    public function assignmentTransfersOut()
+    {
+        return $this->hasMany(CustomerAssignmentTransfer::class, 'from_employee_id');
+    }
+
     public function delegationsGiven()
     {
         return $this->hasMany(CustomerJourneyDelegation::class, 'delegating_manager_id');

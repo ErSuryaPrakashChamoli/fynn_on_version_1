@@ -135,15 +135,7 @@ class AssignedLeadForm
 
                         Select::make('status')
                             ->label('Status')
-                            ->options([
-                                'Pending' => 'Pending',
-                                'Interested' => 'Interested',
-                                'Not Interested' => 'Not Interested',
-                                'Busy' => 'Busy',
-                                'No Response' => 'No Response',
-                                'Not Eligible' => 'Not Eligible',
-                                'Eligible for Other Bank' => 'Eligible for Other Bank',
-                            ])
+                            ->options(CustomerAssignment::FOLLOW_UP_STATUSES)
                             ->default(fn (?CustomerAssignment $record) => $record?->latestFollowUp()?->status ?? 'Pending')
                             ->live()
                             ->required()

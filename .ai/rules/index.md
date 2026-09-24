@@ -17,6 +17,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Enums/CommitmentStage.php, app/Enums/CommitmentResult.php | .ai/rules/enums.md |
 | app/Filament/** | .ai/rules/filament.md |
 | resources/js/**, resources/js/login-session-heartbeat.js | .ai/rules/js.md |
+| app/Services/CustomerAssignmentService.php, app/Filament/Resources/AssignedLeads/**, app/Filament/Resources/LeadAssignmentReports/**, app/Support/LeadAssignmentFilters.php | .ai/rules/lead-assignment-reports-support.md |
 | resources/views/livewire/** | .ai/rules/livewire.md |
 | app/Http/Middleware/EnsureAccountIsActive.php, app/Http/Middleware/EnforceIdleTimeout.php | .ai/rules/middleware.md |
 | app/Models/FollowUp.php, app/Models/DailyCommitmentEntry.php, app/Models/User.php, app/Models/UserLoginSession.php, app/Models/Employee.php | .ai/rules/models.md |

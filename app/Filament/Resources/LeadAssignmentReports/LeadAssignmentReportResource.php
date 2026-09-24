@@ -4,9 +4,9 @@ namespace App\Filament\Resources\LeadAssignmentReports;
 
 use App\Filament\Resources\LeadAssignmentReports\Pages\ListLeadAssignmentReports;
 use App\Filament\Resources\LeadAssignmentReports\Tables\LeadAssignmentReportsTable;
+use App\Filament\Resources\LeadAssignmentReports\Widgets\LeadAssignmentSummary;
 use App\Models\Employee;
 use App\Support\HierarchyHelper;
-use App\Support\SelectedMonth;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
@@ -35,14 +35,9 @@ class LeadAssignmentReportResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        [$start, $end] = SelectedMonth::range();
-
-        $query = parent::getEloquentQuery()
-            ->activeDuring($start, $end)
-            ->whereHas(
-                'assignmentsReceived',
-                fn (Builder $q) => $q->whereBetween('created_at', [$start, $end])
-            );
+        // Who shows up (anyone holding leads assigned in the chosen window) is
+        // decided by the table, since that window follows its filters.
+        $query = parent::getEloquentQuery();
 
         $user = auth()->user();
 
@@ -55,6 +50,13 @@ class LeadAssignmentReportResource extends Resource
         }
 
         return $query->whereIn('id', HierarchyHelper::visibleEmployeeIds($user));
+    }
+
+    public static function getWidgets(): array
+    {
+        return [
+            LeadAssignmentSummary::class,
+        ];
     }
 
     public static function getPages(): array

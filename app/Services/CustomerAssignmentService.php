@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\AiCustomerRecord;
 use App\Models\CustomerAssignment;
 use App\Models\CustomerAssignmentBatch;
+use App\Models\CustomerAssignmentTransfer;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -47,10 +49,13 @@ class CustomerAssignmentService
                 'customer_count' => $toAssign->count(),
             ]);
 
+            $templateIds = self::templateIdsFor($toAssign, $column);
+
             foreach ($toAssign as $id) {
                 CustomerAssignment::create([
                     'batch_id' => $batch->id,
                     $column => $id,
+                    'ai_document_schema_id' => $templateIds->get($id),
                     'employee_id' => $employeeId,
                     'assigned_by' => $assignedBy,
                 ]);
@@ -62,6 +67,66 @@ class CustomerAssignmentService
                 'batch' => $batch,
             ];
         });
+    }
+
+    /**
+     * Hands already-assigned leads to another employee. A lead can be moved
+     * any number of times; each move is logged as a CustomerAssignmentTransfer
+     * and the open counter restarts so Opened/Pending reflects the new owner.
+     *
+     * @param  Collection<int, CustomerAssignment>  $assignments
+     * @return array{reassigned: int, skipped: int}
+     */
+    public function reassign(Collection $assignments, int $employeeId, ?int $transferredBy, ?string $reason = null): array
+    {
+        $assignments = $assignments->unique('id')->values();
+
+        return DB::transaction(function () use ($assignments, $employeeId, $transferredBy, $reason): array {
+            $reassigned = 0;
+
+            foreach ($assignments as $assignment) {
+                if ((int) $assignment->employee_id === $employeeId) {
+                    continue;
+                }
+
+                CustomerAssignmentTransfer::create([
+                    'customer_assignment_id' => $assignment->id,
+                    'from_employee_id' => $assignment->employee_id,
+                    'to_employee_id' => $employeeId,
+                    'transferred_by' => $transferredBy,
+                    'reason' => filled($reason) ? $reason : null,
+                ]);
+
+                $assignment->update([
+                    'employee_id' => $employeeId,
+                    'opens_count' => 0,
+                    'first_opened_at' => null,
+                    'last_opened_at' => null,
+                    'reassign_count' => $assignment->reassign_count + 1,
+                    'last_reassigned_at' => now(),
+                ]);
+
+                $reassigned++;
+            }
+
+            return ['reassigned' => $reassigned, 'skipped' => $assignments->count() - $reassigned];
+        });
+    }
+
+    /**
+     * Template (AI document schema) per target id, so the listing can say
+     * which upload a lead came from even after it is converted.
+     *
+     * @param  Collection<int, int>  $targetIds
+     * @return Collection<int, int|null>
+     */
+    protected static function templateIdsFor(Collection $targetIds, string $column): Collection
+    {
+        $recordColumn = $column === 'ai_customer_record_id' ? 'id' : 'customer_id';
+
+        return AiCustomerRecord::query()
+            ->whereIn($recordColumn, $targetIds)
+            ->pluck('schema_id', $recordColumn);
     }
 
     public static function columnFor(string $targetType): string

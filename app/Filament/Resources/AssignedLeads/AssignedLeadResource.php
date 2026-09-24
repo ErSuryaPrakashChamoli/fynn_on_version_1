@@ -51,7 +51,7 @@ class AssignedLeadResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()->with(['customer', 'aiCustomerRecord.schema', 'batch']);
+        $query = parent::getEloquentQuery()->with(['customer', 'aiCustomerRecord.schema', 'batch', 'template', 'employee', 'assignedBy']);
 
         $user = Auth::user();
 
