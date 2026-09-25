@@ -90,6 +90,19 @@ class DemoModeTest extends TestCase
         $this->assertAuthenticatedAs($admin);
     }
 
+    public function test_the_signed_in_role_switcher_is_draggable(): void
+    {
+        $this->enableDemoMode();
+        $admin = $this->persona('admin');
+
+        $this->actingAs($admin)
+            ->get(Filament::getPanel('admin')->getUrl())
+            ->assertOk()
+            ->assertSee('fynn-demo-switcher', escape: false)
+            ->assertSee('x-on:pointerdown="start($event)"', escape: false)
+            ->assertSee('fynnon.demo-switcher-position', escape: false);
+    }
+
     public function test_an_unknown_persona_is_refused(): void
     {
         $this->enableDemoMode();

@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Customers\Schemas;
 
 use App\Enums\JourneyAccessType;
 use App\Enums\JourneyModule;
+use App\Models\ActivityLog;
 use App\Models\Customer;
 use App\Services\CustomerEligibilityService;
 use App\Services\Journey\CustomerJourneyAccessService;
@@ -20,6 +21,13 @@ use Illuminate\Support\Str;
 
 class CustomerInfolist
 {
+    /**
+     * Columns that change on every save and would only add noise to the timeline.
+     *
+     * @var list<string>
+     */
+    private const IGNORED_ACTIVITY_FIELDS = ['id', 'created_at', 'updated_at'];
+
     public static function configure(Schema $schema): Schema
     {
         return $schema
@@ -395,87 +403,9 @@ class CustomerInfolist
                                     ->label('Date & Time')
                                     ->dateTime(),
 
-                                TextEntry::make('changes')
+                                TextEntry::make('field_changes')
                                     ->label('Field Changes')
-                                    ->html()
-                                    ->columnSpanFull()
-                                    ->formatStateUsing(function ($state, $record) {
-
-                                        $changes = $record->changes ?? [];
-
-                                        $old = $changes['old'] ?? [];
-                                        $new = $changes['new'] ?? [];
-
-                                        if (empty($old) && empty($new)) {
-                                            return '<span class="text-gray-500">No field changes</span>';
-                                        }
-
-                                        $html = '';
-
-                                        foreach ($old as $field => $oldValue) {
-
-                                            $newValue = $new[$field] ?? null;
-
-                                            if (is_array($oldValue)) {
-                                                $oldValue = json_encode($oldValue, JSON_PRETTY_PRINT);
-                                            }
-
-                                            if (is_array($newValue)) {
-                                                $newValue = json_encode($newValue, JSON_PRETTY_PRINT);
-                                            }
-
-                                            // Convert null values
-
-                                            $formatValue = function ($value) {
-
-                                                if ($value === null || $value === '') {
-                                                    return '-';
-                                                }
-
-                                                if (is_bool($value)) {
-                                                    return $value ? 'Yes' : 'No';
-                                                }
-
-                                                if (is_array($value)) {
-                                                    return implode(', ', $value);
-                                                }
-
-                                                // Format timestamps
-                                                if (is_string($value)) {
-                                                    try {
-                                                        return Carbon::parse($value)
-                                                            ->timezone(config('app.timezone')) // or 'Asia/Kolkata'
-                                                            ->format('d M Y, h:i:s A');
-                                                    } catch (\Exception $e) {
-                                                        // Not a date, continue
-                                                    }
-                                                }
-
-                                                return e((string) $value);
-                                            };
-
-                                            // $oldValue = $oldValue === null ? '-' : e($oldValue);
-                                            // $newValue = $newValue === null ? '-' : e($newValue);
-
-                                            $oldValue = $formatValue($oldValue);
-                                            $newValue = $formatValue($newValue);
-
-                                            // Make field names readable
-                                            $label = Str::of($field)
-                                                ->replace('_', ' ')
-                                                ->title();
-
-                                            $html .= "
-                                            <div class='mb-4 p-3 rounded border'>
-                                                <div><strong>{$label}</strong></div>
-                                                <div class='text-danger'>Old: {$oldValue}</div>
-                                                <div class='text-success'>New: {$newValue}</div>
-                                            </div>
-                                        ";
-                                        }
-
-                                        return $html;
-                                    })
+                                    ->state(fn (ActivityLog $record): string => self::formatActivityChanges($record))
                                     ->html()
                                     ->columnSpanFull(),
 
@@ -545,5 +475,77 @@ class CustomerInfolist
                     ->columns(2),
 
             ]);
+    }
+
+    /**
+     * Render an activity's attribute changes as a single HTML block.
+     *
+     * The state is built as one string on purpose: returning the `changes`
+     * array lets Filament format each item separately and join them with ", ".
+     * A "created" entry only notes the creation — listing its full snapshot
+     * repeats every field again in the updates that follow — and bookkeeping
+     * columns (id, timestamps) are never shown as changes.
+     */
+    public static function formatActivityChanges(ActivityLog $activity): string
+    {
+        if ($activity->event === 'created') {
+            return '<span class="text-gray-500">Customer file created</span>';
+        }
+
+        $changes = $activity->changes;
+        $ignoredFields = array_flip(self::IGNORED_ACTIVITY_FIELDS);
+
+        /** @var array<string, mixed> $old */
+        $old = array_diff_key($changes['old'] ?? [], $ignoredFields);
+        /** @var array<string, mixed> $new */
+        $new = array_diff_key($changes['new'] ?? [], $ignoredFields);
+
+        if (empty($old) && empty($new)) {
+            return '<span class="text-gray-500">No field changes</span>';
+        }
+
+        $html = '';
+
+        foreach (array_unique([...array_keys($old), ...array_keys($new)]) as $field) {
+            $label = e(Str::of($field)->replace('_', ' ')->title());
+            $newValue = self::formatActivityValue($new[$field] ?? null);
+
+            $values = array_key_exists($field, $old)
+                ? "<div class='text-danger'>Old: ".self::formatActivityValue($old[$field])."</div>
+                    <div class='text-success'>New: {$newValue}</div>"
+                : "<div class='text-success'>Value: {$newValue}</div>";
+
+            $html .= "
+                <div class='mb-4 p-3 rounded border'>
+                    <div><strong>{$label}</strong></div>
+                    {$values}
+                </div>
+            ";
+        }
+
+        return $html;
+    }
+
+    private static function formatActivityValue(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '-';
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'Yes' : 'No';
+        }
+
+        if (is_array($value)) {
+            return e(json_encode($value));
+        }
+
+        if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/', $value)) {
+            return Carbon::parse($value)
+                ->timezone(config('app.timezone'))
+                ->format('d M Y, h:i:s A');
+        }
+
+        return e((string) $value);
     }
 }
