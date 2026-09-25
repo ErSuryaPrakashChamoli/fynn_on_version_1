@@ -19,6 +19,27 @@ class FollowUpCreationDiagnosticTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_a_customer_outside_the_users_reach_is_not_prefilled(): void
+    {
+        Role::firstOrCreate(['name' => 'Admin']);
+
+        $employee = Employee::factory()->create(['designation' => Employee::DESIGNATION_CALLER]);
+        $stranger = Employee::factory()->create(['designation' => Employee::DESIGNATION_CALLER]);
+
+        $this->actingAs(User::factory()->create(['employee_id' => $employee->id]));
+
+        $customer = Customer::factory()->create([
+            'customer_name' => 'Someone Elses Customer',
+            'assign_to' => $stranger->id,
+            'employee_id' => $stranger->id,
+        ]);
+
+        Livewire::withQueryParams(['customer' => $customer->id])
+            ->test(CreateFollowUp::class)
+            ->assertFormSet(['customer_id' => null])
+            ->assertDontSee('Someone Elses Customer');
+    }
+
     public function test_creating_customer_follow_up_from_customer_page(): void
     {
         Role::firstOrCreate(['name' => 'Admin']);
@@ -30,7 +51,10 @@ class FollowUpCreationDiagnosticTest extends TestCase
         $user = User::factory()->create(['employee_id' => $employee->id]);
         $this->actingAs($user);
 
-        $customer = Customer::factory()->create();
+        $customer = Customer::factory()->create([
+            'assign_to' => $employee->id,
+            'employee_id' => $employee->id,
+        ]);
 
         Livewire::withQueryParams(['customer' => $customer->id])
             ->test(CreateFollowUp::class)

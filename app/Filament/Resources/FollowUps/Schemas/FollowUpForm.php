@@ -2,9 +2,10 @@
 
 namespace App\Filament\Resources\FollowUps\Schemas;
 
+use App\Filament\Resources\AssignedLeads\AssignedLeadResource;
+use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\AiCustomerRecord;
 use App\Models\Bank;
-use App\Models\Customer;
 use Coolsam\Flatpickr\Forms\Components\Flatpickr;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
@@ -18,8 +19,15 @@ class FollowUpForm
 {
     public static function configure(Schema $schema): Schema
     {
-        $customer = Customer::find(request('customer'));
-        $aiRecord = $customer ? null : AiCustomerRecord::find(request('ai_customer_record'));
+        // Only prospects the user may work on can be prefilled — the ids
+        // arrive in the query string and must not reveal anyone else's file.
+        $customer = filled(request('customer'))
+            ? CustomerResource::getEloquentQuery()->find(request('customer'))
+            : null;
+        $aiRecord = ! $customer && filled(request('ai_customer_record'))
+            && (auth()->user()?->hasRole('Admin') || AssignedLeadResource::getEloquentQuery()->where('customer_assignments.ai_customer_record_id', request('ai_customer_record'))->exists())
+            ? AiCustomerRecord::find(request('ai_customer_record'))
+            : null;
 
         return $schema
             ->schema([
@@ -140,6 +148,7 @@ class FollowUpForm
                                 'Awaiting PF Waiver' => 'Awaiting PF Waiver',
                                 'Converted' => 'Converted',
                                 'Delay Multifunding' => 'Delay Multifunding',
+                                'Dropped' => 'Dropped',
                                 'Journey Started' => 'Journey Started',
                                 'Lost' => 'Lost',
                                 'On Hold' => 'On Hold',
@@ -151,7 +160,7 @@ class FollowUpForm
                             ->afterStateUpdated(function ($state, $set) {
                                 // Clear follow-up date for statuses where follow-up
                                 // is not applicable.
-                                if (in_array($state, ['Converted', 'Lost'])) {
+                                if (in_array($state, ['Converted', 'Lost', 'Dropped'])) {
                                     $set('next_follow_up_date', null);
                                 }
                             }),
@@ -245,12 +254,12 @@ class FollowUpForm
                             ->columnSpanFull(),
 
                         Hidden::make('customer_id')
-                            ->default(fn () => request()->query('customer'))
+                            ->default($customer?->id)
                             ->dehydrated(true)
                             ->required(fn (Get $get) => blank($get('ai_customer_record_id'))),
 
                         Hidden::make('ai_customer_record_id')
-                            ->default(fn () => request()->query('ai_customer_record'))
+                            ->default($aiRecord?->id)
                             ->dehydrated(true)
                             ->required(fn (Get $get) => blank($get('customer_id'))),
 

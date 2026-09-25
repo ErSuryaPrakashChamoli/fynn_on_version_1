@@ -61,7 +61,7 @@ class OtherBankSupportTargetForm
                             ->required()
                             ->live(onBlur: true)
                             ->helperText(fn ($state): ?string => filled($state)
-                                ? indianAmount($state).' — '.indianAmountInWords($state)
+                                ? indianAmountInWords($state)
                                 : null),
                     ])
                     ->columns(3)

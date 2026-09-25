@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Enums\EligibilityLogEvent;
 use App\Enums\EligibilityRequestStatus;
+use App\Enums\JourneyModule;
+use App\Enums\NotificationCategory;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\Customer;
 use App\Models\CustomerEligibilityLog;
@@ -78,7 +80,8 @@ class CustomerEligibilityService
 
     /**
      * The file's owner and everyone above them in the reporting tree, plus
-     * the Admin. Other Bank Support never touches eligibility.
+     * the Admin and whoever is standing in for the owner. Other Bank Support
+     * never touches eligibility.
      */
     public function canWorkOn(?User $user, Customer $customer): bool
     {
@@ -100,7 +103,13 @@ class CustomerEligibilityService
             return false;
         }
 
-        return HierarchyHelper::visibleSubordinateIds($employee)->contains((int) $customer->assign_to);
+        if (HierarchyHelper::visibleSubordinateIds($employee)->contains((int) $customer->assign_to)) {
+            return true;
+        }
+
+        // Standing in for the owner (continuity backup or takeover) on the
+        // stage the file is in carries the owner's eligibility rights too.
+        return app(CustomerJourneyAccessService::class)->actsForOwner($user, $customer, JourneyModule::forCustomer($customer));
     }
 
     public function canChangeStatus(?User $user, Customer $customer): bool
@@ -327,15 +336,19 @@ class CustomerEligibilityService
     }
 
     /**
-     * Tells the owner, everyone above them and the Admin what happened.
+     * Tells the owner, everyone above them, anyone standing in for them and
+     * the Admin what happened.
      * Best-effort: a notification failure must never undo the change.
      */
     private function notify(Customer $customer, CustomerEligibilityLog $log, User $actor): void
     {
         try {
-            $employeeIds = app(CustomerJourneyAccessService::class)
-                ->responsibleEmployeeChain($customer)
-                ->filter();
+            $access = app(CustomerJourneyAccessService::class);
+
+            $employeeIds = $access->responsibleEmployeeChain($customer)
+                ->merge($access->activeBackupIdsFor($customer, JourneyModule::forCustomer($customer)))
+                ->filter()
+                ->unique();
 
             $recipients = User::query()
                 ->where(fn ($query) => $query
@@ -367,6 +380,7 @@ class CustomerEligibilityService
                         ->url(CustomerResource::getUrl('view', ['record' => $customer]))
                         ->markAsRead(),
                 ])
+                ->viewData(NotificationCategory::Eligibility->viewData())
                 ->sendToDatabase($recipients);
         } catch (Throwable) {
             // A failed notification must never block the eligibility change.

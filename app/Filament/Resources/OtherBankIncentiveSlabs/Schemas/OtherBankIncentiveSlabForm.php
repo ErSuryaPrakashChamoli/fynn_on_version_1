@@ -38,7 +38,7 @@ class OtherBankIncentiveSlabForm
                             ->required()
                             ->live(onBlur: true)
                             ->helperText(fn ($state): ?string => filled($state)
-                                ? indianAmount($state).' — '.indianAmountInWords($state)
+                                ? indianAmountInWords($state)
                                 : null)
                             ->rule(fn (Get $get, ?OtherBankIncentiveSlab $record): Closure => function (string $attribute, $value, Closure $fail) use ($get, $record): void {
                                 $month = Carbon::parse($get('effective_month') ?: today())->startOfMonth();
@@ -68,7 +68,8 @@ class OtherBankIncentiveSlabForm
                             ->numeric()
                             ->minValue(0)
                             ->maxValue(fn (Get $get): ?int => $get('payout_type') === OtherBankIncentiveSlab::PAYOUT_PERCENTAGE ? 100 : null)
-                            ->required(),
+                            ->required()
+                            ->amountInWords(fn (Get $get): bool => $get('payout_type') !== OtherBankIncentiveSlab::PAYOUT_PERCENTAGE),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),

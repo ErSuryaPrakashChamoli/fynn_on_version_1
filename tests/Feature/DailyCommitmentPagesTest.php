@@ -792,7 +792,12 @@ class DailyCommitmentPagesTest extends TestCase
         $page->set('fulfilment.entries', [
             ['customer_id' => $approved->id, 'customer_name' => 'Rajesh Kumar', 'mobile_no' => '9876543210', 'reference' => null, 'stage' => CommitmentStage::Approved->value, 'outcome' => null, 'amount' => 400000, 'remarks' => null],
             ['customer_id' => $underwriting->id, 'customer_name' => 'Neha Singh', 'mobile_no' => '9876500001', 'reference' => null, 'stage' => CommitmentStage::Underwriting->value, 'outcome' => null, 'amount' => 200000, 'remarks' => null],
-        ])->call('submitFinalStatus');
+        ])
+            ->call('chooseDeclarationMode', 'cases')
+            // Each case amount is read back in grouping and in words.
+            ->assertSee('Four Lakh')
+            ->assertSee('Two Lakh')
+            ->call('submitFinalStatus');
 
         $commitment = DailyCommitment::query()->where('employee_id', $this->caller->id)->firstOrFail();
 

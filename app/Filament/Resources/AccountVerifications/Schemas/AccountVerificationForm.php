@@ -4,8 +4,8 @@ namespace App\Filament\Resources\AccountVerifications\Schemas;
 
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -31,12 +31,12 @@ class AccountVerificationForm
                 ->schema([
                     TextInput::make('mis_lan_no')->label('LAN')->required(),
                     TextInput::make('mis_loan_type')->label('Loan Type As Per Bank'),
-                    TextInput::make('mis_disbursal_amount')->label('Loan Amount As Per Bank')->numeric(),
+                    TextInput::make('mis_disbursal_amount')->label('Loan Amount As Per Bank')->numeric()->amountInWords(),
                     TextInput::make('mis_roi')->label('Rate As Per Bank')->numeric(),
-                    TextInput::make('mis_cashback')->label('Cashback As Per Bank')->numeric(),
-                    TextInput::make('mis_subvention')->label('Subvention As Per Bank')->numeric(),
-                    TextInput::make('mis_docking')->label('Docking As Per Bank')->numeric(),
-                    TextInput::make('mis_processing_fee')->label('Processing Fee As Per Bank')->numeric(),
+                    TextInput::make('mis_cashback')->label('Cashback As Per Bank')->numeric()->amountInWords(),
+                    TextInput::make('mis_subvention')->label('Subvention As Per Bank')->numeric()->amountInWords(),
+                    TextInput::make('mis_docking')->label('Docking As Per Bank')->numeric()->amountInWords(),
+                    TextInput::make('mis_processing_fee')->label('Processing Fee As Per Bank')->numeric()->amountInWords(),
                     DatePicker::make('mis_disbursal_date')->label('Bank Disbursal Date'),
                     Select::make('cancellation_status')->options([
                         'not_cancelled' => 'Not Cancelled',
@@ -44,13 +44,13 @@ class AccountVerificationForm
                         'recovered' => 'Recovered',
                     ]),
                     DatePicker::make('cancellation_date'),
-                    TextInput::make('cancellation_recovery')->numeric(),
-                    TextInput::make('mis_payment')->label('Payment As Per Bank')->numeric(),
+                    TextInput::make('cancellation_recovery')->numeric()->amountInWords(),
+                    TextInput::make('mis_payment')->label('Payment As Per Bank')->numeric()->amountInWords(),
                     TextInput::make('bank_commission_percentage')->numeric(),
-                    TextInput::make('bank_commission_amount')->numeric(),
-                    TextInput::make('mis_tds')->numeric(),
-                    TextInput::make('mis_gst')->numeric(),
-                    TextInput::make('actual_payable_amount')->numeric(),
+                    TextInput::make('bank_commission_amount')->numeric()->amountInWords(),
+                    TextInput::make('mis_tds')->numeric()->amountInWords(),
+                    TextInput::make('mis_gst')->numeric()->amountInWords(),
+                    TextInput::make('actual_payable_amount')->numeric()->amountInWords(),
                 ]),
 
             Section::make('Sales vs Bank Reconciliation')

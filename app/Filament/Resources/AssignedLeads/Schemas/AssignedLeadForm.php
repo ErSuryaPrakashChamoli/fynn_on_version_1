@@ -26,6 +26,35 @@ class AssignedLeadForm
         return filled($record?->customer_id);
     }
 
+    /**
+     * Edit pages fill from the assignment row, which owns none of these
+     * fields, so ->default() never applies there. Resolve the prefilled
+     * prospect details (linked Customer first, then the AI-extracted record)
+     * and the latest follow-up's status, bank and next date instead.
+     *
+     * @return array<string, mixed>
+     */
+    public static function fillData(CustomerAssignment $record): array
+    {
+        $customer = $record->customer;
+        $aiRecord = $record->aiCustomerRecord;
+        $latestFollowUp = $record->latestFollowUp();
+
+        return [
+            'customer_name' => $customer?->customer_name ?? $aiRecord?->value('customer_name'),
+            'mobile_no' => $customer?->mobile_no ?? $aiRecord?->value('mobile_number'),
+            'pan_number' => $customer?->pan_number ?? $aiRecord?->value('pan_number'),
+            'email' => $customer?->email ?? $aiRecord?->value('email'),
+            'current_location' => $customer?->current_location ?? $aiRecord?->value('current_location'),
+            'job_location' => $customer?->job_location ?? $aiRecord?->value('job_location'),
+            'residence_location' => $customer?->residence_location ?? $aiRecord?->value('residence_location'),
+            'salary' => $customer?->salary ?? $aiRecord?->value('salary'),
+            'status' => $latestFollowUp?->status ?? 'Pending',
+            'bank_id' => $latestFollowUp?->bank_id,
+            'next_follow_up_date' => $latestFollowUp?->next_follow_up_date?->format('Y-m-d H:i'),
+        ];
+    }
+
     public static function configure(Schema $schema): Schema
     {
         return $schema
@@ -37,22 +66,16 @@ class AssignedLeadForm
                     ->schema([
                         TextInput::make('customer_name')
                             ->label('Customer Name')
-                            ->default(fn (?CustomerAssignment $record) => $record?->customer?->customer_name
-                                ?? $record?->aiCustomerRecord?->value('customer_name'))
                             ->disabled()
                             ->dehydrated(false),
 
                         TextInput::make('mobile_no')
                             ->label('Mobile Number')
-                            ->default(fn (?CustomerAssignment $record) => $record?->customer?->mobile_no
-                                ?? $record?->aiCustomerRecord?->value('mobile_number'))
                             ->disabled()
                             ->dehydrated(false),
 
                         TextInput::make('pan_number')
                             ->label('PAN Number')
-                            ->default(fn (?CustomerAssignment $record) => $record?->customer?->pan_number
-                                ?? $record?->aiCustomerRecord?->value('pan_number'))
                             ->maxLength(10)
                             ->minLength(10)
                             ->placeholder('ABCDE1234F')
@@ -66,8 +89,6 @@ class AssignedLeadForm
                         TextInput::make('email')
                             ->label('Email Address')
                             ->email()
-                            ->default(fn (?CustomerAssignment $record) => $record?->customer?->email
-                                ?? $record?->aiCustomerRecord?->value('email'))
                             ->disabled(fn (?CustomerAssignment $record) => self::isLockedToCustomer($record))
                             ->dehydrated(fn (?CustomerAssignment $record) => ! self::isLockedToCustomer($record)),
 
@@ -76,8 +97,6 @@ class AssignedLeadForm
                             ->searchable()
                             ->preload()
                             ->options(fn () => City::query()->where('is_active', 1)->orderBy('city')->get()->mapWithKeys(fn ($item) => [$item->city => "{$item->city}, {$item->state}"]))
-                            ->default(fn (?CustomerAssignment $record) => $record?->customer?->current_location
-                                ?? $record?->aiCustomerRecord?->value('current_location'))
                             ->disabled(fn (?CustomerAssignment $record) => self::isLockedToCustomer($record))
                             ->dehydrated(fn (?CustomerAssignment $record) => ! self::isLockedToCustomer($record)),
 
@@ -86,8 +105,6 @@ class AssignedLeadForm
                             ->searchable()
                             ->preload()
                             ->options(fn () => City::query()->where('is_active', 1)->orderBy('city')->get()->pluck('city', 'city'))
-                            ->default(fn (?CustomerAssignment $record) => $record?->customer?->job_location
-                                ?? $record?->aiCustomerRecord?->value('job_location'))
                             ->disabled(fn (?CustomerAssignment $record) => self::isLockedToCustomer($record))
                             ->dehydrated(fn (?CustomerAssignment $record) => ! self::isLockedToCustomer($record)),
 
@@ -96,14 +113,13 @@ class AssignedLeadForm
                             ->searchable()
                             ->preload()
                             ->options(fn () => City::query()->where('is_active', 1)->orderBy('city')->get()->mapWithKeys(fn ($item) => [$item->city => "{$item->city}, {$item->state}"]))
-                            ->default(fn (?CustomerAssignment $record) => $record?->customer?->residence_location
-                                ?? $record?->aiCustomerRecord?->value('residence_location'))
                             ->disabled(fn (?CustomerAssignment $record) => self::isLockedToCustomer($record))
                             ->dehydrated(fn (?CustomerAssignment $record) => ! self::isLockedToCustomer($record)),
 
                         TextInput::make('salary')
                             ->label('Salary')
                             ->prefix('₹')
+                            ->amountInWords()
                             ->live()
                             ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                             ->afterStateUpdated(function ($state, Set $set) {
@@ -114,8 +130,6 @@ class AssignedLeadForm
                                 }
                             })
                             ->dehydrateStateUsing(fn ($state) => preg_replace('/[^0-9]/', '', (string) $state))
-                            ->default(fn (?CustomerAssignment $record) => $record?->customer?->salary
-                                ?? $record?->aiCustomerRecord?->value('salary'))
                             ->disabled(fn (?CustomerAssignment $record) => self::isLockedToCustomer($record))
                             ->dehydrated(fn (?CustomerAssignment $record) => ! self::isLockedToCustomer($record)),
                     ])
@@ -136,11 +150,10 @@ class AssignedLeadForm
                         Select::make('status')
                             ->label('Status')
                             ->options(CustomerAssignment::FOLLOW_UP_STATUSES)
-                            ->default(fn (?CustomerAssignment $record) => $record?->latestFollowUp()?->status ?? 'Pending')
                             ->live()
                             ->required()
                             ->afterStateUpdated(function ($state, $set) {
-                                if (in_array($state, ['Not Interested', 'Not Eligible'])) {
+                                if (in_array($state, CustomerAssignment::CLOSED_FOLLOW_UP_STATUSES)) {
                                     $set('next_follow_up_date', null);
                                 }
 
@@ -158,7 +171,6 @@ class AssignedLeadForm
                                     ->pluck('bank_name', 'id')
                                     ->toArray()
                             )
-                            ->default(fn (?CustomerAssignment $record) => $record?->latestFollowUp()?->bank_id)
                             ->searchable()
                             ->preload()
                             ->required(fn (Get $get) => $get('status') === 'Eligible for Other Bank')
@@ -174,9 +186,8 @@ class AssignedLeadForm
                             ->format('Y-m-d H:i')
                             ->displayFormat('d M Y h:i K')
                             ->minDate(today())
-                            ->default(fn (?CustomerAssignment $record) => $record?->latestFollowUp()?->next_follow_up_date)
-                            ->required(fn (Get $get) => ! in_array($get('status'), ['Not Interested', 'Not Eligible']))
-                            ->visible(fn (Get $get) => ! in_array($get('status'), ['Not Interested', 'Not Eligible']))
+                            ->required(fn (Get $get) => ! in_array($get('status'), CustomerAssignment::CLOSED_FOLLOW_UP_STATUSES))
+                            ->visible(fn (Get $get) => ! in_array($get('status'), CustomerAssignment::CLOSED_FOLLOW_UP_STATUSES))
                             ->placeholder('Select date & time')
                             ->suffixIcon('heroicon-m-calendar'),
 

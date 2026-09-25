@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\AssignedLeads\Pages\EditAssignedLead;
 use App\Filament\Resources\AssignedLeads\Pages\ListAssignedLeads;
 use App\Filament\Resources\LeadAssignmentReports\Pages\ListLeadAssignmentReports;
 use App\Filament\Resources\LeadAssignmentReports\Tables\LeadAssignmentReportsTable;
@@ -99,6 +100,38 @@ class AssignedLeadReassignAndReportTest extends TestCase
             'status' => 'approved',
             'data' => ['customer_name' => $name],
         ]);
+    }
+
+    public function test_edit_page_prefills_prospect_details_and_latest_follow_up(): void
+    {
+        $this->interestedLead->aiCustomerRecord->update(['data' => [
+            'customer_name' => 'Deepika Dogra',
+            'mobile_number' => '9876543210',
+            'pan_number' => 'abcde1234f',
+            'email' => 'deepika@example.com',
+        ]]);
+
+        $nextFollowUp = $this->interestedLead->latestFollowUp()->next_follow_up_date;
+
+        Livewire::test(EditAssignedLead::class, ['record' => $this->interestedLead->getRouteKey()])
+            ->assertFormSet([
+                'customer_name' => 'Deepika Dogra',
+                'mobile_no' => '9876543210',
+                'pan_number' => 'ABCDE1234F',
+                'email' => 'deepika@example.com',
+                'status' => 'Interested',
+                'next_follow_up_date' => $nextFollowUp->format('Y-m-d H:i'),
+                'remarks' => null,
+            ]);
+    }
+
+    public function test_edit_page_defaults_status_to_pending_for_an_untouched_lead(): void
+    {
+        Livewire::test(EditAssignedLead::class, ['record' => $this->untouchedLead->getRouteKey()])
+            ->assertFormSet([
+                'customer_name' => 'Nimisha P',
+                'status' => 'Pending',
+            ]);
     }
 
     public function test_assignment_snapshots_the_template_and_listing_shows_it_instead_of_source(): void

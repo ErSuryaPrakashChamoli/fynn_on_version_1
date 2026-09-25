@@ -16,12 +16,14 @@ class CustomerAssignment extends Model
      */
     public const FOLLOW_UP_STATUSES = [
         'Pending' => 'Pending',
+        'Call Back' => 'Call Back',
         'Interested' => 'Interested',
         'Not Interested' => 'Not Interested',
         'Busy' => 'Busy',
         'No Response' => 'No Response',
         'Not Eligible' => 'Not Eligible',
         'Eligible for Other Bank' => 'Eligible for Other Bank',
+        'Dropped' => 'Dropped',
     ];
 
     /**
@@ -29,7 +31,7 @@ class CustomerAssignment extends Model
      *
      * @var list<string>
      */
-    public const CLOSED_FOLLOW_UP_STATUSES = ['Not Interested', 'Not Eligible'];
+    public const CLOSED_FOLLOW_UP_STATUSES = ['Not Interested', 'Not Eligible', 'Dropped'];
 
     protected $fillable = [
         'batch_id',

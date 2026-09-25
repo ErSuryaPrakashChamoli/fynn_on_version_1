@@ -178,7 +178,7 @@ class DailyCommitmentDetail extends Page
                     ->visible(fn (Get $get): bool => $get('commitment_stage') !== CommitmentStage::Otp->value)
                     ->live(onBlur: true)
                     ->helperText(fn ($state): ?string => filled($state)
-                        ? indianAmount($state).' — '.indianAmountInWords($state)
+                        ? indianAmountInWords($state)
                         : null),
 
                 TextInput::make('commitment_count')
@@ -284,7 +284,11 @@ class DailyCommitmentDetail extends Page
                             ->label('Amount (₹)')
                             ->numeric()
                             ->minValue(0)
-                            ->required(),
+                            ->required()
+                            ->live(onBlur: true)
+                            ->helperText(fn ($state): ?string => filled($state)
+                                ? indianAmountInWords($state)
+                                : null),
                     ]),
 
                 Toggle::make('submitted')
@@ -399,7 +403,7 @@ class DailyCommitmentDetail extends Page
                     ->visible(fn (Get $get): bool => $get('stage') !== CommitmentStage::Otp->value)
                     ->live(onBlur: true)
                     ->helperText(fn ($state): ?string => filled($state)
-                        ? indianAmount($state).' — '.indianAmountInWords($state)
+                        ? indianAmountInWords($state)
                         : null),
 
                 TextInput::make('target_count')

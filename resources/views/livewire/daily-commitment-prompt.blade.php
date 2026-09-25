@@ -100,7 +100,7 @@
                                      has to be caught before it is saved. --}}
                                 @if (filled($amount))
                                     <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
-                                        {{ indianAmount($amount) }} — {{ indianAmountInWords($amount) }}
+                                        {{ indianAmountInWords($amount) }}
                                     </span>
                                 @endif
                                 @error('amount')
@@ -216,13 +216,21 @@
                                             <option value="{{ $value }}" @selected(($case['stage'] ?? null) === $value)>{{ $label }}</option>
                                         @endforeach
                                     </select>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        wire:model="cases.{{ $index }}.amount"
-                                        placeholder="Amount"
-                                        class="rounded-lg border-none bg-white py-2 text-sm tabular-nums text-gray-950 shadow-sm ring-1 ring-gray-950/10 sm:col-span-2 dark:bg-white/5 dark:text-white dark:ring-white/20"
-                                    />
+                                    <div wire:key="case-amount-{{ $index }}" class="sm:col-span-2">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            wire:model.live.debounce.400ms="cases.{{ $index }}.amount"
+                                            placeholder="Amount"
+                                            class="block w-full rounded-lg border-none bg-white py-2 text-sm tabular-nums text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
+                                        />
+                                        {{-- Same read-back as the commitment amount above. --}}
+                                        @if (filled($case['amount'] ?? null))
+                                            <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+                                                {{ indianAmountInWords($case['amount']) }}
+                                            </span>
+                                        @endif
+                                    </div>
                                     <button
                                         type="button"
                                         wire:click="removeCase({{ $index }})"

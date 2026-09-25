@@ -2,8 +2,10 @@
 
 namespace App\Filament\Resources\Leads\Tables;
 
+use App\Filament\Actions\DropFollowUpActions;
 use App\Filament\Imports\LeadImporter;
 use App\Filament\Resources\Customers\CustomerResource;
+use App\Models\CustomerAssignment;
 use App\Models\Employee;
 use App\Models\Lead;
 use App\Support\EmployeeOptions;
@@ -22,6 +24,7 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 class LeadsTable
 {
@@ -143,11 +146,17 @@ class LeadsTable
                         ]));
                     }),
 
+                DropFollowUpActions::record(fn (Lead $record) => $record->followUps()->latest('id')->first()),
+
                 ViewAction::make(),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     // DeleteBulkAction::make(),
+
+                    DropFollowUpActions::bulk(fn (Collection $records) => $records
+                        ->map(fn (Lead $lead) => $lead->followUps()->latest('id')->first())
+                        ->filter()),
                 ]),
             ])
             ->filters([
@@ -166,15 +175,7 @@ class LeadsTable
                 SelectFilter::make('status')
                     ->label('Status')
                     ->multiple()
-                    ->options([
-                        'Pending' => 'Pending',
-                        'Interested' => 'Interested',
-                        'Not Interested' => 'Not Interested',
-                        'Busy' => 'Busy',
-                        'No Response' => 'No Response',
-                        'Not Eligible' => 'Not Eligible',
-                        'Eligible for Other Bank' => 'Eligible for Other Bank',
-                    ]),
+                    ->options(CustomerAssignment::FOLLOW_UP_STATUSES),
 
                 SelectFilter::make('bank_id')
                     ->label('Bank')

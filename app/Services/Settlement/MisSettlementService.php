@@ -2,6 +2,7 @@
 
 namespace App\Services\Settlement;
 
+use App\Enums\NotificationCategory;
 use App\Models\CustomerSettlement;
 use App\Models\CustomerSettlementHistory;
 use Filament\Notifications\Notification;
@@ -148,6 +149,7 @@ class MisSettlementService
             ->title('Bank MIS Updated')
             ->body("LAN {$settlement->mis_lan_no}: {$labels}. Achievement impact: {$achievementDifference}; Incentive impact: ₹{$incentiveDifference}.")
             ->warning()
+            ->viewData(NotificationCategory::Settlement->viewData())
             ->sendToDatabase($user);
     }
 }

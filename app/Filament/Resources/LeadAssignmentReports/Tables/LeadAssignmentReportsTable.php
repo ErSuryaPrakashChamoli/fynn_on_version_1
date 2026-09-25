@@ -41,6 +41,7 @@ class LeadAssignmentReportsTable
     public const REMARK_COUNTS = [
         'Interested' => 'interested_count',
         'Not Interested' => 'not_interested_count',
+        'Call Back' => 'call_back_count',
         'Busy' => 'busy_count',
         'No Response' => 'no_response_count',
         'Not Eligible' => 'not_eligible_remark_count',

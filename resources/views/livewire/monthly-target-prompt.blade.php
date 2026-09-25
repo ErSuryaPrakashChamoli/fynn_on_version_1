@@ -84,7 +84,7 @@
                                 />
                                 @if (filled($bulkAmount))
                                     <span class="mt-1 block font-normal">
-                                        {{ indianAmount($bulkAmount) }} — {{ indianAmountInWords($bulkAmount) }}
+                                        {{ indianAmountInWords($bulkAmount) }}
                                     </span>
                                 @endif
                             </label>
@@ -151,8 +151,7 @@
 
                                         @if (filled($targets[$employee->id]['amount'] ?? null))
                                             <span class="w-full text-xs text-gray-500 dark:text-gray-400 sm:w-auto">
-                                                {{ indianAmount($targets[$employee->id]['amount']) }}
-                                                — {{ indianAmountInWords($targets[$employee->id]['amount']) }}
+                                                {{ indianAmountInWords($targets[$employee->id]['amount']) }}
                                             </span>
                                         @endif
                                     @endif

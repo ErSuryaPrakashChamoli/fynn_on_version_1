@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\FollowUps;
 
+use App\Filament\Resources\AssignedLeads\AssignedLeadResource;
+use App\Filament\Resources\Customers\CustomerResource;
 use App\Filament\Resources\FollowUps\Pages\CreateFollowUp;
 use App\Filament\Resources\FollowUps\Pages\EditFollowUp;
 use App\Filament\Resources\FollowUps\Pages\ListFollowUps;
@@ -98,7 +100,16 @@ class FollowUpResource extends Resource
         $employeeIds = HierarchyHelper::visibleSubordinateIds($employee);
 
         return parent::getEloquentQuery()
-            ->whereIn('employee_id', $employeeIds)
+            ->where(fn (Builder $query) => $query
+                ->whereIn('employee_id', $employeeIds)
+                // Follow-ups on the customers and assigned leads this user can
+                // work today, whoever logged them — a new owner after a
+                // reassignment, or a continuity backup / takeover holder, sees
+                // the prospect's whole history, not just their own entries.
+                ->orWhereIn('customer_id', CustomerResource::getEloquentQuery()->select('customers.id'))
+                ->orWhereIn('ai_customer_record_id', AssignedLeadResource::getEloquentQuery()
+                    ->whereNotNull('customer_assignments.ai_customer_record_id')
+                    ->select('customer_assignments.ai_customer_record_id')))
             // Raw-Lead follow-ups belong to the Lead Follow-Up Calendar,
             // not here — keeps "My Customer Follow-ups" scoped to
             // Customer / AI-record follow-ups only.

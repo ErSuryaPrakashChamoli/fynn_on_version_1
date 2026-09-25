@@ -388,6 +388,24 @@ class DailyCommitmentDeadlinesTest extends TestCase
             ->assertSee('wire:key="case-1"', escape: false);
     }
 
+    public function test_each_declared_case_amount_is_read_back_in_words(): void
+    {
+        Carbon::setTestNow(today()->setTimeFromTimeString('18:45'));
+
+        $this->commit(CommitmentStage::Approved, 1000000);
+
+        app(DailyCommitmentGate::class)->forget();
+
+        $this->actingAs($this->user);
+
+        Livewire::test(DailyCommitmentPrompt::class)
+            ->call('chooseMode', 'cases')
+            ->assertDontSee('— Twelve Lakh Fifty Thousand')
+            ->set('cases.0.amount', '1250000')
+            ->assertSee('wire:key="case-amount-0"', escape: false)
+            ->assertSee('Twelve Lakh Fifty Thousand');
+    }
+
     public function test_the_prompt_gives_the_commitment_without_leaving_the_page(): void
     {
         Carbon::setTestNow(today()->setTimeFromTimeString('10:15'));

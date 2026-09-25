@@ -152,11 +152,9 @@ class CustomerResource extends Resource
             return OtherBankSupportService::isOtherBankCase($record);
         }
 
-        if (
-            $employee?->designation === Employee::DESIGNATION_CALLER
-        ) {
-            return false;
-        }
+        // A Caller never edits on their own account; they only get past this
+        // point as the backup of a continuity rule or a takeover, which the
+        // Gate at the end checks (hasNormalAccess() already refuses Callers).
 
         /*
      * Once documents are submitted / application finalized,
