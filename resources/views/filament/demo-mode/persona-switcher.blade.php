@@ -5,6 +5,10 @@
     in the topbar because the top-performer marquee is positioned against
     the topbar's fixed width, and anything added there pushes the month
     selector underneath it.
+
+    The pill can be dragged anywhere on screen (mouse or touch) so it never
+    covers what is being demoed; the spot is remembered per browser. A drag
+    of more than a few pixels swallows the click so it doesn't open the menu.
 --}}
 <style>
     /*
@@ -38,6 +42,12 @@
         right: 1.25rem;
         bottom: 1.25rem;
         z-index: 40;
+        touch-action: none;
+        user-select: none;
+    }
+
+    .fynn-demo-switcher.is-dragging .fynn-demo-switcher-trigger {
+        cursor: grabbing;
     }
 
     .fynn-demo-switcher-trigger {
@@ -53,7 +63,7 @@
         font-weight: 600;
         color: rgb(255 255 255);
         white-space: nowrap;
-        cursor: pointer;
+        cursor: grab;
     }
 
     .fynn-demo-switcher-trigger:hover {
@@ -71,7 +81,10 @@
     }
 </style>
 
-<div class="fynn-demo-switcher">
+<div
+    class="fynn-demo-switcher"
+    @include('filament.demo.partials.draggable', ['storageKey' => 'fynnon.demo-switcher-position'])
+>
 <x-filament::dropdown placement="top-end" width="xs" teleport>
     <x-slot name="trigger">
         <button type="button" class="fynn-demo-switcher-trigger" aria-label="Switch demo role">

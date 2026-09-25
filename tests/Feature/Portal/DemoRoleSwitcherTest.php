@@ -28,6 +28,18 @@ class DemoRoleSwitcherTest extends PortalBoundaryTestCase
             ->assertSee('Tarun Leader');
     }
 
+    public function test_the_floating_switcher_can_be_dragged_and_remembers_its_spot(): void
+    {
+        $this->actingAsDemoUser($this->makeDemoUser(['email' => config('demo.role_logins.admin.email')]));
+
+        $this->get('/demo')
+            ->assertOk()
+            ->assertSee('class="demo-view-as"', escape: false)
+            ->assertSee('x-on:pointerdown="start($event)"', escape: false)
+            ->assertSee('x-on:click.capture="swallowClickAfterDrag($event)"', escape: false)
+            ->assertSee('fynnon.demo-view-as-position', escape: false);
+    }
+
     public function test_admin_can_switch_to_any_specific_user_and_back(): void
     {
         $caller = $this->makeDemoUser(['name' => 'Priya Caller', 'email' => 'priya@demo-fynnon.test'], 'Caller');

@@ -9,6 +9,8 @@
 
     Floating rather than in the topbar or sidebar, so the admin layout
     (and its top-performer marquee) is left exactly as it is on /admin.
+    It can be dragged anywhere on screen so it never covers what is being
+    shown; the spot is remembered per browser.
 --}}
 @php
     $user = filament()->auth()->user();
@@ -18,7 +20,10 @@
     $isAdminLogin = $user?->email === ($logins['admin']['email'] ?? null);
 @endphp
 
-<div class="demo-view-as">
+<div
+    class="demo-view-as"
+    @include('filament.demo.partials.draggable', ['storageKey' => 'fynnon.demo-view-as-position'])
+>
     <x-filament::dropdown placement="top-end" max-height="26rem" width="sm" teleport>
         <x-slot name="trigger">
             <button type="button" class="demo-view-as__pill" title="Demo environment — switch user">
@@ -117,6 +122,13 @@
         right: 1.25rem;
         bottom: 1.25rem;
         z-index: 30;
+        touch-action: none;
+        user-select: none;
+    }
+
+    .demo-view-as.is-dragging .demo-view-as__pill {
+        cursor: grabbing;
+        transform: none;
     }
 
     .demo-view-as__pill {
@@ -129,6 +141,7 @@
         border: 1px solid rgb(245 158 11 / 0.7);
         box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.35);
         color: rgb(255 255 255);
+        cursor: grab;
         transition: transform 150ms, box-shadow 150ms;
     }
 
