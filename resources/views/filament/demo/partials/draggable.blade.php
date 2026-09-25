@@ -6,9 +6,10 @@
         <div class="..." @include('filament.demo.partials.draggable', ['storageKey' => '...'])>
 
     The dropped spot is kept in localStorage under $storageKey and clamped
-    to the viewport; a drag of 5px or more swallows the click that follows,
-    so the dropdown only opens on a real click. The element gets
-    `is-dragging` while it is being moved.
+    to the viewport. Filament's dropdown trigger opens on mousedown, before
+    a drag can be told apart from a click, so that mousedown is held back
+    and replayed on release only when the pointer didn't move (5px or
+    more counts as a drag). The element gets `is-dragging` while moving.
 --}}
     x-data="{
         storageKey: @js($storageKey),
@@ -18,6 +19,8 @@
         startY: 0,
         offsetX: 0,
         offsetY: 0,
+        heldTrigger: null,
+        replayingPress: false,
         init() {
             let saved = null;
 
@@ -70,12 +73,36 @@
             this.moved = true;
             this.place(event.clientX - this.offsetX, event.clientY - this.offsetY);
         },
+        holdPressUntilRelease(event) {
+            {{-- A touch tap's compatibility mousedown arrives after the pointer is already up. --}}
+            if (this.replayingPress || ! this.dragging) {
+                return;
+            }
+
+            const trigger = event.target.closest('.fi-dropdown-trigger');
+
+            if (! trigger || event.button !== 0) {
+                return;
+            }
+
+            event.stopPropagation();
+            this.heldTrigger = trigger;
+        },
         stop() {
             if (! this.dragging) {
                 return;
             }
 
             this.dragging = false;
+
+            const trigger = this.heldTrigger;
+            this.heldTrigger = null;
+
+            if (trigger && ! this.moved) {
+                this.replayingPress = true;
+                trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }));
+                this.replayingPress = false;
+            }
 
             if (this.moved) {
                 try {
@@ -99,4 +126,5 @@
     x-on:pointermove.window="move($event)"
     x-on:pointerup.window="stop()"
     x-on:pointercancel.window="stop()"
+    x-on:mousedown.capture="holdPressUntilRelease($event)"
     x-on:click.capture="swallowClickAfterDrag($event)"

@@ -36,6 +36,7 @@ class DemoRoleSwitcherTest extends PortalBoundaryTestCase
             ->assertOk()
             ->assertSee('class="demo-view-as"', escape: false)
             ->assertSee('x-on:pointerdown="start($event)"', escape: false)
+            ->assertSee('x-on:mousedown.capture="holdPressUntilRelease($event)"', escape: false)
             ->assertSee('x-on:click.capture="swallowClickAfterDrag($event)"', escape: false)
             ->assertSee('fynnon.demo-view-as-position', escape: false);
     }
