@@ -22,6 +22,14 @@ Schedule::command('journey:check-sla-breaches')
     ->everyFiveMinutes();
 
 /*
+ * Follow-up reminders: every follow-up coming due lands in its owner's
+ * bell and reminder pop-up a few minutes before its time.
+ */
+Schedule::command('follow-ups:send-reminders')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
+/*
  * Daily Commitment: freeze yesterday's commitments (MET / OVERACHIEVED /
  * FAILED) once the day is over. The module's screens always compute live,
  * so this only keeps the stored history honest.
@@ -81,4 +89,8 @@ if (config('demo.panel_enabled') && config('demo.schedule_enabled')) {
 
     Schedule::command('demo:run sessions:close-idle')
         ->everyFiveMinutes();
+
+    Schedule::command('demo:run follow-ups:send-reminders')
+        ->everyFiveMinutes()
+        ->withoutOverlapping();
 }

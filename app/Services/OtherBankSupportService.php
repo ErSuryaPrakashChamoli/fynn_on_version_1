@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Enums\JourneyModule;
+use App\Enums\NotificationCategory;
 use App\Enums\OtherBankRemarkStage;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\Customer;
@@ -270,16 +272,19 @@ class OtherBankSupportService
     }
 
     /**
-     * Tells the file's owner and everyone above them that a remark landed.
+     * Tells the file's owner, everyone above them and anyone standing in for
+     * them that a remark landed.
      * Best-effort, like the journey audit: a notification failure must never
      * lose the remark.
      */
     private function notifyOwnerChain(Customer $customer, OtherBankSupportRemark $remark, User $author): void
     {
         try {
-            $employeeIds = app(CustomerJourneyAccessService::class)
-                ->responsibleEmployeeChain($customer)
+            $access = app(CustomerJourneyAccessService::class);
+
+            $employeeIds = $access->responsibleEmployeeChain($customer)
                 ->push($customer->employee_id)
+                ->merge($access->activeBackupIdsFor($customer, JourneyModule::forCustomer($customer)))
                 ->filter()
                 ->unique();
 
@@ -303,6 +308,7 @@ class OtherBankSupportService
                         ->url(CustomerResource::getUrl('view', ['record' => $customer]))
                         ->markAsRead(),
                 ])
+                ->viewData(NotificationCategory::OtherBankSupport->viewData())
                 ->sendToDatabase($recipients);
         } catch (Throwable) {
             // A failed notification must never block the remark itself.

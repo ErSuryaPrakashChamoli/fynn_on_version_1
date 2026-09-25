@@ -3,7 +3,6 @@
 namespace App\Filament\Resources\Customers\Pages;
 
 use App\Filament\Resources\Customers\CustomerResource;
-use App\Models\Employee;
 use App\Services\CustomerEligibilityService;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\ViewAction;
@@ -25,11 +24,7 @@ class EditCustomer extends EditRecord
     {
         parent::mount($record);
 
-        $employee = auth()->user()->employee;
-
-        if (
-            $employee?->designation === Employee::DESIGNATION_CALLER
-        ) {
+        if (! CustomerResource::canEdit($this->record)) {
             $this->redirect(CustomerResource::getUrl('view', [
                 'record' => $this->record,
             ]));

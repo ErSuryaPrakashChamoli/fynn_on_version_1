@@ -269,20 +269,12 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
 
             Select::make('status')
                 ->label('Status')
-                ->options([
-                    'Pending' => 'Pending',
-                    'Interested' => 'Interested',
-                    'Not Interested' => 'Not Interested',
-                    'Busy' => 'Busy',
-                    'No Response' => 'No Response',
-                    'Not Eligible' => 'Not Eligible',
-                    'Eligible for Other Bank' => 'Eligible for Other Bank',
-                ])
+                ->options(CustomerAssignment::FOLLOW_UP_STATUSES)
                 ->default('Pending')
                 ->live()
                 ->required()
                 ->afterStateUpdated(function ($state, $set) {
-                    if (in_array($state, ['Not Interested', 'Not Eligible'])) {
+                    if (in_array($state, CustomerAssignment::CLOSED_FOLLOW_UP_STATUSES)) {
                         $set('next_follow_up_date', null);
                     }
 
@@ -315,8 +307,8 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
                 ->format('Y-m-d H:i')
                 ->displayFormat('d M Y h:i K')
                 ->minDate(today())
-                ->required(fn (Get $get) => ! in_array($get('status'), ['Not Interested', 'Not Eligible']))
-                ->visible(fn (Get $get) => ! in_array($get('status'), ['Not Interested', 'Not Eligible']))
+                ->required(fn (Get $get) => ! in_array($get('status'), CustomerAssignment::CLOSED_FOLLOW_UP_STATUSES))
+                ->visible(fn (Get $get) => ! in_array($get('status'), CustomerAssignment::CLOSED_FOLLOW_UP_STATUSES))
                 ->placeholder('Select date & time')
                 ->suffixIcon('heroicon-m-calendar'),
 

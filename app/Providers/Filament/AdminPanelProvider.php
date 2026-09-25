@@ -23,6 +23,7 @@ use App\Filament\Resources\AccountVerifications\AccountVerificationResource;
 use App\Filament\Resources\ActivityLogs\ActivityLogResource;
 use App\Filament\Resources\AiCustomerRecords\AiCustomerRecordResource;
 use App\Filament\Resources\AiDocumentSchemas\AiDocumentSchemaResource;
+use App\Filament\Resources\Announcements\AnnouncementResource;
 use App\Filament\Resources\AssignedLeads\AssignedLeadResource;
 use App\Filament\Resources\Cities\CityResource;
 use App\Filament\Resources\CustomerEligibilityRequests\CustomerEligibilityRequestResource;
@@ -58,6 +59,7 @@ use App\Http\Middleware\EncryptCookies;
 use App\Http\Middleware\EnforceIdleTimeout;
 use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\EnsureMonthlyTargetIsSet;
+use App\Livewire\CategorizedDatabaseNotifications;
 use App\Models\UserLoginSession;
 use Filament\Actions\Action;
 use Filament\Enums\ThemeMode;
@@ -186,9 +188,10 @@ class AdminPanelProvider extends PanelProvider
              * the uploader (via the bell icon) once it's actually done,
              * instead of them having to keep the page open watching a
              * status badge. See OcrDocumentProcessor::process() and
-             * ProcessOcrDocument::failed().
+             * ProcessOcrDocument::failed(). The bell is split into tabs by
+             * NotificationCategory (CategorizedDatabaseNotifications).
              */
-            ->databaseNotifications()
+            ->databaseNotifications(livewireComponent: CategorizedDatabaseNotifications::class)
             ->databaseNotificationsPolling('30s')
             ->plugin(
                 FilamentFullCalendarPlugin::make()
@@ -288,6 +291,23 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::BODY_END,
                 fn (): string => Filament::auth()->check()
                     ? Blade::render('@livewire("daily-commitment-prompt")')
+                    : '',
+            )
+            // Pops each pending bell notification (follow-ups coming due,
+            // eligibility, PAN requests, …) up in front of the user to be
+            // closed with remarks, skipped or rescheduled. Not blocking.
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => Filament::auth()->check()
+                    ? Blade::render('@livewire("reminder-popup")')
+                    : '',
+            )
+            // Announcements the Admin flashes from Setting → Announcements,
+            // floating top-right until each user dismisses them.
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => Filament::auth()->check()
+                    ? Blade::render('@livewire("announcement-banner")')
                     : '',
             )
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
@@ -613,6 +633,7 @@ class AdminPanelProvider extends PanelProvider
                 ...$this->navigationItemsFor(CityResource::class),
                 ...$this->navigationItemsFor(LoginPageSettings::class),
                 ...$this->navigationItemsFor(DashboardGreetingSettings::class),
+                ...$this->navigationItemsFor(AnnouncementResource::class),
             ]),
         ]);
     }

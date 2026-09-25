@@ -155,7 +155,7 @@ class MyDailyCommitment extends Page
                     // a stray zero has to be caught before it is saved.
                     ->live(onBlur: true)
                     ->helperText(fn ($state): string => filled($state)
-                        ? indianAmount($state).' — '.indianAmountInWords($state)
+                        ? indianAmountInWords($state)
                         : 'e.g. 1000000 for ₹10,00,000'),
 
                 TextInput::make('commitment_count')
@@ -265,7 +265,7 @@ class MyDailyCommitment extends Page
                             ->required()
                             ->live(onBlur: true)
                             ->helperText(fn ($state): ?string => filled($state)
-                                ? indianAmount($state)
+                                ? indianAmountInWords($state)
                                 : null)
                             ->columnSpan(3),
 

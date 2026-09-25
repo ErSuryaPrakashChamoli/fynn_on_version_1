@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Leads\Schemas;
 
 use App\Models\Bank;
 use App\Models\City;
+use App\Models\CustomerAssignment;
 use Coolsam\Flatpickr\Forms\Components\Flatpickr;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
@@ -162,6 +163,7 @@ class LeadForm
                         TextInput::make('salary')
                             ->label('Salary')
                             ->prefix('₹')
+                            ->amountInWords()
                             ->live()
                             ->formatStateUsing(fn ($state) => filled($state)
                                 ? indianCurrencyFormat($state)
@@ -192,15 +194,7 @@ class LeadForm
                             ->required(),
 
                         Select::make('status')
-                            ->options([
-                                'Pending' => 'Pending',
-                                'Interested' => 'Interested',
-                                'Not Interested' => 'Not Interested',
-                                'Busy' => 'Busy',
-                                'No Response' => 'No Response',
-                                'Not Eligible' => 'Not Eligible',
-                                'Eligible for Other Bank' => 'Eligible for Other Bank',
-                            ])
+                            ->options(CustomerAssignment::FOLLOW_UP_STATUSES)
                             ->default('Pending')
                             ->required()
                             ->live()
@@ -212,7 +206,7 @@ class LeadForm
                                 }
 
                                 // Clear next follow-up date for closed statuses
-                                if (in_array($state, ['Not Interested', 'Not Eligible'])) {
+                                if (in_array($state, CustomerAssignment::CLOSED_FOLLOW_UP_STATUSES)) {
                                     $set('next_follow_up_date', null);
                                 }
                             }),

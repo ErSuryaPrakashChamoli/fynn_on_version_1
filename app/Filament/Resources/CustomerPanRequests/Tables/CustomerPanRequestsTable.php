@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\CustomerPanRequests\Tables;
 
+use App\Enums\NotificationCategory;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\CustomerPanRequest;
 use App\Support\EmployeeOptions;
@@ -210,6 +211,7 @@ class CustomerPanRequestsTable
                                         ->icon('heroicon-o-arrow-right')
                                         ->color('success'),
                                 ])
+                                ->viewData(NotificationCategory::PanRequest->viewData())
                                 ->sendToDatabase(
                                     $record->requestedBy?->user
                                 );
@@ -231,6 +233,7 @@ class CustomerPanRequestsTable
                                         : 'Your duplicate PAN request has been rejected.'
                                 )
                                 ->danger()
+                                ->viewData(NotificationCategory::PanRequest->viewData())
                                 ->sendToDatabase(
                                     $record->requestedBy?->user
                                 );

@@ -138,6 +138,25 @@ class CustomerJourneyAccessService
             });
     }
 
+    /**
+     * Whether the user is standing in for the customer's responsible chain
+     * on this module right now — the backup of an active continuity rule or
+     * the holder of an active emergency takeover. Unlike decide(), this does
+     * not stop at normal hierarchy access, so a Team Leader backing up their
+     * own Manager is still recognised as the Manager's stand-in.
+     */
+    public function actsForOwner(User $user, Customer $customer, JourneyModule $module): bool
+    {
+        $employee = $user->employee;
+
+        if (! $employee) {
+            return false;
+        }
+
+        return $this->activeDelegationFor($employee, $customer, $module) !== null
+            || $this->activeTakeoverFor($employee, $customer, $module) !== null;
+    }
+
     public function activeTakeoverFor(Employee $employee, Customer $customer, JourneyModule $module): ?JourneyTakeover
     {
         return JourneyTakeover::query()
@@ -275,7 +294,9 @@ class CustomerJourneyAccessService
      * The employee ids whose new-and-existing work a continuity rule
      * actually reaches, respecting scope_type (an employee's own records
      * only vs their whole branch) and coverage_type (created_at vs the
-     * rule's own start_at).
+     * rule's own start_at). A branch rule walks the visibility tree
+     * (visibleSubordinateIds), the same one the original employee sees
+     * their own work through, so callers under an exited level stay covered.
      */
     private function customerIdsCoveredBy(CustomerJourneyDelegation $delegation): Collection
     {
@@ -287,7 +308,7 @@ class CustomerJourneyAccessService
 
         $employeeIds = $delegation->scope_type === ContinuityScopeType::Individual
             ? collect([$original->id])
-            : HierarchyHelper::subordinateIds($original);
+            : HierarchyHelper::visibleSubordinateIds($original);
 
         $query = Customer::query()->whereIn('assign_to', $employeeIds);
 
@@ -333,10 +354,43 @@ class CustomerJourneyAccessService
 
                 return $delegation->scope_type === ContinuityScopeType::Individual
                     ? collect([$original->id])
-                    : HierarchyHelper::subordinateIds($original);
+                    : HierarchyHelper::visibleSubordinateIds($original);
             })
             ->unique()
             ->values();
+    }
+
+    /**
+     * Employee ids currently standing in for anyone responsible for the
+     * customer on this module — backups of an active continuity rule and
+     * holders of an active emergency takeover. Used to copy reminders and
+     * alerts that would otherwise only reach the owner chain.
+     *
+     * @return Collection<int, int>
+     */
+    public function activeBackupIdsFor(Customer $customer, JourneyModule $module): Collection
+    {
+        $chainIds = $this->responsibleEmployeeChain($customer);
+
+        $delegateIds = $chainIds->isEmpty()
+            ? collect()
+            : CustomerJourneyDelegation::query()
+                ->whereIn('delegating_manager_id', $chainIds)
+                ->activeAt(now())
+                ->get()
+                ->filter(fn (CustomerJourneyDelegation $delegation): bool => in_array($module->value, $delegation->modules ?? [], true)
+                    && $delegation->coversRecordCreatedAt($customer->created_at)
+                    && $this->scopeCoversCustomer($delegation, $customer))
+                ->pluck('acting_manager_id');
+
+        $takeoverIds = JourneyTakeover::query()
+            ->where('customer_id', $customer->id)
+            ->where('status', JourneyTakeover::STATUS_ACTIVE)
+            ->get()
+            ->filter(fn (JourneyTakeover $takeover): bool => $takeover->grantsModule($module->value))
+            ->pluck('takeover_by_id');
+
+        return $delegateIds->merge($takeoverIds)->map(fn ($id): int => (int) $id)->unique()->values();
     }
 
     public function visibleCustomerIdsForTakeover(Employee $employee): Collection

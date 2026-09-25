@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Customers\Schemas;
 
+use App\Enums\JourneyModule;
+use App\Enums\NotificationCategory;
 use App\Filament\Resources\CustomerPanRequests\CustomerPanRequestResource;
 use App\Filament\Resources\Customers\Pages\CreateCustomer;
 use App\Models\Bank;
@@ -14,6 +16,7 @@ use App\Models\Employee;
 use App\Models\User;
 use App\Services\CustomerEligibilityService;
 use App\Services\CustomerJourneyService;
+use App\Services\Journey\CustomerJourneyAccessService;
 use App\Services\OtherBankSupportService;
 use App\Support\HierarchyHelper;
 use Filament\Actions\Action;
@@ -51,6 +54,32 @@ class CustomerForm
         $employee = Filament::auth()->user()?->employee;
 
         return $employee?->designation !== Employee::DESIGNATION_ADMIN;
+    }
+
+    /**
+     * Whether the signed-in user stands in for this customer's owner on
+     * any of the given journey stages — as the backup of an active Team
+     * Continuity rule or through an emergency takeover. A stand-in gets the
+     * stage screens the owner's side works in, whatever their own role:
+     * the rule the Admin approved, not their designation, is the grant.
+     */
+    protected static function actsForOwner(?Customer $record, JourneyModule ...$modules): bool
+    {
+        $user = Filament::auth()->user();
+
+        if (! $record || ! $user instanceof User || $user->hasRole('Admin')) {
+            return false;
+        }
+
+        $access = app(CustomerJourneyAccessService::class);
+
+        foreach ($modules ?: JourneyModule::cases() as $module) {
+            if ($access->actsForOwner($user, $record, $module)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected static function lockDuplicatePan(?Customer $record, $livewire): bool
@@ -264,6 +293,7 @@ class CustomerForm
                                             ->url(CustomerPanRequestResource::getUrl('index'))
                                             ->markAsRead(),
                                     ])
+                                    ->viewData(NotificationCategory::PanRequest->viewData())
                                     ->sendToDatabase(User::role('Admin')->get());
                             }),
 
@@ -710,6 +740,7 @@ class CustomerForm
                         TextInput::make('salary')
                             ->label('Salary')
                             ->prefix('₹')
+                            ->amountInWords()
                             ->live()
                             // ->required()
                             ->required(
@@ -857,7 +888,7 @@ class CustomerForm
 
                 // PIPELINE AREA: Dynamic Sequential Sections Layout Container
                 Section::make('Application Progress Steps')
-                    ->visible(fn () => ! auth()->user()->hasRole('Caller'))
+                    ->visible(fn (?Customer $record): bool => ! auth()->user()->hasRole('Caller') || self::actsForOwner($record))
                     ->schema([
 
                         Placeholder::make('stage_history_timeline')
@@ -906,7 +937,8 @@ class CustomerForm
                         // STAGE 1: Journey Requirements (Always Visible for Admin/Manager)
                         Section::make('Journey Configuration')
                             ->visible(
-                                fn () => auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
+                                fn (?Customer $record): bool => auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
+                                    || self::actsForOwner($record, JourneyModule::DocumentVerification, JourneyModule::Approval)
                             )
                             ->schema([
 
@@ -990,6 +1022,12 @@ class CustomerForm
                                         ]) && $get('eligibility_status') === 'eligible'
                                     )
                                     ->live()
+                                    ->afterStateUpdated(function (Get $get, Set $set, ?string $state, ?string $old): void {
+                                        // Keep the approval bank following the SFL bank until someone picks a different one.
+                                        if (blank($get('sanctioned_bank')) || $get('sanctioned_bank') === $old) {
+                                            $set('sanctioned_bank', $state);
+                                        }
+                                    })
                                     ->disabled(fn (?Customer $record) => self::lockAfterFilled($record, 'bank_eligible_for')),
 
                                 TextInput::make('other_bank_eligible_for')
@@ -1033,6 +1071,7 @@ class CustomerForm
                                 TextInput::make('eligible_loan_amount')
                                     ->label('Eligible Loan Amount')
                                     ->prefix('₹')
+                                    ->amountInWords()
                                     ->live()
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->afterStateUpdated(function ($state, callable $set) {
@@ -1203,10 +1242,10 @@ class CustomerForm
 
                             ])
                             ->columns(2)
-                            ->visible(function (Get $get): bool {
+                            ->visible(function (Get $get, ?Customer $record): bool {
                                 $journeyStatus = strtolower((string) $get('journey_status'));
 
-                                return ! auth()->user()->hasRole('Caller')
+                                return (! auth()->user()->hasRole('Caller') || self::actsForOwner($record, JourneyModule::Approval))
                                     && (
                                         in_array($journeyStatus, [
                                             'underwriting',
@@ -1229,6 +1268,7 @@ class CustomerForm
                                 TextInput::make('approved_loan_amount')
                                     ->label('Approved Sanctioned Amount')
                                     ->prefix('₹')
+                                    ->amountInWords()
                                     ->live()
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
@@ -1249,6 +1289,12 @@ class CustomerForm
                                     ]))
                                     ->required()
                                     ->searchable()
+                                    ->helperText('Pre-selected from the bank chosen at SFL.')
+                                    ->afterStateHydrated(function (Select $component, ?string $state, Get $get): void {
+                                        if (blank($state) && filled($get('bank_eligible_for'))) {
+                                            $component->state($get('bank_eligible_for'));
+                                        }
+                                    })
                                     ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->dehydrated(true)
                                     ->live(),
@@ -1316,9 +1362,12 @@ class CustomerForm
                                     ]),
                             ])
                             ->columns(2)
-                            ->visible(function (Get $get): bool {
+                            ->visible(function (Get $get, ?Customer $record): bool {
 
-                                return auth()->user()->hasAnyRole(['Admin', 'Team Leader', 'Manager', 'Cluster Manager', 'Business Head', OtherBankSupportService::ROLE])
+                                return (
+                                    auth()->user()->hasAnyRole(['Admin', 'Team Leader', 'Manager', 'Cluster Manager', 'Business Head', OtherBankSupportService::ROLE])
+                                    || self::actsForOwner($record, JourneyModule::Approval, JourneyModule::BankProcessing)
+                                )
                                     && (
                                         in_array(
                                             strtolower((string) $get('journey_status')),
@@ -1390,6 +1439,7 @@ class CustomerForm
                                 TextInput::make('sanctioned_loan_amount')
                                     ->label('Final Net Disbursed Loan Amount')
                                     ->prefix('₹')
+                                    ->amountInWords()
                                     ->live()
                                     ->dehydrated(true)
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
@@ -1408,6 +1458,7 @@ class CustomerForm
                                 TextInput::make('cashback')
                                     ->label('Cashback Given')
                                     ->prefix('₹')
+                                    ->amountInWords()
                                     ->live()
                                     ->required()
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
@@ -1425,6 +1476,7 @@ class CustomerForm
                                 TextInput::make('subvention')
                                     ->label('Subvention Fees')
                                     ->prefix('₹')
+                                    ->amountInWords()
                                     ->required()
                                     ->live()
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
@@ -1442,6 +1494,7 @@ class CustomerForm
                                 TextInput::make('docking')
                                     ->label('Docking Charges')
                                     ->prefix('₹')
+                                    ->amountInWords()
                                     ->live()
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
@@ -1486,12 +1539,13 @@ class CustomerForm
                                 Placeholder::make('disbursal_actions')
                                     ->label('')
                                     ->visible(
-                                        fn (Get $get): bool => ! $get('disbursal_finalized')
+                                        fn (Get $get, ?Customer $record): bool => ! $get('disbursal_finalized')
                                             && $get('disbursal_status') === 'disbursed'
                                             && (
                                                 auth()->user()->hasRole('Admin')
                                                 || auth()->user()->hasRole('Manager')
                                                 || auth()->user()->hasRole(OtherBankSupportService::ROLE)
+                                                || self::actsForOwner($record, JourneyModule::DisbursalProcessing)
                                             )
                                     )
                                     ->hintAction(
@@ -1541,10 +1595,11 @@ class CustomerForm
 
                             ->columns(2)
                             ->visible(
-                                fn (Get $get) => (
+                                fn (Get $get, ?Customer $record) => (
                                     auth()->user()->hasRole('Admin')
                                     || auth()->user()->hasRole('Manager')
                                     || auth()->user()->hasRole(OtherBankSupportService::ROLE)
+                                    || self::actsForOwner($record, JourneyModule::DisbursalProcessing)
                                 )
                                     && (
                                         ($get('credit_approval_completed') ?? false)

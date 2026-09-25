@@ -31,6 +31,7 @@ class LeadAssignmentReportExporter extends Exporter
             ExportColumn::make('reassigned_out_count')->label('Reassigned Away'),
             ExportColumn::make('interested_count')->label('Interested'),
             ExportColumn::make('not_interested_count')->label('Not Interested'),
+            ExportColumn::make('call_back_count')->label('Call Back'),
             ExportColumn::make('busy_count')->label('Busy'),
             ExportColumn::make('no_response_count')->label('No Response'),
             ExportColumn::make('not_eligible_remark_count')->label('Not Eligible (Remark)'),

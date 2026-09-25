@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\AssignedLeads\Pages;
 
 use App\Filament\Resources\AssignedLeads\AssignedLeadResource;
+use App\Filament\Resources\AssignedLeads\Schemas\AssignedLeadForm;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\FollowUp;
 use Filament\Actions\Action;
@@ -28,6 +29,15 @@ class EditAssignedLead extends EditRecord
                     'ai_customer_record' => $this->record->ai_customer_record_id,
                 ])),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        return [...$data, ...AssignedLeadForm::fillData($this->record)];
     }
 
     protected function mutateFormDataBeforeSave(array $data): array

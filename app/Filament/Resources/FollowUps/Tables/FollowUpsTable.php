@@ -2,8 +2,10 @@
 
 namespace App\Filament\Resources\FollowUps\Tables;
 
+use App\Filament\Actions\DropFollowUpActions;
 use App\Filament\Resources\FollowUps\FollowUpResource;
 use App\Models\Customer;
+use App\Models\CustomerAssignment;
 use App\Models\FollowUp;
 use App\Support\EmployeeOptions;
 use App\Support\SelectedMonth;
@@ -12,6 +14,7 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -53,9 +56,9 @@ class FollowUpsTable
                     ->sortable()
                     ->color(fn (?string $state): string => match ($state) {
                         'Interested' => 'success',
-                        'Pending' => 'warning',
+                        'Pending', 'Call Back' => 'warning',
                         'Eligible for Other Bank' => 'info',
-                        'Not Interested', 'Not Eligible' => 'danger',
+                        'Not Interested', 'Not Eligible', 'Dropped', 'Lost' => 'danger',
                         default => 'gray',
                     }),
 
@@ -138,15 +141,7 @@ class FollowUpsTable
                 SelectFilter::make('status')
                     ->label('Status')
                     ->multiple()
-                    ->options([
-                        'Pending' => 'Pending',
-                        'Interested' => 'Interested',
-                        'Not Interested' => 'Not Interested',
-                        'Busy' => 'Busy',
-                        'No Response' => 'No Response',
-                        'Not Eligible' => 'Not Eligible',
-                        'Eligible for Other Bank' => 'Eligible for Other Bank',
-                    ]),
+                    ->options(CustomerAssignment::FOLLOW_UP_STATUSES),
 
                 SelectFilter::make('follow_up_type')
                     ->label('Type')
@@ -162,6 +157,13 @@ class FollowUpsTable
                     ->label('Bank')
                     ->multiple()
                     ->relationship('bank', 'bank_name'),
+
+                Filter::make('overdue')
+                    ->label('Overdue only')
+                    ->toggle()
+                    ->query(fn (Builder $query): Builder => $query
+                        ->whereNotNull('follow_ups.next_follow_up_date')
+                        ->where('follow_ups.next_follow_up_date', '<', now())),
             ])
             ->modifyQueryUsing(
                 fn (Builder $query) => $query
@@ -198,9 +200,13 @@ class FollowUpsTable
                     ->url(fn ($record) => FollowUpResource::getUrl('create', filled($record->customer_id)
                         ? ['customer' => $record->customer_id]
                         : ['ai_customer_record' => $record->ai_customer_record_id])),
+
+                DropFollowUpActions::record(),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
+                    DropFollowUpActions::bulk(),
+
                     DeleteBulkAction::make(),
                 ]),
             ]);

@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Enums\NotificationCategory;
 use App\Models\OcrDocument;
 use App\Services\Ocr\OcrDocumentProcessor;
 use Filament\Notifications\Notification;
@@ -100,8 +101,9 @@ class ProcessOcrDocument implements ShouldQueue
         if ($document?->uploader) {
             Notification::make()
                 ->title('OCR processing failed')
-                ->body($document->original_name . ': ' . $exception->getMessage())
+                ->body($document->original_name.': '.$exception->getMessage())
                 ->danger()
+                ->viewData(NotificationCategory::Ocr->viewData())
                 ->sendToDatabase($document->uploader);
         }
     }

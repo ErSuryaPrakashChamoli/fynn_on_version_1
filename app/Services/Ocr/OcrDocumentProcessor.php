@@ -2,6 +2,7 @@
 
 namespace App\Services\Ocr;
 
+use App\Enums\NotificationCategory;
 use App\Models\AiCustomerRecord;
 use App\Models\OcrDocument;
 use Filament\Notifications\Notification;
@@ -180,6 +181,7 @@ class OcrDocumentProcessor
                     ->title('OCR processing completed')
                     ->body($document->original_name.' finished processing'.(is_array($rows) ? ' — '.count($rows).' row(s) extracted.' : '.'))
                     ->success()
+                    ->viewData(NotificationCategory::Ocr->viewData())
                     ->sendToDatabase($document->uploader);
             }
         } catch (\Throwable $e) {

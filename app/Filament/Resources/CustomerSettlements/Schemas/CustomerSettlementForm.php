@@ -4,8 +4,8 @@ namespace App\Filament\Resources\CustomerSettlements\Schemas;
 
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 
@@ -77,7 +77,7 @@ class CustomerSettlementForm
             Section::make('Accounts Settlement')
                 ->columns(3)
                 ->schema([
-                    TextInput::make('gross_payable_amount')->label('Gross Payable')->numeric(),
+                    TextInput::make('gross_payable_amount')->label('Gross Payable')->numeric()->amountInWords(),
                     TextInput::make('gst_rate')->label('Expected GST %')->numeric()->default(18),
                     TextInput::make('tds_rate')->label('Expected TDS %')->numeric()->default(2),
                     TextInput::make('expected_gst')->label('Expected GST')->numeric()->disabled()->dehydrated(false),
@@ -92,7 +92,7 @@ class CustomerSettlementForm
                     TextInput::make('recovery_received')->label('Recovery Received From Transactions')->numeric()->disabled()->dehydrated(false),
                     TextInput::make('recovery_pending')->label('Recovery Pending')->numeric()->disabled()->dehydrated(false),
                     TextInput::make('advance_received')->label('Advance Received From Transactions')->numeric()->disabled()->dehydrated(false),
-                    TextInput::make('advance_adjusted')->label('Advance Adjusted')->numeric(),
+                    TextInput::make('advance_adjusted')->label('Advance Adjusted')->numeric()->amountInWords(),
                     TextInput::make('advance_outstanding')->label('Advance Outstanding')->numeric()->disabled()->dehydrated(false),
                     DatePicker::make('payment_received_date')->label('Latest Payment Date')->disabled()->dehydrated(false),
                     TextInput::make('utr_number')->label('Latest UTR')->disabled()->dehydrated(false),

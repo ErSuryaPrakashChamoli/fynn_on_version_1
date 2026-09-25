@@ -84,7 +84,7 @@ class MonthlyCommitmentTargetForm
                             // obvious before the target is saved.
                             ->live(onBlur: true)
                             ->helperText(fn ($state): ?string => filled($state)
-                                ? indianAmount($state).' — '.indianAmountInWords($state)
+                                ? indianAmountInWords($state)
                                 : null),
 
                         TextInput::make('target_count')

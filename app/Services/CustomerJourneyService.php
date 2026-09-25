@@ -76,7 +76,7 @@ class CustomerJourneyService
                     ? preg_replace('/[^0-9]/', '', $data['approved_loan_amount'])
                     : null,
 
-                'sanctioned_bank' => $data['sanctioned_bank'] ?? null,
+                'sanctioned_bank' => ($data['sanctioned_bank'] ?? null) ?: $customer->bank_eligible_for,
                 'other_sanctioned_bank' => $data['other_sanctioned_bank'] ?? null,
                 'approved_remarks' => $data['approved_remarks'] ?? null,
                 'approval_date' => $data['approval_date'] ?? null,

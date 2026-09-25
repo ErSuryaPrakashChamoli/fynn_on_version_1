@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Customers\Tables;
 use App\Filament\Actions\AssignCustomersToUserBulkAction;
 use App\Filament\Exports\CustomerExporter;
 use App\Filament\Imports\CustomerImporter;
+use App\Filament\Resources\Customers\CustomerResource;
 use App\Filament\Resources\FollowUps\FollowUpResource;
 use App\Models\Employee;
 use App\Services\OtherBankSupportService;
@@ -368,12 +369,7 @@ class CustomersTable
                 ViewAction::make(),
                 // EditAction::make(),
                 EditAction::make()
-                    ->visible(
-                        fn ($record) =>
-                        // ! $record->documents_submitted &&
-                        // auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
-                        Filament::auth()->user()?->employee?->designation !== Employee::DESIGNATION_CALLER
-                    ),
+                    ->visible(fn ($record): bool => CustomerResource::canEdit($record)),
 
                 Action::make('followup')
                     ->label('Follow Up')

@@ -2,12 +2,14 @@
 
 namespace App\Filament\Resources\AssignedLeads\Tables;
 
+use App\Filament\Actions\DropFollowUpActions;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\Customer;
 use App\Models\CustomerAssignment;
 use App\Models\Employee;
 use App\Models\User;
 use App\Services\CustomerAssignmentService;
+use App\Services\FollowUpReminderService;
 use App\Services\HierarchyService;
 use App\Support\EmployeeOptions;
 use App\Support\LeadAssignmentFilters;
@@ -90,8 +92,8 @@ class AssignedLeadsTable
                     ))
                     ->color(fn (string $state): string => match ($state) {
                         'Interested' => 'success',
-                        'Not Interested', 'Not Eligible' => 'danger',
-                        'Busy', 'No Response' => 'warning',
+                        'Not Interested', 'Not Eligible', 'Dropped', 'Lost' => 'danger',
+                        'Busy', 'No Response', 'Call Back' => 'warning',
                         'Eligible for Other Bank' => 'info',
                         default => 'gray',
                     }),
@@ -259,11 +261,15 @@ class AssignedLeadsTable
 
                 self::reassignAction(),
 
+                DropFollowUpActions::record(fn (CustomerAssignment $record) => $record->latestFollowUp()),
+
                 ViewAction::make(),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     self::reassignBulkAction(),
+
+                    DropFollowUpActions::bulk(fn (Collection $records) => app(FollowUpReminderService::class)->currentForAssignments($records)),
                 ]),
             ])
             ->modifyQueryUsing(

@@ -5,26 +5,23 @@ namespace App\Filament\Resources\Customers\Pages;
 use App\Filament\Resources\Customers\CustomerResource;
 use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
-use App\Models\Employee;
 
 class ViewCustomer extends ViewRecord
 {
     protected static string $resource = CustomerResource::class;
 
-   protected function getHeaderActions(): array
-{
-    $employee = auth()->user()->employee;
+    protected function getHeaderActions(): array
+    {
+        $actions = [];
 
-    $actions = [];
+        // canEdit() lets a Caller through only as a continuity backup or takeover holder.
+        if (
+            CustomerResource::canEdit($this->record) &&
+            ! $this->record->documents_submitted
+        ) {
+            $actions[] = EditAction::make();
+        }
 
-    if (
-        $employee?->designation !== Employee::DESIGNATION_CALLER &&
-        ! $this->record->documents_submitted
-    ) {
-        $actions[] = EditAction::make();
+        return $actions;
     }
-
-    return $actions;
-}
-
 }

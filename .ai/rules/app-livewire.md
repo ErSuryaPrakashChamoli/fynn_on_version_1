@@ -13,3 +13,8 @@ Reserved: on, el, id, js, get, set, refs, call, hook, watch, dirty, effect, comm
 This cost a day on DailyCommitmentPrompt: wire:click="commit" resolved to $wire.$commit (Livewire's internal flush-pending-updates), so the "Give commitment" button returned 200 with the modal re-rendered and unchanged, and the employee was stuck behind a full-screen prompt with nothing written. There is no JS error and no failed request — the only visible symptom is a button that does nothing. The method is now giveCommitment().
 
 Livewire::test()->call('commit') calls the method directly and passes regardless, so feature tests cannot see this. tests/Unit/LivewireReservedNamesTest reflects over app/Livewire and app/Filament and fails on any clash — keep its RESERVED list in step with the Livewire version when upgrading.
+
+## Bell must extend the panel's DatabaseNotifications; announcements float, never pop up
+CategorizedDatabaseNotifications must extend Filament\Livewire\DatabaseNotifications, not Filament\Notifications\Livewire\DatabaseNotifications: only the panel class supplies getTrigger() (the topbar bell button + unread badge). Extending the package base silently renders no bell at all. Covered by AnnouncementTest::test_topbar_bell_renders_with_the_unread_count_badge.
+
+Announcements (Setting → Announcements, AnnouncementService::publish) are bell notifications with category 'announcement' and viewData.announcement_id. AnnouncementBanner floats the user's unread ones whose Announcement is still floating (is_active, not expired); dismissing marks the notification read. ReminderPopup::pendingQuery() excludes this category — keep it excluded so announcements never ask for close-with-remarks.
