@@ -20,13 +20,20 @@
                             </span>
                             <h3 class="text-sm font-semibold text-gray-950 dark:text-white">Follow-Up Calendar</h3>
                         </div>
-                        <span class="lead-followup-calendar-card__legend">
-                            <span class="lead-followup-calendar-card__legend-dot"></span>
-                            Has follow-ups
-                        </span>
+                        @include('filament.widgets.follow-up-outcome-legend')
                     </div>
 
-                    <div class="p-3">
+                    <div class="p-3"
+                        x-data="{
+                            markSelectedDay() {
+                                this.$el.querySelectorAll('.fc-daygrid-day').forEach((cell) => cell.classList.toggle('is-selected-day', cell.dataset.date === $wire.selectedDate));
+                            },
+                        }"
+                        x-init="
+                            markSelectedDay();
+                            $watch('$wire.selectedDate', () => markSelectedDay());
+                            new MutationObserver(() => markSelectedDay()).observe($el, { childList: true, subtree: true });
+                        ">
                         <div wire:ignore x-load
                             x-load-src="{{ \Filament\Support\Facades\FilamentAsset::getAlpineComponentSrc('filament-fullcalendar-alpine', 'saade/filament-fullcalendar') }}"
                             x-ignore x-data="fullcalendar({
@@ -59,6 +66,8 @@
                         <p class="text-xs text-gray-500 dark:text-gray-400">
                             Click any date on the calendar to see that day's follow-ups here.
                         </p>
+
+                        @include('filament.widgets.missed-follow-up-actions')
                     </div>
 
                     <div class="max-h-[40rem] overflow-y-auto p-4">

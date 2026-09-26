@@ -4,27 +4,43 @@ namespace App\Services;
 
 use App\Enums\NotificationCategory;
 use App\Models\Announcement;
+use App\Models\AnnouncementRecipient;
 use App\Models\User;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Str;
 
 /**
- * Flashes an Announcement to everyone who can use the LMS: one bell
- * notification per user, tagged with the announcement's id so the floating
- * banner (AnnouncementBanner) can show it until that user dismisses it.
+ * Sends an Announcement to its audience (company wide, chosen roles or chosen
+ * designations). Each recipient gets an AnnouncementRecipient row, which
+ * AnnouncementPrompt uses to block the LMS until they acknowledge it, and a
+ * bell notification so it can be read again later.
  */
 class AnnouncementService
 {
     /**
      * Sends the announcement to every recipient and records how many got it.
+     * The sender is marked as having acknowledged their own announcement.
      */
     public function publish(Announcement $announcement): int
     {
         $sent = 0;
+        $notification = $this->notificationFor($announcement);
 
-        $this->recipientsQuery()->chunkById(500, function ($users) use ($announcement, &$sent): void {
-            $this->notificationFor($announcement)->sendToDatabase($users);
+        // notifyNow(), not Filament's sendToDatabase(): that one queues every
+        // notification, so nothing reached a bell until a queue worker ran —
+        // and /demo has its own worker (demo:queue-work).
+        $this->recipientsQuery($announcement)->chunkById(500, function ($users) use ($announcement, $notification, &$sent): void {
+            AnnouncementRecipient::query()->insertOrIgnore($users->map(fn (User $user): array => [
+                'announcement_id' => $announcement->getKey(),
+                'user_id' => $user->getKey(),
+                'acknowledged_at' => $user->getKey() === $announcement->created_by ? now() : null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ])->all());
+
+            foreach ($users as $user) {
+                $user->notifyNow($notification->toDatabase());
+            }
 
             $sent += $users->count();
         });
@@ -35,24 +51,47 @@ class AnnouncementService
     }
 
     /**
-     * Admin-panel users whose login still works: switched on, not exited,
-     * and not an external portal account (see User::canAccessPanel()).
+     * Records the user's acknowledgement and marks the matching bell entry
+     * read. It stays in the bell to be read again.
+     */
+    public function acknowledge(AnnouncementRecipient $recipient): void
+    {
+        $recipient->forceFill(['acknowledged_at' => $recipient->acknowledged_at ?? now()])->save();
+
+        $recipient->user?->unreadNotifications()
+            ->where('category', NotificationCategory::Announcement->value)
+            ->where('data->viewData->announcement_id', $recipient->announcement_id)
+            ->update(['read_at' => now()]);
+    }
+
+    /**
+     * Admin-panel users whose login still works (switched on, not exited,
+     * not an external portal account — see User::canAccessPanel()), narrowed
+     * to the announcement's audience.
      *
      * @return Builder<User>
      */
-    public function recipientsQuery(): Builder
+    public function recipientsQuery(Announcement $announcement): Builder
     {
         return User::query()
             ->where(fn (Builder $query) => $query->where('is_active', true)->orWhereNull('is_active'))
             ->whereDoesntHave('portalAccount')
-            ->whereDoesntHave('employee', fn (Builder $query) => $query->where('exit_status', 'yes'));
+            ->whereDoesntHave('employee', fn (Builder $query) => $query->where('exit_status', 'yes'))
+            ->when(
+                $announcement->audience === Announcement::AUDIENCE_ROLES,
+                fn (Builder $query) => $query->whereHas('roles', fn (Builder $query) => $query->whereIn('name', $announcement->audience_roles ?? [])),
+            )
+            ->when(
+                $announcement->audience === Announcement::AUDIENCE_DESIGNATIONS,
+                fn (Builder $query) => $query->whereHas('employee', fn (Builder $query) => $query->whereIn('designation', $announcement->audience_designations ?? [])),
+            );
     }
 
     private function notificationFor(Announcement $announcement): Notification
     {
         return Notification::make()
             ->title($announcement->title)
-            ->body(Str::limit($announcement->message, 300))
+            ->body($announcement->message)
             ->icon(NotificationCategory::Announcement->icon())
             ->status($announcement->level)
             ->viewData([

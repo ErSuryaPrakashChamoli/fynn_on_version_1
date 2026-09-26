@@ -13,6 +13,7 @@ use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\DashboardGreetingSettings;
 use App\Filament\Pages\EmployeeHierarchy;
 use App\Filament\Pages\EmployeePerformanceDashboard;
+use App\Filament\Pages\FollowUpMonitor;
 use App\Filament\Pages\JourneyContinuityDashboard;
 use App\Filament\Pages\LoginPageSettings;
 use App\Filament\Pages\MyDailyCommitment;
@@ -302,12 +303,13 @@ class AdminPanelProvider extends PanelProvider
                     ? Blade::render('@livewire("reminder-popup")')
                     : '',
             )
-            // Announcements the Admin flashes from Setting → Announcements,
-            // floating top-right until each user dismisses them.
+            // Announcements sent from Setting → Announcements block the LMS
+            // until each recipient acknowledges them (AnnouncementPrompt).
+            // Registered last so it sits above the other body-end prompts.
             ->renderHook(
                 PanelsRenderHook::BODY_END,
                 fn (): string => Filament::auth()->check()
-                    ? Blade::render('@livewire("announcement-banner")')
+                    ? Blade::render('@livewire("announcement-prompt")')
                     : '',
             )
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
@@ -581,6 +583,7 @@ class AdminPanelProvider extends PanelProvider
                 ...$this->navigationItemsFor(EmployeePerformanceDashboard::class),
                 ...$this->navigationItemsFor(EmployeePerformanceReportResource::class),
                 ...$this->navigationItemsFor(TeamPerformance::class),
+                ...$this->navigationItemsFor(FollowUpMonitor::class),
                 ...$this->navigationItemsFor(PerformanceMetricRatioResource::class),
             ]),
 

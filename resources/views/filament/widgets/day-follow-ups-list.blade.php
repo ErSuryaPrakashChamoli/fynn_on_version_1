@@ -20,7 +20,15 @@
         }
 
         if ($followUp->lead_id) {
-            return \App\Filament\Resources\Leads\LeadResource::getUrl('edit', ['record' => $followUp->lead_id]);
+            // A converted lead drops out of the Leads screen (404) — open
+            // the customer it became instead.
+            if ($followUp->lead?->is_converted && $followUp->lead->converted_customer_id) {
+                return \App\Filament\Resources\Customers\CustomerResource::getUrl('view', ['record' => $followUp->lead->converted_customer_id]);
+            }
+
+            return \App\Filament\Resources\Leads\LeadResource::getEloquentQuery()->whereKey($followUp->lead_id)->exists()
+                ? \App\Filament\Resources\Leads\LeadResource::getUrl('edit', ['record' => $followUp->lead_id])
+                : null;
         }
 
         return null;
@@ -69,6 +77,19 @@
                     <dt>Owner</dt>
                     <dd class="text-gray-700 dark:text-gray-300">{{ $followUp->employee?->emp_name ?? '-' }}</dd>
                 </div>
+                @if ($followUp->monitor_outcome instanceof \App\Enums\FollowUpOutcome)
+                    <div class="flex items-center justify-between gap-2">
+                        <dt>Outcome</dt>
+                        <dd class="flex items-center gap-1 text-gray-700 dark:text-gray-300">
+                            @if ($followUp->acted_at)
+                                <span>{{ $followUp->acted_at->format('d M h:i A') }}</span>
+                            @endif
+                            <x-filament::badge size="sm" :color="$followUp->monitor_outcome->color()">
+                                {{ $followUp->monitor_outcome->label() }}
+                            </x-filament::badge>
+                        </dd>
+                    </div>
+                @endif
             </dl>
 
             @if ($followUp->remarks)

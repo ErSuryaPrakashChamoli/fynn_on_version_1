@@ -6,6 +6,7 @@ use App\Filament\Resources\AssignedLeads\AssignedLeadResource;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\AiCustomerRecord;
 use App\Models\Bank;
+use App\Models\FollowUp;
 use Coolsam\Flatpickr\Forms\Components\Flatpickr;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
@@ -43,36 +44,54 @@ class FollowUpForm
                         TextInput::make('customer_name')
                             ->label('Customer Name')
                             ->default($customer?->customer_name ?? $aiRecord?->value('customer_name'))
+                            ->afterStateHydrated(fn (TextInput $component, ?FollowUp $record) => $record
+                                ? $component->state(self::subjectDetails($record)['customer_name'])
+                                : null)
                             ->disabled()
                             ->dehydrated(false),
 
                         TextInput::make('mobile_no')
                             ->label('Phone')
                             ->default($customer?->mobile_no ?? $aiRecord?->value('mobile_number'))
+                            ->afterStateHydrated(fn (TextInput $component, ?FollowUp $record) => $record
+                                ? $component->state(self::subjectDetails($record)['mobile_no'])
+                                : null)
                             ->disabled()
                             ->dehydrated(false),
 
                         TextInput::make('email')
                             ->label('Email Address')
                             ->default($customer?->email)
+                            ->afterStateHydrated(fn (TextInput $component, ?FollowUp $record) => $record
+                                ? $component->state(self::subjectDetails($record)['email'])
+                                : null)
                             ->disabled()
                             ->dehydrated(false),
 
                         TextInput::make('pan_number')
                             ->label('PAN Number')
                             ->default($customer?->pan_number)
+                            ->afterStateHydrated(fn (TextInput $component, ?FollowUp $record) => $record
+                                ? $component->state(self::subjectDetails($record)['pan_number'])
+                                : null)
                             ->disabled()
                             ->dehydrated(false),
 
                         TextInput::make('current_location')
                             ->label('Current Location')
                             ->default($customer?->current_location)
+                            ->afterStateHydrated(fn (TextInput $component, ?FollowUp $record) => $record
+                                ? $component->state(self::subjectDetails($record)['current_location'])
+                                : null)
                             ->disabled()
                             ->dehydrated(false),
 
                         TextInput::make('job_location')
                             ->label('Job Location')
                             ->default($customer?->job_location)
+                            ->afterStateHydrated(fn (TextInput $component, ?FollowUp $record) => $record
+                                ? $component->state(self::subjectDetails($record)['job_location'])
+                                : null)
                             ->disabled()
                             ->dehydrated(false),
 
@@ -83,6 +102,9 @@ class FollowUpForm
                                     ? '₹'.number_format($customer->salary)
                                     : ''
                             )
+                            ->afterStateHydrated(fn (TextInput $component, ?FollowUp $record) => $record
+                                ? $component->state(self::subjectDetails($record)['salary'])
+                                : null)
                             ->disabled()
                             ->dehydrated(false),
 
@@ -271,5 +293,27 @@ class FollowUpForm
                     ->columns(2),
 
             ]);
+    }
+
+    /**
+     * The read-only details shown for the prospect an existing follow-up was
+     * logged against — its customer, AI-extracted record or lead.
+     *
+     * @return array{customer_name: ?string, mobile_no: ?string, email: ?string, pan_number: ?string, current_location: ?string, job_location: ?string, salary: ?string}
+     */
+    public static function subjectDetails(FollowUp $followUp): array
+    {
+        $subject = $followUp->customer ?? $followUp->lead;
+        $aiRecord = $subject ? null : $followUp->aiCustomerRecord;
+
+        return [
+            'customer_name' => $subject?->customer_name ?? $aiRecord?->value('customer_name'),
+            'mobile_no' => $subject?->mobile_no ?? $aiRecord?->value('mobile_number'),
+            'email' => $subject?->email,
+            'pan_number' => $subject?->pan_number,
+            'current_location' => $subject?->current_location,
+            'job_location' => $subject?->job_location,
+            'salary' => $subject?->salary ? '₹'.number_format((float) $subject->salary) : null,
+        ];
     }
 }

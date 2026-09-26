@@ -30,6 +30,17 @@ Schedule::command('follow-ups:send-reminders')
     ->withoutOverlapping();
 
 /*
+ * Follow-up escalation: open 48h past its time -> the owner's boss; 7 days
+ * -> the boss above too. Supervisors get a morning summary of their team.
+ */
+Schedule::command('follow-ups:escalate')
+    ->hourly()
+    ->withoutOverlapping();
+
+Schedule::command('follow-ups:morning-digest')
+    ->dailyAt('09:00');
+
+/*
  * Daily Commitment: freeze yesterday's commitments (MET / OVERACHIEVED /
  * FAILED) once the day is over. The module's screens always compute live,
  * so this only keeps the stored history honest.
@@ -93,4 +104,11 @@ if (config('demo.panel_enabled') && config('demo.schedule_enabled')) {
     Schedule::command('demo:run follow-ups:send-reminders')
         ->everyFiveMinutes()
         ->withoutOverlapping();
+
+    Schedule::command('demo:run follow-ups:escalate')
+        ->hourly()
+        ->withoutOverlapping();
+
+    Schedule::command('demo:run follow-ups:morning-digest')
+        ->dailyAt('09:00');
 }

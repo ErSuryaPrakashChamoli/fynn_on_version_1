@@ -6,6 +6,8 @@ paths:
   - app/Services/AchievementCalculatorService.php
   - app/Services/OtherBankSupportService.php
   - app/Services/FollowUpReminderService.php
+  - app/Services/FollowUpMonitorService.php
+  - app/Services/FollowUpEscalationService.php
 ---
 
 # Services
@@ -105,3 +107,9 @@ Spatie role 'Other Bank Support' (OtherBankSupportService::ROLE), keyed on user_
 
 ## Bell notifications carry a category; follow-up outcomes are new log rows
 Since 2026-09-25 every notifications row has a `category` (NotificationCategory), set in AppServiceProvider's DatabaseNotification::creating from viewData.category or inferred from the title. When you add a new sendToDatabase(), tag it with ->viewData(NotificationCategory::X->viewData()). The bell (App\Livewire\CategorizedDatabaseNotifications, whose view is a copy of the Filament vendor view, so re-sync it on upgrade) groups by it into tabs. ReminderPopup (BODY_END, polls every 60s) shows unread notifications from the last 7 days, plus any whose remind_at is due, and offers close with remarks, skip, reschedule, and drop (follow-ups only). `follow-ups:send-reminders` runs every 5 minutes, and `demo:run` runs it for /demo. It reminds the current follow-up of each prospect (latestPerSubject) once, stamping reminded_at, from 24 hours before now to 10 minutes after. Close, drop and reschedule never edit a row: they log a NEW follow_ups row through FollowUpReminderService (or update the Lead, which logs its own row). 'Dropped' is in CustomerAssignment::CLOSED_FOLLOW_UP_STATUSES. Covered by tests/Feature/FollowUpReminderTest.php.
+
+## Follow-up outcomes are read off the log; on time = due day + 24h
+Decided with user 2026-09-26. FollowUpMonitorService::classify() judges each row that fell due by the NEXT row logged for the same prospect: on time if logged by endOfDay(due) + GRACE_HOURS (24), late if after, missed if none and past that deadline, pending inside it, upcoming before due. A row superseded before its due day began never fell due and is excluded. Nothing is stored — no schema for outcomes. Attribution is follow_ups.employee_id of the due row; supervisor spreads pass the caller as owner (FollowUpReminderService::reschedule $employeeId) so misses don't move to the supervisor. DAILY_CAPACITY = 25 open follow-ups/caller/day (overload warning + spread fill limit). Follow-up Monitor page (Performance group) is Admin + TL/Manager/Cluster/Business Head; calendars share ShowsFollowUpOutcomes. Covered by tests/Feature/FollowUpMonitorTest.php.
+
+## Follow-up escalation is grouped per supervisor and fires once per level
+Since 2026-09-26 `follow-ups:escalate` (hourly) sends a prospect's CURRENT follow-up (latestPerSubject) still open 48h past its time to the owner's nearest ACTIVE boss (ReportingTree ancestors, exited skipped), and after 7 days also to the next active boss up. follow_ups.escalation_level (0/1/2) + escalated_at stop repeats; a new row starts at 0. Always ONE bell notification per supervisor per level per run (category FollowUp, no follow_up_id so the pop-up offers no Drop) — never per follow-up, the live backlog is hundreds. `follow-ups:morning-digest` (09:00) sends each supervisor/Admin one summary, at most once a day (Cache::add key per user+date); "newly missed" = due two days ago, as the grace ends at midnight. Both also run via demo:run. Covered by tests/Feature/FollowUpEscalationTest.php.

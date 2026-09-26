@@ -26,6 +26,6 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Filament/Pages/DailyCommitment*.php | .ai/rules/pages.md |
 | app/Providers/Filament/AdminPanelProvider.php | .ai/rules/providers-filament.md |
 | app/Filament/Resources/** | .ai/rules/resources.md |
-| app/Services/DailyCommitmentService.php, app/Services/MonthlyTargetGate.php, app/Services/DailyCommitmentGate.php, app/Services/AchievementCalculatorService.php, app/Services/OtherBankSupportService.php, app/Services/FollowUpReminderService.php | .ai/rules/services.md |
+| app/Services/DailyCommitmentService.php, app/Services/MonthlyTargetGate.php, app/Services/DailyCommitmentGate.php, app/Services/AchievementCalculatorService.php, app/Services/OtherBankSupportService.php, app/Services/FollowUpReminderService.php, app/Services/FollowUpMonitorService.php, app/Services/FollowUpEscalationService.php | .ai/rules/services.md |
 | app/Support/HierarchyHelper.php | .ai/rules/support.md |
 | app/Filament/Resources/**/Tables/*.php | .ai/rules/tables.md |

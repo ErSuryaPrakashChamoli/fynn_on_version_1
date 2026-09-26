@@ -203,7 +203,7 @@ class ReminderPopup extends Component
 
         return $query
             ->whereNull('read_at')
-            // Announcements float in their own banner (AnnouncementBanner).
+            // Announcements have their own blocking prompt (AnnouncementPrompt).
             ->where(fn (Builder $query) => $query->whereNull('category')->orWhere('category', '!=', NotificationCategory::Announcement->value))
             ->where(fn (Builder $query) => $query
                 ->where(fn (Builder $query) => $query->whereNull('remind_at')->where('created_at', '>=', now()->subDays(self::POP_UP_DAYS)))

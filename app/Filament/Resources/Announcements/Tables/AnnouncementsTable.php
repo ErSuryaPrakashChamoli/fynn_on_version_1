@@ -11,12 +11,16 @@ use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class AnnouncementsTable
 {
     public static function configure(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (Builder $query) => $query->withCount([
+                'recipients as acknowledged_recipients_count' => fn (Builder $query) => $query->whereNotNull('acknowledged_at'),
+            ]))
             ->defaultSort('created_at', 'desc')
             ->columns([
                 TextColumn::make('title')
@@ -31,20 +35,27 @@ class AnnouncementsTable
                     ->color(fn (string $state): string => $state)
                     ->sortable(),
 
+                TextColumn::make('audience')
+                    ->label('Sent to')
+                    ->state(fn (Announcement $record): string => $record->audienceLabel())
+                    ->wrap()
+                    ->sortable(),
+
+                TextColumn::make('acknowledged_recipients_count')
+                    ->label('Acknowledged')
+                    ->state(fn (Announcement $record): string => "{$record->acknowledged_recipients_count} / {$record->recipients_count}")
+                    ->badge()
+                    ->color(fn (Announcement $record): string => $record->acknowledged_recipients_count >= $record->recipients_count ? 'success' : 'warning')
+                    ->sortable(),
+
                 ToggleColumn::make('is_active')
-                    ->label('Floating')
+                    ->label('Require acknowledgement')
                     ->sortable(),
 
                 TextColumn::make('expires_at')
-                    ->label('Stops floating')
+                    ->label('Stop asking after')
                     ->dateTime('d M Y h:i A')
-                    ->placeholder('When dismissed')
-                    ->sortable(),
-
-                TextColumn::make('recipients_count')
-                    ->label('Sent to')
-                    ->numeric()
-                    ->suffix(' users')
+                    ->placeholder('Until acknowledged')
                     ->sortable(),
 
                 TextColumn::make('creator.name')
@@ -62,8 +73,12 @@ class AnnouncementsTable
                     ->label('Type')
                     ->options(Announcement::LEVELS),
 
+                SelectFilter::make('audience')
+                    ->label('Sent to')
+                    ->options(Announcement::AUDIENCES),
+
                 TernaryFilter::make('is_active')
-                    ->label('Floating'),
+                    ->label('Require acknowledgement'),
             ])
             ->recordActions([
                 EditAction::make(),

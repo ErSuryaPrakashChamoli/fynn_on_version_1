@@ -177,12 +177,16 @@ class FollowUpReminderService
         ]);
     }
 
-    public function reschedule(FollowUp $followUp, User $user, Carbon $when, ?string $remarks = null): FollowUp
+    /**
+     * @param  int|null  $employeeId  Who the new row is logged against; defaults to the user doing it. A supervisor moving a caller's backlog passes the caller.
+     */
+    public function reschedule(FollowUp $followUp, User $user, Carbon $when, ?string $remarks = null, ?int $employeeId = null): FollowUp
     {
         return $this->logOutcome($followUp, $user, [
             'status' => $followUp->status,
             'remarks' => filled($remarks) ? $remarks : 'Rescheduled to '.$when->format('d M Y, h:i A'),
             'next_follow_up_date' => $when,
+            'employee_id' => $employeeId,
         ]);
     }
 
@@ -256,7 +260,7 @@ class FollowUpReminderService
     }
 
     /**
-     * @param  array{status: ?string, remarks: string, next_follow_up_date: ?Carbon}  $outcome
+     * @param  array{status: ?string, remarks: string, next_follow_up_date: ?Carbon, employee_id?: ?int}  $outcome
      */
     private function logOutcome(FollowUp $followUp, User $user, array $outcome): FollowUp
     {
@@ -275,7 +279,7 @@ class FollowUpReminderService
                 $logged = FollowUp::create([
                     'customer_id' => $followUp->customer_id,
                     'ai_customer_record_id' => $followUp->ai_customer_record_id,
-                    'employee_id' => $user->employee_id ?? $followUp->employee_id,
+                    'employee_id' => $outcome['employee_id'] ?? $user->employee_id ?? $followUp->employee_id,
                     'follow_up_type' => $followUp->follow_up_type,
                     'status' => $outcome['status'] ?? $followUp->status,
                     'remarks' => $outcome['remarks'],

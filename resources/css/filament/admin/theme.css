@@ -2236,6 +2236,112 @@ ul.eh-vtree ul.eh-vtree > li::before {
     color: rgb(15 23 42);
 }
 
+/* Follow-up outcome chip: one segment per verdict (see ShowsFollowUpOutcomes). */
+.followup-outcome-chip,
+.followup-outcome-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+}
+
+.followup-outcome-legend {
+    justify-content: flex-end;
+}
+
+.followup-outcome {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 6px;
+    border-radius: 9999px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.followup-outcome--on-time {
+    background: rgb(220 252 231);
+    color: rgb(21 128 61);
+}
+
+.followup-outcome--late {
+    background: rgb(254 243 199);
+    color: rgb(180 83 9);
+}
+
+.followup-outcome--missed {
+    background: rgb(254 226 226);
+    color: rgb(185 28 28);
+}
+
+.followup-outcome--open {
+    background: rgb(224 231 255);
+    color: rgb(67 56 202);
+}
+
+.followup-outcome--overloaded {
+    background: rgb(185 28 28);
+    color: rgb(255 255 255);
+}
+
+.dark .followup-outcome--on-time {
+    background: rgb(20 83 45 / 0.5);
+    color: rgb(134 239 172);
+}
+
+.dark .followup-outcome--late {
+    background: rgb(120 53 15 / 0.5);
+    color: rgb(252 211 77);
+}
+
+.dark .followup-outcome--missed {
+    background: rgb(127 29 29 / 0.5);
+    color: rgb(252 165 165);
+}
+
+.dark .followup-outcome--open {
+    background: rgb(49 46 129 / 0.5);
+    color: rgb(165 180 252);
+}
+
+.filament-fullcalendar .fc-daygrid-day.has-missed-followups .fc-daygrid-day-number {
+    color: rgb(185 28 28);
+}
+
+/* The day whose follow-ups the side panel is showing — deliberately a
+   different colour and weight from today's thin primary outline. */
+.filament-fullcalendar .fc-daygrid-day.is-selected-day {
+    background-color: rgb(245 158 11 / 0.14) !important;
+}
+
+.filament-fullcalendar .fc-daygrid-day.is-selected-day .fc-daygrid-day-frame {
+    position: relative;
+    box-shadow: inset 0 0 0 3px rgb(245 158 11);
+}
+
+.filament-fullcalendar .fc-daygrid-day.is-selected-day .fc-daygrid-day-frame::after {
+    content: 'Selected';
+    position: absolute;
+    bottom: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 1px 6px;
+    border-radius: 9999px;
+    background: rgb(245 158 11);
+    color: rgb(255 255 255);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    pointer-events: none;
+}
+
+.dark .filament-fullcalendar .fc-daygrid-day.is-selected-day {
+    background-color: rgb(245 158 11 / 0.18) !important;
+}
+
 /* =========================================================
    PAGE TRANSITIONS
    Panel-wide `->spa()` mode (Livewire wire:navigate) is what

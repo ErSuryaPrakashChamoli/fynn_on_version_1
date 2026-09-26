@@ -2,6 +2,7 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Widgets\Concerns\ShowsFollowUpOutcomes;
 use App\Models\Bank;
 use App\Models\CustomerAssignment;
 use App\Models\FollowUp;
@@ -17,14 +18,19 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Saade\FilamentFullCalendar\Actions\CreateAction;
-use Saade\FilamentFullCalendar\Data\EventData;
 use Saade\FilamentFullCalendar\Widgets\FullCalendarWidget;
 
+/**
+ * Lead follow-up calendar. Each day shows what became of the follow-ups due
+ * on it — kept on time, kept late, missed, still open — see
+ * ShowsFollowUpOutcomes.
+ */
 class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
 {
+    use ShowsFollowUpOutcomes;
+
     public Model|string|null $model = FollowUp::class;
 
     protected string $view = 'filament.widgets.assigned-lead-follow-up-calendar-widget';
@@ -66,102 +72,11 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
         ];
     }
 
-    /**
-     * Marks the day-summary chip with a dedicated class so it can be
-     * styled independently of FullCalendar's default event look.
-     */
-    public function eventClassNames(): string
-    {
-        return <<<'JS'
-            function ({ event }) {
-                return ['lead-followup-day-chip'];
-            }
-        JS;
-    }
-
-    /**
-     * Renders the day-summary chip's inner markup (an icon + count) instead
-     * of FullCalendar's default plain-text event label, which read as a
-     * cramped, barely-legible sliver inside the day cell.
-     */
-    public function eventContent(): string
-    {
-        return <<<'JS'
-            function ({ event }) {
-                const count = event.extendedProps.count ?? 0;
-                const label = count === 1 ? '1 Follow-up' : count + ' Follow-ups';
-
-                return {
-                    html: `
-                        <div class="lead-followup-day-chip__inner">
-                            <svg class="lead-followup-day-chip__icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                <path fill-rule="evenodd" d="M5.75 2a.75.75 0 01.75.75V4h7V2.75a.75.75 0 011.5 0V4h.25A2.75 2.75 0 0118 6.75v8.5A2.75 2.75 0 0115.25 18H4.75A2.75 2.75 0 012 15.25v-8.5A2.75 2.75 0 014.75 4H5V2.75A.75.75 0 015.75 2zM3.5 8.5v6.75c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25V8.5h-13z" clip-rule="evenodd" />
-                            </svg>
-                            <span>${label}</span>
-                        </div>
-                    `,
-                };
-            }
-        JS;
-    }
-
-    /**
-     * Tints the whole day cell (not just the chip) so a day with follow-ups
-     * reads clearly at a glance across the month grid.
-     */
-    public function eventDidMount(): string
-    {
-        return <<<'JS'
-            function ({ el }) {
-                el.closest('.fc-daygrid-day')?.classList.add('has-followups');
-            }
-        JS;
-    }
-
     protected function headerActions(): array
     {
         return [
             CreateAction::make(),
         ];
-    }
-
-    public function fetchEvents(array $info): array
-    {
-        [$customerIds, $aiRecordIds, $leadIds] = $this->visibleLeadIds();
-
-        if (empty($customerIds) && empty($aiRecordIds) && empty($leadIds)) {
-            return [];
-        }
-
-        $start = Carbon::parse($info['start']);
-        $end = Carbon::parse($info['end']);
-
-        $query = FollowUp::query();
-        $this->scopeToVisibleLeadFollowUps($query, $customerIds, $aiRecordIds, $leadIds);
-
-        return $query
-            ->latestPerSubject()
-            ->scheduled()
-            ->whereBetween('next_follow_up_date', [$start, $end])
-            ->get(['id', 'next_follow_up_date'])
-            ->groupBy(fn (FollowUp $followUp) => $followUp->next_follow_up_date->toDateString())
-            ->map(function (\Illuminate\Support\Collection $followUpsForDay, string $date) {
-                $count = $followUpsForDay->count();
-
-                return EventData::make()
-                    ->id('day-'.$date)
-                    ->title($count.' Follow-up'.($count === 1 ? '' : 's'))
-                    ->start($date)
-                    ->allDay(true)
-                    ->backgroundColor('#4f46e5')
-                    ->borderColor('#4f46e5')
-                    ->extendedProps([
-                        'date' => $date,
-                        'count' => $count,
-                    ]);
-            })
-            ->values()
-            ->toArray();
     }
 
     /**
@@ -185,24 +100,20 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
         $this->selectedDate = Carbon::parse($start)->toDateString();
     }
 
-    protected function followUpsForDate(string $date): Collection
+    /**
+     * Follow-ups on the assigned leads and raw leads this user can see.
+     */
+    protected function scopedFollowUpQuery(): Builder
     {
         [$customerIds, $aiRecordIds, $leadIds] = $this->visibleLeadIds();
 
+        $query = FollowUp::query();
+
         if (empty($customerIds) && empty($aiRecordIds) && empty($leadIds)) {
-            return new Collection;
+            return $query->whereRaw('1 = 0');
         }
 
-        $query = FollowUp::query();
-        $this->scopeToVisibleLeadFollowUps($query, $customerIds, $aiRecordIds, $leadIds);
-
-        return $query
-            ->latestPerSubject()
-            ->scheduled()
-            ->whereDate('next_follow_up_date', $date)
-            ->with(['customer', 'aiCustomerRecord', 'lead', 'employee'])
-            ->orderBy('next_follow_up_date')
-            ->get();
+        return $this->scopeToVisibleLeadFollowUps($query, $customerIds, $aiRecordIds, $leadIds);
     }
 
     /**
