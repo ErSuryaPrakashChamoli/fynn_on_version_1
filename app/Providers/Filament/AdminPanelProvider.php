@@ -31,6 +31,7 @@ use App\Filament\Resources\Cities\CityResource;
 use App\Filament\Resources\ComplaintCategories\ComplaintCategoryResource;
 use App\Filament\Resources\ComplaintPriorities\ComplaintPriorityResource;
 use App\Filament\Resources\Complaints\ComplaintResource;
+use App\Filament\Resources\CostCenters\CostCenterResource;
 use App\Filament\Resources\CustomerEditRequests\CustomerEditRequestResource;
 use App\Filament\Resources\CustomerEligibilityRequests\CustomerEligibilityRequestResource;
 use App\Filament\Resources\CustomerJourneyAudits\CustomerJourneyAuditResource;
@@ -40,6 +41,7 @@ use App\Filament\Resources\CustomerReassignments\CustomerReassignmentResource;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Filament\Resources\CustomerSettlements\CustomerSettlementResource;
 use App\Filament\Resources\CustomerSlaBreaches\CustomerSlaBreachResource;
+use App\Filament\Resources\Designations\DesignationResource;
 use App\Filament\Resources\EmployeePerformanceReports\EmployeePerformanceReportResource;
 use App\Filament\Resources\Employees\EmployeeResource;
 use App\Filament\Resources\FollowUps\FollowUpResource;
@@ -54,7 +56,11 @@ use App\Filament\Resources\PendingManagerCases\PendingManagerCaseResource;
 use App\Filament\Resources\PerformanceMetricRatios\PerformanceMetricRatioResource;
 use App\Filament\Resources\Polls\PollResource;
 use App\Filament\Resources\PollTypes\PollTypeResource;
+use App\Filament\Resources\Positions\PositionResource;
+use App\Filament\Resources\Roles\RoleResource;
+use App\Filament\Resources\TargetCategories\TargetCategoryResource;
 use App\Filament\Resources\Teams\TeamResource;
+use App\Filament\Resources\Units\UnitResource;
 use App\Filament\Resources\UserLoginSessions\UserLoginSessionResource;
 use App\Filament\Resources\Users\UserResource;
 use App\Filament\Widgets\CustomerStats;
@@ -248,6 +254,13 @@ class AdminPanelProvider extends PanelProvider
             ->renderHook(
                 PanelsRenderHook::GLOBAL_SEARCH_AFTER,
                 fn (): string => view('filament.components.global-month-selector')->render(),
+            )
+            // Module search (Ctrl/⌘+K): a pop-up of every module and
+            // sub-module in the user's own sidebar, filtered as they type.
+            // Filament's record global search stays off (->globalSearch(false)).
+            ->renderHook(
+                PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
+                fn (): string => view('filament.components.module-search')->render(),
             )
             // Swapping ->colors() (see buildColors()) already recolors every
             // Filament component that reads the --primary-*/--gray-* CSS
@@ -672,6 +685,16 @@ class AdminPanelProvider extends PanelProvider
                 ...$this->navigationItemsFor(UserResource::class),
                 ...$this->navigationItemsFor(ActivityLogResource::class),
                 ...$this->navigationItemsFor(UserLoginSessionResource::class),
+            ]),
+
+            // Admin-maintained lists behind the Employee and User forms.
+            NavigationGroup::make('Employee Setup')->icon(Heroicon::OutlinedWrenchScrewdriver)->items([
+                ...$this->navigationItemsFor(DesignationResource::class),
+                ...$this->navigationItemsFor(PositionResource::class),
+                ...$this->navigationItemsFor(TargetCategoryResource::class),
+                ...$this->navigationItemsFor(CostCenterResource::class),
+                ...$this->navigationItemsFor(UnitResource::class),
+                ...$this->navigationItemsFor(RoleResource::class),
             ]),
 
             NavigationGroup::make('Request')->icon(Heroicon::OutlinedInboxStack)->items([

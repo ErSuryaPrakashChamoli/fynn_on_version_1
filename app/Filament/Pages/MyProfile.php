@@ -2,7 +2,10 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\CostCenter;
 use App\Models\Employee;
+use App\Models\TargetCategory;
+use App\Models\Unit;
 use App\Support\HierarchyHelper;
 use Carbon\Carbon;
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
@@ -11,7 +14,6 @@ use Filament\Forms\Components\Placeholder;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
-use Illuminate\Support\Str;
 use NumberFormatter;
 
 /**
@@ -130,8 +132,8 @@ class MyProfile extends BaseEditProfile
         return [
             Placeholder::make('org_reports_to')->label('Reporting To')->content($reportsTo?->emp_name ?? '—'),
             Placeholder::make('org_cluster')->label('Cluster')->content($employee->clusterManager?->emp_name ?? '—'),
-            Placeholder::make('org_unit')->label('Unit')->content($employee->unit_name ?? '—'),
-            Placeholder::make('org_cost_center')->label('Cost Center')->content($employee->cost_center ?? '—'),
+            Placeholder::make('org_unit')->label('Unit')->content(Unit::labelFor($employee->unit_name) ?? '—'),
+            Placeholder::make('org_cost_center')->label('Cost Center')->content(CostCenter::labelFor($employee->cost_center) ?? '—'),
         ];
     }
 
@@ -158,10 +160,8 @@ class MyProfile extends BaseEditProfile
     }
 
     /**
-     * "category" is an overloaded field (see EmployeeResource's "Target
-     * Category" select): a raw numeric target override for Callers, or a
-     * role-label string for other designations. Shown humanized rather
-     * than duplicating that select's exact option list.
+     * The category's name as set on the Target Categories screen, with its
+     * monthly target when it has one — "Gold (₹30,00,000)".
      */
     protected function categoryLabel(?string $category): string
     {
@@ -169,13 +169,17 @@ class MyProfile extends BaseEditProfile
             return '—';
         }
 
-        if (is_numeric($category)) {
-            $formatter = new NumberFormatter('en_IN', NumberFormatter::CURRENCY);
-            $formatter->setAttribute(NumberFormatter::MAX_FRACTION_DIGITS, 0);
+        $name = TargetCategory::labelFor($category);
+        $amount = TargetCategory::targetAmountFor($category);
 
-            return $formatter->formatCurrency((float) $category, 'INR');
+        if ($amount === null) {
+            return $name;
         }
 
-        return Str::headline($category);
+        $formatter = new NumberFormatter('en_IN', NumberFormatter::CURRENCY);
+        $formatter->setAttribute(NumberFormatter::MAX_FRACTION_DIGITS, 0);
+        $formattedAmount = $formatter->formatCurrency($amount, 'INR');
+
+        return $name === $category ? $formattedAmount : "{$name} ({$formattedAmount})";
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Users\Schemas;
 
 use App\Models\Employee;
+use App\Models\User;
 use App\Services\HierarchyRoleService;
 use App\Services\OtherBankSupportService;
 use App\Support\EmployeeOptions;
@@ -73,8 +74,16 @@ class UserForm
                             ->required()
                             ->unique(ignoreRecord: true),
 
+                        // Inactive roles (Employee Setup → Roles) are not
+                        // offered, except one this login already holds.
                         Select::make('roles')
-                            ->relationship('roles', 'name')
+                            ->relationship(
+                                'roles',
+                                'name',
+                                fn (Builder $query, ?User $record): Builder => $query->where(fn (Builder $query): Builder => $query
+                                    ->where('roles.is_active', true)
+                                    ->when($record, fn (Builder $query, User $record): Builder => $query->orWhereIn('roles.id', $record->roles()->pluck('roles.id')))),
+                            )
                             ->multiple(false)
                             ->preload()
                             ->searchable()

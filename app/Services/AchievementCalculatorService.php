@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Customer;
 use App\Models\Employee;
+use App\Models\TargetCategory;
 use App\Support\HierarchyHelper;
 use App\Support\SelectedMonth;
 use Carbon\Carbon;
@@ -52,8 +53,8 @@ class AchievementCalculatorService
     private const UNDERSTAFFED_TEAM_TOP_UP = 3000000.0;
 
     /**
-     * Fallback when employees.category holds something non-numeric
-     * (e.g. 'team_leader') or is blank.
+     * Fallback when employees.category is blank or names a category with
+     * no target amount (e.g. 'team_leader').
      */
     private const DEFAULT_CATEGORY_TARGET = 2500000.0;
 
@@ -989,9 +990,8 @@ class AchievementCalculatorService
 
     private function categoryTarget(Employee $employee): float
     {
-        return is_numeric($employee->category)
-            ? (float) $employee->category
-            : self::DEFAULT_CATEGORY_TARGET;
+        return TargetCategory::targetAmountFor($employee->category)
+            ?? self::DEFAULT_CATEGORY_TARGET;
     }
 
     /**
