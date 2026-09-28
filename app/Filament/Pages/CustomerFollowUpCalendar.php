@@ -9,7 +9,7 @@ use UnitEnum;
 
 class CustomerFollowUpCalendar extends Page
 {
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCalendarDays;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCalendarDateRange;
 
     protected static string|UnitEnum|null $navigationGroup = 'Follow-ups';
 

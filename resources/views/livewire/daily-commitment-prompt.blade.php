@@ -100,7 +100,7 @@
                                      has to be caught before it is saved. --}}
                                 @if (filled($amount))
                                     <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
-                                        {{ indianAmountInWords($amount) }}
+                                        ₹{{ indianNumberFormat($amount) }} · {{ indianAmountInWordsWithPaise($amount) }}
                                     </span>
                                 @endif
                                 @error('amount')
@@ -227,7 +227,7 @@
                                         {{-- Same read-back as the commitment amount above. --}}
                                         @if (filled($case['amount'] ?? null))
                                             <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
-                                                {{ indianAmountInWords($case['amount']) }}
+                                                ₹{{ indianNumberFormat($case['amount']) }} · {{ indianAmountInWordsWithPaise($case['amount']) }}
                                             </span>
                                         @endif
                                     </div>

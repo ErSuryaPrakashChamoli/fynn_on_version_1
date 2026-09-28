@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\Relation;
 
 /**
  * The panel's notification bell, split into tabs by NotificationCategory
- * (Follow-ups, Eligibility, PAN requests, …) with an unread count on each.
+ * (Follow-ups, Requests, Settlement, …) with an unread count on each.
  *
  * The bell badge still counts every unread notification; the list, "Mark
  * all as read" and "Clear" act on the open tab only, so a flood of one kind
@@ -22,12 +22,17 @@ use Illuminate\Database\Eloquent\Relations\Relation;
  */
 class CategorizedDatabaseNotifications extends DatabaseNotifications
 {
-    /** The open tab: a NotificationCategory value, or 'all'. */
+    /**
+     * The tab grouping every request category (eligibility, PAN, edit requests).
+     */
+    public const REQUESTS_TAB = 'requests';
+
+    /** The open tab: 'all', 'requests', or a NotificationCategory value. */
     public string $activeCategory = 'all';
 
     public function showCategory(string $category): void
     {
-        $this->activeCategory = $category === 'all' || NotificationCategory::tryFrom($category)
+        $this->activeCategory = in_array($category, ['all', self::REQUESTS_TAB], true) || NotificationCategory::tryFrom($category)
             ? $category
             : 'all';
 
@@ -38,7 +43,12 @@ class CategorizedDatabaseNotifications extends DatabaseNotifications
     {
         $query = parent::getNotificationsQuery();
 
-        if ($this->activeCategory !== 'all') {
+        if ($this->activeCategory === self::REQUESTS_TAB) {
+            $query->whereIn('category', array_map(
+                fn (NotificationCategory $category): string => $category->value,
+                NotificationCategory::requestCategories(),
+            ));
+        } elseif ($this->activeCategory !== 'all') {
             $query->where('category', $this->activeCategory);
         }
 
@@ -71,7 +81,8 @@ class CategorizedDatabaseNotifications extends DatabaseNotifications
 
     /**
      * Tabs to show: "All" plus every category that has notifications for
-     * this user (read or not), in enum order.
+     * this user (read or not), in enum order. Request categories share one
+     * "Requests" tab, placed where the first of them falls.
      *
      * @return array<string, array{label: string, icon: ?string, unread: int}>
      */
@@ -88,13 +99,19 @@ class CategorizedDatabaseNotifications extends DatabaseNotifications
         $tabs = ['all' => ['label' => 'All', 'icon' => null, 'unread' => array_sum($unread)]];
 
         foreach (NotificationCategory::cases() as $category) {
-            if (in_array($category->value, $present, true) || $this->activeCategory === $category->value) {
-                $tabs[$category->value] = [
-                    'label' => $category->label(),
-                    'icon' => $category->icon(),
-                    'unread' => $unread[$category->value] ?? 0,
-                ];
+            $key = $category->isRequest() ? self::REQUESTS_TAB : $category->value;
+
+            if (! in_array($category->value, $present, true) && $this->activeCategory !== $key) {
+                continue;
             }
+
+            $tabs[$key] ??= [
+                'label' => $category->isRequest() ? 'Requests' : $category->label(),
+                'icon' => $category->isRequest() ? 'heroicon-o-inbox-stack' : $category->icon(),
+                'unread' => 0,
+            ];
+
+            $tabs[$key]['unread'] += $unread[$category->value] ?? 0;
         }
 
         return $tabs;

@@ -37,6 +37,15 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
 
     public ?string $selectedDate = null;
 
+    /**
+     * Per-request cache for scopeToVisibleEmployees(): the reporting tree's
+     * employee ids, or false for Admin (no restriction). Not public, so
+     * Livewire never ships it to the browser or keeps it between requests.
+     *
+     * @var array<int, int>|false|null
+     */
+    protected array|false|null $visibleEmployeeIds = null;
+
     public function mount(): void
     {
         $this->selectedDate = now()->toDateString();
@@ -105,34 +114,29 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
      */
     protected function scopedFollowUpQuery(): Builder
     {
-        [$customerIds, $aiRecordIds, $leadIds] = $this->visibleLeadIds();
-
-        $query = FollowUp::query();
-
-        if (empty($customerIds) && empty($aiRecordIds) && empty($leadIds)) {
-            return $query->whereRaw('1 = 0');
-        }
-
-        return $this->scopeToVisibleLeadFollowUps($query, $customerIds, $aiRecordIds, $leadIds);
+        return $this->scopeToVisibleLeadFollowUps(FollowUp::query());
     }
 
     /**
-     * Scopes a FollowUp query to those tied to the given visible
-     * customers, AI-extracted records, or raw Leads. Shared by
+     * Scopes a FollowUp query to those tied to the customers, AI-extracted
+     * records and raw Leads this user can see. Shared by
      * fetchEvents/followUpsForDate here and by
      * DashboardFollowUpCalendarWidget's lead-side counts.
      *
-     * @param  array<int, int>  $customerIds
-     * @param  array<int, int>  $aiRecordIds
-     * @param  array<int, int>  $leadIds
+     * The visible ids stay subqueries: loading them into PHP and sending
+     * them back as IN (...) lists (every row in the tables, for Admin) was
+     * what made the calendar slow to load.
      */
-    protected function scopeToVisibleLeadFollowUps(Builder $query, array $customerIds, array $aiRecordIds, array $leadIds): Builder
+    protected function scopeToVisibleLeadFollowUps(Builder $query): Builder
     {
-        return $query->where(function (Builder $query) use ($customerIds, $aiRecordIds, $leadIds) {
-            $query->when(filled($customerIds), fn (Builder $q) => $q->whereIn('customer_id', $customerIds))
-                ->when(filled($aiRecordIds), fn (Builder $q) => $q->orWhereIn('ai_customer_record_id', $aiRecordIds))
-                ->when(filled($leadIds), fn (Builder $q) => $q->orWhereIn('lead_id', $leadIds));
-        });
+        return $query->where(fn (Builder $query) => $query
+            ->whereIn('customer_id', $this->visibleAssignmentsQuery()
+                ->whereNotNull('customer_id')
+                ->select('customer_id'))
+            ->orWhereIn('ai_customer_record_id', $this->visibleAssignmentsQuery()
+                ->whereNotNull('ai_customer_record_id')
+                ->select('ai_customer_record_id'))
+            ->orWhereIn('lead_id', $this->visibleLeadsQuery()->select('id')));
     }
 
     /**
@@ -249,52 +253,37 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
             ->toArray();
     }
 
-    /**
-     * @return array{0: array<int, int>, 1: array<int, int>, 2: array<int, int>}
-     */
-    protected function visibleLeadIds(): array
-    {
-        $assignments = $this->visibleAssignmentsQuery()
-            ->get(['customer_id', 'ai_customer_record_id']);
-
-        return [
-            $assignments->pluck('customer_id')->filter()->unique()->values()->all(),
-            $assignments->pluck('ai_customer_record_id')->filter()->unique()->values()->all(),
-            $this->visibleLeadsQuery()->pluck('id')->all(),
-        ];
-    }
-
     protected function visibleAssignmentsQuery(): Builder
     {
-        $query = CustomerAssignment::query();
-
-        $user = Filament::auth()->user();
-
-        if (! $user) {
-            return $query->whereRaw('1 = 0');
-        }
-
-        if ($user->hasRole('Admin')) {
-            return $query;
-        }
-
-        return $query->whereIn('employee_id', HierarchyService::visibleEmployeeIds($user));
+        return $this->scopeToVisibleEmployees(CustomerAssignment::query());
     }
 
     protected function visibleLeadsQuery(): Builder
     {
-        $query = Lead::query();
+        return $this->scopeToVisibleEmployees(Lead::query());
+    }
 
+    /**
+     * Admin sees every row; anyone else the rows owned by their reporting
+     * tree. The tree is resolved once per request — a calendar load builds
+     * this scope several times over.
+     */
+    private function scopeToVisibleEmployees(Builder $query): Builder
+    {
         $user = Filament::auth()->user();
 
         if (! $user) {
             return $query->whereRaw('1 = 0');
         }
 
-        if ($user->hasRole('Admin')) {
+        $this->visibleEmployeeIds ??= $user->hasRole('Admin')
+            ? false
+            : HierarchyService::visibleEmployeeIds($user);
+
+        if ($this->visibleEmployeeIds === false) {
             return $query;
         }
 
-        return $query->whereIn('employee_id', HierarchyService::visibleEmployeeIds($user));
+        return $query->whereIn('employee_id', $this->visibleEmployeeIds);
     }
 }

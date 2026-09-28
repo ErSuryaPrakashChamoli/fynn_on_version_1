@@ -188,7 +188,9 @@ class EmployeeHierarchy extends Page
             return false;
         }
 
-        if ($user->hasRole('Admin')) {
+        // IT gets this page company-wide (App\Support\ItModuleAccess),
+        // with or without an employee record of their own.
+        if ($user->hasRole(['Admin', 'IT'])) {
             return true;
         }
 

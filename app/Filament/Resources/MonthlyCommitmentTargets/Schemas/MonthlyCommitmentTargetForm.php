@@ -73,19 +73,14 @@ class MonthlyCommitmentTargetForm
                             ->live(),
 
                         TextInput::make('target_amount')
-                            ->label('Target amount (₹)')
-                            ->numeric()
-                            ->minValue(0)
+                            ->label('Target amount')
                             ->default(0)
                             ->required(fn (Get $get): bool => $get('stage') !== CommitmentStage::Otp->value)
                             ->visible(fn (Get $get): bool => $get('stage') !== CommitmentStage::Otp->value)
                             // Read the typed figure back in Indian
                             // grouping and in words, so a stray zero is
                             // obvious before the target is saved.
-                            ->live(onBlur: true)
-                            ->helperText(fn ($state): ?string => filled($state)
-                                ? indianAmountInWords($state)
-                                : null),
+                            ->indianAmount(min: 0),
 
                         TextInput::make('target_count')
                             ->label('Target OTPs')

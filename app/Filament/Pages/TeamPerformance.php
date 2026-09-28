@@ -20,7 +20,7 @@ use UnitEnum;
 
 class TeamPerformance extends Page
 {
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUserGroup;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedChartPie;
 
     protected static string|UnitEnum|null $navigationGroup = 'Performance';
 

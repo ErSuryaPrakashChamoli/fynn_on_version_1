@@ -59,7 +59,6 @@ class UsersTable
                     ->sortable(),
             ])
             ->defaultPaginationPageOption(5)
-            ->paginated([5, 10, 25, 50, 100, 'all'])
             ->deferFilters(false)
             ->filters([
                 SelectFilter::make('roles')

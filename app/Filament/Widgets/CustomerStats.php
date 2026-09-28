@@ -207,9 +207,9 @@ class CustomerStats extends StatsOverviewWidget
         |--------------------------------------------------------------------------
         */
 
-        $daysPassed = SelectedMonth::isCurrentCalendarMonth()
-            ? max(now()->day, 1)
-            : max($monthStart->daysInMonth, 1);
+        // Days of the selected period so far (the whole period once it is
+        // over) — a month, a financial year or all time alike.
+        $daysPassed = SelectedMonth::elapsedDays();
 
         $monthlyAverage = round(
             $thisMonth / $daysPassed,

@@ -18,6 +18,7 @@ use App\Filament\Pages\JourneyContinuityDashboard;
 use App\Filament\Pages\LoginPageSettings;
 use App\Filament\Pages\MyDailyCommitment;
 use App\Filament\Pages\MyProfile;
+use App\Filament\Pages\MyVotes;
 use App\Filament\Pages\OtherBankSupportDashboard;
 use App\Filament\Pages\TeamPerformance;
 use App\Filament\Resources\AccountVerifications\AccountVerificationResource;
@@ -27,6 +28,10 @@ use App\Filament\Resources\AiDocumentSchemas\AiDocumentSchemaResource;
 use App\Filament\Resources\Announcements\AnnouncementResource;
 use App\Filament\Resources\AssignedLeads\AssignedLeadResource;
 use App\Filament\Resources\Cities\CityResource;
+use App\Filament\Resources\ComplaintCategories\ComplaintCategoryResource;
+use App\Filament\Resources\ComplaintPriorities\ComplaintPriorityResource;
+use App\Filament\Resources\Complaints\ComplaintResource;
+use App\Filament\Resources\CustomerEditRequests\CustomerEditRequestResource;
 use App\Filament\Resources\CustomerEligibilityRequests\CustomerEligibilityRequestResource;
 use App\Filament\Resources\CustomerJourneyAudits\CustomerJourneyAuditResource;
 use App\Filament\Resources\CustomerJourneyDelegations\CustomerJourneyDelegationResource;
@@ -47,6 +52,8 @@ use App\Filament\Resources\OtherBankIncentiveSlabs\OtherBankIncentiveSlabResourc
 use App\Filament\Resources\OtherBankSupportTargets\OtherBankSupportTargetResource;
 use App\Filament\Resources\PendingManagerCases\PendingManagerCaseResource;
 use App\Filament\Resources\PerformanceMetricRatios\PerformanceMetricRatioResource;
+use App\Filament\Resources\Polls\PollResource;
+use App\Filament\Resources\PollTypes\PollTypeResource;
 use App\Filament\Resources\Teams\TeamResource;
 use App\Filament\Resources\UserLoginSessions\UserLoginSessionResource;
 use App\Filament\Resources\Users\UserResource;
@@ -60,8 +67,11 @@ use App\Http\Middleware\EncryptCookies;
 use App\Http\Middleware\EnforceIdleTimeout;
 use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\EnsureMonthlyTargetIsSet;
+use App\Http\Middleware\RestrictItRoleToAllowedModules;
 use App\Livewire\CategorizedDatabaseNotifications;
 use App\Models\UserLoginSession;
+use App\Support\ItModuleAccess;
+use App\Support\TablePaginationOptions;
 use Filament\Actions\Action;
 use Filament\Enums\ThemeMode;
 use Filament\Facades\Filament;
@@ -130,6 +140,9 @@ class AdminPanelProvider extends PanelProvider
                 // has gone idle should be signed out, not redirected to
                 // whichever screen a gate wants them on.
                 EnforceIdleTimeout::class,
+                // An IT login may only reach the Reporting Hierarchy and
+                // the Help Desk; every other URL lands on the hierarchy.
+                RestrictItRoleToAllowedModules::class,
                 EnsureMonthlyTargetIsSet::class,
             ]);
     }
@@ -173,7 +186,17 @@ class AdminPanelProvider extends PanelProvider
             // preference yet needs a default that one of the two
             // remaining buttons can actually show as active.
             ->defaultThemeMode(ThemeMode::Light)
-            ->sidebarFullyCollapsibleOnDesktop()
+            // The sidebar rests as an icon rail and expands in place (the
+            // content area shrinks to make room) while the cursor is on it — see
+            // resources/js/sidebar-hover-expand.js, registered in boot().
+            // The topbar's own expand button pins it open; collapse unpins.
+            // Every group carries a module icon (buildNavigation()) and every
+            // item its own submodule icon, which the published
+            // filament-panels::components.sidebar.group view lets coexist.
+            // The rail width is referenced by theme.css as
+            // var(--collapsed-sidebar-width).
+            ->sidebarCollapsibleOnDesktop()
+            ->collapsedSidebarWidth('5rem')
             ->globalSearch(false)
             ->brandName('Finn On')
             // Filament falls back to a 7xl (1280px) content cap on every
@@ -199,12 +222,18 @@ class AdminPanelProvider extends PanelProvider
                     ->selectable()
                     ->editable(false)
             )
+            // The top-performer marquee: its own full-width strip directly
+            // under the topbar (user decision 2026-09-27), not a slot inside
+            // it competing with the period selector and the bell. TOPBAR_AFTER
+            // lands between the topbar and .fi-layout as a row of the app
+            // shell's flex column (see GLOBAL APP SHELL in theme.css); the
+            // sidebar is pushed down by the strip's height via :has() there.
             ->renderHook(
-                // PanelsRenderHook::TOPBAR_START,
-                PanelsRenderHook::GLOBAL_SEARCH_BEFORE,
-                function () {
-                    return Blade::render('@livewire("top-performer-marquee")');
-                }
+                PanelsRenderHook::TOPBAR_AFTER,
+                // The performance marquee is a module IT does not get.
+                fn (): string => ItModuleAccess::restricts(Filament::auth()->user())
+                    ? ''
+                    : '<div class="fynn-marquee-strip">'.Blade::render('@livewire("top-performer-marquee")').'</div>',
             )
             // The global month selector (see App\Support\SelectedMonth):
             // one topbar control that scopes every resource table and
@@ -263,10 +292,12 @@ class AdminPanelProvider extends PanelProvider
                 TablesRenderHook::TOOLBAR_START,
                 fn (): string => view('filament.components.table-records-per-page-top')->render(),
             )
-            // A "back to top" button after every resource List page's
-            // table, for jumping back up past a long page of rows without
-            // hunting for the scrollbar. Scoped to List pages specifically
-            // (not relation-manager tables) via this hook.
+            // A floating "scroll to top" arrow that hovers over every
+            // resource List page's table while the user is scrolled down,
+            // for jumping back up past a long page of rows without hunting
+            // for the scrollbar. Takes no space below the pagination bar.
+            // Scoped to List pages specifically (not relation-manager
+            // tables) via this hook.
             ->renderHook(
                 PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_AFTER,
                 fn (): string => view('filament.components.table-scroll-to-top')->render(),
@@ -281,6 +312,16 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::BODY_END,
                 fn (): string => Filament::auth()->check()
                     ? Blade::render('@livewire("monthly-target-prompt")')
+                    : '',
+            )
+            // Voting & Feedback: a MANDATORY poll the user has not voted on
+            // blocks the panel until they do (optional polls only wait on
+            // the My Votes page). Same non-dismissible pattern as the
+            // announcement prompt; PollService::blockingFor() is the query.
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => Filament::auth()->check()
+                    ? Blade::render('@livewire("poll-prompt")')
                     : '',
             )
             // The same module's daily half: a commitment is owed by 09:50
@@ -536,19 +577,25 @@ class AdminPanelProvider extends PanelProvider
      * "Customers"). Building it by hand lets standalone items and groups be
      * interleaved freely — each item still comes from its own resource/page
      * via getNavigationItems(), so icons, badges and sort order stay intact.
+     *
+     * Every labelled group carries its own module icon and every item its own
+     * submodule icon, none of them shared, so the collapsed icon rail stays
+     * readable (SidebarHoverNavigationTest guards the uniqueness). Filament
+     * itself forbids group and item icons together; the published
+     * sidebar.group view lifts that for groups whose items carry icons.
      */
     protected function buildNavigation(NavigationBuilder $builder): NavigationBuilder
     {
         return $builder->groups([
             NavigationGroup::make()->items($this->navigationItemsFor(Dashboard::class)),
 
-            NavigationGroup::make('Leads')->items([
+            NavigationGroup::make('Leads')->icon(Heroicon::OutlinedFunnel)->items([
                 ...$this->navigationItemsFor(LeadResource::class),
                 ...$this->navigationItemsFor(AssignedLeadResource::class),
                 ...$this->navigationItemsFor(AssignedLeadFollowUpCalendar::class),
             ]),
 
-            NavigationGroup::make('Customers')->items([
+            NavigationGroup::make('Customers')->icon(Heroicon::OutlinedUserCircle)->items([
                 ...$this->navigationItemsFor(CustomerResource::class),
                 ...$this->navigationItemsFor(FollowUpResource::class),
                 ...$this->navigationItemsFor(CustomerFollowUpCalendar::class),
@@ -563,13 +610,13 @@ class AdminPanelProvider extends PanelProvider
             // Files eligible for a bank other than the in-house BFL products,
             // worked by the Other Bank Support role, plus that team's own
             // Admin-set targets and incentive slabs. See OtherBankSupportService.
-            NavigationGroup::make('Other Bank Support')->items([
+            NavigationGroup::make('Other Bank Support')->icon(Heroicon::OutlinedBuildingOffice2)->items([
                 ...$this->navigationItemsFor(OtherBankSupportDashboard::class),
                 ...$this->navigationItemsFor(OtherBankSupportTargetResource::class),
                 ...$this->navigationItemsFor(OtherBankIncentiveSlabResource::class),
             ]),
 
-            NavigationGroup::make('Customer Journey Continuity')->items([
+            NavigationGroup::make('Customer Journey Continuity')->icon(Heroicon::OutlinedLink)->items([
                 ...$this->navigationItemsFor(JourneyContinuityDashboard::class),
                 ...$this->navigationItemsFor(CustomerJourneyDelegationResource::class),
                 ...$this->navigationItemsFor(JourneyTakeoverResource::class),
@@ -579,7 +626,7 @@ class AdminPanelProvider extends PanelProvider
                 ...$this->navigationItemsFor(CustomerJourneyAuditResource::class),
             ]),
 
-            NavigationGroup::make('Performance')->items([
+            NavigationGroup::make('Performance')->icon(Heroicon::OutlinedBolt)->items([
                 ...$this->navigationItemsFor(EmployeePerformanceDashboard::class),
                 ...$this->navigationItemsFor(EmployeePerformanceReportResource::class),
                 ...$this->navigationItemsFor(TeamPerformance::class),
@@ -592,7 +639,7 @@ class AdminPanelProvider extends PanelProvider
             // journey, login sessions and hierarchy; keeps its own
             // commitments and monthly targets, separate from the LMS
             // target/incentive dashboards in the Performance group above.
-            NavigationGroup::make('Daily Commitment')->items([
+            NavigationGroup::make('Daily Commitment')->icon(Heroicon::OutlinedSun)->items([
                 ...$this->navigationItemsFor(DailyCommitmentDashboard::class),
                 ...$this->navigationItemsFor(MyDailyCommitment::class),
                 ...$this->navigationItemsFor(DailyCommitmentTeamView::class),
@@ -600,43 +647,58 @@ class AdminPanelProvider extends PanelProvider
                 ...$this->navigationItemsFor(MonthlyCommitmentTargetResource::class),
             ]),
 
-            NavigationGroup::make('Administration')->items([
+            NavigationGroup::make('Administration')->icon(Heroicon::OutlinedBuildingOffice)->items([
                 ...$this->navigationItemsFor(EmployeeHierarchy::class),
                 ...$this->navigationItemsFor(TeamResource::class),
             ]),
 
-            NavigationGroup::make('Lead Assignment')->items(
+            NavigationGroup::make('Lead Assignment')->icon(Heroicon::OutlinedPaperAirplane)->items(
                 $this->navigationItemsFor(LeadAssignmentReportResource::class),
             ),
 
-            NavigationGroup::make('Accounts')->items([
+            NavigationGroup::make('Accounts')->icon(Heroicon::OutlinedWallet)->items([
                 ...$this->navigationItemsFor(AccountVerificationResource::class),
                 ...$this->navigationItemsFor(CustomerSettlementResource::class),
             ]),
 
-            NavigationGroup::make('Documents')->items([
+            NavigationGroup::make('Documents')->icon(Heroicon::OutlinedFolderOpen)->items([
                 ...$this->navigationItemsFor(OcrDocumentResource::class),
                 ...$this->navigationItemsFor(AiCustomerRecordResource::class),
                 ...$this->navigationItemsFor(AiDocumentSchemaResource::class),
             ]),
 
-            NavigationGroup::make('People & Access')->items([
+            NavigationGroup::make('People & Access')->icon(Heroicon::OutlinedFingerPrint)->items([
                 ...$this->navigationItemsFor(EmployeeResource::class),
                 ...$this->navigationItemsFor(UserResource::class),
                 ...$this->navigationItemsFor(ActivityLogResource::class),
                 ...$this->navigationItemsFor(UserLoginSessionResource::class),
             ]),
 
-            NavigationGroup::make('Request')->items([
+            NavigationGroup::make('Request')->icon(Heroicon::OutlinedInboxStack)->items([
                 ...$this->navigationItemsFor(CustomerPanRequestResource::class),
                 ...$this->navigationItemsFor(CustomerEligibilityRequestResource::class),
+                ...$this->navigationItemsFor(CustomerEditRequestResource::class),
             ]),
 
-            NavigationGroup::make('Setting')->items([
+            // Every role raises and follows tickets; only the Admin sees the
+            // two settings screens (categories / routing, priorities / SLA).
+            NavigationGroup::make('Help Desk')->icon(Heroicon::OutlinedTicket)->items([
+                ...$this->navigationItemsFor(ComplaintResource::class),
+                ...$this->navigationItemsFor(ComplaintCategoryResource::class),
+                ...$this->navigationItemsFor(ComplaintPriorityResource::class),
+            ]),
+
+            NavigationGroup::make('Setting')->icon(Heroicon::OutlinedCog6Tooth)->items([
                 ...$this->navigationItemsFor(CityResource::class),
                 ...$this->navigationItemsFor(LoginPageSettings::class),
                 ...$this->navigationItemsFor(DashboardGreetingSettings::class),
                 ...$this->navigationItemsFor(AnnouncementResource::class),
+                // Voting & Feedback submodule (own tables, prompt and screens —
+                // not part of Announcements): raise polls (Admin + supervisors),
+                // define poll types (Admin), vote (everyone).
+                ...$this->navigationItemsFor(PollResource::class),
+                ...$this->navigationItemsFor(PollTypeResource::class),
+                ...$this->navigationItemsFor(MyVotes::class),
             ]),
         ]);
     }
@@ -648,11 +710,18 @@ class AdminPanelProvider extends PanelProvider
      * here so role-gated items (e.g. Employees, Users, Activity Logs) stay
      * hidden from users who shouldn't see them, exactly as before.
      *
+     * An IT login additionally keeps only the two modules listed in
+     * ItModuleAccess; Filament drops the groups that end up empty.
+     *
      * @param  class-string  $class
      * @return array<NavigationItem>
      */
     protected function navigationItemsFor(string $class): array
     {
+        if (ItModuleAccess::restricts(Filament::auth()->user()) && ! ItModuleAccess::allowsNavigationOf($class)) {
+            return [];
+        }
+
         if (! $class::shouldRegisterNavigation()) {
             return [];
         }
@@ -668,6 +737,7 @@ class AdminPanelProvider extends PanelProvider
     {
         $this->configureSearchableDropdowns();
         $this->configureFilterApplyBehaviour();
+        $this->configurePaginationOptions();
 
         FilamentAsset::register([
             Js::make(
@@ -685,6 +755,14 @@ class AdminPanelProvider extends PanelProvider
             Js::make(
                 'table-scroll-nav',
                 resource_path('js/table-scroll-nav.js')
+            ),
+            Js::make(
+                'sidebar-hover-expand',
+                resource_path('js/sidebar-hover-expand.js')
+            ),
+            Js::make(
+                'listing-sticky-header',
+                resource_path('js/listing-sticky-header.js')
             ),
         ]);
 
@@ -772,6 +850,21 @@ class AdminPanelProvider extends PanelProvider
             }
 
             $filter->searchable()->preload();
+        });
+    }
+
+    /**
+     * One "records per page" list for every table: 5 / 10 / 50 / 100 / All.
+     *
+     * Registered as the component default, so a table can still override
+     * it with its own ->paginated([...]) — but then the top-of-toolbar
+     * selector (which reads TablePaginationOptions::OPTIONS) would no
+     * longer match the bottom one, so don't.
+     */
+    protected function configurePaginationOptions(): void
+    {
+        Table::configureUsing(function (Table $table): void {
+            $table->paginated(TablePaginationOptions::OPTIONS);
         });
     }
 

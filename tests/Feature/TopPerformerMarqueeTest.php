@@ -158,7 +158,11 @@ class TopPerformerMarqueeTest extends TestCase
      * scrolled by exactly one copy's width (0 → -50%), never a start
      * position off-screen to the right (the old translateX(100%) left the
      * header blank for about a minute with a long leaderboard). Its speed
-     * scales with the message length.
+     * scales with the message length. In the browser Alpine clones the copy
+     * until the track spans two strip widths, so a message shorter than the
+     * strip still wraps as one circular loop with no blank stretch; those
+     * clones survive polls (wire:ignore) and are rebuilt when the message
+     * changes (wire:key on its hash).
      */
     public function test_the_marquee_scrolls_from_the_first_frame_and_loops_seamlessly(): void
     {
@@ -179,6 +183,12 @@ class TopPerformerMarqueeTest extends TestCase
 
         $this->assertSame(max(20, (int) ceil(mb_strlen($message) / 8)), $component->get('duration'));
         $this->assertStringContainsString('animation-duration: '.$component->get('duration').'s', $html);
+
+        $this->assertStringContainsString('data-marquee-clone', $html);
+        $this->assertStringContainsString('x-ref="track"', $html);
+        $this->assertStringContainsString('x-ref="copy"', $html);
+        $this->assertStringContainsString('wire:ignore', $html);
+        $this->assertStringContainsString('wire:key="marquee-'.md5($message).'"', $html);
     }
 
     public function test_caller_login_still_shows_the_top_5_callers_title(): void

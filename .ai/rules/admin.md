@@ -1,0 +1,16 @@
+---
+paths:
+  - 'resources/js/listing-sticky-header.js, resources/css/filament/admin/theme.css'
+  - 'resources/js/sidebar-hover-expand.js, resources/css/filament/admin/theme.css'
+---
+
+# Admin
+
+## Frozen page header + listing header block + column header: CSS sticky for the first two, JS translateY for <th>
+User decision 2026-09-27: every page keeps its header (breadcrumbs/title/actions) frozen; List pages also freeze the table header block and the column header row. .fi-page-header-main-ctn > .fi-header is position:sticky (theme.css "FROZEN PAGE HEADER"); on .fi-resource-list-records-page .fi-ta-header-ctn is sticky at --fynn-sticky-header-h (set by listing-sticky-header.js) and .fi-ta-ctn overflow is lifted. Traps: sticky must go on .fi-ta-header-ctn, NOT .fi-ta-header-toolbar — a sticky element only moves within its parent and the toolbar's parent is the header block itself; and the <th> row cannot be CSS-sticky against the page because .fi-ta-content-ctn is overflow-x:auto (its scroll container) and no longer scrolls vertically, so the script pins <th> with translateY = (header + header block bottom) - table box top on each scroll tick, capped at the table's end. After editing the JS run `php artisan filament:assets`; after theme.css run `npm run build`. Verified headlessly (temporary Admin login via CDP; Livewire::test() never boots panel render hooks or assets).
+
+## Sidebar pin control lives on the rail beside the Dashboard item; topbar expand/collapse hidden on desktop
+User decision 2026-09-27: the expand/collapse (pin) control is a round chevron (.fynn-sidebar-pin-btn) injected by sidebar-hover-expand.js into #fi-main-sidebar, absolutely positioned on the rail's right edge and `top`-aligned by JS to the first .fi-sidebar-item (Dashboard); it fades in on sidebar hover (CSS), shows chevron-right "Keep sidebar open" when unpinned and chevron-left "Collapse sidebar" when pinned (localStorage fynnon.sidebar-pinned, same key the old topbar buttons used). The topbar's .fi-topbar-open/close-collapse-sidebar-btn are display:none on desktop in theme.css. The sidebar is a Livewire component whose re-renders drop injected nodes — ensurePinButton() re-adds it via a MutationObserver; keep that. Hover mode keys on matchMedia('(hover: hover)'), which headless Chromium reports false: to verify in a headless run, stub matchMedia via Page.addScriptToEvaluateOnNewDocument (Emulation.setEmulatedMedia is not enough). After editing the JS run `php artisan filament:assets` (SidebarHoverNavigationTest asserts the PUBLISHED copy carries the control).
+
+## Toolbar dropdowns must scroll on their own under the frozen toolbar
+The filters / column-manager dropdowns live inside the sticky .fi-ta-header-ctn, so they move with it and page scroll can never reveal their bottom (this hid the filters' Apply button). listing-sticky-header.js writes --fynn-toolbar-bottom on each .fi-ta; theme.css caps .fi-ta-header-ctn .fi-dropdown-panel at calc(100dvh - that - 1.5rem) with overflow-y:auto + overscroll-behavior:contain, and pins .fi-ta-filters-actions-ctn sticky at the panel bottom. Keep these if the sticky header is ever changed. Covered by tests/Feature/ListingScrollToTopTest.php.

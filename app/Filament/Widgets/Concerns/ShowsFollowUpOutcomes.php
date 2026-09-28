@@ -6,7 +6,9 @@ use App\Enums\FollowUpOutcome;
 use App\Filament\Actions\FollowUpBacklogActions;
 use App\Models\FollowUp;
 use App\Services\FollowUpMonitorService;
+use App\Support\FollowUpCalendarCache;
 use Filament\Actions\Action;
+use Filament\Facades\Filament;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -88,12 +90,33 @@ trait ShowsFollowUpOutcomes
         $start = Carbon::parse($info['start'])->startOfDay();
         $end = Carbon::parse($info['end'])->endOfDay();
 
+        return FollowUpCalendarCache::remember(
+            static::class,
+            Filament::auth()->id(),
+            $start->toDateTimeString(),
+            $end->toDateTimeString(),
+            fn (): array => $this->buildDayEvents($start, $end),
+        );
+    }
+
+    /**
+     * One chip per day between $start and $end. Only the columns the
+     * verdicts need are loaded — the chips never show remarks or statuses.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    protected function buildDayEvents(Carbon $start, Carbon $end): array
+    {
         $monitor = app(FollowUpMonitorService::class);
 
         $overloadedByDate = collect($monitor->overloadedDays($monitor->openLoad($this->scopedFollowUpQuery(), $start, $end)))
             ->countBy('date');
 
-        return $monitor->classify($this->scopedFollowUpQuery(), $start, $end)
+        $columns = collect(['id', 'employee_id', 'next_follow_up_date', 'created_at', ...FollowUp::SUBJECT_COLUMNS])
+            ->map(fn (string $column): string => 'follow_ups.'.$column)
+            ->all();
+
+        return $monitor->classify($this->scopedFollowUpQuery()->select($columns), $start, $end)
             ->groupBy(fn (FollowUp $followUp): string => $followUp->next_follow_up_date->toDateString())
             ->map(function (Collection $followUpsForDay, string $date) use ($overloadedByDate): array {
                 $count = fn (FollowUpOutcome ...$outcomes): int => $followUpsForDay

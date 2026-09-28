@@ -110,7 +110,14 @@ class CustomerForm
             && $livewire->showPanRequests;
     }
 
-    public static function configure(Schema $schema): Schema
+    /**
+     * The sanctioning / eligible bank choices, alphabetical. Shared with the
+     * customer edit-request field registry (App\Support\CustomerEditableFields)
+     * so both offer the same list.
+     *
+     * @return array<string, string>
+     */
+    public static function bankOptions(): array
     {
         $banks = [
             'BFL Prime' => 'BFL Prime',
@@ -141,6 +148,13 @@ class CustomerForm
         ];
 
         asort($banks);
+
+        return $banks;
+    }
+
+    public static function configure(Schema $schema): Schema
+    {
+        $banks = self::bankOptions();
 
         $currencyField = fn (string $name, string $label) => TextInput::make($name)
             ->label($label)

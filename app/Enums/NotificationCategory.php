@@ -20,6 +20,9 @@ enum NotificationCategory: string
     case Settlement = 'settlement';
     case Ocr = 'ocr';
     case Announcement = 'announcement';
+    case HelpDesk = 'help_desk';
+    case Voting = 'voting';
+    case CustomerEdit = 'customer_edit';
     case General = 'general';
 
     public function label(): string
@@ -32,6 +35,9 @@ enum NotificationCategory: string
             self::Settlement => 'Settlement',
             self::Ocr => 'OCR',
             self::Announcement => 'Announcements',
+            self::HelpDesk => 'Help Desk',
+            self::Voting => 'Voting',
+            self::CustomerEdit => 'Edit Requests',
             self::General => 'General',
         };
     }
@@ -46,8 +52,26 @@ enum NotificationCategory: string
             self::Settlement => 'heroicon-o-banknotes',
             self::Ocr => 'heroicon-o-document-magnifying-glass',
             self::Announcement => 'heroicon-o-megaphone',
+            self::HelpDesk => 'heroicon-o-lifebuoy',
+            self::Voting => 'heroicon-o-hand-thumb-up',
+            self::CustomerEdit => 'heroicon-o-pencil-square',
             self::General => 'heroicon-o-bell',
         };
+    }
+
+    /**
+     * Categories the bell shows together under one "Requests" tab.
+     *
+     * @return list<self>
+     */
+    public static function requestCategories(): array
+    {
+        return [self::Eligibility, self::PanRequest, self::CustomerEdit];
+    }
+
+    public function isRequest(): bool
+    {
+        return in_array($this, self::requestCategories(), true);
     }
 
     /**
@@ -82,6 +106,9 @@ enum NotificationCategory: string
             Str::contains($title, 'other bank support') => self::OtherBankSupport,
             Str::contains($title, 'bank mis') || Str::contains($title, 'settlement') => self::Settlement,
             Str::startsWith($title, 'ocr') => self::Ocr,
+            Str::contains($title, 'ticket') || Str::contains($title, 'complaint') => self::HelpDesk,
+            Str::contains($title, 'vote') || Str::contains($title, 'poll') => self::Voting,
+            Str::contains($title, 'edit request') => self::CustomerEdit,
             default => self::General,
         };
     }

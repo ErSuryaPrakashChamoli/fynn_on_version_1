@@ -9,7 +9,7 @@ use UnitEnum;
 
 class AssignedLeadFollowUpCalendar extends Page
 {
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCalendarDays;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCalendar;
 
     protected static string|UnitEnum|null $navigationGroup = 'Leads';
 

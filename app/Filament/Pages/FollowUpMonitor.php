@@ -37,7 +37,7 @@ use UnitEnum;
  */
 class FollowUpMonitor extends Page
 {
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedPresentationChartLine;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedEye;
 
     protected static string|UnitEnum|null $navigationGroup = 'Performance';
 

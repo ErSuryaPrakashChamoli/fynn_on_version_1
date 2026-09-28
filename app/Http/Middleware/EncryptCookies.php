@@ -15,13 +15,15 @@ class EncryptCookies extends Middleware
      * Laravel's default encryption would fail to decrypt it and silently
      * null it out on every request.
      *
-     * `selected_month` is set the same way by the global month selector
-     * (see global-month-selector.blade.php and App\Support\SelectedMonth).
+     * `selected_month` and `selected_period` are set the same way by the
+     * global period selector (see global-month-selector.blade.php and
+     * App\Support\SelectedMonth).
      *
      * @var array<int, string>
      */
     protected $except = [
         'dashboard_theme',
         'selected_month',
+        'selected_period',
     ];
 }

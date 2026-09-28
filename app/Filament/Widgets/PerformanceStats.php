@@ -113,15 +113,7 @@ class PerformanceStats extends BaseWidget
         | started deducting from its full count yet.
         */
 
-        $selectedMonth = SelectedMonth::current();
-
-        if (SelectedMonth::isCurrentCalendarMonth()) {
-            $remainingDays = now()->daysInMonth - now()->day + 1;
-        } elseif ($selectedMonth->lt(now()->startOfMonth())) {
-            $remainingDays = 0;
-        } else {
-            $remainingDays = $selectedMonth->daysInMonth;
-        }
+        $remainingDays = SelectedMonth::remainingDays();
 
         /*
         |--------------------------------------------------------------------------

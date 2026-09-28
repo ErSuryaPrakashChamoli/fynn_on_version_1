@@ -25,7 +25,7 @@ class PendingManagerCaseResource extends Resource
 {
     protected static ?string $model = Customer::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedPauseCircle;
 
     protected static ?string $navigationLabel = 'Pending Manager Cases';
 

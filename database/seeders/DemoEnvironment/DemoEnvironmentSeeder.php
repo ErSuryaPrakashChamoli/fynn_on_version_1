@@ -32,6 +32,8 @@ class DemoEnvironmentSeeder extends Seeder
             LeadSeeder::class,
             CommitmentSeeder::class,
             OperationsSeeder::class,
+            HelpDeskSeeder::class,
+            VotingSeeder::class,
         ] as $seeder) {
             $this->callWith($seeder, ['world' => $world]);
         }

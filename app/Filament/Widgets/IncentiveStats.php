@@ -7,6 +7,7 @@ use App\Services\IncentiveCalculator;
 use Filament\Facades\Filament;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
+use Illuminate\Support\HtmlString;
 use NumberFormatter;
 
 class IncentiveStats extends StatsOverviewWidget
@@ -87,6 +88,26 @@ class IncentiveStats extends StatsOverviewWidget
         $currentIncentive = (float) (
             $data['incentive'] ?? 0
         );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Two-part deductions (user decision 2026-09-27)
+        |--------------------------------------------------------------------------
+        |
+        | Each deduction card shows the BFL Prime / Growth / SOL share and
+        | the share from every other sanctioning bank side by side, since
+        | the two follow different policies. The card total stays in the
+        | description.
+        */
+
+        $split = fn (string $key): HtmlString => new HtmlString(sprintf(
+            '<span class="incentive-split">'
+            .'<span class="incentive-split-part"><span class="incentive-split-label">BFL Prime · Growth · SOL</span><span class="incentive-split-amount">%s</span></span>'
+            .'<span class="incentive-split-part"><span class="incentive-split-label">Other banks</span><span class="incentive-split-amount">%s</span></span>'
+            .'</span>',
+            e($formatter->formatCurrency((float) ($data[$key.'_bfl'] ?? 0), 'INR')),
+            e($formatter->formatCurrency((float) ($data[$key.'_other'] ?? 0), 'INR')),
+        ));
 
         $actual = (float) (
             $data['actual'] ?? 0
@@ -243,13 +264,10 @@ class IncentiveStats extends StatsOverviewWidget
                 $isAdmin
                     ? '💰 Company Cashback'
                     : '💰 Cashback',
-                $formatter->formatCurrency(
-                    $cashback,
-                    'INR'
-                )
+                $split('cashback')
             )
                 ->description(
-                    "{$cashbackBadge} • {$scopeBadge}"
+                    "{$cashbackBadge} • {$scopeBadge} • Total ".$formatter->formatCurrency($cashback, 'INR')
                 )
                 ->descriptionIcon(
                     'heroicon-m-banknotes'
@@ -283,13 +301,10 @@ class IncentiveStats extends StatsOverviewWidget
                 $isAdmin
                     ? '🏦 Company Subvention'
                     : '🏦 Subvention',
-                $formatter->formatCurrency(
-                    $subvention,
-                    'INR'
-                )
+                $split('subvention')
             )
                 ->description(
-                    "{$subventionBadge} • Total subvention impact"
+                    "{$subventionBadge} • Total subvention ".$formatter->formatCurrency($subvention, 'INR')
                 )
                 ->descriptionIcon(
                     'heroicon-m-building-library'
@@ -323,13 +338,10 @@ class IncentiveStats extends StatsOverviewWidget
                 $isAdmin
                     ? '⚓ Company Docking'
                     : '⚓ Docking',
-                $formatter->formatCurrency(
-                    $docking,
-                    'INR'
-                )
+                $split('docking')
             )
                 ->description(
-                    "{$dockingBadge} • Docking charges"
+                    "{$dockingBadge} • Total docking ".$formatter->formatCurrency($docking, 'INR')
                 )
                 ->descriptionIcon(
                     'heroicon-m-arrow-down-circle'

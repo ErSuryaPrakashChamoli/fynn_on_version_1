@@ -20,7 +20,7 @@ class CustomerJourneyAuditResource extends Resource
 {
     protected static ?string $model = CustomerJourneyAudit::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedShieldCheck;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentCheck;
 
     protected static ?string $navigationLabel = 'Audit History';
 

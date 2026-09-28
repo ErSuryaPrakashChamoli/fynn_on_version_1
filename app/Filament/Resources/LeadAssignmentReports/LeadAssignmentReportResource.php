@@ -18,7 +18,7 @@ class LeadAssignmentReportResource extends Resource
 {
     protected static ?string $model = Employee::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedChartBar;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedQueueList;
 
     protected static string|UnitEnum|null $navigationGroup = 'Lead Assignment';
 

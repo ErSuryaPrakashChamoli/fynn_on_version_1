@@ -131,7 +131,6 @@ class FollowUpsTable
 
             ])
             ->defaultPaginationPageOption(5)
-            ->paginated([5, 10, 25, 50, 100, 'all'])
             ->filters([
                 SelectFilter::make('employee_id')
                     ->label('Followed By')

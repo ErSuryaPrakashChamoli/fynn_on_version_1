@@ -99,6 +99,16 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
     }
 
     /**
+     * An IT login sees only the Reporting Hierarchy and the Help Desk
+     * (App\Support\ItModuleAccess). Holding Admin as well lifts the
+     * restriction — Admin is company-wide and always wins.
+     */
+    public function isRestrictedToItModules(): bool
+    {
+        return $this->hasRole('IT') && ! $this->hasRole('Admin');
+    }
+
+    /**
      * The portal account that pins this user to Academy or Demo, if any.
      *
      * Null for every pre-existing LMS user, which is what keeps their

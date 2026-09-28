@@ -90,7 +90,7 @@ class DemoModeTest extends TestCase
         $this->assertAuthenticatedAs($admin);
     }
 
-    public function test_the_signed_in_role_switcher_is_draggable(): void
+    public function test_the_signed_in_role_switcher_is_a_user_menu_entry_not_a_floating_pill(): void
     {
         $this->enableDemoMode();
         $admin = $this->persona('admin');
@@ -98,9 +98,12 @@ class DemoModeTest extends TestCase
         $this->actingAs($admin)
             ->get(Filament::getPanel('admin')->getUrl())
             ->assertOk()
+            ->assertSee('fynn-demo-switcher-menu-item', escape: false)
+            ->assertSee('View the demo as')
             ->assertSee('fynn-demo-switcher', escape: false)
-            ->assertSee('x-on:pointerdown="start($event)"', escape: false)
-            ->assertSee('fynnon.demo-switcher-position', escape: false);
+            ->assertDontSee('fynn-demo-switcher-trigger', escape: false)
+            ->assertDontSee('x-on:pointerdown="start($event)"', escape: false)
+            ->assertDontSee('fynnon.demo-switcher-position', escape: false);
     }
 
     public function test_an_unknown_persona_is_refused(): void

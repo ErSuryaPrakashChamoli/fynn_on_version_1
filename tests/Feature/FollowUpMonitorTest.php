@@ -18,6 +18,7 @@ use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -301,6 +302,72 @@ class FollowUpMonitorTest extends TestCase
         $this->assertSame(2, $events['2026-09-10']['extendedProps']['count']);
     }
 
+    /**
+     * The Dashboard calendar is drawn on the server, so the grid and its day
+     * chips arrive in the page itself — no script to wait for, no second
+     * round trip for the events.
+     */
+    public function test_the_dashboard_calendar_renders_its_day_chips_with_the_page(): void
+    {
+        $this->actingAs(User::factory()->create(['employee_id' => $this->caller->id]));
+        $this->logFollowUp($this->customer(), Carbon::parse('2026-09-10 15:00'), createdAt: Carbon::parse('2026-09-08 09:00'));
+
+        Livewire::test(DashboardFollowUpCalendarWidget::class)
+            ->assertSee('September 2026')
+            ->assertSeeHtml('data-date="2026-09-10"')
+            ->assertSeeHtml('followup-outcome--missed')
+            ->assertDontSeeHtml('x-load-src')
+            // Only the weeks September spans: 31 Aug–4 Oct is five rows, Oct days blank.
+            ->assertDontSeeHtml('data-date="2026-10-01"');
+    }
+
+    public function test_calendar_months_are_cached_until_a_follow_up_changes(): void
+    {
+        $this->actingAs(User::factory()->create(['employee_id' => $this->caller->id]));
+        $this->logFollowUp($this->customer(), Carbon::parse('2026-09-10 15:00'), createdAt: Carbon::parse('2026-09-08 09:00'));
+
+        $widget = new CustomerFollowUpCalendarWidget;
+        $september = ['start' => '2026-09-01', 'end' => '2026-10-01'];
+
+        $this->assertCount(1, $widget->fetchEvents($september));
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $this->assertCount(1, $widget->fetchEvents($september));
+        $followUpQueries = collect(DB::getQueryLog())->filter(fn (array $query): bool => str_contains($query['query'], 'follow_ups'));
+        $this->assertCount(0, $followUpQueries, 'A repeat load of the same month is served from the cache.');
+
+        $this->logFollowUp($this->customer(), Carbon::parse('2026-09-12 15:00'));
+
+        $this->assertCount(2, $widget->fetchEvents($september), 'A new follow-up shows at once, not after the cache expires.');
+    }
+
+    public function test_the_dashboard_calendar_moves_between_periods_and_views(): void
+    {
+        $this->actingAs(User::factory()->create(['employee_id' => $this->caller->id]));
+        $this->logFollowUp($this->customer(), Carbon::parse('2026-10-05 15:00'));
+
+        Livewire::test(DashboardFollowUpCalendarWidget::class)
+            ->assertDontSeeHtml('data-date="2026-10-05"')
+            ->call('showNextPeriod')
+            ->assertSee('October 2026')
+            ->assertSeeHtml('data-date="2026-10-05"')
+            ->assertSeeHtml('followup-outcome--open')
+            ->call('showPreviousPeriod')
+            ->assertSee('September 2026')
+            ->call('selectCalendarDate', '2026-09-16')
+            ->assertSet('selectedDate', '2026-09-16')
+            ->call('switchCalendarView', 'week')
+            ->assertSet('calendarView', 'week')
+            ->assertSeeHtml('data-date="2026-09-14"')
+            ->assertDontSeeHtml('data-date="2026-09-21"')
+            ->call('switchCalendarView', 'day')
+            ->assertSeeHtml('data-date="2026-09-16"')
+            ->assertDontSeeHtml('data-date="2026-09-17"')
+            ->call('switchCalendarView', 'bogus')
+            ->assertSet('calendarView', 'day');
+    }
+
     public function test_a_caller_drops_the_days_missed_follow_ups_from_the_dashboard(): void
     {
         $this->actingAs(User::factory()->create(['employee_id' => $this->caller->id]));
@@ -340,7 +407,44 @@ class FollowUpMonitorTest extends TestCase
             ->assertSee('Converted Lead')
             ->assertSee(CustomerResource::getUrl('view', ['record' => $customer->id]), escape: false)
             ->assertDontSee(LeadResource::getUrl('edit', ['record' => $lead->id]), escape: false)
-            ->assertSee('markSelectedDay', escape: false);
+            // The picked day is marked in the server-drawn grid itself.
+            ->assertSeeHtml('is-selected-day');
+    }
+
+    /**
+     * The day panel splits the day into Lead / Customer tabs, each with its
+     * own count, so a busy day's follow-ups are not one mixed list.
+     */
+    public function test_the_dashboard_day_panel_has_lead_and_customer_tabs(): void
+    {
+        $this->actingAs(User::factory()->create(['employee_id' => $this->caller->id]));
+
+        Lead::create([
+            'employee_id' => $this->caller->id,
+            'customer_name' => 'Tabbed Lead',
+            'mobile_no' => '9876500009',
+            'follow_up_type' => 'Call',
+            'status' => 'Call Back',
+            'remarks' => 'call later',
+            'next_follow_up_date' => Carbon::parse('2026-09-10 11:00'),
+        ]);
+        $this->logFollowUp($this->customer(), Carbon::parse('2026-09-10 15:00'));
+
+        $html = Livewire::test(DashboardFollowUpCalendarWidget::class)
+            ->set('selectedDate', '2026-09-10')
+            ->assertSeeHtml('role="tablist"')
+            ->assertSeeHtml("x-show=\"followUpTab === 'lead'\"")
+            ->assertSeeHtml("x-show=\"followUpTab === 'customer'\"")
+            ->assertSee('Tabbed Lead')
+            ->html();
+
+        $leadPanel = strpos($html, 'day-panel-lead');
+        $customerPanel = strpos($html, 'day-panel-customer');
+
+        $this->assertNotFalse($leadPanel);
+        $this->assertNotFalse($customerPanel);
+        $this->assertGreaterThan($leadPanel, strpos($html, 'Tabbed Lead'), 'The lead sits in the Lead tab.');
+        $this->assertLessThan($customerPanel, strpos($html, 'Tabbed Lead'), 'The lead is not in the Customer tab.');
     }
 
     public function test_an_open_leads_card_still_opens_the_lead(): void

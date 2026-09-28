@@ -42,10 +42,8 @@ class TransactionsRelationManager extends RelationManager
                 ->required(),
 
             Forms\Components\TextInput::make('amount')
-                ->numeric()
                 ->required()
-                ->minValue(0.01)
-                ->amountInWords(),
+                ->indianAmount(min: 0.01),
 
             Forms\Components\DatePicker::make('transaction_date')
                 ->default(now())

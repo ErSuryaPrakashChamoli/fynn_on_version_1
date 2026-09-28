@@ -54,7 +54,7 @@ use UnitEnum;
  */
 class MyDailyCommitment extends Page
 {
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedFlag;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedPencilSquare;
 
     protected static string|UnitEnum|null $navigationGroup = 'Daily Commitment';
 
@@ -144,19 +144,15 @@ class MyDailyCommitment extends Page
                     ->live(),
 
                 TextInput::make('commitment_amount')
-                    ->label('Amount (₹)')
-                    ->numeric()
-                    ->minValue(1)
+                    ->label('Amount')
                     ->required(fn (Get $get): bool => $get('commitment_stage') !== CommitmentStage::Otp->value)
                     ->visible(fn (Get $get): bool => $get('commitment_stage') !== CommitmentStage::Otp->value)
                     ->disabled(fn (): bool => $this->isCommitmentLocked())
+                    ->placeholder('e.g. 10,00,000')
                     // The figure is read straight back in Indian grouping
                     // and in words — a commitment is locked once given, so
                     // a stray zero has to be caught before it is saved.
-                    ->live(onBlur: true)
-                    ->helperText(fn ($state): string => filled($state)
-                        ? indianAmountInWords($state)
-                        : 'e.g. 1000000 for ₹10,00,000'),
+                    ->indianAmount(min: 1),
 
                 TextInput::make('commitment_count')
                     ->label('Number of OTPs')
@@ -225,7 +221,7 @@ class MyDailyCommitment extends Page
                                 $set('reference', $customer->application_no ?? $customer->lan_no);
                                 $set('stage', $resolved['stage']?->value);
                                 $set('outcome', $resolved['outcome']?->value);
-                                $set('amount', $resolved['amount'] ? (int) $resolved['amount'] : null);
+                                $set('amount', $resolved['amount'] ? indianNumberFormat((int) $resolved['amount']) : null);
                             })
                             ->columnSpan(2),
 
@@ -259,14 +255,9 @@ class MyDailyCommitment extends Page
                             ->columnSpan(3),
 
                         TextInput::make('amount')
-                            ->label('Amount (₹)')
-                            ->numeric()
-                            ->minValue(0)
+                            ->label('Amount')
                             ->required()
-                            ->live(onBlur: true)
-                            ->helperText(fn ($state): ?string => filled($state)
-                                ? indianAmountInWords($state)
-                                : null)
+                            ->indianAmount(min: 0)
                             ->columnSpan(3),
 
                         // Everything below is the exception, not the rule:

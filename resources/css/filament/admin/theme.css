@@ -250,10 +250,130 @@
     box-shadow: inset 0 0 0 1px rgb(255 255 255 / 10%), 0 0 0 2px var(--teal-400);
 }
 
+/* ---- Sidebar hover expand ----
+   The panel is sidebarCollapsibleOnDesktop(): at rest the sidebar is an
+   icon rail (Filament hides labels/badges/group headers via
+   $store.sidebar.isOpen). resources/js/sidebar-hover-expand.js opens
+   the store while the cursor is on the rail and closes it on leave.
+   The sidebar stays in the page flow, so the content area shrinks and
+   grows with it exactly as Filament's own toggle does — it must never
+   float over the content. These rules only size the collapsed rail;
+   --collapsed-sidebar-width comes from ->collapsedSidebarWidth() in
+   AdminPanelProvider. */
+
+@media (min-width: 1024px) {
+    .fi-body-has-sidebar-collapsible-on-desktop .fi-main-sidebar:not(.fi-sidebar-open) {
+        width: var(--collapsed-sidebar-width);
+    }
+
+    .fi-body-has-sidebar-collapsible-on-desktop .fi-main-sidebar:not(.fi-sidebar-open) .fi-sidebar-nav {
+        padding-inline: 0.75rem;
+    }
+
+    .fi-body-has-sidebar-collapsible-on-desktop .fi-main-sidebar:not(.fi-sidebar-open) .fi-sidebar-nav-groups {
+        gap: 1rem;
+    }
+}
+
+/* ---- Sidebar pin control ----
+   The expand / collapse control lives on the rail itself (user decision
+   2026-09-27): a round chevron hanging on the sidebar's right edge, level
+   with the Dashboard item, that fades in while the sidebar is hovered.
+   Injected and positioned by resources/js/sidebar-hover-expand.js
+   (`top` is set inline to the Dashboard row). The topbar's own expand /
+   collapse buttons are hidden on desktop so there is one control. */
+
+.fynn-sidebar-pin-btn {
+    position: absolute;
+    right: -0.875rem;
+    top: 1rem;
+    z-index: 5;
+    display: none;
+    width: 1.75rem;
+    height: 1.75rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(255 255 255 / 25%);
+    border-radius: 9999px;
+    background: linear-gradient(135deg, var(--teal-400), var(--teal-600));
+    color: rgb(15 23 42);
+    box-shadow: 0 2px 8px rgb(0 0 0 / 35%), 0 0 0 3px rgb(30 27 75);
+    cursor: pointer;
+    opacity: 0;
+    transform: scale(0.85);
+    transition: opacity 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.fynn-sidebar-pin-btn.is-available {
+    display: inline-flex;
+}
+
+.fynn-sidebar-pin-btn svg {
+    width: 1rem;
+    height: 1rem;
+}
+
+.fi-main-sidebar:hover > .fynn-sidebar-pin-btn,
+.fynn-sidebar-pin-btn:focus-visible,
+.fynn-sidebar-pin-btn.is-pinned {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.fynn-sidebar-pin-btn.is-pinned {
+    background: linear-gradient(135deg, rgb(226 232 240), rgb(148 163 184));
+}
+
+.fynn-sidebar-pin-btn:hover {
+    transform: scale(1.08);
+    box-shadow: 0 4px 12px rgb(0 0 0 / 40%), 0 0 0 3px rgb(30 27 75), 0 0 16px color-mix(in oklab, var(--teal-400) 60%, transparent);
+}
+
+@media (min-width: 1024px) {
+    .fi-body-has-sidebar-collapsible-on-desktop .fi-topbar-open-collapse-sidebar-btn,
+    .fi-body-has-sidebar-collapsible-on-desktop .fi-topbar-close-collapse-sidebar-btn {
+        display: none !important;
+    }
+}
+
+/* ---- Sidebar module icons ----
+   Each navigation group carries its own icon (AdminPanelProvider::
+   buildNavigation()). Open sidebar: it sits beside the gradient
+   group label. Collapsed rail: the published sidebar.group view
+   renders it as a small marker above the group's submodule icons,
+   set apart by size and a hairline so it reads as a heading, not
+   another link. */
+
+.fi-main-sidebar .fi-sidebar-group-btn > .fi-icon {
+    color: var(--teal-300) !important;
+    filter: drop-shadow(0 1px 1px rgb(0 0 0 / 40%));
+}
+
+.fynn-sidebar-group-rail-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-block: 0.125rem 0.375rem;
+    margin-bottom: 0.125rem;
+    border-bottom: 1px solid rgb(255 255 255 / 12%);
+    color: var(--teal-300);
+    opacity: 0.9;
+}
+
+.fynn-sidebar-group-rail-icon .fi-icon {
+    width: 1.125rem;
+    height: 1.125rem;
+}
+
+.fi-sidebar-group.fi-active > .fynn-sidebar-group-rail-icon {
+    opacity: 1;
+    border-bottom-color: color-mix(in oklab, var(--teal-300) 55%, transparent);
+}
+
 /* ---- Topbar ----
    The brand logo actually renders inside .fi-topbar (not
-   .fi-sidebar-header, which sidebarFullyCollapsibleOnDesktop()
-   leaves empty) — so the topbar is styled to match the dark
+   .fi-sidebar-header, which sidebarCollapsibleOnDesktop() plus a
+   topbar hides on desktop) — so the topbar is styled to match the dark
    sidebar tone, giving one continuous corporate chrome band
    across the top and left instead of a mismatched white strip
    next to a dark rail. */
@@ -287,6 +407,38 @@
 .fi-topbar .fi-icon-btn:hover {
     background-color: rgb(255 255 255 / 8%) !important;
     color: rgb(255 255 255) !important;
+}
+
+/* ---- Top-performer marquee strip ----
+   Its own full-width row directly under the topbar (TOPBAR_AFTER hook in
+   AdminPanelProvider), spanning the sidebar and the page. It is a row of
+   the app shell's flex column (GLOBAL APP SHELL above), so it never
+   scrolls away; the desktop sidebar is pinned at top 4rem by Filament and
+   is pushed down by the strip's height when the strip is present (IT users
+   have no marquee, so no :has() match and no gap). */
+:root {
+    --fynn-marquee-strip-h: 2.25rem;
+}
+
+.fi-body.fi-body-has-navigation > .fynn-marquee-strip {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    height: var(--fynn-marquee-strip-h);
+    padding-inline: 1rem;
+    background: linear-gradient(180deg, rgb(15 23 42), rgb(30 27 75));
+    border-bottom: 1px solid color-mix(in oklab, var(--teal-400) 35%, transparent);
+    /* Above the fixed sidebar (z 20 on desktop) so the strip's own row
+       is never covered by it. */
+    position: relative;
+    z-index: 25;
+}
+
+@media (min-width: 1024px) {
+    .fi-body-has-topbar:has(> .fynn-marquee-strip) .fi-sidebar {
+        top: calc(4rem + var(--fynn-marquee-strip-h));
+        height: calc(100dvh - 4rem - var(--fynn-marquee-strip-h));
+    }
 }
 
 /* .fi-topbar-end already has a gap-x-4 between its children, but the
@@ -423,11 +575,21 @@
    which are absolutely positioned descendants of this same container --
    would otherwise drift vertically as rows scroll, exactly like they
    already drift horizontally; table-scroll-nav.js compensates for both
-   axes in its `compensation` transform now, not just scrollLeft. */
+   axes in its `compensation` transform now, not just scrollLeft.
+
+   SUPERSEDED 2026-09-27 (user decision): listings must show ONE vertical
+   scrollbar -- the page's (.fi-main-ctn) -- so the max-height / overflow-y
+   bound on .fi-ta-content-ctn below is gone and the table body runs to
+   its full height. The thead sticky rule is kept but is inert: the
+   wrapper is still overflow-x:auto for wide tables, which makes it the
+   header's scroll container, and it no longer scrolls vertically. A
+   sticky header again would need either the bound back or overflow-x
+   visible (no horizontal scroll). The floating up/down arrows
+   (filament/components/table-scroll-to-top.blade.php) scroll the page. */
 
 .fi-ta-content-ctn {
-    max-height: 65dvh;
-    overflow-y: auto;
+    max-height: none;
+    overflow-y: visible;
 }
 
 .fi-ta-table:not(.fi-ta-table-stacked-on-mobile) > thead > tr > th {
@@ -619,16 +781,11 @@
     right: 0;
 }
 
-.fynn-table-scroll-nav[data-fynn-pos='top'] {
-    top: 4.5rem;
-}
-
-.fynn-table-scroll-nav[data-fynn-pos='middle'] {
-    top: 50%;
-}
-
-.fynn-table-scroll-nav[data-fynn-pos='bottom'] {
-    top: calc(100% - 4.5rem);
+/* One cluster per side since 2026-09-27, pinned just under the column
+   header row; its `top` is set inline by table-scroll-nav.js on every
+   page scroll so it follows the frozen header down the listing. */
+.fynn-table-scroll-nav[data-fynn-pos='pinned'] {
+    top: 4rem;
 }
 
 .fynn-table-scroll-stack {
@@ -783,12 +940,58 @@
     justify-self: end;
 }
 
-/* ---- "Back to top" control at the bottom of listing pages ---- */
+/* ---- Floating scroll arrows on listing pages ----
+   resources/views/filament/components/table-scroll-to-top.blade.php.
+   Fixed to the bottom-right of the viewport (sticky is silently disabled
+   by the overflow clipping between the table and .fi-main-ctn), so they
+   float over the listing and never add space below the pagination bar. */
 
 .fynn-table-scroll-to-top-ctn {
+    position: fixed;
+    right: 1.5rem;
+    bottom: 1.5rem;
+    z-index: 30;
     display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    pointer-events: none;
+}
+
+.fynn-table-scroll-to-top {
+    display: inline-flex;
+    align-items: center;
     justify-content: center;
-    margin-top: 1.5rem;
+    width: 2.75rem;
+    height: 2.75rem;
+    border: 1px solid color-mix(in oklab, var(--primary-600) 30%, transparent);
+    border-radius: 9999px;
+    background: color-mix(in oklab, var(--primary-600) 92%, white);
+    color: white;
+    box-shadow: 0 6px 18px -6px color-mix(in oklab, var(--primary-700) 60%, transparent);
+    cursor: pointer;
+    pointer-events: auto;
+    transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.fynn-table-scroll-to-top:hover {
+    background: var(--primary-700);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 22px -8px color-mix(in oklab, var(--primary-700) 70%, transparent);
+}
+
+.fynn-table-scroll-to-top:focus-visible {
+    outline: 2px solid var(--primary-400);
+    outline-offset: 2px;
+}
+
+.fynn-table-scroll-to-top-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+}
+
+.dark .fynn-table-scroll-to-top {
+    background: var(--primary-500);
+    border-color: color-mix(in oklab, var(--primary-300) 40%, transparent);
 }
 
 /* ---- Stat widgets (native StatsOverviewWidget) ---- */
@@ -1154,6 +1357,39 @@
 /* =========================================================
    FYNN-ON Performance Cards
    ========================================================= */
+
+/* Two-part deduction values on the incentive cards (IncentiveStats):
+   the BFL Prime / Growth / SOL share beside the other-bank share. */
+.incentive-split {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.25rem;
+    line-height: 1.15;
+}
+
+.incentive-split-part {
+    display: flex;
+    flex-direction: column;
+    min-width: 7.5rem;
+}
+
+.incentive-split-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: rgb(100 116 139);
+}
+
+.dark .incentive-split-label {
+    color: rgb(148 163 184);
+}
+
+.incentive-split-amount {
+    font-size: 1.375rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
 
 .performance-card {
     border-radius: 16px !important;
@@ -1558,6 +1794,17 @@
 }
 
 
+.commitment-card-consent-pending {
+    background:
+        linear-gradient(135deg,
+            rgb(250 245 255),
+            rgb(243 232 255)) !important;
+
+    border-color:
+        rgb(216 180 254) !important;
+}
+
+
 /* =========================================================
    TOTAL
    ========================================================= */
@@ -1626,6 +1873,17 @@
 
     border-color:
         rgb(239 68 68 / 40%) !important;
+}
+
+
+.dark .commitment-card-consent-pending {
+    background:
+        linear-gradient(135deg,
+            rgb(59 7 100),
+            rgb(88 28 135)) !important;
+
+    border-color:
+        rgb(168 85 247 / 40%) !important;
 }
 
 
@@ -1722,6 +1980,17 @@
 }
 
 
+.commitment-card-consent-pending {
+    background:
+        linear-gradient(135deg,
+            rgb(250 245 255),
+            rgb(243 232 255)) !important;
+
+    border-color:
+        rgb(216 180 254) !important;
+}
+
+
 /* Login */
 
 .commitment-card-login {
@@ -1780,6 +2049,17 @@
 
     border-color:
         rgb(239 68 68 / 40%) !important;
+}
+
+
+.dark .commitment-card-consent-pending {
+    background:
+        linear-gradient(135deg,
+            rgb(59 7 100),
+            rgb(88 28 135)) !important;
+
+    border-color:
+        rgb(168 85 247 / 40%) !important;
 }
 
 .dark .commitment-card-login {
@@ -2108,7 +2388,7 @@ ul.eh-vtree ul.eh-vtree > li::before {
 }
 
 .filament-fullcalendar .fc-daygrid-day-frame {
-    min-height: 6.5rem;
+    min-height: 5.5rem;
     padding: 2px;
     transition: background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
@@ -2430,9 +2710,12 @@ ul.eh-vtree ul.eh-vtree > li::before {
     display: flex;
     align-items: center;
     gap: 0.875rem;
-    margin-bottom: 1.25rem;
-    padding: 1rem 1.25rem;
-    border-radius: 0.85rem;
+    /* Kept to a single slim strip so the Dashboard's follow-up calendar
+       below the heading lands inside the first screen — see the
+       "Compact page chrome" rules further down. */
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 1rem;
+    border-radius: 0.75rem;
     border: 1px solid color-mix(in oklab, var(--primary-500) 25%, transparent);
     background: linear-gradient(135deg, color-mix(in oklab, var(--primary-500) 12%, transparent), transparent);
 }
@@ -2491,7 +2774,23 @@ ul.eh-vtree ul.eh-vtree > li::before {
 .fynn-dashboard-greeting-text {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.25rem;
+}
+
+/* On anything wider than a phone the headline and tagline share one
+   line, with the dash turned into a short vertical separator. */
+@media (min-width: 768px) {
+    .fynn-dashboard-greeting-text {
+        flex-direction: row;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .fynn-dashboard-greeting-dash {
+        width: 3px;
+        height: 1.25rem;
+        margin-block: 0;
+    }
 }
 
 .fynn-dashboard-greeting-sub-line {
@@ -2506,7 +2805,7 @@ ul.eh-vtree ul.eh-vtree > li::before {
 .fynn-dashboard-greeting-headline {
     font-weight: 800;
     font-style: italic;
-    font-size: 1.375rem;
+    font-size: 1.125rem;
     letter-spacing: 0.01em;
     line-height: 1.2;
     background: linear-gradient(120deg, var(--primary-700), var(--primary-500) 60%, var(--primary-300));
@@ -2540,6 +2839,189 @@ ul.eh-vtree ul.eh-vtree > li::before {
 
 .dark .fynn-dashboard-greeting-sub {
     color: rgb(148 163 184);
+}
+
+/* ---- Compact page chrome (panel-wide) ----
+   Every page's main content should land inside the first screen.
+   Filament pads the heading block with py-8, separates heading and
+   content by gap-y-8, stacks content blocks with gap-y-8 and pads each
+   section by p-6; all of that is pulled in here for every page. The
+   Dashboard additionally keeps its calendar widget's section slim and
+   puts the widget's create action in the calendar card's own header
+   row instead of a row of its own above it. */
+
+.fi-page > .fi-page-header-main-ctn {
+    gap: 0.75rem;
+    padding-block: 0.5rem 1.5rem;
+}
+
+.fi-page .fi-page-content {
+    gap: 1rem;
+}
+
+.fi-section:not(.fi-section-not-contained):not(.fi-divided) > .fi-section-content-ctn > .fi-section-content {
+    padding: 1rem 1.25rem;
+}
+
+.fi-section:not(.fi-section-not-contained).fi-divided > .fi-section-content-ctn > .fi-section-content > * {
+    padding: 1rem 1.25rem;
+}
+
+.fi-section:not(.fi-section-not-contained) > .fi-section-content-ctn > .fi-section-footer {
+    padding: 0.75rem 1.25rem;
+}
+
+.fynn-dashboard-calendar-section > .fi-section-content-ctn > .fi-section-content {
+    padding: 0.75rem;
+}
+
+.fynn-dashboard-calendar-section .lead-followup-calendar-card__header {
+    padding-block: 0.5rem;
+}
+
+/* Dashboard calendar fits the first screen: the widget measures the space
+   left below the grid's top and sets one row height for every week row
+   (dashboard-follow-up-calendar-widget.blade.php, fitToScreen()). The
+   cells drop FullCalendar's own spacing (events min-height / 1em bottom
+   margin, roomy number and chip padding), which otherwise keeps each row
+   near 6rem however small the variable is. */
+.fynn-dashboard-calendar-section .filament-fullcalendar .fc-header-toolbar {
+    margin-bottom: 0.75rem !important;
+}
+
+.fynn-dashboard-calendar-section .filament-fullcalendar .fc-daygrid-day-frame {
+    min-height: 0;
+    height: var(--fynn-calendar-row-h, 5.5rem);
+    overflow: hidden;
+}
+
+.fynn-dashboard-calendar-section .filament-fullcalendar .fc-daygrid-day-top {
+    padding: 0.2rem 0.35rem 0;
+}
+
+.fynn-dashboard-calendar-section .filament-fullcalendar .fc-daygrid-day-number {
+    padding: 1px 2px;
+}
+
+.fynn-dashboard-calendar-section .filament-fullcalendar .fc-daygrid-day-events {
+    min-height: 0 !important;
+    margin: 0 !important;
+}
+
+.fynn-dashboard-calendar-section .filament-fullcalendar .fc-daygrid-day-bottom {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.fynn-dashboard-calendar-section .filament-fullcalendar .fc-daygrid-event.lead-followup-day-chip {
+    margin: 1px 4px 0 !important;
+}
+
+/* The Dashboard calendar is drawn on the server with FullCalendar's class
+   names (dashboard-follow-up-calendar-widget.blade.php) so every calendar
+   rule above styles it; these are the layout rules FullCalendar's script
+   would otherwise inject at runtime. */
+.fynn-server-calendar .fc-header-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.fynn-server-calendar .fc-toolbar-chunk {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.fynn-server-calendar .fc-toolbar-title {
+    margin: 0;
+}
+
+.fynn-server-calendar .fc-button-group {
+    display: inline-flex;
+}
+
+.fynn-server-calendar .fc-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--fc-button-border-color);
+    background-color: var(--fc-button-bg-color);
+    color: var(--fc-button-text-color);
+    line-height: 1.5;
+    cursor: pointer;
+    transition: background-color 150ms ease;
+}
+
+.fynn-server-calendar .fc-button:not([disabled]):hover {
+    background-color: var(--fc-button-hover-bg-color);
+}
+
+.fynn-server-calendar .fc-button.fc-button-active {
+    background-color: var(--fc-button-active-bg-color);
+}
+
+.fynn-server-calendar .fc-button svg {
+    width: 1.25rem;
+    height: 1.25rem;
+}
+
+.fynn-server-calendar .fc-button-group > .fc-button:not(:first-child) {
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+}
+
+.fynn-server-calendar .fc-button-group > .fc-button:not(:last-child) {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+}
+
+.fynn-server-calendar__table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+}
+
+.fynn-server-calendar__table th,
+.fynn-server-calendar__table td {
+    padding: 0;
+    border: 1px solid var(--fc-border-color);
+    vertical-align: top;
+}
+
+.fynn-server-calendar__table th {
+    text-align: center;
+}
+
+.fynn-server-calendar .fc-daygrid-day:not(.fc-day-disabled) {
+    cursor: pointer;
+}
+
+.fynn-server-calendar .fc-daygrid-day-top {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.fynn-server-calendar .fc-day-disabled {
+    background-color: rgb(208 208 208 / 30%);
+}
+
+.dark .fynn-server-calendar .fc-day-disabled {
+    background-color: rgb(255 255 255 / 4%);
+}
+
+.fynn-server-calendar .fc-daygrid-event.lead-followup-day-chip {
+    display: block;
+    width: calc(100% - 8px);
+}
+
+/* Month / week / day and prev / next are a server round trip: dim the
+   grid meanwhile instead of leaving the old period looking current. */
+.fynn-server-calendar--busy .fc-view {
+    opacity: 0.6;
+    transition: opacity 150ms ease;
 }
 
 
@@ -2785,4 +3267,98 @@ ul.eh-vtree ul.eh-vtree > li::before {
 .dark .dc-table tbody tr.dc-total-row td {
     background: rgb(31 41 55);
     border-top-color: rgb(55 65 81);
+}
+
+/* =========================================================
+   FROZEN PAGE HEADER + LISTING TOOLBAR + COLUMN HEADER
+   User decision 2026-09-27: on every page the header (breadcrumbs,
+   title, header actions) stays put while the content scrolls, and on
+   resource List pages so do the table toolbar and the column header
+   row. The scroll region is .fi-main-ctn (GLOBAL APP SHELL above), and
+   nothing between it and .fi-page-header-main-ctn scrolls or clips, so
+   the header can be plain position: sticky. The table's header block
+   (.fi-ta-header-ctn: header actions row + the per-page / search /
+   filters toolbar) is sticky too, at the header's measured height
+   (--fynn-sticky-header-h, set by resources/js/listing-sticky-header.js).
+   It must be that block, not .fi-ta-header-toolbar inside it: a sticky
+   element only moves within its parent, and the toolbar's parent is the
+   header block itself. .fi-ta-main (the block's parent) spans header,
+   rows and pagination, so the block stays put for the whole table. Needs
+   .fi-ta-ctn's overflow: hidden lifted. The <th> row is pinned by the
+   script with a translateY (see its header comment for why CSS sticky
+   cannot).
+   ========================================================= */
+
+.fi-body-has-navigation .fi-page-header-main-ctn > .fi-header {
+    position: sticky;
+    top: 0;
+    z-index: 25;
+    /* Swallow the container's top padding (0.5rem — see the compact
+       spacing rule for .fi-page > .fi-page-header-main-ctn above) so
+       nothing scrolls past above the header, and take 0.5rem of the
+       0.75rem gap below as the title's floor. The two pairs MUST equal
+       the real padding / stay under the real gap: any excess pushes the
+       header below the card's top at rest and it covers the listing. */
+    margin-top: -0.5rem;
+    padding-top: 0.5rem;
+    margin-bottom: -0.5rem;
+    padding-bottom: 0.5rem;
+    background-color: rgb(249 250 251);
+}
+
+.dark .fi-body-has-navigation .fi-page-header-main-ctn > .fi-header {
+    background-color: rgb(3 7 18);
+}
+
+.fi-body-has-navigation .fi-resource-list-records-page .fi-ta-ctn {
+    overflow: visible;
+}
+
+.fi-body-has-navigation .fi-resource-list-records-page .fi-ta-header-ctn {
+    position: sticky;
+    top: var(--fynn-sticky-header-h, 0px);
+    z-index: 24;
+    background-color: white;
+    border-start-start-radius: 0.75rem;
+    border-start-end-radius: 0.75rem;
+}
+
+.dark .fi-body-has-navigation .fi-resource-list-records-page .fi-ta-header-ctn {
+    background-color: rgb(17 24 39);
+}
+
+/* The pinned column header sits above the rows it slides over; the
+   toolbar (z 24) and page header (z 25) stay above it in turn. */
+.fi-resource-list-records-page .fi-ta-table > thead.fynn-thead-pinned > tr > th {
+    z-index: 15;
+    box-shadow: 0 1px 0 rgb(15 23 42 / 8%);
+}
+
+/* Toolbar dropdowns (filters, column manager) open from the frozen
+   header block, so they move with it: a panel taller than the space
+   below the toolbar can never be scrolled into view by the page, which
+   hid the filters' Apply button. Cap each panel at the viewport space
+   under the toolbar (--fynn-toolbar-bottom, measured by
+   listing-sticky-header.js), let it scroll on its own without chaining
+   into the page, and keep the filters' Apply / Reset row pinned to the
+   panel's bottom edge. */
+.fi-body-has-navigation .fi-resource-list-records-page .fi-ta-header-ctn .fi-dropdown-panel {
+    max-height: max(12rem, calc(100dvh - var(--fynn-toolbar-bottom, 12rem) - 1.5rem));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.fi-body-has-navigation .fi-resource-list-records-page .fi-ta-filters-dropdown .fi-ta-filters-actions-ctn {
+    position: sticky;
+    bottom: -1.5rem;
+    z-index: 1;
+    margin: 0 -1.5rem -1.5rem;
+    padding: 0.75rem 1.5rem 1.5rem;
+    background-color: white;
+    border-top: 1px solid rgb(229 231 235);
+}
+
+.dark .fi-body-has-navigation .fi-resource-list-records-page .fi-ta-filters-dropdown .fi-ta-filters-actions-ctn {
+    background-color: rgb(17 24 39);
+    border-top-color: rgb(255 255 255 / 10%);
 }

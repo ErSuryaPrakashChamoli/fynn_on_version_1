@@ -21,7 +21,7 @@ use Filament\Support\Icons\Heroicon;
  */
 class JourneyContinuityDashboard extends Page
 {
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedShieldExclamation;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedMap;
 
     protected static ?string $navigationLabel = 'Dashboard';
 

@@ -4,22 +4,21 @@ namespace App\Filament\Resources\UserLoginSessions;
 
 use App\Filament\Resources\UserLoginSessions\Pages\ListUserLoginSessions;
 use App\Filament\Resources\UserLoginSessions\Pages\ViewUserLoginSession;
+use App\Filament\Resources\UserLoginSessions\Schemas\UserLoginSessionInfolist;
 use App\Filament\Resources\UserLoginSessions\Tables\UserLoginSessionsTable;
 use App\Models\UserLoginSession;
 use BackedEnum;
 use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
-
-use App\Filament\Resources\UserLoginSessions\Schemas\UserLoginSessionInfolist;
-use Filament\Schemas\Schema;
 
 class UserLoginSessionResource extends Resource
 {
     protected static ?string $model = UserLoginSession::class;
 
     protected static string|BackedEnum|null $navigationIcon =
-    Heroicon::OutlinedClock;
+        Heroicon::OutlinedComputerDesktop;
 
     protected static ?string $navigationLabel = 'Login & Screen Time';
 

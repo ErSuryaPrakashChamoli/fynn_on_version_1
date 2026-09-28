@@ -52,14 +52,16 @@ class UserResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->check() && auth()->user()->hasRole(['Admin', 'IT']);
+        return auth()->check() && auth()->user()->hasRole('Admin');
     }
 
     /**
      * Hiding the menu item alone left /admin/users reachable by URL.
+     * Admin only since 2026-09-26: IT is limited to the Reporting
+     * Hierarchy and the Help Desk (App\Support\ItModuleAccess).
      */
     public static function canAccess(): bool
     {
-        return auth()->check() && auth()->user()->hasRole(['Admin', 'IT']);
+        return auth()->check() && auth()->user()->hasRole('Admin');
     }
 }

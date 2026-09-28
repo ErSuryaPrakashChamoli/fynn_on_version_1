@@ -32,20 +32,16 @@ class OtherBankIncentiveSlabForm
                                 : null),
 
                         TextInput::make('min_achievement')
-                            ->label('Minimum count achievement (₹)')
-                            ->numeric()
-                            ->minValue(0)
+                            ->label('Minimum count achievement')
                             ->required()
-                            ->live(onBlur: true)
-                            ->helperText(fn ($state): ?string => filled($state)
-                                ? indianAmountInWords($state)
-                                : null)
+                            ->indianAmount(min: 0)
                             ->rule(fn (Get $get, ?OtherBankIncentiveSlab $record): Closure => function (string $attribute, $value, Closure $fail) use ($get, $record): void {
                                 $month = Carbon::parse($get('effective_month') ?: today())->startOfMonth();
 
+                                // The field shows Indian grouping ("12,50,000"); compare the amount.
                                 $exists = OtherBankIncentiveSlab::query()
                                     ->forMonth($month)
-                                    ->where('min_achievement', $value)
+                                    ->where('min_achievement', (float) preg_replace('/[^0-9.]/', '', (string) $value))
                                     ->when($record, fn ($query) => $query->whereKeyNot($record->getKey()))
                                     ->exists();
 
@@ -65,10 +61,15 @@ class OtherBankIncentiveSlabForm
                             ->label(fn (Get $get): string => $get('payout_type') === OtherBankIncentiveSlab::PAYOUT_PERCENTAGE
                                 ? 'Payout (% of achievement)'
                                 : 'Payout amount (₹)')
-                            ->numeric()
-                            ->minValue(0)
-                            ->maxValue(fn (Get $get): ?int => $get('payout_type') === OtherBankIncentiveSlab::PAYOUT_PERCENTAGE ? 100 : null)
                             ->required()
+                            // "₹" for a fixed payout, "%" for a percentage.
+                            ->prefix(fn (Get $get): ?string => $get('payout_type') === OtherBankIncentiveSlab::PAYOUT_PERCENTAGE ? null : '₹')
+                            ->suffix(fn (Get $get): ?string => $get('payout_type') === OtherBankIncentiveSlab::PAYOUT_PERCENTAGE ? '%' : null)
+                            ->indianAmount(
+                                words: false,
+                                min: 0,
+                                max: fn (Get $get): ?int => $get('payout_type') === OtherBankIncentiveSlab::PAYOUT_PERCENTAGE ? 100 : null,
+                            )
                             ->amountInWords(fn (Get $get): bool => $get('payout_type') !== OtherBankIncentiveSlab::PAYOUT_PERCENTAGE),
                     ])
                     ->columns(2)

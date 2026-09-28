@@ -99,7 +99,7 @@ class FollowUpForm
                             ->label('Salary')
                             ->default(
                                 $customer?->salary
-                                    ? '₹'.number_format($customer->salary)
+                                    ? '₹'.indianNumberFormat($customer->salary)
                                     : ''
                             )
                             ->afterStateHydrated(fn (TextInput $component, ?FollowUp $record) => $record

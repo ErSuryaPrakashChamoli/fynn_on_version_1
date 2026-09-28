@@ -55,6 +55,12 @@ class IncentiveCalculator
             'cashback' => (float) ($performance['cashback'] ?? 0),
             'subvention' => (float) ($performance['subvention'] ?? 0),
             'docking' => (float) ($performance['docking'] ?? 0),
+            'cashback_bfl' => (float) ($performance['cashback_bfl'] ?? 0),
+            'cashback_other' => (float) ($performance['cashback_other'] ?? 0),
+            'subvention_bfl' => (float) ($performance['subvention_bfl'] ?? 0),
+            'subvention_other' => (float) ($performance['subvention_other'] ?? 0),
+            'docking_bfl' => (float) ($performance['docking_bfl'] ?? 0),
+            'docking_other' => (float) ($performance['docking_other'] ?? 0),
             'count_achievement' => (float) ($performance['count_achievement'] ?? 0),
             'incentive' => (float) ($performance['incentive'] ?? 0),
         ];

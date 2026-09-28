@@ -41,6 +41,16 @@ Schedule::command('follow-ups:morning-digest')
     ->dailyAt('09:00');
 
 /*
+ * Help Desk: a ticket still unresolved past its priority's deadline goes
+ * to the handler's supervisor, and after a second SLA window to the boss
+ * above (Admins when the line runs out). Every 15 minutes so a 4-hour
+ * Critical SLA is not missed by most of an hour.
+ */
+Schedule::command('complaints:escalate')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping();
+
+/*
  * Daily Commitment: freeze yesterday's commitments (MET / OVERACHIEVED /
  * FAILED) once the day is over. The module's screens always compute live,
  * so this only keeps the stored history honest.
@@ -111,4 +121,8 @@ if (config('demo.panel_enabled') && config('demo.schedule_enabled')) {
 
     Schedule::command('demo:run follow-ups:morning-digest')
         ->dailyAt('09:00');
+
+    Schedule::command('demo:run complaints:escalate')
+        ->everyFifteenMinutes()
+        ->withoutOverlapping();
 }

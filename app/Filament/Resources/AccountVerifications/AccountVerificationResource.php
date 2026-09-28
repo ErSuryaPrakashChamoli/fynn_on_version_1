@@ -29,7 +29,7 @@ class AccountVerificationResource extends Resource
 
     protected static string|UnitEnum|null $navigationGroup = 'Accounts';
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBanknotes;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCheckBadge;
 
     public static function form(Schema $schema): Schema
     {

@@ -55,14 +55,9 @@ class OtherBankSupportTargetForm
                                 : null),
 
                         TextInput::make('target_amount')
-                            ->label('Target amount (₹)')
-                            ->numeric()
-                            ->minValue(0)
+                            ->label('Target amount')
                             ->required()
-                            ->live(onBlur: true)
-                            ->helperText(fn ($state): ?string => filled($state)
-                                ? indianAmountInWords($state)
-                                : null),
+                            ->indianAmount(min: 0),
                     ])
                     ->columns(3)
                     ->columnSpanFull(),

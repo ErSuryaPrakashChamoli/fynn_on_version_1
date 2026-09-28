@@ -23,7 +23,7 @@ class CustomerPanRequestResource extends Resource
 {
     protected static ?string $model = CustomerPanRequest::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCreditCard;
 
     protected static ?string $recordTitleAttribute = 'customer_id';
 

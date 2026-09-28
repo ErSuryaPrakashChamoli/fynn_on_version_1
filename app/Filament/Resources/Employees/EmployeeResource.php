@@ -310,7 +310,6 @@ class EmployeeResource extends Resource
 
             ])
             ->defaultPaginationPageOption(5)
-            ->paginated([5, 10, 25, 50, 100, 'all'])
             ->deferFilters(false)
             ->filters([
                 Filter::make('active_in_selected_month')

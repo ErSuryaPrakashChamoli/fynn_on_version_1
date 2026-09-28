@@ -354,7 +354,6 @@ class CustomersTable
 
             ])
             ->defaultPaginationPageOption(5)
-            ->paginated([5, 10, 25, 50, 100, 'all'])
             ->modifyQueryUsing(
                 // Customers whose journey is still incomplete/not yet
                 // disbursed stay visible under every month (they have no

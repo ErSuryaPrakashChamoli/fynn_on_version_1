@@ -1,0 +1,9 @@
+---
+paths:
+  - 'app/Services/Voting/**, app/Filament/Resources/Polls/**, app/Filament/Resources/PollTypes/**, app/Filament/Pages/MyVotes.php, app/Livewire/PollPrompt.php'
+---
+
+# Pages Livewire
+
+## Voting & Feedback is its own submodule under Setting; anonymous votes have no user; mandatory polls block via PollPrompt
+Since 2026-09-27 (user decision): Setting → Voting & Feedback (PollResource), Poll Types (PollTypeResource, Admin only) and My Votes (everyone, incl. IT via ItModuleAccess). Separate from Announcements — own tables poll_types / polls / poll_recipients / poll_votes, own PollService and PollPrompt (BODY_END); do not merge them. Raise: PollService::canRaise = Admin or designation rank >= Team Leader; Admin sees all polls, a raiser only their own (canManage). Options come ONLY from the poll type and are snapshotted onto polls.options at creation (CreatePoll::mutateFormDataBeforeCreate); type/options/anonymous/mandatory/audience are disabled on edit. publish() snapshots the audience (company / roles / designations, same filter as announcements) into poll_recipients and uses notifyNow() (category NotificationCategory::Voting, viewData.poll_id). vote(): one per recipient, option must be in the poll's list, refused when closed/expired; for is_anonymous the poll_votes.user_id is NULL — participation is only on poll_recipients.voted_at, so never add a user column back or log the voter. Mandatory + live + unvoted rows (PollRecipient::blocking) block the panel through PollPrompt (non-dismissible, mirrors AnnouncementPrompt); optional polls only wait on My Votes + the bell. Default types seeded by Database\Seeders\VotingSeeder from the migration; demo gets DemoEnvironment\VotingSeeder (personas already answered the mandatory poll so nobody is blocked). Covered by tests/Feature/VotingTest.php.

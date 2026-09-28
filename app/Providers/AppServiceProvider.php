@@ -7,11 +7,15 @@ use App\Enums\NotificationCategory;
 use App\Listeners\EndLoginSession;
 use App\Listeners\StartLoginSession;
 use App\Models\Customer;
+use App\Models\CustomerAssignment;
+use App\Models\FollowUp;
+use App\Models\Lead;
 use App\Models\User;
 use App\Observers\CustomerObserver;
 use App\Services\DailyCommitmentGate;
 use App\Services\Journey\CustomerJourneyAccessService;
 use App\Services\MonthlyTargetGate;
+use App\Support\FollowUpCalendarCache;
 use Closure;
 use Filament\Forms\Components\Field;
 use Filament\Forms\Components\TextInput;
@@ -68,6 +72,16 @@ class AppServiceProvider extends ServiceProvider
         );
 
         Customer::observe(CustomerObserver::class);
+
+        /*
+         * The follow-up calendars cache each month's day chips
+         * (FollowUpCalendarCache); any follow-up, and any assignment or
+         * lead that decides who sees one, retires those caches.
+         */
+        foreach ([FollowUp::class, CustomerAssignment::class, Lead::class] as $model) {
+            $model::saved(fn () => FollowUpCalendarCache::flush());
+            $model::deleted(fn () => FollowUpCalendarCache::flush());
+        }
 
         /*
          * Files every bell notification under a tab (see NotificationCategory)
@@ -151,10 +165,83 @@ class AppServiceProvider extends ServiceProvider
                     return $components;
                 }
 
-                $components[] = Text::make(indianAmountInWords($amount));
+                $components[] = Text::make(indianAmountInWordsWithPaise($amount));
 
                 return $components;
             });
+        });
+
+        /*
+         * TextInput::indianAmount() is the one way to take a rupee amount:
+         * the box shows Indian grouping with paise kept ("12,50,000.50"),
+         * regrouped when the field loses focus; the value is saved as plain
+         * digits; a "₹" prefix is added unless the field has one; and the
+         * figure is read back in words underneath (pass words: false on a
+         * read-only computed figure, where words would only be clutter).
+         * Replaces ->numeric() on the field — a number input cannot hold
+         * commas — with a pattern rule instead. Do not combine it with a
+         * field's own formatStateUsing() / dehydrateStateUsing(): those are
+         * single callbacks and this macro sets both.
+         */
+        TextInput::macro('indianAmount', function (bool $words = true, bool $allowNegative = false, float|Closure|null $min = null, float|Closure|null $max = null): TextInput {
+            /** @var TextInput $this */
+            $this->numeric(false)
+                ->inputMode('decimal')
+                ->formatStateUsing(fn ($state): ?string => filled($state) ? indianNumberFormat($state) : null)
+                ->dehydrateStateUsing(function ($state): ?string {
+                    $clean = preg_replace('/[^0-9.\-]/', '', (string) $state);
+
+                    return $clean === '' || $clean === '-' ? null : $clean;
+                })
+                ->rule($allowNegative ? 'regex:/^-?[0-9,]*(\.[0-9]{1,2})?$/' : 'regex:/^[0-9,]*(\.[0-9]{1,2})?$/')
+                ->validationMessages(['regex' => $allowNegative
+                    ? 'Enter an amount in rupees, up to two decimal places.'
+                    : 'Enter an amount of zero or more, up to two decimal places.']);
+
+            // minValue()/maxValue() would compare the text's LENGTH now that
+            // the field is not numeric, so the bounds are checked here on the
+            // amount itself.
+            if ($min !== null || $max !== null) {
+                $this->rule(fn (TextInput $component): Closure => function (string $attribute, $value, Closure $fail) use ($component, $min, $max): void {
+                    $amount = preg_replace('/[^0-9.\-]/', '', (string) $value);
+
+                    if ($amount === '' || ! is_numeric($amount)) {
+                        return;
+                    }
+
+                    $lower = $component->evaluate($min);
+                    $upper = $component->evaluate($max);
+
+                    if ($lower !== null && (float) $amount < (float) $lower) {
+                        $fail('Enter at least ₹'.indianNumberFormat($lower).'.');
+                    }
+
+                    if ($upper !== null && (float) $amount > (float) $upper) {
+                        $fail('Enter no more than '.indianNumberFormat($upper).'.');
+                    }
+                });
+            }
+
+            // Read the raw property: a prefix set with a closure (e.g. "₹" or
+            // none, depending on another field) must not be evaluated here.
+            if ($this->prefixLabel === null) {
+                $this->prefix('₹');
+            }
+
+            // Regroup when the field loses focus. Harmless on a read-only
+            // field (it never fires there); checking disabled here would
+            // evaluate the field before its form exists.
+            if ($this->isLive === null) {
+                $this->live(onBlur: true);
+            }
+
+            $this->afterStateUpdated(function ($state, TextInput $component): void {
+                if (filled($state)) {
+                    $component->state(indianNumberFormat($state));
+                }
+            });
+
+            return $words ? $this->amountInWords() : $this;
         });
     }
 }

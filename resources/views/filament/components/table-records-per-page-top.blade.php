@@ -6,10 +6,11 @@
     CanPaginateRecords — so the two stay in sync automatically without any
     extra wiring.
 
-    Options mirror Filament's table pagination default ([5, 10, 25, 50] —
-    see Table::getPaginationPageOptions()). No resource in this app
-    currently overrides that list; if one starts to, its top selector
-    would need the same override.
+    Options come from App\Support\TablePaginationOptions, the same list
+    AdminPanelProvider::configurePaginationOptions() sets as every table's
+    default. A <select> whose current value has no matching <option> falls
+    back to showing its first option, which is how this one used to read
+    "5" while the bottom one read "All" — so the two lists must be the same.
 --}}
 <div
     x-data="{
@@ -31,8 +32,10 @@
     <label class="fi-pagination-records-per-page-select">
         <x-filament::input.wrapper :prefix="__('filament::components/pagination.fields.records_per_page.label')">
             <x-filament::input.select wire:model.live="tableRecordsPerPage">
-                @foreach ([5, 10, 25, 50] as $option)
-                    <option value="{{ $option }}">{{ $option }}</option>
+                @foreach (\App\Support\TablePaginationOptions::OPTIONS as $option)
+                    <option value="{{ $option }}">
+                        {{ $option === 'all' ? __('filament::components/pagination.fields.records_per_page.options.all') : $option }}
+                    </option>
                 @endforeach
             </x-filament::input.select>
         </x-filament::input.wrapper>

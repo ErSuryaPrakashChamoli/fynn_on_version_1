@@ -12,12 +12,17 @@
     // the opposite extreme.
     const SCROLL_RATIO = 0.72;
 
-    // A cluster only renders at the top/bottom (in addition to the middle)
-    // once the listing's own full height clears this -- short tables just
-    // get the single centred cluster.
-    const TALL_LISTING_HEIGHT = 480;
+    // One cluster per side, pinned just under the column header row: the
+    // table body no longer scrolls on its own (listings have one scrollbar,
+    // the page's), so a cluster parked at the table's middle or bottom was
+    // off-screen for most of a long listing. Following the frozen header
+    // keeps the arrows in reach at every scroll position.
+    const POSITIONS = ['pinned'];
 
-    const POSITIONS = ['top', 'middle', 'bottom'];
+    // Gap between the column header row and the cluster's top.
+    const PIN_GAP = 12;
+
+    const LIST_PAGE_CLASS = 'fi-resource-list-records-page';
 
     // Built from the same chevron glyph used for the primary "step" arrows,
     // duplicated and offset to read as a double-chevron "jump to edge" icon.
@@ -128,11 +133,38 @@
     // explicit counter-transform is simple, symmetric for both sides, and
     // avoids relying on sticky's containing-block quirks entirely.
     //
-    // `container` (.fi-ta-content-ctn) is now also bounded to a max-height
-    // with its own vertical overflow (see the STICKY TABLE HEADER CSS), so
-    // it scrolls on both axes -- these clusters drift on a row scroll the
-    // same way they drift on a column scroll, and the `translateY` term
-    // below cancels that on top of its own `-50%` self-centering.
+    // The `translateY(scrollTop)` term is kept for any container that does
+    // scroll vertically (custom overflow-x-auto wrappers); on listings the
+    // table body no longer does (one page scrollbar), so it is 0 there and
+    // the vertical placement comes from pinnedTop() on every page scroll.
+    // Where, inside `container`, the cluster's top must sit so it shows
+    // just under the column header row: under the row's natural place at
+    // rest, and under the frozen line (page header + table header block +
+    // header row, see listing-sticky-header.js) once the page has scrolled
+    // the table's top past it. Clamped so it never leaves the table.
+    function pinnedTop(container, clusterHeight) {
+        const thead = container.querySelector('thead');
+        const theadHeight = thead ? thead.getBoundingClientRect().height : 0;
+        const boxRect = container.getBoundingClientRect();
+        let top = theadHeight;
+
+        const page = container.closest('.fi-page');
+        const region = document.querySelector('.fi-body-has-navigation .fi-main-ctn');
+
+        if (page && region && page.classList.contains(LIST_PAGE_CLASS)) {
+            const headerHeight = parseFloat(getComputedStyle(page).getPropertyValue('--fynn-sticky-header-h')) || 0;
+            const block = container.closest('.fi-ta')?.querySelector('.fi-ta-header-ctn');
+            const blockHeight = block ? block.getBoundingClientRect().height : 0;
+            const frozenLine = region.getBoundingClientRect().top + headerHeight + blockHeight + theadHeight;
+
+            top = Math.max(top, frozenLine - boxRect.top);
+        }
+
+        top += PIN_GAP;
+
+        return Math.max(PIN_GAP, Math.min(top, boxRect.height - clusterHeight - PIN_GAP));
+    }
+
     function updateVisibility(container) {
         const clusters = container.querySelectorAll(':scope > .fynn-table-scroll-nav');
 
@@ -149,17 +181,15 @@
         const stepAmount = container.clientWidth * SCROLL_RATIO;
         const farFromStart = scrollLeft > stepAmount * 1.4;
         const farFromEnd = (maxScrollLeft - scrollLeft) > stepAmount * 1.4;
-        const isTall = container.offsetHeight > TALL_LISTING_HEIGHT;
-        const compensation = `translate(${scrollLeft}px, calc(-50% + ${scrollTop}px))`;
+        const compensation = `translate(${scrollLeft}px, ${scrollTop}px)`;
 
         clusters.forEach((cluster) => {
             const isLeft = cluster.dataset.fynnSide === 'left';
-            const isMiddle = cluster.dataset.fynnPos === 'middle';
-            const baseVisible = isLeft ? canScrollLeft : canScrollRight;
-            const visible = baseVisible && (isMiddle || isTall);
+            const visible = isLeft ? canScrollLeft : canScrollRight;
 
             cluster.classList.toggle('is-visible', visible);
             cluster.style.transform = compensation;
+            cluster.style.top = `${Math.round(pinnedTop(container, cluster.offsetHeight || 120))}px`;
 
             const jumpBtn = cluster.querySelector('.fynn-table-scroll-arrow-btn--jump');
 
@@ -170,6 +200,20 @@
     }
 
     const pendingVisibilityUpdates = new WeakSet();
+
+    // Every container set up so far, so a page scroll (which never fires on
+    // the container itself) can re-pin all of their clusters.
+    const knownContainers = new Set();
+
+    function refreshAll() {
+        knownContainers.forEach((container) => {
+            if (container.isConnected) {
+                scheduleVisibilityUpdate(container);
+            } else {
+                knownContainers.delete(container);
+            }
+        });
+    }
 
     function scheduleVisibilityUpdate(container) {
         if (pendingVisibilityUpdates.has(container)) {
@@ -201,6 +245,8 @@
     }
 
     function setupContainer(container) {
+        knownContainers.add(container);
+
         if (!container.hasAttribute('data-fynn-scroll-nav-ready')) {
             container.setAttribute('data-fynn-scroll-nav-ready', '1');
 
@@ -306,6 +352,11 @@
 
     function init() {
         onNavigate();
+
+        // Capture phase: the page's scroll region (.fi-main-ctn) is what
+        // scrolls a listing, and scroll events do not bubble.
+        window.addEventListener('scroll', refreshAll, true);
+        window.addEventListener('resize', refreshAll);
 
         document.addEventListener('livewire:navigated', onNavigate);
     }

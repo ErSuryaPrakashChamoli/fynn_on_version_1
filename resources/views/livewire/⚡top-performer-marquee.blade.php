@@ -192,18 +192,71 @@ new class extends Component
     {
         return <<<'HTML'
             <div wire:poll.60s="loadPerformers" class="fi-top-marquee-wrapper">
-                <div class="ticker-container">
-                    {{-- Two identical copies scrolled by exactly one copy's
-                         width (-50%): the text is on screen from the first
-                         frame and loops without a gap. wire:key restarts the
-                         animation only when the message itself changes. --}}
+                {{-- Circular ticker. The server renders two copies scrolled
+                     by -50% so the text moves from the first frame even
+                     without JS; Alpine then clones the copy until the track
+                     spans at least two strip widths (an even count, so -50%
+                     is still a whole number of copies) and re-times the
+                     animation at a constant px/s. Without that, a message
+                     shorter than the strip left a blank stretch behind the
+                     second copy before it wrapped. wire:ignore keeps the
+                     clones across polls; the wire:key on the message hash
+                     replaces the whole track when the text changes. --}}
+                <div
+                    class="ticker-container"
+                    wire:ignore
+                    wire:key="marquee-{{ md5($message) }}"
+                    x-data="{
+                        speed: 60,
+                        build() {
+                            const track = $refs.track;
+                            const copy = $refs.copy;
+                            track.querySelectorAll('[data-marquee-clone]').forEach((clone) => clone.remove());
+                            const copyWidth = copy.getBoundingClientRect().width;
+                            const stripWidth = $el.clientWidth;
+                            if (! copyWidth || ! stripWidth) {
+                                return;
+                            }
+                            let count = Math.max(2, Math.ceil(stripWidth / copyWidth) * 2);
+                            if (count % 2) {
+                                count++;
+                            }
+                            for (let i = 1; i < count; i++) {
+                                const clone = copy.cloneNode(true);
+                                clone.setAttribute('aria-hidden', 'true');
+                                clone.setAttribute('data-marquee-clone', '');
+                                track.appendChild(clone);
+                            }
+                            track.style.animation = 'none';
+                            void track.offsetWidth;
+                            track.style.animation = '';
+                            track.style.animationDuration = ((copyWidth * count) / 2 / this.speed) + 's';
+                        },
+                    }"
+                    x-init="
+                        build();
+                        if (window.ResizeObserver) {
+                            let last = $el.clientWidth;
+                            new ResizeObserver(() => {
+                                if ($el.clientWidth !== last) {
+                                    last = $el.clientWidth;
+                                    build();
+                                }
+                            }).observe($el);
+                        }
+                    "
+                >
                     <div
                         class="marquee-text"
                         style="animation-duration: {{ $duration }}s"
-                        wire:key="marquee-{{ md5($message) }}"
+                        x-ref="track"
                     >
-                        <span class="marquee-copy">{{ $message }}</span>
-                        <span class="marquee-copy" aria-hidden="true">{{ $message }}</span>
+                        {{-- Segments coloured by kind so the headings and the
+                             month stand apart from the names: 📅 month (sky
+                             blue), 🏆 section title (gold), the rest names.
+                             build() clones this copy, so clones keep it. --}}
+                        <span class="marquee-copy" x-ref="copy">@foreach (explode('     •     ', $message) as $segment)@if (! $loop->first)<span class="marquee-sep">&nbsp;&nbsp;•&nbsp;&nbsp;</span>@endif<span @class(['marquee-month' => str_starts_with($segment, '📅'), 'marquee-title' => str_starts_with($segment, '🏆'), 'marquee-name' => ! str_starts_with($segment, '📅') && ! str_starts_with($segment, '🏆')])>{{ $segment }}</span>@endforeach</span>
+                        <span class="marquee-copy" aria-hidden="true" data-marquee-clone>@foreach (explode('     •     ', $message) as $segment)@if (! $loop->first)<span class="marquee-sep">&nbsp;&nbsp;•&nbsp;&nbsp;</span>@endif<span @class(['marquee-month' => str_starts_with($segment, '📅'), 'marquee-title' => str_starts_with($segment, '🏆'), 'marquee-name' => ! str_starts_with($segment, '📅') && ! str_starts_with($segment, '🏆')])>{{ $segment }}</span>@endforeach</span>
                     </div>
                 </div>
             </div>
@@ -212,14 +265,15 @@ new class extends Component
 
 
                         <style>
+            /* Fills the full-width strip under the topbar (.fynn-marquee-strip,
+               rendered by AdminPanelProvider's TOPBAR_AFTER hook and styled in
+               theme.css). It used to sit inside the topbar, absolutely
+               positioned with a hard-coded right edge that the period
+               selector outgrew. */
             .fi-top-marquee-wrapper {
-                position: absolute;
-                left: 260px;       /* Start after Filament logo/sidebar area */
-                right: 380px;      /* End before profile area — widened from 160px to also clear the global month selector (two <select>s, ~220px) now sitting left of the notification bell; fine-tune visually if it still overlaps at your topbar font/zoom. */
-                top: 50%;
-                transform: translateY(-50%);
+                position: relative;
+                width: 100%;
                 overflow: hidden;
-                z-index: 10;
             }
 
             .ticker-container {
@@ -240,6 +294,30 @@ new class extends Component
 
             .marquee-copy {
                 padding-right: 6rem;
+            }
+
+            /* The month: sky blue, so it reads as the period, not a name. */
+            .marquee-month {
+                color: #7dd3fc;
+                text-shadow: 0 0 10px rgb(56 189 248 / 55%), 0 1px 2px rgb(0 0 0 / 50%);
+            }
+
+            /* Group headings (the trophy segments): gold capitals, so each
+               leaderboard group's start stands out from its names. */
+            .marquee-title {
+                color: #fbbf24;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                text-shadow: 0 0 10px rgb(245 158 11 / 55%), 0 1px 2px rgb(0 0 0 / 50%);
+            }
+
+            .marquee-name {
+                color: #ffffff;
+            }
+
+            .marquee-sep {
+                color: rgb(148 163 184);
+                text-shadow: none;
             }
 
             .marquee-text:hover {

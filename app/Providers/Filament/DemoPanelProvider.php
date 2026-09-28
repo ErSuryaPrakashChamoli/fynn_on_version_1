@@ -9,6 +9,7 @@ use App\Http\Middleware\EnsureMonthlyTargetIsSet;
 use App\Http\Middleware\Portal\EnsureDemoAccess;
 use App\Http\Middleware\Portal\EnsureDemoIsAvailable;
 use App\Http\Middleware\Portal\UseDemoContext;
+use App\Http\Middleware\RestrictItRoleToAllowedModules;
 use App\Support\Demo\DemoContext;
 use App\Support\Demo\DemoDatabaseQueue;
 use Filament\Facades\Filament;
@@ -58,11 +59,19 @@ class DemoPanelProvider extends AdminPanelProvider
         )
             ->authGuard('demo')
             /*
-             * The demo marker and one-click "View as" switcher float in the
-             * bottom-right corner, so the admin layout (topbar marquee,
-             * sidebar) stays exactly as on /admin. A thin amber line along
-             * the topbar keeps "this is the demo" visible at a glance.
+             * The one-click "View as" switcher is the "Switch demo user"
+             * entry under My Profile in the user menu; the modal it opens
+             * is rendered at BODY_END so it outlives the menu dropdown.
+             * The admin layout (topbar marquee, sidebar) stays exactly as
+             * on /admin. A thin amber line along the topbar keeps "this is
+             * the demo" visible at a glance.
              */
+            ->renderHook(
+                PanelsRenderHook::USER_MENU_PROFILE_AFTER,
+                fn (): string => Filament::auth()->check()
+                    ? view('filament.demo.user-menu-switcher')->render()
+                    : '',
+            )
             ->renderHook(
                 PanelsRenderHook::BODY_END,
                 fn (): string => Filament::auth()->check()
@@ -109,6 +118,7 @@ class DemoPanelProvider extends AdminPanelProvider
             ->authMiddleware([
                 Authenticate::class,
                 EnforceIdleTimeout::class,
+                RestrictItRoleToAllowedModules::class,
                 EnsureMonthlyTargetIsSet::class,
             ]);
     }

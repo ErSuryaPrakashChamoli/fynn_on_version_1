@@ -139,3 +139,72 @@ function indianAmountInWords($number): string
 
     return implode(' ', $words);
 }
+
+/**
+ * Indian digit grouping that keeps the paise and the sign, and reads back
+ * a value that already carries commas — "-1250000.5" and "12,50,000.50"
+ * both become "-12,50,000.50" / "12,50,000.50". Used by the
+ * TextInput::indianAmount() macro, where settlement figures (GST, TDS)
+ * have paise; indianCurrencyFormat() stays whole-rupee for its callers.
+ */
+function indianNumberFormat($number): string
+{
+    if ($number === null || $number === '') {
+        return '';
+    }
+
+    $clean = preg_replace('/[^0-9.\-]/', '', (string) $number);
+
+    if ($clean === '' || $clean === '-' || ! is_numeric($clean)) {
+        return (string) $number;
+    }
+
+    $negative = str_starts_with($clean, '-');
+    $clean = ltrim($clean, '-');
+    [$rupees, $paise] = array_pad(explode('.', $clean, 2), 2, null);
+    $rupees = ltrim($rupees, '0') ?: '0';
+
+    $grouped = indianCurrencyFormat($rupees);
+
+    if ($paise !== null && rtrim($paise, '0') !== '') {
+        $grouped .= '.'.str_pad(substr($paise, 0, 2), 2, '0');
+    }
+
+    return ($negative ? '-' : '').$grouped;
+}
+
+/**
+ * indianAmountInWords() plus the paise when there are any —
+ * "Twelve Lakh Fifty Thousand and Seventy Five Paise". Whole amounts read
+ * exactly as indianAmountInWords() does.
+ */
+function indianAmountInWordsWithPaise($number): string
+{
+    if ($number === null || $number === '') {
+        return '';
+    }
+
+    $clean = preg_replace('/[^0-9.\-]/', '', (string) $number);
+
+    if ($clean === '' || ! is_numeric($clean)) {
+        return '';
+    }
+
+    $negative = (float) $clean < 0;
+    $absolute = abs((float) $clean);
+    $rupees = (int) floor($absolute);
+    $paise = (int) round(($absolute - $rupees) * 100);
+
+    if ($paise === 100) {
+        $rupees++;
+        $paise = 0;
+    }
+
+    $words = indianAmountInWords($rupees);
+
+    if ($paise > 0) {
+        $words = ($rupees > 0 ? $words.' and ' : '').indianAmountInWords($paise).' Paise';
+    }
+
+    return ($negative ? 'Minus ' : '').$words;
+}

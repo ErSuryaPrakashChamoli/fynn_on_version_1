@@ -305,6 +305,35 @@ class FollowUpReminderTest extends TestCase
         $this->assertSame(NotificationCategory::FollowUp->value, $this->callerUser->unreadNotifications()->sole()->category);
     }
 
+    public function test_the_bell_groups_every_request_under_one_requests_tab(): void
+    {
+        Notification::make()->title('Eligibility: Sam')->sendToDatabase($this->callerUser);
+        Notification::make()->title('Duplicate PAN Request Approved')->sendToDatabase($this->callerUser);
+        Notification::make()->title('Customer edit request approved')->sendToDatabase($this->callerUser);
+        Notification::make()->title('Bank MIS settlement uploaded')->sendToDatabase($this->callerUser);
+
+        $this->actingAs($this->callerUser);
+
+        $bell = Livewire::test(CategorizedDatabaseNotifications::class);
+        $tabs = $bell->instance()->getCategoryTabs();
+
+        $this->assertSame(['all', CategorizedDatabaseNotifications::REQUESTS_TAB, NotificationCategory::Settlement->value], array_keys($tabs));
+        $this->assertSame('Requests', $tabs[CategorizedDatabaseNotifications::REQUESTS_TAB]['label']);
+        $this->assertSame(3, $tabs[CategorizedDatabaseNotifications::REQUESTS_TAB]['unread']);
+
+        $bell->call('showCategory', CategorizedDatabaseNotifications::REQUESTS_TAB)
+            ->assertSee('Eligibility: Sam')
+            ->assertSee('Duplicate PAN Request Approved')
+            ->assertSee('Customer edit request approved')
+            ->assertDontSee('Bank MIS settlement uploaded');
+
+        $this->assertSame(3, $bell->instance()->getNotificationsQuery()->count());
+
+        $bell->call('markAllNotificationsAsRead');
+
+        $this->assertSame(NotificationCategory::Settlement->value, $this->callerUser->unreadNotifications()->sole()->category);
+    }
+
     public function test_follow_ups_can_be_dropped_in_bulk_from_the_listing(): void
     {
         $admin = User::factory()->create(['employee_id' => Employee::factory()->create()->id]);

@@ -107,7 +107,9 @@ class HierarchyHelper
      */
     public static function ownHierarchyIds(User $user): Collection
     {
-        if ($user->hasRole('Admin')) {
+        // Admin and IT both see the whole company on the Reporting
+        // Hierarchy page (IT sees nothing else — App\Support\ItModuleAccess).
+        if ($user->hasRole(['Admin', 'IT'])) {
             return Employee::query()->pluck('id');
         }
 

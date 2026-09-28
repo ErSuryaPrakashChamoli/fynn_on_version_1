@@ -12,7 +12,7 @@ use App\Models\Demo\DemoUser;
  */
 class DemoRoleSwitcherTest extends PortalBoundaryTestCase
 {
-    public function test_the_floating_switcher_is_shown_on_demo_with_every_role(): void
+    public function test_the_switcher_modal_lists_every_demo_user_under_their_role(): void
     {
         $this->makeDemoUser(['name' => 'Priya Caller', 'email' => 'priya@demo-fynnon.test'], 'Caller');
         $this->makeDemoUser(['name' => 'Tarun Leader', 'email' => 'tarun@demo-fynnon.test'], 'Team Leader');
@@ -20,7 +20,8 @@ class DemoRoleSwitcherTest extends PortalBoundaryTestCase
 
         $this->get('/demo')
             ->assertOk()
-            ->assertSeeInOrder(['Demo', 'Ada Admin', 'Admin', 'Viewing as Ada Admin (Admin)'])
+            ->assertSee('Switch demo user')
+            ->assertSee('Viewing as Ada Admin (Admin)')
             // Every demo user, grouped under their role.
             ->assertSee('Caller (1)')
             ->assertSee('Priya Caller')
@@ -28,17 +29,27 @@ class DemoRoleSwitcherTest extends PortalBoundaryTestCase
             ->assertSee('Tarun Leader');
     }
 
-    public function test_the_floating_switcher_can_be_dragged_and_remembers_its_spot(): void
+    public function test_the_switcher_is_a_user_menu_entry_that_opens_a_modal_not_a_floating_pill(): void
     {
         $this->actingAsDemoUser($this->makeDemoUser(['email' => config('demo.role_logins.admin.email')]));
 
-        $this->get('/demo')
+        $html = $this->get('/demo')
             ->assertOk()
+            ->assertSee('demo-view-as-menu-item', escape: false)
+            ->assertSee('Switch demo user')
             ->assertSee('class="demo-view-as"', escape: false)
-            ->assertSee('x-on:pointerdown="start($event)"', escape: false)
-            ->assertSee('x-on:mousedown.capture="holdPressUntilRelease($event)"', escape: false)
-            ->assertSee('x-on:click.capture="swallowClickAfterDrag($event)"', escape: false)
-            ->assertSee('fynnon.demo-view-as-position', escape: false);
+            ->assertDontSee('demo-view-as__pill', escape: false)
+            ->assertDontSee('x-on:pointerdown="start($event)"', escape: false)
+            ->assertDontSee('fynnon.demo-view-as-position', escape: false)
+            ->getContent();
+
+        // The entry sits inside the user menu, after the profile link.
+        $menuStart = strpos($html, 'fi-user-menu');
+        $entry = strpos($html, 'demo-view-as-menu-item');
+        $this->assertNotFalse($menuStart);
+        $this->assertNotFalse($entry);
+        $this->assertGreaterThan($menuStart, $entry);
+        $this->assertGreaterThan(strpos($html, '/demo/profile'), $entry);
     }
 
     public function test_admin_can_switch_to_any_specific_user_and_back(): void

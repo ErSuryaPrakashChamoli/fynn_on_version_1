@@ -1,0 +1,9 @@
+---
+paths:
+  - 'app/Services/HelpDesk/**'
+---
+
+# Help Desk
+
+## Help Desk tickets: every change goes through ComplaintService; SLA never pauses
+Since 2026-09-26 the Help Desk (app/Filament/Resources/Complaints, ComplaintCategories, ComplaintPriorities; nav group "Help Desk") is open to EVERY signed-in role — ComplaintResource::canAccess() is just auth. Never write complaints.status/assigned_to directly: ComplaintService::raise/takeUp/assign/hold/resume/resolve/close/reopen/reprioritise/comment write the row, the thread (complaint_comments, type comment|system) and the bell notifications (NotificationCategory::HelpDesk) together, and each re-checks authority (AuthorizationException). Routing: ComplaintCategory.routing Team = handler_role stamped with the FIRST handler role, visibility via any role in category.handler_roles (JSON contains); Supervisor = raiser picks from supervisorOptionsFor() (active ReportingTree ancestors with a login). Deadline = sla_started_at + priority.resolve_within_minutes (minutes since 2026-09-26: Low 2880 / Medium 1440 / High 60 / Critical 10; the create migration makes the column in minutes and 2026_09_26_210000 converts a DB that still has resolve_within_hours), set on raise AND reopen; On Hold never pauses it. `complaints:escalate` (every 15 min, also demo:run) sends level 1 once due_at passes to the assignee's nearest active boss, level 2 after a second SLA window to the boss above; a team ticket nobody took up, or a handler with no employee/boss, goes to the Admins. Visibility (scopeVisible/canView): Admin all; raiser; assignee; escalatee; handler-team; supervisors see tickets HELD by their subordinates (visibleSubordinateIds) but cannot handle them. Defaults (8 categories with reasons, 4 priorities) are seeded by Database\Seeders\HelpDeskSeeder from the create_help_desk_tables migration; tests rely on them. Covered by tests/Feature/HelpDeskComplaintTest.php.

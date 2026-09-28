@@ -22,6 +22,16 @@ class AchievementCalculatorService
     private const HALF_DEDUCTION_BANKS = ['BFL Prime', 'BFL Growth'];
 
     /**
+     * The in-house products whose cashback / subvention / docking are
+     * reported as one group on the dashboard (user decision 2026-09-27),
+     * with every other sanctioning bank (including BFL RSL) in the second
+     * group — their deduction policies differ, so the two are read apart.
+     *
+     * @var list<string>
+     */
+    public const IN_HOUSE_SPLIT_BANKS = ['BFL Prime', 'BFL Growth', 'BFL SOL'];
+
+    /**
      * Calendar days a caller must be on the rolls within a month before
      * their target is counted into the hierarchy above them.
      */
@@ -149,18 +159,35 @@ class AchievementCalculatorService
      * cashback+subvention+docking is halved or deducted in full before it's
      * added to the total.
      *
-     * @return array{actual: float, cashback: float, subvention: float, docking: float, count_achievement: float}
+     * The *_bfl / *_other pairs split each deduction between loans
+     * sanctioned by IN_HOUSE_SPLIT_BANKS and everything else; each pair
+     * always adds up to the total.
+     *
+     * @return array{actual: float, cashback: float, subvention: float, docking: float, count_achievement: float, cashback_bfl: float, cashback_other: float, subvention_bfl: float, subvention_other: float, docking_bfl: float, docking_other: float}
      */
     public function computeAchievementTotals(Builder $customers): array
     {
         $totals = $this->achievementQuery($customers)->first();
 
+        $cashback = (float) ($totals->cashback ?? 0);
+        $subvention = (float) ($totals->subvention ?? 0);
+        $docking = (float) ($totals->docking ?? 0);
+        $cashbackBfl = (float) ($totals->cashback_bfl ?? 0);
+        $subventionBfl = (float) ($totals->subvention_bfl ?? 0);
+        $dockingBfl = (float) ($totals->docking_bfl ?? 0);
+
         return [
             'actual' => (float) ($totals->actual ?? 0),
-            'cashback' => (float) ($totals->cashback ?? 0),
-            'subvention' => (float) ($totals->subvention ?? 0),
-            'docking' => (float) ($totals->docking ?? 0),
+            'cashback' => $cashback,
+            'subvention' => $subvention,
+            'docking' => $docking,
             'count_achievement' => (float) ($totals->count_achievement ?? 0),
+            'cashback_bfl' => $cashbackBfl,
+            'cashback_other' => $cashback - $cashbackBfl,
+            'subvention_bfl' => $subventionBfl,
+            'subvention_other' => $subvention - $subventionBfl,
+            'docking_bfl' => $dockingBfl,
+            'docking_other' => $docking - $dockingBfl,
         ];
     }
 
@@ -216,6 +243,12 @@ class AchievementCalculatorService
                 SUM(CASE WHEN cs.mis_cashback IS NOT NULL THEN cs.mis_cashback ELSE customers.cashback END) as cashback,
                 SUM(CASE WHEN cs.mis_subvention IS NOT NULL THEN cs.mis_subvention ELSE customers.subvention END) as subvention,
                 SUM(CASE WHEN cs.mis_docking IS NOT NULL THEN cs.mis_docking ELSE CAST(customers.docking AS DECIMAL(15,2)) END) as docking,
+                SUM(CASE WHEN UPPER(TRIM(REPLACE(customers.sanctioned_bank, \'-\', \' \'))) IN (?, ?, ?)
+                    THEN COALESCE(CASE WHEN cs.mis_cashback IS NOT NULL THEN cs.mis_cashback ELSE customers.cashback END, 0) ELSE 0 END) as cashback_bfl,
+                SUM(CASE WHEN UPPER(TRIM(REPLACE(customers.sanctioned_bank, \'-\', \' \'))) IN (?, ?, ?)
+                    THEN COALESCE(CASE WHEN cs.mis_subvention IS NOT NULL THEN cs.mis_subvention ELSE customers.subvention END, 0) ELSE 0 END) as subvention_bfl,
+                SUM(CASE WHEN UPPER(TRIM(REPLACE(customers.sanctioned_bank, \'-\', \' \'))) IN (?, ?, ?)
+                    THEN COALESCE(CASE WHEN cs.mis_docking IS NOT NULL THEN cs.mis_docking ELSE CAST(customers.docking AS DECIMAL(15,2)) END, 0) ELSE 0 END) as docking_bfl,
                 SUM(
                     COALESCE(CASE WHEN cs.mis_disbursal_amount IS NOT NULL THEN cs.mis_disbursal_amount ELSE customers.sanctioned_loan_amount END, 0)
                     - (
@@ -227,7 +260,14 @@ class AchievementCalculatorService
                         * (CASE WHEN UPPER(TRIM(REPLACE(customers.sanctioned_bank, \'-\', \' \'))) IN (?, ?) THEN 50 ELSE 100 END)
                     )
                 ) as count_achievement
-            ', array_map($this->canonicalBankName(...), self::HALF_DEDUCTION_BANKS));
+            ', [
+                // Bindings in the order the placeholders appear: the three
+                // in-house splits, then the half-deduction banks.
+                ...$splitBanks = array_map($this->canonicalBankName(...), self::IN_HOUSE_SPLIT_BANKS),
+                ...$splitBanks,
+                ...$splitBanks,
+                ...array_map($this->canonicalBankName(...), self::HALF_DEDUCTION_BANKS),
+            ]);
     }
 
     public function getTarget(Employee $employee, ?Carbon $referenceMonth = null): float
@@ -689,6 +729,12 @@ class AchievementCalculatorService
             'cashback' => $cashback,
             'subvention' => $subvention,
             'docking' => $docking,
+            'cashback_bfl' => $totals['cashback_bfl'],
+            'cashback_other' => $totals['cashback_other'],
+            'subvention_bfl' => $totals['subvention_bfl'],
+            'subvention_other' => $totals['subvention_other'],
+            'docking_bfl' => $totals['docking_bfl'],
+            'docking_other' => $totals['docking_other'],
             'count_achievement' => $countAchievement,
             'percentage' => $percentage,
             'incentive' => match ($employee?->designation) {

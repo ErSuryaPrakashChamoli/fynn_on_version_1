@@ -171,15 +171,10 @@ class DailyCommitmentDetail extends Page
                     ->live(),
 
                 TextInput::make('commitment_amount')
-                    ->label('Amount (₹)')
-                    ->numeric()
-                    ->minValue(1)
+                    ->label('Amount')
                     ->required(fn (Get $get): bool => $get('commitment_stage') !== CommitmentStage::Otp->value)
                     ->visible(fn (Get $get): bool => $get('commitment_stage') !== CommitmentStage::Otp->value)
-                    ->live(onBlur: true)
-                    ->helperText(fn ($state): ?string => filled($state)
-                        ? indianAmountInWords($state)
-                        : null),
+                    ->indianAmount(min: 1),
 
                 TextInput::make('commitment_count')
                     ->label('Number of OTPs')
@@ -281,14 +276,9 @@ class DailyCommitmentDetail extends Page
                             ->required(),
 
                         TextInput::make('amount')
-                            ->label('Amount (₹)')
-                            ->numeric()
-                            ->minValue(0)
+                            ->label('Amount')
                             ->required()
-                            ->live(onBlur: true)
-                            ->helperText(fn ($state): ?string => filled($state)
-                                ? indianAmountInWords($state)
-                                : null),
+                            ->indianAmount(min: 0),
                     ]),
 
                 Toggle::make('submitted')
@@ -396,15 +386,10 @@ class DailyCommitmentDetail extends Page
                     ->live(),
 
                 TextInput::make('target_amount')
-                    ->label('Target amount (₹)')
-                    ->numeric()
-                    ->minValue(1)
+                    ->label('Target amount')
                     ->required(fn (Get $get): bool => $get('stage') !== CommitmentStage::Otp->value)
                     ->visible(fn (Get $get): bool => $get('stage') !== CommitmentStage::Otp->value)
-                    ->live(onBlur: true)
-                    ->helperText(fn ($state): ?string => filled($state)
-                        ? indianAmountInWords($state)
-                        : null),
+                    ->indianAmount(min: 1),
 
                 TextInput::make('target_count')
                     ->label('Target OTPs')

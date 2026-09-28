@@ -1,16 +1,15 @@
 {{--
-    /demo only: the floating "View as" switcher, pinned bottom-right.
+    /demo only: the "View as" switcher, opened from the "Switch demo user"
+    entry under My Profile in the user menu (filament.demo.user-menu-switcher).
 
-    A compact pill showing that this is the demo and who is signed in; a
-    click opens (upwards) every active demo login grouped by role (Admin,
+    A modal listing every active demo login grouped by role (Admin,
     Business Head, Cluster Manager, Manager, Team Leader, Caller, ...), with
     a search box and a "Back to Admin" shortcut. Each item POSTs to
     demo.switch-user / demo.switch-role — see SwitchDemoRoleController.
 
-    Floating rather than in the topbar or sidebar, so the admin layout
-    (and its top-performer marquee) is left exactly as it is on /admin.
-    It can be dragged anywhere on screen so it never covers what is being
-    shown; the spot is remembered per browser.
+    Rendered at BODY_END rather than inside the user menu because the menu
+    is a dropdown that closes on click; the modal has to outlive it. It
+    replaced a floating, draggable bottom-right pill on 2026-09-27.
 --}}
 @php
     $user = filament()->auth()->user();
@@ -18,42 +17,37 @@
     $groups = app(\App\Support\Demo\DemoLoginSwitcher::class)->usersByRole();
     $currentRole = $user?->roles->pluck('name')->first() ?? 'Demo user';
     $isAdminLogin = $user?->email === ($logins['admin']['email'] ?? null);
+    $switchError = session('demo_role_switch_error');
 @endphp
 
 <div
     class="demo-view-as"
-    @include('filament.demo.partials.draggable', ['storageKey' => 'fynnon.demo-view-as-position'])
+    @if ($switchError)
+        x-data
+        x-init="$nextTick(() => $dispatch('open-modal', { id: 'demo-view-as' }))"
+    @endif
 >
-    <x-filament::dropdown placement="top-end" max-height="26rem" width="sm" teleport>
-        <x-slot name="trigger">
-            <button type="button" class="demo-view-as__pill" title="Demo environment — switch user">
-                <span class="demo-view-as__demo">
-                    <span class="demo-view-as__dot"></span>
-                    Demo
-                </span>
-                <span class="demo-view-as__who">
-                    <span class="demo-view-as__name">{{ $user?->name }}</span>
-                    <span class="demo-view-as__role">{{ $currentRole }}</span>
-                </span>
-                <x-filament::icon icon="heroicon-m-arrows-right-left" class="demo-view-as__icon" />
-            </button>
-        </x-slot>
+    <x-filament::modal
+        id="demo-view-as"
+        width="md"
+        icon="heroicon-m-arrows-right-left"
+        icon-color="warning"
+        heading="Switch demo user"
+        :description="'Viewing as '.$user?->name.' ('.$currentRole.')'"
+    >
+        @if ($switchError)
+            <div class="demo-view-as__error">{{ $switchError }}</div>
+        @endif
 
-        <x-filament::dropdown.header icon="heroicon-m-user-circle">
-            Viewing as {{ $user?->name }} ({{ $currentRole }})
-        </x-filament::dropdown.header>
-
-        <div x-data="{ search: '' }">
-            <div class="p-2">
-                <x-filament::input.wrapper prefix-icon="heroicon-m-magnifying-glass">
-                    <x-filament::input
-                        type="search"
-                        x-model="search"
-                        placeholder="Search name, role or employee id"
-                        x-on:keydown.stop
-                    />
-                </x-filament::input.wrapper>
-            </div>
+        <div x-data="{ search: '' }" class="demo-view-as__list">
+            <x-filament::input.wrapper prefix-icon="heroicon-m-magnifying-glass">
+                <x-filament::input
+                    type="search"
+                    x-model="search"
+                    placeholder="Search name, role or employee id"
+                    x-on:keydown.stop
+                />
+            </x-filament::input.wrapper>
 
             @unless ($isAdminLogin)
                 <x-filament::dropdown.list x-show="search === ''">
@@ -80,7 +74,7 @@
                     x-data="{ haystacks: @js($haystacks->values()) }"
                     x-show="search === '' || haystacks.some((text) => text.includes(search.toLowerCase()))"
                 >
-                    <div class="px-3 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <div class="px-1 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                         {{ $role }} ({{ $members->count() }})
                     </div>
 
@@ -109,99 +103,21 @@
                 </div>
             @endforeach
         </div>
-    </x-filament::dropdown>
-
-    @if (session('demo_role_switch_error'))
-        <div class="demo-view-as__error">{{ session('demo_role_switch_error') }}</div>
-    @endif
+    </x-filament::modal>
 </div>
 
 <style>
-    .demo-view-as {
-        position: fixed;
-        right: 1.25rem;
-        bottom: 1.25rem;
-        z-index: 30;
-        touch-action: none;
-        user-select: none;
-    }
-
-    .demo-view-as.is-dragging .demo-view-as__pill {
-        cursor: grabbing;
-        transform: none;
-    }
-
-    .demo-view-as__pill {
-        display: flex;
-        align-items: center;
-        gap: 0.625rem;
-        padding: 0.4rem 0.9rem 0.4rem 0.45rem;
-        border-radius: 9999px;
-        background: rgb(17 24 39);
-        border: 1px solid rgb(245 158 11 / 0.7);
-        box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.35);
-        color: rgb(255 255 255);
-        cursor: grab;
-        transition: transform 150ms, box-shadow 150ms;
-    }
-
-    .demo-view-as__pill:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 14px 30px -6px rgb(0 0 0 / 0.45);
-    }
-
-    .demo-view-as__demo {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.3rem;
-        padding: 0.2rem 0.55rem;
-        border-radius: 9999px;
-        background: rgb(251 191 36);
-        color: rgb(17 24 39);
-        font-size: 0.6875rem;
-        font-weight: 800;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-    }
-
-    .demo-view-as__dot {
-        width: 0.375rem;
-        height: 0.375rem;
-        border-radius: 9999px;
-        background: rgb(17 24 39);
-    }
-
-    .demo-view-as__who {
+    .demo-view-as__list {
         display: flex;
         flex-direction: column;
-        align-items: flex-start;
-        line-height: 1.15;
-        text-align: left;
-    }
-
-    .demo-view-as__name {
-        max-width: 11rem;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        font-size: 0.8125rem;
-        font-weight: 700;
-    }
-
-    .demo-view-as__role {
-        font-size: 0.6875rem;
-        color: rgb(252 211 77);
-    }
-
-    .demo-view-as__icon {
-        width: 1rem;
-        height: 1rem;
-        color: rgb(252 211 77);
+        gap: 0.25rem;
+        max-height: 60vh;
+        overflow-y: auto;
+        padding-inline: 0.125rem;
     }
 
     .demo-view-as__error {
-        margin-top: 0.5rem;
-        max-width: 16rem;
+        margin-bottom: 0.75rem;
         padding: 0.5rem 0.75rem;
         border-radius: 0.5rem;
         background: rgb(127 29 29);

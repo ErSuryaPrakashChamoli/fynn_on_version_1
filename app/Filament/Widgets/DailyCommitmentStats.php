@@ -114,6 +114,13 @@ class DailyCommitmentStats extends StatsOverviewWidget
             )
             ->count();
 
+        $consentPending = (clone $customersQuery)
+            ->where(
+                'eligibility_status',
+                'consent_pending'
+            )
+            ->count();
+
         $sanctioned = (clone $customersQuery)
             ->whereNotNull(
                 'sanctioned_loan_amount'
@@ -261,6 +268,37 @@ class DailyCommitmentStats extends StatsOverviewWidget
 
             $notEligibleBadge = '🔴 HIGH';
             $notEligibleColor = 'danger';
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Consent Pending Status
+        |--------------------------------------------------------------------------
+        */
+
+        $consentPendingRate = $totalCustomers > 0
+            ? round(
+                ($consentPending / $totalCustomers) * 100,
+                1
+            )
+            : 0;
+
+        if ($consentPending === 0) {
+
+            $consentPendingBadge = '✅ ALL CONSENTED';
+            $consentPendingColor = 'success';
+        } elseif ($consentPendingRate <= 10) {
+
+            $consentPendingBadge = '🟢 LOW';
+            $consentPendingColor = 'success';
+        } elseif ($consentPendingRate <= 25) {
+
+            $consentPendingBadge = '🟡 MODERATE';
+            $consentPendingColor = 'warning';
+        } else {
+
+            $consentPendingBadge = '⏳ FOLLOW UP';
+            $consentPendingColor = 'danger';
         }
 
         /*
@@ -417,6 +455,38 @@ class DailyCommitmentStats extends StatsOverviewWidget
                 )
                 ->extraAttributes([
                     'class' => 'performance-card commitment-card-not-eligible',
+                ]),
+
+            /*
+            |--------------------------------------------------------------------------
+            | CONSENT PENDING
+            |--------------------------------------------------------------------------
+            */
+
+            Stat::make(
+                $isAdmin
+                    ? '⏳ Company Consent Pending'
+                    : '⏳ Consent Pending',
+                number_format(
+                    $consentPending
+                )
+            )
+                ->description(
+                    "{$consentPendingBadge} • {$consentPendingRate}% awaiting consent"
+                )
+                ->descriptionIcon(
+                    $consentPending > 0
+                        ? 'heroicon-m-clock'
+                        : 'heroicon-m-check-circle'
+                )
+                ->color(
+                    $consentPendingColor
+                )
+                ->icon(
+                    'heroicon-o-clock'
+                )
+                ->extraAttributes([
+                    'class' => 'performance-card commitment-card-consent-pending',
                 ]),
 
             /*
