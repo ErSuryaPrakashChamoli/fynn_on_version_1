@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Teams\Tables;
 
 use App\Filament\Resources\Teams\TeamResource;
 use App\Models\Employee;
+use App\Models\TargetCategory;
 use App\Services\AchievementCalculatorService;
 use App\Support\EmployeeOptions;
 use App\Support\HierarchyHelper;
@@ -74,7 +75,7 @@ class TeamsTable
 
                         $performanceCache[$record->id] ??= $calculator->getPerformance($record);
 
-                        return $performanceCache[$record->id]['target_category'];
+                        return TargetCategory::labelFor($performanceCache[$record->id]['target_category']);
                     }),
 
                 // TextColumn::make('target_category')

@@ -10,6 +10,7 @@ use App\Filament\Resources\OtherBankIncentiveSlabs\Pages\CreateOtherBankIncentiv
 use App\Filament\Resources\OtherBankSupportTargets\OtherBankSupportTargetResource;
 use App\Filament\Resources\OtherBankSupportTargets\Pages\CreateOtherBankSupportTarget;
 use App\Filament\Widgets\OtherBankSupportStats;
+use App\Models\Designation;
 use App\Models\Employee;
 use App\Models\OtherBankIncentiveSlab;
 use App\Models\OtherBankSupportTarget;
@@ -163,7 +164,7 @@ class OtherBankSupportAdminModuleTest extends TestCase
                 'emp_id' => 'FA000009',
                 'emp_name' => 'Raja Kush',
                 'email' => 'raja.kush@fynnedge.com',
-                'position' => 'Sales Support Coordinator',
+                'position' => Designation::query()->create(['name' => 'Sales Support Coordinator'])->name,
                 'designation' => Employee::DESIGNATION_OTHER_BANK_SUPPORT,
                 'cost_center' => 'rohit_sharma',
                 'unit_name' => 'rohit_sharma',

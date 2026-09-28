@@ -10,7 +10,12 @@ use App\Filament\Resources\Employees\Pages\ViewEmployee;
 use App\Filament\Resources\Employees\Schemas\EmployeeForm;
 use App\Filament\Resources\Employees\Schemas\EmployeeInfolist;
 use App\Filament\Resources\Employees\Tables\EmployeesTable;
+use App\Models\CostCenter;
+use App\Models\Designation;
 use App\Models\Employee;
+use App\Models\Position;
+use App\Models\TargetCategory;
+use App\Models\Unit;
 use App\Services\ReportingLineService;
 use App\Support\EmployeeOptions;
 use App\Support\SelectedMonth;
@@ -65,13 +70,17 @@ class EmployeeResource extends Resource
                         ->required()
                         ->unique(ignoreRecord: true),
 
-                    TextInput::make('position')
+                    // Lists maintained under Employee Setup; the current
+                    // value stays selectable even if it was removed there.
+                    Select::make('position')
                         ->label('Designation')
-                        ->required(),
+                        ->options(fn (?Employee $record): array => Designation::optionsIncluding($record?->position))
+                        ->required()
+                        ->native(false),
 
                     Select::make('designation')
                         ->label('Position')
-                        ->options(Employee::designationOptions())
+                        ->options(fn (?Employee $record): array => Position::optionsIncluding($record?->designation))
                         ->required()
                         ->searchable()
                         ->live()
@@ -98,14 +107,7 @@ class EmployeeResource extends Resource
 
                     Select::make('category')
                         ->label('Target Category')
-                        ->options([
-                            '2500000' => 'Silver',
-                            '3000000' => 'Gold',
-                            '3500000' => 'Diamond',
-                            'team_leader' => 'Alpha',
-                            'manager' => 'Beta',
-                            'cluster_manager' => 'Delta',
-                        ])
+                        ->options(fn (?Employee $record): array => TargetCategory::optionsIncluding($record?->category))
                         // Only in-tree seats carry an LMS target. Admin and
                         // Other Bank Support sit outside the hierarchy
                         // (designationRank 0) and never read this value —
@@ -158,33 +160,15 @@ class EmployeeResource extends Resource
                         ->suffixIcon('heroicon-m-calendar')
                         ->maxDate(now()),
 
-                    // TextInput::make('cost_center'),
-
                     Select::make('cost_center')
                         ->label('Cost Center')
-                        ->options([
-                            'anuj_singh_thakur' => 'Anuj Singh Thakur',
-                            'bhupendra_singh' => 'Bhupendra Singh',
-                            'chanchal_chaudhary' => 'Chanchal Chaudhary',
-                            'deepak_singh' => 'Deepak Singh',
-                            'kanak_kumar' => 'Kanak Kumar',
-                            'manoj_sajwan' => 'Manoj Sajwan',
-                            'nitin_thakur' => 'Nitin Thakur',
-                            'prabhat_tyagi' => 'Prabhat Tyagi',
-                            'rohit_sharma' => 'Rohit Sharma',
-                        ])
+                        ->options(fn (?Employee $record): array => CostCenter::optionsIncluding($record?->cost_center))
                         ->required()
                         ->native(false),
 
-                    // TextInput::make('unit_name'),
-
                     Select::make('unit_name')
                         ->label('Unit')
-                        ->options([
-                            'kanak_kumar' => 'Kanak Kumar',
-                            'rohit_sharma' => 'Rohit Sharma',
-
-                        ])
+                        ->options(fn (?Employee $record): array => Unit::optionsIncluding($record?->unit_name))
                         ->required()
                         ->native(false),
 
@@ -261,6 +245,7 @@ class EmployeeResource extends Resource
 
                 Tables\Columns\TextColumn::make('category')
                     ->label('Target Category')
+                    ->formatStateUsing(fn (?string $state): ?string => TargetCategory::labelFor($state))
                     ->searchable()
                     ->sortable(),
 
@@ -287,10 +272,13 @@ class EmployeeResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('cost_center')
+                    ->formatStateUsing(fn (?string $state): ?string => CostCenter::labelFor($state))
                     ->searchable()
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('unit_name')
+                    ->label('Unit')
+                    ->formatStateUsing(fn (?string $state): ?string => Unit::labelFor($state))
                     ->searchable()
                     ->sortable(),
 

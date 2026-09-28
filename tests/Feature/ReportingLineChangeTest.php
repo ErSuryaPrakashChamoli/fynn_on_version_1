@@ -6,6 +6,7 @@ use App\Filament\Imports\EmployeeImporter;
 use App\Filament\Resources\Employees\Pages\CreateEmployee;
 use App\Filament\Resources\Employees\Pages\EditEmployee;
 use App\Filament\Resources\Employees\Pages\ViewEmployee;
+use App\Models\Designation;
 use App\Models\Employee;
 use App\Models\EmployeeReportingHistory;
 use App\Models\HierarchyTransferLog;
@@ -97,7 +98,7 @@ class ReportingLineChangeTest extends TestCase
             'emp_id' => 'EMP-NEW-1',
             'emp_name' => 'New Joiner',
             'email' => 'new.joiner@example.com',
-            'position' => 'Staff',
+            'position' => Designation::query()->firstOrCreate(['name' => 'Staff'])->name,
             'designation' => $designation,
             'category' => '2500000',
             'cost_center' => 'kanak_kumar',

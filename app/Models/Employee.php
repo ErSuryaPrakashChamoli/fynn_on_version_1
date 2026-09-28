@@ -283,7 +283,7 @@ class Employee extends Model
 
     public function getTargetAmountAttribute(): int
     {
-        return is_numeric($this->category) ? (int) $this->category : 2500000;
+        return (int) (TargetCategory::targetAmountFor($this->category) ?? 2500000);
     }
 
     public function reportingHistories()
@@ -301,8 +301,21 @@ class Employee extends Model
         return $this->hasMany(Customer::class);
     }
 
+    /**
+     * Position names keyed by designation code, as the admin maintains them
+     * on the Positions screen. Falls back to the built-in names only when
+     * the table holds nothing (e.g. a database that was never seeded).
+     *
+     * @return array<int, string>
+     */
     public static function designationOptions(): array
     {
+        $positions = Position::options();
+
+        if ($positions !== []) {
+            return $positions;
+        }
+
         return [
             self::DESIGNATION_ADMIN => 'Admin',
             self::DESIGNATION_MANAGER => 'Manager',
