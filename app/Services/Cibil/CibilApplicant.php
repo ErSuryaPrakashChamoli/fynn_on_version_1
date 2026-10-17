@@ -6,7 +6,9 @@ use App\Models\CibilReport;
 use Illuminate\Support\Carbon;
 
 /**
- * The details the bureau is asked about, as typed on the fetch form.
+ * The details the bureau is asked about, as validated and stored on the
+ * request row. Surepass matches an applicant on name, PAN, mobile number and
+ * gender; the rest is kept for the record only.
  */
 final readonly class CibilApplicant
 {

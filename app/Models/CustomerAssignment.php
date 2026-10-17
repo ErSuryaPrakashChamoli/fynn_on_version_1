@@ -116,6 +116,16 @@ class CustomerAssignment extends Model
     }
 
     /**
+     * CIBIL requests made for this assigned lead.
+     *
+     * @return HasMany<CibilReport, $this>
+     */
+    public function cibilReports(): HasMany
+    {
+        return $this->hasMany(CibilReport::class);
+    }
+
+    /**
      * Follow-ups recorded against this row's lead, correlated to the outer
      * customer_assignments table so it can be used as a subquery. Mirrors
      * latestFollowUp(): AI-record follow-ups until conversion, customer

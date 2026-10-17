@@ -419,6 +419,17 @@ class Customer extends Model
     }
 
     /**
+     * CIBIL requests made for this file, including those made for the lead
+     * it was converted from (linked at conversion).
+     *
+     * @return HasMany<CibilReport, $this>
+     */
+    public function cibilReports(): HasMany
+    {
+        return $this->hasMany(CibilReport::class);
+    }
+
+    /**
      * Files eligible for a bank other than the in-house BFL products — the
      * Other Bank Support pool. See OtherBankSupportService.
      */

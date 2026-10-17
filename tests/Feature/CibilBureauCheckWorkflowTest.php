@@ -13,6 +13,7 @@ use App\Http\Middleware\EnsureMonthlyTargetIsSet;
 use App\Models\AiCustomerRecord;
 use App\Models\AiDocumentSchema;
 use App\Models\CibilReport;
+use App\Models\CibilSetting;
 use App\Models\Customer;
 use App\Models\CustomerAssignment;
 use App\Models\Employee;
@@ -66,6 +67,7 @@ class CibilBureauCheckWorkflowTest extends TestCase
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $this->app->instance(CibilClient::class, new FakeCibilClient);
         $this->withoutMiddleware(EnsureMonthlyTargetIsSet::class);
+        CibilSetting::current()->update(['requests_enabled' => true]);
 
         $this->admin = User::factory()->create(['name' => 'Asha Admin']);
         $this->admin->assignRole('Admin');
@@ -139,37 +141,39 @@ class CibilBureauCheckWorkflowTest extends TestCase
 
     // ---- Required details -------------------------------------------------
 
-    public function test_name_pan_and_date_of_birth_are_required_and_everything_else_is_optional(): void
+    public function test_name_pan_mobile_gender_and_consent_are_required_and_the_rest_is_optional(): void
     {
         $report = app(CibilReportService::class)->fetch($this->admin, [
             'customer_name' => 'Nisha Sharma',
             'pan_number' => 'bbbbb1212j',
-            'date_of_birth' => '1994-03-09',
+            'mobile_no' => '+91 88006 18269',
+            'gender' => 'female',
             'consent' => true,
+            'consent_method' => 'recorded_call',
         ]);
 
         $this->assertSame(CibilReportStatus::Success, $report->status);
         $this->assertSame('BBBBB1212J', $report->pan_number);
-        $this->assertNull($report->mobile_no);
-        $this->assertSame('1994-03-09', $report->date_of_birth->toDateString());
+        $this->assertSame('8800618269', $report->mobile_no);
+        $this->assertNull($report->date_of_birth);
 
         try {
             app(CibilReportService::class)->fetch($this->admin, ['consent' => true]);
             $this->fail('Expected a validation error.');
         } catch (ValidationException $exception) {
-            $this->assertEqualsCanonicalizing(['customer_name', 'pan_number', 'date_of_birth'], array_keys($exception->errors()));
+            $this->assertEqualsCanonicalizing(['customer_name', 'pan_number', 'mobile_no', 'gender', 'consent_method'], array_keys($exception->errors()));
         }
     }
 
-    public function test_the_form_requires_a_lead_or_a_customer_and_the_date_of_birth(): void
+    public function test_the_form_requires_a_lead_or_a_customer_mobile_gender_and_how_consent_was_given(): void
     {
         $this->actingAs($this->admin);
 
         Livewire::test(CreateCibilReport::class)
             ->fillForm(['customer_name' => 'Nisha Sharma', 'pan_number' => 'BBBBB1212J', 'consent' => true])
             ->call('create')
-            ->assertHasFormErrors(['fetch_for' => 'required', 'date_of_birth' => 'required'])
-            ->assertHasNoFormErrors(['mobile_no', 'email', 'gender', 'pincode']);
+            ->assertHasFormErrors(['fetch_for' => 'required', 'mobile_no' => 'required', 'gender' => 'required', 'consent_method' => 'required'])
+            ->assertHasNoFormErrors(['date_of_birth', 'email', 'pincode']);
 
         $this->assertSame(0, CibilReport::query()->count());
     }
@@ -235,7 +239,7 @@ class CibilBureauCheckWorkflowTest extends TestCase
                 'mobile_no' => '8800618269',
                 'email' => 'nisha@example.com',
             ])
-            ->fillForm(['date_of_birth' => '1994-03-09', 'consent' => true])
+            ->fillForm(['gender' => 'female', 'date_of_birth' => '1994-03-09', 'consent_method' => 'recorded_call', 'consent' => true])
             ->call('create')
             ->assertHasNoFormErrors()
             ->assertNotified('CIBIL report fetched');
@@ -258,7 +262,7 @@ class CibilBureauCheckWorkflowTest extends TestCase
             ->fillForm(['fetch_for' => 'lead'])
             ->fillForm(['lead_key' => 'assigned:'.$assigned->id])
             ->assertSchemaStateSet(['customer_name' => 'Sunil Verma', 'pan_number' => 'LMNOP4321Q', 'mobile_no' => '9123456780'])
-            ->fillForm(['date_of_birth' => '1990-01-20', 'consent' => true])
+            ->fillForm(['gender' => 'male', 'date_of_birth' => '1990-01-20', 'consent_method' => 'digital', 'consent' => true])
             ->call('create')
             ->assertHasNoFormErrors();
 
@@ -488,26 +492,41 @@ class CibilBureauCheckWorkflowTest extends TestCase
 
     // ---- Fetch again ------------------------------------------------------
 
-    public function test_fetch_again_asks_for_the_date_of_birth_an_older_report_lacks_and_keeps_the_link(): void
+    public function test_refresh_asks_for_the_gender_an_older_report_lacks_and_keeps_the_link(): void
     {
+        CibilAccess::sync(['Caller'], [], CibilAccess::REFRESH_PERMISSION);
         $lead = $this->lead();
-        $old = $this->reportFor($lead, ['date_of_birth' => null]);
+        $old = $this->reportFor($lead, ['gender' => null, 'request_type' => 'score']);
+        $refresh = ['request_type' => 'score', 'consent' => true, 'consent_method' => 'recorded_call', 'reason' => 'Customer disputes the old score'];
 
-        $this->actingAs($this->caller);
+        $this->actingAs($this->caller->fresh());
 
         Livewire::test(ViewCibilReport::class, ['record' => $old->getRouteKey()])
-            ->callAction(TestAction::make('fetchAgain'), ['consent' => true])
-            ->assertHasActionErrors(['date_of_birth' => 'required']);
+            ->callAction(TestAction::make('fetchAgain'), $refresh)
+            ->assertHasActionErrors(['gender' => 'required']);
 
         $this->assertSame(1, CibilReport::query()->count());
 
         Livewire::test(ViewCibilReport::class, ['record' => $old->getRouteKey()])
-            ->callAction(TestAction::make('fetchAgain'), ['consent' => true, 'date_of_birth' => '1994-03-09'])
+            ->callAction(TestAction::make('fetchAgain'), [...$refresh, 'gender' => 'female'])
             ->assertHasNoActionErrors();
 
         $new = CibilReport::query()->latest('id')->first();
         $this->assertNotSame($old->id, $new->id);
-        $this->assertSame('1994-03-09', $new->date_of_birth->toDateString());
+        $this->assertSame('female', $new->gender);
         $this->assertSame($lead->id, $new->lead_id);
+    }
+
+    public function test_refresh_is_offered_only_with_the_refresh_permission(): void
+    {
+        $report = $this->reportFor($this->lead());
+
+        $this->actingAs($this->caller);
+
+        Livewire::test(ViewCibilReport::class, ['record' => $report->getRouteKey()])
+            ->assertActionHidden('fetchAgain');
+
+        $this->expectException(AuthorizationException::class);
+        app(CibilReportService::class)->refetch($this->caller, $report, ['consent' => true, 'consent_method' => 'written', 'reason' => 'Just checking again']);
     }
 }

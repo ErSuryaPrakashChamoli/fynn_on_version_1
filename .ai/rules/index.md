@@ -10,6 +10,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Filament/Resources/AiCustomerRecords/** | .ai/rules/ai-customer-records.md |
 | app/Livewire/** | .ai/rules/app-livewire.md |
 | app/**/Customer*.php | .ai/rules/app.md |
+| app/Services/Cibil/**, app/Filament/Resources/CibilReports/**, app/Filament/Resources/CibilRequests/**, app/Filament/Pages/Cibil*.php, app/Support/Cibil*.php, app/Models/CibilReport.php, app/Models/CibilSetting.php, config/cibil.php | .ai/rules/cibil.md |
 | resources/views/components/daily-commitment/** | .ai/rules/components-daily-commitment.md |
 | resources/css/filament/admin/theme.css, resources/views/filament/components/table-scroll-to-top.blade.php, resources/js/table-scroll-nav.js | .ai/rules/components-js.md |
 | app/Services/CustomerEditRequestService.php, app/Support/CustomerEditableFields.php, app/Filament/Resources/CustomerEditRequests/** | .ai/rules/customer-edit-requests.md |

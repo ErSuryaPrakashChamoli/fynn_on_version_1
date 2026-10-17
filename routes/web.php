@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CibilReportPdfController;
 use App\Http\Controllers\LoginSessionHeartbeatController;
 use App\Http\Controllers\OcrDocumentFileController;
 use App\Http\Controllers\SwitchDemoRoleController;
@@ -26,6 +27,12 @@ Route::middleware('auth')->post(
 Route::middleware('auth')->get('/ocr-documents/{ocrDocument}/file', OcrDocumentFileController::class)
     ->name('ocr-documents.file');
 
+// A CIBIL report's saved PDF, authorised and audited per request (never the
+// provider's signed link). See CibilReportPdfController.
+Route::middleware(['auth', 'throttle:30,1'])->get('/cibil-reports/{cibilReport}/pdf', CibilReportPdfController::class)
+    ->whereNumber('cibilReport')
+    ->name('cibil-reports.pdf');
+
 /*
  * The /demo copies of the plain routes above. Same controllers, but run in
  * the demo context (demo database + storage) and authenticated on the
@@ -42,6 +49,11 @@ Route::prefix('demo')
 
         Route::get('/ocr-documents/{ocrDocument}/file', OcrDocumentFileController::class)
             ->name('ocr-documents.file');
+
+        Route::get('/cibil-reports/{cibilReport}/pdf', CibilReportPdfController::class)
+            ->middleware('throttle:30,1')
+            ->whereNumber('cibilReport')
+            ->name('cibil-reports.pdf');
 
         // The "View as" switcher in the /demo topbar: a role's seeded
         // login, or any specific demo user.

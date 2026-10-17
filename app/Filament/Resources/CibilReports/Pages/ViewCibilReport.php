@@ -4,19 +4,23 @@ namespace App\Filament\Resources\CibilReports\Pages;
 
 use App\Enums\BureauDecision;
 use App\Enums\CibilReportStatus;
+use App\Enums\CibilRequestType;
 use App\Filament\Resources\CibilReports\CibilReportResource;
+use App\Filament\Resources\CibilReports\Schemas\CibilRequestFields;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\CibilReport;
 use App\Models\User;
 use App\Services\Cibil\CibilReportService;
+use App\Services\Cibil\CibilRequestRefused;
 use App\Support\CibilAccess;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
-use Filament\Forms\Components\Checkbox;
-use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
+use Filament\Schemas\Components\Utilities\Get;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Validation\ValidationException;
 
 /**
  * @property CibilReport $record
@@ -38,7 +42,7 @@ class ViewCibilReport extends ViewRecord
 
     public function getTitle(): string
     {
-        return 'CIBIL report — '.$this->record->customer_name;
+        return $this->record->bureau->label().' report — '.$this->record->customer_name;
     }
 
     protected function getHeaderActions(): array
@@ -59,46 +63,143 @@ class ViewCibilReport extends ViewRecord
                     $this->convertLead();
                 }),
 
-            Action::make('fetchAgain')
-                ->label('Fetch again')
-                ->icon('heroicon-o-arrow-path')
-                ->visible(fn (): bool => CibilAccess::canUse(Filament::auth()->user()))
-                ->modalHeading('Fetch a fresh CIBIL report')
-                ->modalDescription(fn (): string => "The bureau is asked again for {$this->record->customer_name} ({$this->record->pan_number}). This report stays as it is.")
-                ->modalSubmitActionLabel('Fetch')
-                ->fillForm(fn (): array => ['date_of_birth' => $this->record->date_of_birth?->toDateString()])
+            Action::make('openPdf')
+                ->label('Open PDF')
+                ->icon('heroicon-o-document-arrow-down')
+                ->color('gray')
+                ->visible(fn (): bool => $this->canDownloadPdf())
+                ->url(fn (): ?string => $this->record->pdfUrl())
+                ->openUrlInNewTab(),
+
+            Action::make('retryPdfDownload')
+                ->label('Retry PDF download')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('gray')
+                ->visible(fn (): bool => CibilAccess::canDownloadPdf(Filament::auth()->user()) && app(CibilReportService::class)->canRetryPdfDownload($this->record))
+                ->requiresConfirmation()
+                ->modalDescription('The provider\'s link is tried once more. No new request is sent to the bureau.')
+                ->action(function (): void {
+                    /** @var User $user */
+                    $user = Filament::auth()->user();
+
+                    $report = app(CibilReportService::class)->retryPdfDownload($user, $this->record);
+                    $saved = $report->hasPdf();
+
+                    Notification::make()
+                        ->status($saved ? 'success' : 'warning')
+                        ->title($saved ? 'PDF saved' : 'PDF still not available')
+                        ->body($saved ? null : $report->pdf_status?->label())
+                        ->send();
+                }),
+
+            Action::make('verifyUncertain')
+                ->label('Mark as verified')
+                ->icon('heroicon-o-shield-check')
+                ->color('warning')
+                ->visible(fn (): bool => $this->record->isUnresolvedUncertain() && CibilAccess::canManage(Filament::auth()->user()))
+                ->modalHeading('Verify the uncertain request')
+                ->modalDescription('Check the request against the provider (e.g. the Surepass dashboard) first. Once verified, a new request for this PAN can be sent.')
                 ->schema([
-                    DatePicker::make('date_of_birth')
-                        ->label('Date of birth')
+                    Textarea::make('note')
+                        ->label('What did you find?')
                         ->required()
-                        ->maxDate(now()->subDay()),
-                    Checkbox::make('consent')
-                        ->label('The customer has given consent for their CIBIL report to be fetched again.')
-                        ->accepted()
-                        ->validationMessages(['accepted' => 'The customer\'s consent is required before a CIBIL report can be fetched.']),
+                        ->minLength(5)
+                        ->maxLength(500)
+                        ->rows(3),
                 ])
                 ->action(function (array $data): void {
                     /** @var User $user */
                     $user = Filament::auth()->user();
 
-                    $report = app(CibilReportService::class)->refetch(
-                        $user,
-                        $this->record,
-                        (bool) ($data['consent'] ?? false),
-                        $data['date_of_birth'] ?? null,
-                    );
+                    app(CibilReportService::class)->resolveUncertain($user, $this->record, (string) $data['note']);
+                    $this->record->refresh();
 
-                    $fetched = $report->status === CibilReportStatus::Success;
+                    Notification::make()->success()->title('Request marked as verified')->send();
+                }),
+
+            Action::make('fetchAgain')
+                ->label('Refresh report')
+                ->icon('heroicon-o-arrow-path')
+                ->visible(fn (): bool => CibilAccess::canRefresh(Filament::auth()->user()))
+                ->modalHeading(fn (): string => "Request a fresh {$this->record->bureau->label()} report")
+                ->modalDescription(fn (): string => "{$this->record->bureau->label()} is asked again for {$this->record->customer_name} ({$this->record->maskedPan()}) and the request is billed. This report stays as it is.")
+                ->modalSubmitActionLabel('Send request')
+                ->fillForm(fn (): array => [
+                    'request_type' => in_array($this->record->request_type, $this->refreshableTypes(), true) ? $this->record->request_type->value : null,
+                    'mobile_no' => $this->record->mobile_no,
+                    'gender' => $this->record->gender,
+                    'date_of_birth' => $this->record->date_of_birth?->toDateString(),
+                ])
+                ->schema(fn (): array => [
+                    CibilRequestFields::requestType($this->refreshableTypes()),
+                    CibilRequestFields::mobile()->visible(blank($this->record->mobile_no)),
+                    CibilRequestFields::gender()->visible(blank($this->record->gender)),
+                    CibilRequestFields::freshReason(),
+                    ...CibilRequestFields::consent(fn (Get $get): ?CibilRequestType => CibilRequestType::tryFrom((string) $get('request_type')), $this->record->bureau),
+                    CibilRequestFields::afterUncertain(fn (Get $get): bool => $this->hasUnresolvedUncertain($get('request_type'))),
+                ])
+                ->action(function (array $data, Action $action): void {
+                    /** @var User $user */
+                    $user = Filament::auth()->user();
+
+                    try {
+                        $outcome = app(CibilReportService::class)->refetch($user, $this->record, $data);
+                    } catch (AuthorizationException $exception) {
+                        abort(403, $exception->getMessage());
+                    } catch (CibilRequestRefused $exception) {
+                        Notification::make()->warning()->title("{$this->record->bureau->label()} request not sent")->body($exception->getMessage())->persistent()->send();
+
+                        $action->halt();
+                    } catch (ValidationException $exception) {
+                        Notification::make()->danger()->title("{$this->record->bureau->label()} request not sent")->body(collect($exception->errors())->flatten()->implode(' '))->send();
+
+                        $action->halt();
+                    }
+
+                    $report = $outcome->report;
+                    $bureau = $report->bureau->label();
 
                     Notification::make()
-                        ->status($fetched ? 'success' : 'danger')
-                        ->title($fetched ? 'CIBIL report fetched' : 'CIBIL report could not be fetched')
-                        ->body($fetched ? ($report->score !== null ? "Score: {$report->score}" : null) : $report->error_message)
+                        ->status(match ($report->status) {
+                            CibilReportStatus::Success => 'success',
+                            CibilReportStatus::Uncertain => 'warning',
+                            default => 'danger',
+                        })
+                        ->title(match ($report->status) {
+                            CibilReportStatus::Success => "{$bureau} report fetched",
+                            CibilReportStatus::Uncertain => "{$bureau} request outcome uncertain",
+                            default => "{$bureau} report could not be fetched",
+                        })
+                        ->body($report->status === CibilReportStatus::Success ? ($report->score !== null ? "Score: {$report->score}" : null) : $report->error_message)
                         ->send();
 
                     $this->redirect(CibilReportResource::getUrl('view', ['record' => $report]));
                 }),
         ];
+    }
+
+    /**
+     * What this login may ask the report's own bureau for again.
+     *
+     * @return list<CibilRequestType>
+     */
+    protected function refreshableTypes(): array
+    {
+        return CibilAccess::requestableTypes(Filament::auth()->user());
+    }
+
+    protected function hasUnresolvedUncertain(mixed $type): bool
+    {
+        $type = CibilRequestType::tryFrom((string) $type);
+
+        return $type !== null && app(CibilReportService::class)->unresolvedUncertain($this->record->pan_number, $type, $this->record->bureau) !== null;
+    }
+
+    protected function canDownloadPdf(): bool
+    {
+        $user = Filament::auth()->user();
+
+        return $user instanceof User && app(CibilReportService::class)->canDownloadPdf($this->record, $user);
     }
 
     /**

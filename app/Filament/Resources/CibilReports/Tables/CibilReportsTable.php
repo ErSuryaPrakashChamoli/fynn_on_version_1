@@ -3,12 +3,17 @@
 namespace App\Filament\Resources\CibilReports\Tables;
 
 use App\Enums\BureauDecision;
+use App\Enums\CibilPdfStatus;
 use App\Enums\CibilReportStatus;
+use App\Enums\CibilRequestType;
 use App\Enums\CibilScoreBand;
+use App\Enums\CreditBureau;
 use App\Models\CibilReport;
 use App\Models\User;
 use App\Services\Cibil\CibilReportService;
 use App\Support\CibilAccess;
+use App\Support\CibilMask;
+use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\DatePicker;
@@ -31,13 +36,28 @@ class CibilReportsTable
                     ->searchable()
                     ->sortable()
                     ->weight('bold')
-                    ->description(fn (CibilReport $record): string => $record->mobile_no),
+                    ->description(fn (CibilReport $record): ?string => $record->maskedMobile()),
 
+                // Masked on screen; typing the full PAN in the search still finds it.
                 TextColumn::make('pan_number')
                     ->label('PAN')
                     ->searchable()
                     ->sortable()
-                    ->copyable(),
+                    ->formatStateUsing(fn (?string $state): string => CibilMask::pan($state)),
+
+                TextColumn::make('bureau')
+                    ->label('Bureau')
+                    ->badge()
+                    ->sortable()
+                    ->formatStateUsing(fn (CreditBureau $state): string => $state->label())
+                    ->color(fn (CreditBureau $state): string => $state->color()),
+
+                TextColumn::make('request_type')
+                    ->label('Request')
+                    ->badge()
+                    ->sortable()
+                    ->formatStateUsing(fn (CibilRequestType $state): string => $state->label())
+                    ->color(fn (CibilRequestType $state): string => $state->color()),
 
                 TextColumn::make('fetched_for')
                     ->label('For')
@@ -77,12 +97,26 @@ class CibilReportsTable
                     ->color('info')
                     ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('fetch_count', $direction)),
 
+                TextColumn::make('pdf_status')
+                    ->label('PDF')
+                    ->badge()
+                    ->formatStateUsing(fn (CibilPdfStatus $state): string => $state->label())
+                    ->color(fn (CibilPdfStatus $state): string => $state->color())
+                    ->placeholder('—'),
+
+                TextColumn::make('bureau_reference')
+                    ->label('Provider reference')
+                    ->placeholder('—')
+                    ->copyable()
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->visible(fn (): bool => CibilAccess::canViewAudit(Filament::auth()->user())),
+
                 TextColumn::make('requester.name')
                     ->label('Fetched by')
                     ->searchable()
                     ->sortable()
-                    ->description(fn (CibilReport $record): ?string => $record->requester?->employee?->emp_id)
-                    ->visible(fn (): bool => self::viewerManages()),
+                    ->placeholder('Former user')
+                    ->description(fn (CibilReport $record): ?string => $record->requester?->employee?->emp_id),
 
                 TextColumn::make('created_at')
                     ->label('Fetched on')
@@ -93,6 +127,14 @@ class CibilReportsTable
                 SelectFilter::make('status')
                     ->label('Status')
                     ->options(CibilReportStatus::options()),
+
+                SelectFilter::make('bureau')
+                    ->label('Bureau')
+                    ->options(CreditBureau::options()),
+
+                SelectFilter::make('request_type')
+                    ->label('Request')
+                    ->options(CibilRequestType::options()),
 
                 SelectFilter::make('score_band')
                     ->label('Score band')
@@ -126,6 +168,14 @@ class CibilReportsTable
             ])
             ->recordActions([
                 ViewAction::make(),
+
+                Action::make('openPdf')
+                    ->label('PDF')
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('gray')
+                    ->visible(fn (CibilReport $record): bool => self::viewerCanOpenPdf($record))
+                    ->url(fn (CibilReport $record): ?string => $record->pdfUrl())
+                    ->openUrlInNewTab(),
             ]);
     }
 
@@ -150,5 +200,12 @@ class CibilReportsTable
         $user = Filament::auth()->user();
 
         return $user instanceof User && CibilAccess::canManage($user);
+    }
+
+    protected static function viewerCanOpenPdf(CibilReport $record): bool
+    {
+        $user = Filament::auth()->user();
+
+        return $user instanceof User && app(CibilReportService::class)->canDownloadPdf($record, $user);
     }
 }

@@ -21,6 +21,9 @@
                         <div>
                             <span class="font-medium text-gray-950 dark:text-white">{{ $row['name'] }}</span>
                             <span class="text-gray-500 dark:text-gray-400">· {{ $row['emp_id'] ?? $row['email'] }}</span>
+                            @if ($row['extras'] !== [])
+                                <span class="text-gray-500 dark:text-gray-400">· also {{ implode(', ', $row['extras']) }}</span>
+                            @endif
                         </div>
                         <x-filament::badge :color="$row['via'] === 'Admin' ? 'primary' : ($row['via'] === 'Individually' ? 'info' : 'gray')">
                             {{ $row['via'] }}

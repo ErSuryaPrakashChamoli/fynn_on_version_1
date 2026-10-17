@@ -25,7 +25,8 @@ use UnitEnum;
 /**
  * CIBIL pulls and their history. Open to the Admin and to whoever the Admin
  * has granted access on the CIBIL Access page (App\Support\CibilAccess).
- * The Admin sees every report; everyone else sees the reports they fetched.
+ * The Admin sees every report; everyone else sees the reports they fetched
+ * and those made for the leads and customer files they can see.
  * The listing shows one row per applicant (PAN) with how often it was
  * pulled; each pull stays its own report, reachable from the applicant's
  * history. Reports are never edited or deleted — fetching again adds a new
@@ -37,7 +38,7 @@ class CibilReportResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedDocumentCheck;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Customers';
+    protected static string|UnitEnum|null $navigationGroup = 'CIBIL Management';
 
     protected static ?string $navigationLabel = 'CIBIL Reports';
 
@@ -47,7 +48,7 @@ class CibilReportResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'customer_name';
 
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 2;
 
     public static function form(Schema $schema): Schema
     {
@@ -75,7 +76,7 @@ class CibilReportResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()->with(['requester.employee', 'customer', 'lead', 'assignedLead', 'decider']);
+        $query = parent::getEloquentQuery()->with(['requester.employee', 'customer', 'lead', 'assignedLead', 'decider', 'resolver']);
         $user = Filament::auth()->user();
 
         if (! $user instanceof User) {

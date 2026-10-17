@@ -2,26 +2,22 @@
 
 namespace App\Filament\Resources\Leads;
 
+use App\Filament\Resources\CibilReports\RelationManagers\CibilProfileRelationManager;
 use App\Filament\Resources\Leads\Pages\CreateLead;
 use App\Filament\Resources\Leads\Pages\EditLead;
 use App\Filament\Resources\Leads\Pages\ListLeads;
 use App\Filament\Resources\Leads\Schemas\LeadForm;
+use App\Filament\Resources\Leads\Schemas\LeadInfolist;
 use App\Filament\Resources\Leads\Tables\LeadsTable;
 use App\Models\Lead;
+use App\Services\HierarchyService;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
-
-
 use Illuminate\Database\Eloquent\Builder;
-use App\Services\HierarchyService;
 use Illuminate\Support\Facades\Auth;
-
-use App\Filament\Imports\LeadImporter;
-use Filament\Actions\ImportAction;
-use App\Filament\Resources\Leads\Schemas\LeadInfolist;
 use UnitEnum;
 
 class LeadResource extends Resource
@@ -39,9 +35,6 @@ class LeadResource extends Resource
 
     protected static ?string $navigationLabel = 'My Leads';
 
-
-
-
     public static function form(Schema $schema): Schema
     {
         return LeadForm::configure($schema);
@@ -55,7 +48,8 @@ class LeadResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            // Only with CIBIL access; shown on the edit page, the lead's detail page.
+            CibilProfileRelationManager::class,
         ];
     }
 
@@ -68,7 +62,6 @@ class LeadResource extends Resource
         ];
     }
 
-
     // public static function getEloquentQuery(): Builder
     // {
     //     $query = parent::getEloquentQuery();
@@ -79,14 +72,12 @@ class LeadResource extends Resource
     //         return $query->whereRaw('1 = 0');
     //     }
 
-
     //     dd("called");
 
     //     return $query->whereIn(
     //         'employee_id',
     //         HierarchyService::visibleEmployeeIds($user)
     //     );
-
 
     // }
 

@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Enums\CibilReportStatus;
+use App\Enums\CibilRequestType;
 use App\Enums\CibilScoreBand;
+use App\Enums\CreditBureau;
 use App\Filament\Pages\CibilAccessSettings;
 use App\Filament\Resources\CibilReports\CibilReportResource;
 use App\Filament\Resources\CibilReports\Pages\CreateCibilReport;
@@ -11,6 +13,7 @@ use App\Filament\Resources\CibilReports\Pages\ListCibilReports;
 use App\Filament\Resources\CibilReports\Pages\ViewCibilReport;
 use App\Http\Middleware\EnsureMonthlyTargetIsSet;
 use App\Models\CibilReport;
+use App\Models\CibilSetting;
 use App\Models\Customer;
 use App\Models\Employee;
 use App\Models\User;
@@ -59,6 +62,7 @@ class CibilReportModuleTest extends TestCase
 
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $this->app->instance(CibilClient::class, new FakeCibilClient);
+        CibilSetting::current()->update(['requests_enabled' => true]);
 
         // The month's unset commitment targets would send every request to
         // the target screen first; that gate has its own tests.
@@ -90,13 +94,16 @@ class CibilReportModuleTest extends TestCase
             'gender' => 'female',
             'pincode' => '110001',
             'consent' => true,
+            'consent_method' => 'recorded_call',
             ...$overrides,
         ];
     }
 
+    /** Module access plus full reports — what the migration carries over for existing grants. */
     private function grantRole(string $role): void
     {
         CibilAccess::sync([$role], []);
+        CibilAccess::sync([$role], [], CibilAccess::FULL_REPORT_PERMISSION);
     }
 
     // ---- Access ---------------------------------------------------------
@@ -245,11 +252,11 @@ class CibilReportModuleTest extends TestCase
         $this->assertSame('The bureau could not find a record for this PAN.', $report->error_message);
     }
 
-    public function test_an_unexpected_error_is_kept_as_failed_with_a_safe_message(): void
+    public function test_an_unexpected_error_is_kept_as_uncertain_with_a_safe_message(): void
     {
         $this->app->instance(CibilClient::class, new class implements CibilClient
         {
-            public function fetch(CibilApplicant $applicant): CibilFetchResult
+            public function fetch(CibilApplicant $applicant, CibilRequestType $type, CreditBureau $bureau = CreditBureau::Cibil): CibilFetchResult
             {
                 throw new RuntimeException('cURL error 28 with secret token abc');
             }
@@ -257,9 +264,10 @@ class CibilReportModuleTest extends TestCase
 
         $report = app(CibilReportService::class)->fetch($this->admin, $this->applicant());
 
-        $this->assertSame(CibilReportStatus::Failed, $report->status);
+        // Whether the bureau got it is unknown, so it is never retried blindly.
+        $this->assertSame(CibilReportStatus::Uncertain, $report->status);
         $this->assertStringNotContainsString('secret', (string) $report->error_message);
-        $this->assertStringContainsString('could not be reached', (string) $report->error_message);
+        $this->assertStringContainsString('Verify its status before retrying', (string) $report->error_message);
     }
 
     public function test_without_a_connected_api_every_pull_fails_with_a_clear_reason(): void
@@ -333,11 +341,12 @@ class CibilReportModuleTest extends TestCase
         $mine = CibilReport::factory()->create(['requested_by' => $this->caller->id]);
         $theirs = CibilReport::factory()->create(['requested_by' => $this->manager->id]);
 
+        // Reports not made for a file the caller can see stay with whoever fetched them.
         $this->actingAs($this->caller->fresh());
         Livewire::test(ListCibilReports::class)
             ->assertCanSeeTableRecords([$mine])
             ->assertCanNotSeeTableRecords([$theirs])
-            ->assertTableColumnHidden('requester.name');
+            ->assertTableColumnVisible('requester.name');
 
         $this->actingAs($this->admin);
         Livewire::test(ListCibilReports::class)
@@ -383,6 +392,7 @@ class CibilReportModuleTest extends TestCase
     public function test_the_view_page_shows_the_applicants_earlier_reports_and_audits_the_view(): void
     {
         $this->grantRole('Caller');
+        CibilAccess::sync(['Caller'], [], CibilAccess::FULL_REPORT_PERMISSION);
         $caller = $this->caller->fresh();
 
         $older = CibilReport::factory()->create(['requested_by' => $caller->id, 'pan_number' => 'ABCDE1234K', 'score' => 612, 'created_at' => now()->subMonths(3)]);
@@ -433,7 +443,9 @@ class CibilReportModuleTest extends TestCase
             ])
             ->fillForm([
                 'mobile_no' => '9876543210',
+                'gender' => 'male',
                 'date_of_birth' => '1988-02-11',
+                'consent_method' => 'written',
                 'consent' => true,
             ])
             ->call('create')
@@ -481,9 +493,12 @@ class CibilReportModuleTest extends TestCase
         CibilReport::factory()->create(['requested_by' => $this->admin->id, 'pan_number' => 'ABCDE1234K', 'score' => 777]);
 
         Livewire::test(CreateCibilReport::class)
-            ->fillForm(['pan_number' => 'ABCDE1234K'])
-            ->assertSee('Already fetched on')
-            ->assertSee('score 777');
+            ->fillForm(['bureau' => 'cibil', 'pan_number' => 'ABCDE1234K'])
+            ->assertSee('Already fetched from CIBIL on')
+            ->assertSee('score 777')
+            // A CIBIL report says nothing about Experian.
+            ->fillForm(['bureau' => 'experian', 'pan_number' => 'ABCDE1234K'])
+            ->assertDontSee('Already fetched from');
     }
 
     public function test_fetch_again_adds_a_new_report_and_keeps_the_old_one(): void
@@ -492,7 +507,7 @@ class CibilReportModuleTest extends TestCase
         $old = CibilReport::factory()->create(['requested_by' => $this->admin->id, 'pan_number' => 'ABCDE1234K', 'score' => 650]);
 
         Livewire::test(ViewCibilReport::class, ['record' => $old->getRouteKey()])
-            ->callAction(TestAction::make('fetchAgain'), ['consent' => true])
+            ->callAction(TestAction::make('fetchAgain'), ['consent' => true, 'consent_method' => 'recorded_call', 'reason' => 'Customer cleared a loan last week'])
             ->assertHasNoActionErrors()
             ->assertNotified('CIBIL report fetched');
 
@@ -502,6 +517,8 @@ class CibilReportModuleTest extends TestCase
         $new = CibilReport::query()->latest('id')->first();
         $this->assertSame('ABCDE1234K', $new->pan_number);
         $this->assertSame($old->customer_name, $new->customer_name);
+        $this->assertSame(CibilRequestType::FullReport, $new->request_type);
+        $this->assertSame('Fresh pull requested: Customer cleared a loan last week', $new->request_reason);
     }
 
     public function test_fetch_again_requires_consent(): void

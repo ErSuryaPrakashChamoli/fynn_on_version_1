@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Models\User;
+use App\Services\Cibil\CibilReportService;
 use App\Support\CibilAccess;
 use BackedEnum;
 use Filament\Facades\Filament;
@@ -17,16 +18,17 @@ use Spatie\Permission\Models\Role;
 use UnitEnum;
 
 /**
- * Where the Admin decides who may fetch and see CIBIL reports: whole roles,
- * individual logins, or both (see App\Support\CibilAccess). Admins always
- * have access and are not listed as a choice. Every change is written to
- * the activity log.
+ * Where the Admin decides who may use the CIBIL module and what else they
+ * may do in it (full reports, PDFs, fresh pulls, audit history): whole
+ * roles, individual logins, or both, per permission (see
+ * App\Support\CibilAccess). Admins always have everything and are not
+ * listed as a choice. Every change is written to the CIBIL audit log.
  */
 class CibilAccessSettings extends Page
 {
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedLockOpen;
 
-    protected static string|UnitEnum|null $navigationGroup = 'People & Access';
+    protected static string|UnitEnum|null $navigationGroup = 'CIBIL Management';
 
     protected static ?string $navigationLabel = 'CIBIL Access';
 
@@ -34,25 +36,43 @@ class CibilAccessSettings extends Page
 
     protected static ?string $slug = 'cibil-access';
 
+    protected static ?int $navigationSort = 6;
+
     protected string $view = 'filament.pages.cibil-access-settings';
 
-    /** @var array{roles?: list<string>, users?: list<int|string>}|null */
+    /** @var array{roles?: list<string>, users?: list<int|string>, grants?: array<string, array{roles?: list<string>, users?: list<int|string>}>}|null */
     public ?array $data = [];
 
     public function mount(): void
     {
+        $grants = [];
+
+        foreach (CibilAccess::EXTRA_PERMISSIONS as $permission) {
+            $grants[self::grantKey($permission)] = [
+                'roles' => CibilAccess::grantedRoleNames($permission),
+                'users' => CibilAccess::grantedUserIds($permission),
+            ];
+        }
+
         $this->form->fill([
             'roles' => CibilAccess::grantedRoleNames(),
             'users' => CibilAccess::grantedUserIds(),
+            'grants' => $grants,
         ]);
+    }
+
+    /** cibil.full_report → cibil_full_report, so the form's state path has no extra dot. */
+    protected static function grantKey(string $permission): string
+    {
+        return str_replace('.', '_', $permission);
     }
 
     public function form(Schema $schema): Schema
     {
         return $schema
             ->components([
-                Section::make('Who can fetch CIBIL reports?')
-                    ->description('Give access to whole roles, to individual users, or both. Admins always have access and see every report; everyone else sees only the reports they fetched. Taking access away also hides their earlier reports from them.')
+                Section::make('Who can use the CIBIL module?')
+                    ->description('Give access to whole roles, to individual users, or both. With access, a login sees the CIBIL profile on the leads and customer files it can already see, and can run score checks. Admins always have access and see every report. Taking access away also hides earlier reports.')
                     ->schema([
                         Select::make('roles')
                             ->label('Roles')
@@ -67,6 +87,26 @@ class CibilAccessSettings extends Page
                             ->helperText('Access for these users whatever their role.'),
                     ])
                     ->columnSpanFull(),
+
+                ...collect(CibilAccess::EXTRA_PERMISSION_LABELS)
+                    ->map(fn (array $permission, string $name): Section => Section::make($permission['label'])
+                        ->description($permission['description'].' Only counts for logins that also have CIBIL access above.')
+                        ->schema([
+                            Select::make('grants.'.self::grantKey($name).'.roles')
+                                ->label('Roles')
+                                ->multiple()
+                                ->options(fn (): array => self::roleOptions()),
+
+                            Select::make('grants.'.self::grantKey($name).'.users')
+                                ->label('Individual users')
+                                ->multiple()
+                                ->options(fn (): array => self::userOptions()),
+                        ])
+                        ->columns(2)
+                        ->collapsible()
+                        ->columnSpanFull())
+                    ->values()
+                    ->all(),
             ])
             ->statePath('data');
     }
@@ -79,10 +119,22 @@ class CibilAccessSettings extends Page
 
         CibilAccess::sync($roles, $userIds);
 
-        activity()
+        $grants = [];
+
+        foreach (CibilAccess::EXTRA_PERMISSIONS as $permission) {
+            $grant = $data['grants'][self::grantKey($permission)] ?? [];
+            $grants[$permission] = [
+                'roles' => array_values($grant['roles'] ?? []),
+                'user_ids' => array_map('intval', array_values($grant['users'] ?? [])),
+            ];
+
+            CibilAccess::sync($grants[$permission]['roles'], $grants[$permission]['user_ids'], $permission);
+        }
+
+        activity(CibilReportService::LOG_NAME)
             ->causedBy(Filament::auth()->user())
             ->event('updated')
-            ->withProperties(['roles' => $roles, 'user_ids' => $userIds])
+            ->withProperties(['roles' => $roles, 'user_ids' => $userIds, 'grants' => $grants])
             ->log('CIBIL access updated');
 
         Notification::make()
@@ -95,7 +147,7 @@ class CibilAccessSettings extends Page
      * Everyone who can open the module right now, and why — shown under the
      * form so the Admin sees the effect of a role grant before saving more.
      *
-     * @return Collection<int, array{name: string, email: string, emp_id: string|null, via: string}>
+     * @return Collection<int, array{name: string, email: string, emp_id: string|null, via: string, extras: list<string>}>
      */
     public function usersWithAccess(): Collection
     {
@@ -119,6 +171,11 @@ class CibilAccessSettings extends Page
                     'email' => $user->email,
                     'emp_id' => $user->employee?->emp_id,
                     'via' => $via,
+                    'extras' => collect(CibilAccess::EXTRA_PERMISSION_LABELS)
+                        ->filter(fn (array $permission, string $name): bool => CibilAccess::has($user, $name))
+                        ->pluck('label')
+                        ->values()
+                        ->all(),
                 ];
             });
     }

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Customers;
 
 use App\Enums\JourneyModule;
+use App\Filament\Resources\CibilReports\RelationManagers\CibilProfileRelationManager;
 use App\Filament\Resources\Customers\Pages\ContinuePanRequest;
 use App\Filament\Resources\Customers\Pages\CreateCustomer;
 use App\Filament\Resources\Customers\Pages\EditCustomer;
@@ -63,7 +64,8 @@ class CustomerResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            // Only with CIBIL access, and on the view page (see canViewForRecord()).
+            CibilProfileRelationManager::class,
         ];
     }
 

@@ -8,6 +8,7 @@ use App\Filament\Resources\AssignedLeads\Pages\ViewAssignedLead;
 use App\Filament\Resources\AssignedLeads\Schemas\AssignedLeadForm;
 use App\Filament\Resources\AssignedLeads\Schemas\AssignedLeadInfolist;
 use App\Filament\Resources\AssignedLeads\Tables\AssignedLeadsTable;
+use App\Filament\Resources\CibilReports\RelationManagers\CibilProfileRelationManager;
 use App\Models\CustomerAssignment;
 use App\Services\HierarchyService;
 use App\Services\Journey\CustomerJourneyAccessService;
@@ -85,6 +86,14 @@ class AssignedLeadResource extends Resource
                 $query->orWhereIn('employee_id', $delegatedOriginalIds);
             }
         });
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            // Only with CIBIL access, and on the view page (see canViewForRecord()).
+            CibilProfileRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

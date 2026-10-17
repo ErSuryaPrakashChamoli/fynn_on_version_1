@@ -3,7 +3,11 @@
 namespace App\Filament\Resources\CibilReports\Schemas;
 
 use App\Enums\BureauDecision;
+use App\Enums\CibilConsentMethod;
+use App\Enums\CibilPdfStatus;
 use App\Enums\CibilReportStatus;
+use App\Enums\CibilRequestType;
+use App\Enums\CreditBureau;
 use App\Filament\Resources\AssignedLeads\AssignedLeadResource;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Filament\Resources\Leads\LeadResource;
@@ -13,6 +17,7 @@ use App\Models\Lead;
 use App\Models\User;
 use App\Services\Cibil\CibilReportService;
 use App\Support\BureauCheckCandidates;
+use App\Support\CibilAccess;
 use Filament\Facades\Filament;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Grid;
@@ -27,7 +32,7 @@ class CibilReportInfolist
     {
         return $schema
             ->components([
-                Section::make('CIBIL score')
+                Section::make(fn (CibilReport $record): string => "{$record->bureau->label()} score")
                     ->columnSpanFull()
                     ->schema([
                         Grid::make(4)->schema([
@@ -36,7 +41,7 @@ class CibilReportInfolist
                                 ->size(TextSize::Large)
                                 ->weight('bold')
                                 ->badge()
-                                ->placeholder('—')
+                                ->placeholder(fn (CibilReport $record): string => $record->status === CibilReportStatus::Success ? 'No score returned' : '—')
                                 ->formatStateUsing(fn (int $state): string => $state < 300 ? 'NH (no history)' : (string) $state)
                                 ->color(fn (CibilReport $record): string => $record->scoreBand()?->color() ?? 'gray')
                                 ->helperText(fn (CibilReport $record): ?string => $record->scoreBand()?->label()),
@@ -47,21 +52,64 @@ class CibilReportInfolist
                                 ->formatStateUsing(fn (CibilReportStatus $state): string => $state->label())
                                 ->color(fn (CibilReportStatus $state): string => $state->color()),
 
+                            TextEntry::make('request_type')
+                                ->label('Request')
+                                ->badge()
+                                ->formatStateUsing(fn (CibilRequestType $state): string => $state->label())
+                                ->color(fn (CibilRequestType $state): string => $state->color()),
+
+                            TextEntry::make('bureau')
+                                ->label('Bureau')
+                                ->badge()
+                                ->formatStateUsing(fn (CreditBureau $state): string => $state->label())
+                                ->color(fn (CreditBureau $state): string => $state->color())
+                                ->icon(fn (CreditBureau $state): string => $state->icon()),
+
                             TextEntry::make('fetched_at')
                                 ->label('Fetched on')
                                 ->dateTime('d M Y, h:i A')
                                 ->placeholder('Not fetched'),
 
+                            TextEntry::make('pdf_status')
+                                ->label('PDF')
+                                ->badge()
+                                ->formatStateUsing(fn (CibilPdfStatus $state): string => $state->label())
+                                ->color(fn (CibilPdfStatus $state): string => $state->color())
+                                ->visible(fn (CibilReport $record): bool => $record->request_type === CibilRequestType::Pdf && $record->status === CibilReportStatus::Success),
+
+                            TextEntry::make('completed_at')
+                                ->label('Completed on')
+                                ->dateTime('d M Y, h:i A')
+                                ->placeholder('—'),
+
                             TextEntry::make('bureau_reference')
-                                ->label('Bureau reference')
+                                ->label('Provider reference')
                                 ->placeholder('—')
-                                ->copyable(),
+                                ->copyable()
+                                ->visible(fn (): bool => self::viewerAudits()),
+
+                            TextEntry::make('provider_status_code')
+                                ->label('Provider response')
+                                ->formatStateUsing(fn (int $state, CibilReport $record): string => trim("HTTP {$state} ".($record->provider_message_code ?? '')))
+                                ->placeholder('—')
+                                ->visible(fn (): bool => self::viewerAudits()),
                         ]),
 
                         TextEntry::make('error_message')
-                            ->label('Why it failed')
-                            ->color('danger')
-                            ->visible(fn (CibilReport $record): bool => $record->status === CibilReportStatus::Failed)
+                            ->label(fn (CibilReport $record): string => $record->status === CibilReportStatus::Uncertain ? 'Why the outcome is uncertain' : 'Why it failed')
+                            ->color(fn (CibilReport $record): string => $record->status === CibilReportStatus::Uncertain ? 'warning' : 'danger')
+                            ->visible(fn (CibilReport $record): bool => in_array($record->status, [CibilReportStatus::Failed, CibilReportStatus::Uncertain], true))
+                            ->columnSpanFull(),
+
+                        TextEntry::make('resolution_note')
+                            ->label('Verified')
+                            ->state(fn (CibilReport $record): string => trim(($record->resolver?->name ?? 'Former user').' on '.$record->resolved_at?->format('d M Y, h:i A').': '.$record->resolution_note))
+                            ->visible(fn (CibilReport $record): bool => $record->resolved_at !== null)
+                            ->columnSpanFull(),
+
+                        TextEntry::make('request_reason')
+                            ->label('Why this request was sent')
+                            ->placeholder('—')
                             ->columnSpanFull(),
                     ]),
 
@@ -126,13 +174,21 @@ class CibilReportInfolist
                             TextEntry::make('created_at')->label('Requested on')->dateTime('d M Y, h:i A'),
                             TextEntry::make('consent_given_at')->label('Customer consent recorded')->dateTime('d M Y, h:i A'),
                         ]),
+                        Grid::make(3)->schema([
+                            TextEntry::make('consent_method')
+                                ->label('How consent was given')
+                                ->formatStateUsing(fn (CibilConsentMethod $state): string => $state->label())
+                                ->placeholder('Not recorded'),
+                            TextEntry::make('consent_reference')->label('Consent reference')->placeholder('—'),
+                            TextEntry::make('consent_purpose')->label('Purpose of the enquiry')->placeholder('—'),
+                        ]),
                     ]),
 
                 Section::make('Full report')
                     ->description('As received from the bureau.')
                     ->columnSpanFull()
                     ->collapsible()
-                    ->visible(fn (CibilReport $record): bool => filled($record->response_payload))
+                    ->visible(fn (CibilReport $record): bool => filled($record->response_payload) && self::viewerReadsFullReports())
                     ->schema([
                         View::make('filament.components.cibil-report-payload')
                             ->viewData(fn (CibilReport $record): array => ['payload' => $record->response_payload ?? []]),
@@ -199,5 +255,16 @@ class CibilReportInfolist
         return $user instanceof User
             ? app(CibilReportService::class)->historyFor($record, $user)
             : [];
+    }
+
+    /** Provider references and response codes are for the Admin and the audit permission. */
+    protected static function viewerAudits(): bool
+    {
+        return CibilAccess::canViewAudit(Filament::auth()->user());
+    }
+
+    protected static function viewerReadsFullReports(): bool
+    {
+        return CibilAccess::canViewFullReport(Filament::auth()->user());
     }
 }

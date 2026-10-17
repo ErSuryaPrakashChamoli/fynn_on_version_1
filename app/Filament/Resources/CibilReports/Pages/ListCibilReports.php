@@ -23,7 +23,7 @@ class ListCibilReports extends ListRecords
                 ->visible(fn (): bool => CibilAccessSettings::canAccess()),
 
             CreateAction::make()
-                ->label('Fetch CIBIL report')
+                ->label('Fetch bureau report')
                 ->icon('heroicon-o-magnifying-glass'),
         ];
     }

@@ -11,6 +11,7 @@ use App\Models\CustomerPanRequest;
 use App\Models\Employee;
 use App\Models\FollowUp;
 use App\Models\Lead;
+use App\Services\Cibil\CibilReportService;
 use App\Services\CustomerEligibilityService;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -411,7 +412,11 @@ class CreateCustomer extends CreateRecord
             ]);
         }
 
+        $convertedAssignmentIds = [];
+
         if ($this->aiCustomerRecordId) {
+            $convertedAssignmentIds = CustomerAssignment::where('ai_customer_record_id', $this->aiCustomerRecordId)->pluck('id')->all();
+
             AiCustomerRecord::where('id', $this->aiCustomerRecordId)->update([
                 'customer_id' => $this->record->id,
             ]);
@@ -434,6 +439,9 @@ class CreateCustomer extends CreateRecord
                 'converted_customer_id' => $this->record->id,
             ]);
         }
+
+        // The lead's CIBIL reports stay its history and now also show on the new file.
+        app(CibilReportService::class)->linkConvertedLead($this->record, $this->leadId, $convertedAssignmentIds, auth()->user());
 
         app(CustomerEligibilityService::class)->logCreation($this->record, auth()->user());
     }

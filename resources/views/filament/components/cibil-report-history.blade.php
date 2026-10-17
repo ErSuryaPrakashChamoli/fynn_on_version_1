@@ -11,6 +11,9 @@
         @foreach ($reports as $report)
             <li class="flex flex-wrap items-center justify-between gap-2 py-2">
                 <div class="flex flex-wrap items-center gap-2">
+                    <x-filament::badge :color="$report->bureau->color()">
+                        {{ $report->bureau->label() }}
+                    </x-filament::badge>
                     <x-filament::badge :color="$report->scoreBand()?->color() ?? 'gray'">
                         {{ $report->score === null ? '—' : ($report->score < 300 ? 'NH' : $report->score) }}
                     </x-filament::badge>

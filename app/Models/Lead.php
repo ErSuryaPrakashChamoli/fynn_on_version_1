@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 
@@ -90,6 +91,16 @@ class Lead extends Model
     public function convertedCustomer()
     {
         return $this->belongsTo(Customer::class, 'converted_customer_id');
+    }
+
+    /**
+     * CIBIL requests made for this lead.
+     *
+     * @return HasMany<CibilReport, $this>
+     */
+    public function cibilReports(): HasMany
+    {
+        return $this->hasMany(CibilReport::class);
     }
 
     /**
