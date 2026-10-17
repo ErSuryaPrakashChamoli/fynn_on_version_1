@@ -70,18 +70,29 @@ class SurepassCibilClient implements CibilClient
                 ->asJson()
                 ->connectTimeout((int) ($config['connect_timeout'] ?? 10))
                 ->timeout((int) ($config['timeout'] ?? 60))
-                ->post($endpoint, [
-                    'pan' => $applicant->panNumber,
-                    'mobile' => $applicant->mobileNo,
-                    'name' => $applicant->name,
-                    'gender' => $applicant->gender,
-                    'consent' => 'Y',
-                ]));
+                ->post($endpoint, self::body($applicant, $bureau)));
         } catch (ConnectionException $exception) {
             throw $this->connectionFailure($exception, $bureau);
         }
 
         return $this->parse($response, $type, $bureau);
+    }
+
+    /**
+     * Exactly the fields each bureau's API takes: CIBIL also matches on
+     * gender, Experian does not take it.
+     *
+     * @return array<string, string|null>
+     */
+    private static function body(CibilApplicant $applicant, CreditBureau $bureau): array
+    {
+        return [
+            'pan' => $applicant->panNumber,
+            'mobile' => $applicant->mobileNo,
+            'name' => $applicant->name,
+            ...($bureau === CreditBureau::Cibil ? ['gender' => $applicant->gender] : []),
+            'consent' => 'Y',
+        ];
     }
 
     private function parse(Response $response, CibilRequestType $type, CreditBureau $bureau): CibilFetchResult

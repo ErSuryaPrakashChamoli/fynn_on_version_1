@@ -59,20 +59,21 @@ Base URL: `https://kyc-api.surepass.app`, authenticated with `Authorization: Bea
 | Full report | `POST /api/v1/credit-report-cibil/fetch-report` | score, `client_id`, complete `credit_report` (encrypted) |
 | PDF report | `POST /api/v1/credit-report-cibil/fetch-report-pdf` | score, `client_id`, PDF on the private disk |
 
-**Experian** (`SUREPASS_EXPERIAN_*`): the paths below are defaults and **must be
-confirmed against the Surepass account's API documentation**. While an endpoint is
-empty, that Experian request type fails as "not connected".
+**Experian** (`SUREPASS_EXPERIAN_*`), from Surepass's Experian API docs (confirmed
+2026-10-17). The env overrides are only needed if Surepass changes a path.
 
-| Request type | Default endpoint | Env override |
-| --- | --- | --- |
-| Score check | *(none yet, fails as "not connected")* | `SUREPASS_EXPERIAN_SCORE_ENDPOINT` |
-| Full report | `POST /api/v1/credit-report-experian/fetch-report` | `SUREPASS_EXPERIAN_REPORT_ENDPOINT` |
-| PDF report | `POST /api/v1/credit-report-experian/fetch-report-pdf` | `SUREPASS_EXPERIAN_PDF_ENDPOINT` |
+| Request type | Endpoint | Env override | Stored |
+| --- | --- | --- | --- |
+| Score check | `POST /api/v1/credit-report-experian/score` | `SUREPASS_EXPERIAN_SCORE_ENDPOINT` | score, `client_id` |
+| Full report | `POST /api/v1/credit-report-experian/fetch-report` | `SUREPASS_EXPERIAN_REPORT_ENDPOINT` | score, `client_id`, the `credit_report` object (`CreditProfileHeader`, `CAIS_Account`, …) encrypted |
+| PDF report | `POST /api/v1/credit-report-experian/fetch-report-pdf` | `SUREPASS_EXPERIAN_PDF_ENDPOINT` | score, `client_id`, the PDF from `credit_report_link` (signed S3 link) on the private disk |
 
-Request body for every type and bureau: `pan`, `mobile`, `name`, `gender` and `consent: "Y"`.
-Experian answers are read the same way as CIBIL ones (`credit_score`, `client_id`,
-`credit_report`, `credit_report_link` / `credit_report_base64`). Check this against
-a sandbox Experian response before going live.
+Request body:
+
+- **CIBIL:** `pan`, `mobile`, `name`, `gender` and `consent: "Y"`.
+- **Experian:** `pan`, `mobile`, `name` and `consent: "Y"`. Experian does not take
+  gender, so the form asks for gender only when CIBIL is chosen.
+
 `consent` is only sent after consent has been recorded (see below).
 
 ## Environment variables
@@ -85,7 +86,7 @@ a sandbox Experian response before going live.
 | `SUREPASS_CIBIL_TIMEOUT` / `SUREPASS_CIBIL_CONNECT_TIMEOUT` | 60 / 10 s | Keep PHP-FPM's `max_execution_time` above the timeout |
 | `SUREPASS_EXPERIAN_TOKEN` | — | Experian's own token. Same rules as the CIBIL token. Without it every Experian request fails with "Experian credentials are not configured". |
 | `SUREPASS_EXPERIAN_BASE_URL` | the CIBIL base URL | Must be `https://` |
-| `SUREPASS_EXPERIAN_SCORE_ENDPOINT` / `_REPORT_ENDPOINT` / `_PDF_ENDPOINT` | see above | Empty = that request fails as "not connected" |
+| `SUREPASS_EXPERIAN_SCORE_ENDPOINT` / `_REPORT_ENDPOINT` / `_PDF_ENDPOINT` | see above | Leave unset; only for a changed Surepass path |
 | `SUREPASS_EXPERIAN_TIMEOUT` / `SUREPASS_EXPERIAN_CONNECT_TIMEOUT` | the CIBIL values | |
 | `CIBIL_PDF_DISK` | `local` | Private disk. A public disk is refused and `local` is used instead. |
 | `CIBIL_PDF_MAX_BYTES` | 15 MB | Larger files are rejected |
@@ -240,5 +241,5 @@ Then, as the Admin:
 2. **CIBIL Access**: grant `cibil.fetch` and the finer permissions.
 3. **CIBIL Settings**: switch requests on.
 
-Requests stay off until step 3. Until the Experian token and endpoints are set,
-Experian requests fail as "not connected" without anything being sent.
+Requests stay off until step 3. Until the Experian token is set, Experian requests
+fail with "Experian credentials are not configured" without anything being sent.

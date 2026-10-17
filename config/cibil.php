@@ -49,16 +49,17 @@ return [
     |
     | The Experian bureau, used when the user picks Experian (both bureaus
     | are always offered in the LMS). Its own token: the CIBIL token is never
-    | used in its place. Until the token and an endpoint are set, an Experian
-    | request is recorded as failed ("not connected") and nothing is sent.
-    | Confirm the paths below against the Surepass account's API docs.
+    | used in its place. Until the token is set, an Experian request is
+    | recorded as failed ("not connected") and nothing is sent. The paths are
+    | Surepass's documented Experian APIs (confirmed 2026-10-17); Experian
+    | takes pan, mobile, name and consent — no gender.
     */
     'experian' => [
         'base_url' => env('SUREPASS_EXPERIAN_BASE_URL', env('SUREPASS_CIBIL_BASE_URL', 'https://kyc-api.surepass.app')),
         'token' => env('SUREPASS_EXPERIAN_TOKEN'),
 
         'endpoints' => [
-            'score' => env('SUREPASS_EXPERIAN_SCORE_ENDPOINT'),
+            'score' => env('SUREPASS_EXPERIAN_SCORE_ENDPOINT', '/api/v1/credit-report-experian/score'),
             'full_report' => env('SUREPASS_EXPERIAN_REPORT_ENDPOINT', '/api/v1/credit-report-experian/fetch-report'),
             'pdf' => env('SUREPASS_EXPERIAN_PDF_ENDPOINT', '/api/v1/credit-report-experian/fetch-report-pdf'),
         ],

@@ -30,6 +30,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -365,5 +367,103 @@ class CibilBureauChoiceTest extends TestCase
             && $request->hasHeader('Authorization', 'Bearer experian-token-not-real')
             && $request['pan'] === 'MEENA1234I'
             && $request['consent'] === 'Y');
+    }
+
+    /**
+     * Surepass's documented Experian APIs: the request body is pan, mobile,
+     * name and consent (no gender), and the answers are read as documented —
+     * the score, the report object, and the PDF behind a signed S3 link.
+     */
+    public function test_experian_uses_the_documented_surepass_score_report_and_pdf_apis(): void
+    {
+        $base = 'https://kyc-api.surepass.app/api/v1/credit-report-experian';
+        $link = 'https://aadhaar-kyc-docs.s3.amazonaws.com/credit_report_experian/credit_report_1730202365240415.pdf?X-Amz-Signature=secret';
+
+        $this->app->forgetInstance(CibilClient::class);
+        config([
+            'cibil.driver' => 'surepass',
+            'cibil.experian.token' => 'experian-token-not-real',
+            'cibil.experian.base_url' => 'https://kyc-api.surepass.app',
+        ]);
+        Storage::fake('local');
+        Http::preventStrayRequests();
+        Http::fake([
+            "{$base}/score" => Http::response(['data' => [
+                'client_id' => 'experian_credit_score_BLffggUeWtqOpHTjugpw',
+                'name' => 'MEENA IYER', 'mobile' => '9811122233', 'pan' => 'MEENA1234I',
+                'credit_score' => '796',
+            ], 'status_code' => 200, 'success' => true, 'message' => 'Success', 'message_code' => 'success']),
+            "{$base}/fetch-report" => Http::response(['data' => [
+                'client_id' => 'credit_report_experian_SivVmssPcdDwdnhnqghz',
+                'name' => 'Meena Iyer', 'mobile' => '9811122233', 'pan' => 'MEENA1234I',
+                'credit_score' => '792',
+                'credit_report' => [
+                    'CreditProfileHeader' => ['ReportDate' => 20240705, 'Version' => 'V2.4'],
+                    'CAIS_Account' => [
+                        'CAIS_Summary' => ['Credit_Account' => ['CreditAccountTotal' => 44, 'CreditAccountActive' => 15]],
+                        'CAIS_Account_DETAILS' => [['Subscriber_Name' => 'XXXXXXXXXX', 'Account_Type' => 13, 'Current_Balance' => 0]],
+                    ],
+                ],
+            ], 'status_code' => 200, 'success' => true, 'message' => 'Success', 'message_code' => 'success']),
+            "{$base}/fetch-report-pdf" => Http::response(['data' => [
+                'client_id' => 'credit_report_experian_pdf_yzWulawpzCczmLyKazqJ',
+                'name' => 'MEENA IYER', 'mobile' => '9811122233', 'pan' => 'MEENA1234I',
+                'credit_score' => '761',
+                'credit_report' => [],
+                'credit_report_link' => $link,
+            ], 'status_code' => 200, 'success' => true, 'message' => 'Success', 'message_code' => 'success']),
+            'aadhaar-kyc-docs.s3.amazonaws.com/*' => Http::response("%PDF-1.4\nexperian report\n%%EOF\n", 200, ['Content-Type' => 'application/pdf']),
+        ]);
+
+        // Experian does not take gender, so none is needed or sent.
+        $details = $this->details(['gender' => null]);
+        $request = fn (CibilRequestType $type): CibilReport => $this->service()
+            ->request($this->admin, $type, $details, bureau: CreditBureau::Experian)->report->fresh();
+
+        $score = $request(CibilRequestType::Score);
+        $full = $request(CibilRequestType::FullReport);
+        $pdf = $request(CibilRequestType::Pdf);
+
+        $this->assertSame([796, 792, 761], [$score->score, $full->score, $pdf->score]);
+        $this->assertSame('experian_credit_score_BLffggUeWtqOpHTjugpw', $score->bureau_reference);
+        $this->assertSame(44, $full->response_payload['credit_report'][0]['CAIS_Account']['CAIS_Summary']['Credit_Account']['CreditAccountTotal']);
+        $this->assertNull($full->gender);
+        Storage::disk('local')->assertExists($pdf->pdf_path);
+        $this->assertArrayNotHasKey('credit_report_link', $pdf->response_payload);
+
+        foreach (['score', 'fetch-report', 'fetch-report-pdf'] as $path) {
+            Http::assertSent(fn (Request $sent): bool => $sent->url() === "{$base}/{$path}"
+                && $sent->hasHeader('Authorization', 'Bearer experian-token-not-real')
+                && $sent->data() === ['pan' => 'MEENA1234I', 'mobile' => '9811122233', 'name' => 'Meena Iyer', 'consent' => 'Y']);
+        }
+    }
+
+    public function test_gender_is_required_for_cibil_but_not_for_experian(): void
+    {
+        $this->service()->request($this->admin, CibilRequestType::Score, $this->details(['gender' => null]), bureau: CreditBureau::Experian);
+
+        $this->expectException(ValidationException::class);
+
+        $this->service()->request($this->admin, CibilRequestType::Score, $this->details(['gender' => null, 'pan_number' => 'OTHER1234X']));
+    }
+
+    public function test_the_form_asks_for_gender_only_when_cibil_is_chosen(): void
+    {
+        $customer = $this->customer();
+
+        Livewire::test(CreateCibilReport::class)
+            ->fillForm(['bureau' => 'cibil', 'fetch_for' => 'customer'])
+            ->fillForm(['customer_id' => $customer->id])
+            ->fillForm(['request_type' => 'score', 'gender' => null, 'consent_method' => 'recorded_call', 'consent' => true])
+            ->call('create')
+            ->assertHasFormErrors(['gender' => 'required'])
+            ->fillForm(['bureau' => 'experian'])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $report = CibilReport::query()->sole();
+
+        $this->assertSame(CreditBureau::Experian, $report->bureau);
+        $this->assertNull($report->gender);
     }
 }

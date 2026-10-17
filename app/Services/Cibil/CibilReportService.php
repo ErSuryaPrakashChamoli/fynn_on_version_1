@@ -121,7 +121,7 @@ class CibilReportService
             default => null,
         };
 
-        $details = $this->validated($data, $subject, needsReason: $fresh || $afterUncertain);
+        $details = $this->validated($data, $subject, $bureau, needsReason: $fresh || $afterUncertain);
         $pan = $details['pan_number'];
 
         $outcome = $this->underLock($pan, $type, $bureau, function () use ($user, $type, $bureau, $details, $pan, $subject, $fresh, $afterUncertain, $settings): CibilRequestOutcome {
@@ -803,21 +803,21 @@ class CibilReportService
 
     /**
      * @param  array<string, mixed>  $data
-     * @return array{customer_name: string, pan_number: string, mobile_no: string, email: string|null, date_of_birth: Carbon|null, gender: string, pincode: string|null, consent_method: CibilConsentMethod, consent_reference: string|null, reason: string|null}
+     * @return array{customer_name: string, pan_number: string, mobile_no: string, email: string|null, date_of_birth: Carbon|null, gender: string|null, pincode: string|null, consent_method: CibilConsentMethod, consent_reference: string|null, reason: string|null}
      */
-    private function validated(array $data, Lead|CustomerAssignment|Customer|null $subject, bool $needsReason): array
+    private function validated(array $data, Lead|CustomerAssignment|Customer|null $subject, CreditBureau $bureau, bool $needsReason): array
     {
         $data['pan_number'] = Str::upper(trim((string) ($data['pan_number'] ?? '')));
         $mobile = preg_replace('/\D/', '', (string) ($data['mobile_no'] ?? '')) ?: null;
         $data['mobile_no'] = $mobile !== null && strlen($mobile) > 10 ? substr($mobile, -10) : $mobile;
 
-        // Surepass matches the applicant on name, PAN, mobile and gender;
-        // the rest is kept for the record.
+        // Surepass matches the applicant on name, PAN and mobile (CIBIL also
+        // on gender); the rest is kept for the record.
         $validator = Validator::make($data, [
             'customer_name' => ['required', 'string', 'max:255'],
             'pan_number' => ['required', 'regex:'.self::PAN_PATTERN],
             'mobile_no' => ['required', 'regex:'.self::MOBILE_PATTERN],
-            'gender' => ['required', Rule::in(array_keys(CibilReport::GENDERS))],
+            'gender' => [Rule::requiredIf($bureau === CreditBureau::Cibil), 'nullable', Rule::in(array_keys(CibilReport::GENDERS))],
             'date_of_birth' => ['nullable', 'date', 'before:today'],
             'email' => ['nullable', 'email', 'max:255'],
             'pincode' => ['nullable', 'regex:'.self::PINCODE_PATTERN],
@@ -855,7 +855,7 @@ class CibilReportService
             'mobile_no' => $valid['mobile_no'],
             'email' => filled($valid['email'] ?? null) ? trim($valid['email']) : null,
             'date_of_birth' => filled($valid['date_of_birth'] ?? null) ? Carbon::parse($valid['date_of_birth']) : null,
-            'gender' => $valid['gender'],
+            'gender' => filled($valid['gender'] ?? null) ? $valid['gender'] : null,
             'pincode' => $valid['pincode'] ?? null,
             'consent_method' => CibilConsentMethod::from($valid['consent_method']),
             'consent_reference' => filled($valid['consent_reference'] ?? null) ? trim($valid['consent_reference']) : null,

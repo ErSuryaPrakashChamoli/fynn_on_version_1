@@ -133,7 +133,7 @@ class ViewCibilReport extends ViewRecord
                 ->schema(fn (): array => [
                     CibilRequestFields::requestType($this->refreshableTypes()),
                     CibilRequestFields::mobile()->visible(blank($this->record->mobile_no)),
-                    CibilRequestFields::gender()->visible(blank($this->record->gender)),
+                    CibilRequestFields::gender($this->record->bureau)->visible(blank($this->record->gender)),
                     CibilRequestFields::freshReason(),
                     ...CibilRequestFields::consent(fn (Get $get): ?CibilRequestType => CibilRequestType::tryFrom((string) $get('request_type')), $this->record->bureau),
                     CibilRequestFields::afterUncertain(fn (Get $get): bool => $this->hasUnresolvedUncertain($get('request_type'))),

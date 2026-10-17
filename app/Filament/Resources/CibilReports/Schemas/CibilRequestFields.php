@@ -81,14 +81,22 @@ final class CibilRequestFields
             ->validationMessages(['regex' => 'Enter a valid 10-digit mobile number.']);
     }
 
-    public static function gender(): Select
+    /**
+     * CIBIL matches on gender, Experian does not take it. $bureau: the
+     * bureau, or null to read the form's own "bureau" field.
+     */
+    public static function gender(?CreditBureau $bureau = null): Select
     {
+        $isCibil = fn (Get $get): bool => ($bureau ?? CreditBureau::tryFrom((string) $get('bureau')) ?? CreditBureau::Cibil) === CreditBureau::Cibil;
+
         return Select::make('gender')
-            ->label('Gender')
+            ->label(fn (Get $get): string => $isCibil($get) ? 'Gender' : 'Gender (optional)')
             ->options(CibilReport::GENDERS)
             ->searchable(false)
-            ->required()
-            ->helperText('Not kept on leads or customer files; the bureau needs it.');
+            ->required($isCibil)
+            ->helperText(fn (Get $get): string => $isCibil($get)
+                ? 'Not kept on leads or customer files; CIBIL needs it.'
+                : 'Experian does not need it; kept for the record only.');
     }
 
     public static function dateOfBirth(): DatePicker
