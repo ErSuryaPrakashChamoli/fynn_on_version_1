@@ -150,4 +150,37 @@ class Lead extends Model
     {
         return $this->belongsTo(Bank::class, 'bank_id');
     }
+
+    /**
+     * Interested, Eligible (after the bureau check) and Eligible for Other
+     * Bank leads may move on to a customer file.
+     */
+    public function isConvertible(): bool
+    {
+        return ! $this->is_converted
+            && in_array($this->status, CustomerAssignment::CONVERTIBLE_FOLLOW_UP_STATUSES, true);
+    }
+
+    /**
+     * Details the customer form needs that this lead does not hold yet.
+     *
+     * @return list<string>
+     */
+    public function missingConversionFields(): array
+    {
+        $required = [
+            'pan_number' => 'PAN Number',
+            'job_location' => 'Job Location',
+            'salary' => 'Salary',
+            'email' => 'Email',
+            'residence_location' => 'Residence Location',
+            'current_location' => 'Current Location',
+        ];
+
+        return array_values(array_filter(
+            $required,
+            fn (string $label, string $field): bool => blank($this->{$field}),
+            ARRAY_FILTER_USE_BOTH,
+        ));
+    }
 }
