@@ -104,20 +104,20 @@ class CreateCustomer extends CreateRecord
 
                 $this->aiCustomerRecordId = $aiRecord->id;
 
-                $panNumber = filled($aiRecord->value('pan_number'))
-                    ? strtoupper($aiRecord->value('pan_number'))
-                    : null;
+                // The upload template may store these under its own keys
+                // ("mobile", "pan", "city"...) — prospectValue() finds them.
+                $panNumber = $aiRecord->prospectValue('pan_number');
 
                 $fill = [
                     'pan_number' => $panNumber,
-                    'customer_name' => $aiRecord->value('customer_name'),
-                    'mobile_no' => $aiRecord->value('mobile_number'),
+                    'customer_name' => $aiRecord->prospectValue('customer_name'),
+                    'mobile_no' => $aiRecord->prospectValue('mobile_number'),
                     'loan_applied' => $aiRecord->value('product_type'),
-                    'email' => $aiRecord->value('email'),
-                    'current_location' => $aiRecord->value('current_location'),
-                    'job_location' => $aiRecord->value('job_location'),
-                    'residence_location' => $aiRecord->value('residence_location'),
-                    'salary' => $aiRecord->value('salary'),
+                    'email' => $aiRecord->prospectValue('email'),
+                    'current_location' => $aiRecord->prospectValue('current_location'),
+                    'job_location' => $aiRecord->prospectValue('job_location'),
+                    'residence_location' => $aiRecord->prospectValue('residence_location'),
+                    'salary' => $aiRecord->prospectValue('salary'),
                 ];
 
                 // Run the same duplicate-PAN lookup used by the live

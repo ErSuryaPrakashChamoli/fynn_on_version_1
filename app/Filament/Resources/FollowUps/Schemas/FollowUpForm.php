@@ -43,7 +43,7 @@ class FollowUpForm
 
                         TextInput::make('customer_name')
                             ->label('Customer Name')
-                            ->default($customer?->customer_name ?? $aiRecord?->value('customer_name'))
+                            ->default($customer?->customer_name ?? $aiRecord?->prospectValue('customer_name'))
                             ->afterStateHydrated(fn (TextInput $component, ?FollowUp $record) => $record
                                 ? $component->state(self::subjectDetails($record)['customer_name'])
                                 : null)
@@ -52,7 +52,7 @@ class FollowUpForm
 
                         TextInput::make('mobile_no')
                             ->label('Phone')
-                            ->default($customer?->mobile_no ?? $aiRecord?->value('mobile_number'))
+                            ->default($customer?->mobile_no ?? $aiRecord?->prospectValue('mobile_number'))
                             ->afterStateHydrated(fn (TextInput $component, ?FollowUp $record) => $record
                                 ? $component->state(self::subjectDetails($record)['mobile_no'])
                                 : null)
@@ -307,8 +307,8 @@ class FollowUpForm
         $aiRecord = $subject ? null : $followUp->aiCustomerRecord;
 
         return [
-            'customer_name' => $subject?->customer_name ?? $aiRecord?->value('customer_name'),
-            'mobile_no' => $subject?->mobile_no ?? $aiRecord?->value('mobile_number'),
+            'customer_name' => $subject?->customer_name ?? $aiRecord?->prospectValue('customer_name'),
+            'mobile_no' => $subject?->mobile_no ?? $aiRecord?->prospectValue('mobile_number'),
             'email' => $subject?->email,
             'pan_number' => $subject?->pan_number,
             'current_location' => $subject?->current_location,

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\AiRecordProspectFields;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -80,5 +81,14 @@ class AiCustomerRecord extends Model
     public function value(string $key, mixed $default = null): mixed
     {
         return data_get($this->data, $key, $default);
+    }
+
+    /**
+     * A prospect detail (customer_name, mobile_number, pan_number, ...)
+     * wherever this record's template stores it — see AiRecordProspectFields.
+     */
+    public function prospectValue(string $field): ?string
+    {
+        return AiRecordProspectFields::value($this, $field);
     }
 }

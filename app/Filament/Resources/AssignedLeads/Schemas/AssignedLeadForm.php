@@ -29,8 +29,9 @@ class AssignedLeadForm
     /**
      * Edit pages fill from the assignment row, which owns none of these
      * fields, so ->default() never applies there. Resolve the prefilled
-     * prospect details (linked Customer first, then the AI-extracted record)
-     * and the latest follow-up's status, bank and next date instead.
+     * prospect details (linked Customer first, then the AI-extracted record,
+     * whose template may use its own keys — see AiRecordProspectFields) and
+     * the latest follow-up's status, bank and next date instead.
      *
      * @return array<string, mixed>
      */
@@ -41,14 +42,14 @@ class AssignedLeadForm
         $latestFollowUp = $record->latestFollowUp();
 
         return [
-            'customer_name' => $customer?->customer_name ?? $aiRecord?->value('customer_name'),
-            'mobile_no' => $customer?->mobile_no ?? $aiRecord?->value('mobile_number'),
-            'pan_number' => $customer?->pan_number ?? $aiRecord?->value('pan_number'),
-            'email' => $customer?->email ?? $aiRecord?->value('email'),
-            'current_location' => $customer?->current_location ?? $aiRecord?->value('current_location'),
-            'job_location' => $customer?->job_location ?? $aiRecord?->value('job_location'),
-            'residence_location' => $customer?->residence_location ?? $aiRecord?->value('residence_location'),
-            'salary' => $customer?->salary ?? $aiRecord?->value('salary'),
+            'customer_name' => $customer?->customer_name ?? $aiRecord?->prospectValue('customer_name'),
+            'mobile_no' => $customer?->mobile_no ?? $aiRecord?->prospectValue('mobile_number'),
+            'pan_number' => $customer?->pan_number ?? $aiRecord?->prospectValue('pan_number'),
+            'email' => $customer?->email ?? $aiRecord?->prospectValue('email'),
+            'current_location' => $customer?->current_location ?? $aiRecord?->prospectValue('current_location'),
+            'job_location' => $customer?->job_location ?? $aiRecord?->prospectValue('job_location'),
+            'residence_location' => $customer?->residence_location ?? $aiRecord?->prospectValue('residence_location'),
+            'salary' => $customer?->salary ?? $aiRecord?->prospectValue('salary'),
             'status' => $latestFollowUp?->status ?? 'Pending',
             'bank_id' => $latestFollowUp?->bank_id,
             'next_follow_up_date' => $latestFollowUp?->next_follow_up_date?->format('Y-m-d H:i'),

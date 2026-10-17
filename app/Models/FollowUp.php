@@ -226,7 +226,7 @@ class FollowUp extends Model
         }
 
         if ($this->aiCustomerRecord) {
-            return $this->aiCustomerRecord->value('customer_name')
+            return $this->aiCustomerRecord->prospectValue('customer_name')
                 ?? ('AI Record #'.$this->aiCustomerRecord->id);
         }
 

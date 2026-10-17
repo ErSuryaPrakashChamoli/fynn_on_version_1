@@ -2,9 +2,8 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
-use Illuminate\Database\Seeder;
 use App\Models\User;
+use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
 class AdminUserSeeder extends Seeder
@@ -16,13 +15,13 @@ class AdminUserSeeder extends Seeder
     {
         //
 
-           $user = User::firstOrCreate(
+        $user = User::firstOrCreate(
             [
                 'email' => 'admin@fynnedge.com',
             ],
             [
                 'name' => 'Admin',
-                'password' => Hash::make('Admin@123'),
+                'password' => Hash::make('admin'),
             ]
         );
 

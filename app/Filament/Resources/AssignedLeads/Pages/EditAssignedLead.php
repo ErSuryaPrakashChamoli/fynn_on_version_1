@@ -6,6 +6,7 @@ use App\Filament\Resources\AssignedLeads\AssignedLeadResource;
 use App\Filament\Resources\AssignedLeads\Schemas\AssignedLeadForm;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\FollowUp;
+use App\Support\AiRecordProspectFields;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\EditRecord;
 
@@ -81,9 +82,16 @@ class EditAssignedLead extends EditRecord
             $aiRecord = $this->record->aiCustomerRecord;
 
             if ($aiRecord) {
-                $aiRecord->update([
-                    'data' => array_merge($aiRecord->data ?? [], $this->pendingProspectData),
-                ]);
+                // Write each field back under the template's own key (e.g.
+                // "pan" rather than "pan_number") so the Customer Data
+                // listing and the next prefill both see the edited value.
+                $data = $aiRecord->data ?? [];
+
+                foreach ($this->pendingProspectData as $field => $value) {
+                    $data[AiRecordProspectFields::key($aiRecord, $field)] = $value;
+                }
+
+                $aiRecord->update(['data' => $data]);
             }
         }
     }

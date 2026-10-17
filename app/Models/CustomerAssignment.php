@@ -201,7 +201,7 @@ class CustomerAssignment extends Model
         }
 
         if ($this->aiCustomerRecord) {
-            return $this->aiCustomerRecord->value('customer_name')
+            return $this->aiCustomerRecord->prospectValue('customer_name')
                 ?? ($this->aiCustomerRecord->schema?->name.' #'.$this->aiCustomerRecord->id);
         }
 

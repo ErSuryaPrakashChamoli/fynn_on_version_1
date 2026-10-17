@@ -2,11 +2,17 @@
 
 namespace App\Filament\Resources\AssignedLeads\Schemas;
 
+use App\Models\CustomerAssignment;
+use App\Support\AiRecordProspectFields;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
+use Throwable;
 
 class AssignedLeadInfolist
 {
@@ -23,34 +29,30 @@ class AssignedLeadInfolist
                         Grid::make(3)
                             ->schema([
                                 TextEntry::make('aiCustomerRecord.schema.name')
-                                    ->label('Configuration'),
+                                    ->label('Configuration')
+                                    ->placeholder('-'),
 
                                 TextEntry::make('aiCustomerRecord.status')
                                     ->label('Review Status')
-                                    ->badge(),
+                                    ->badge()
+                                    ->formatStateUsing(fn (?string $state): string => $state ? ucfirst($state) : '-')
+                                    ->color(fn (?string $state): string => match ($state) {
+                                        'approved' => 'success',
+                                        'review' => 'warning',
+                                        'rejected' => 'danger',
+                                        default => 'gray',
+                                    }),
 
                                 TextEntry::make('aiCustomerRecord.confidence_score')
                                     ->label('Confidence')
-                                    ->formatStateUsing(fn ($state) => $state === null ? '-' : number_format((float) $state * 100, 1).'%'),
+                                    ->placeholder('-')
+                                    ->formatStateUsing(fn ($state) => number_format((float) $state * 100, 1).'%'),
                             ]),
 
-                        TextEntry::make('aiCustomerRecord.data')
-                            ->label('Extracted Fields')
-                            ->html()
+                        Fieldset::make('Extracted Fields')
                             ->columnSpanFull()
-                            ->formatStateUsing(function ($state, $record) {
-                                $labels = collect($record->aiCustomerRecord?->schema?->getFieldDefinitions() ?? [])
-                                    ->pluck('label', 'key');
-
-                                $rows = collect($state ?? [])->map(function ($value, $key) use ($labels) {
-                                    $label = e($labels->get($key, ucfirst(str_replace('_', ' ', $key))));
-                                    $value = ($value === null || $value === '') ? '-' : e($value);
-
-                                    return "<div class='mb-1'><strong>{$label}:</strong> {$value}</div>";
-                                })->implode('');
-
-                                return $rows !== '' ? $rows : '<span class="text-gray-500">No data extracted.</span>';
-                            }),
+                            ->columns(['default' => 1, 'sm' => 2, 'lg' => 3])
+                            ->schema(fn (CustomerAssignment $record): array => static::extractedFieldEntries($record)),
                     ]),
 
                 Section::make('Customer Details')
@@ -234,6 +236,82 @@ class AssignedLeadInfolist
                     ])
                     ->visible(fn ($record) => filled($record->ai_customer_record_id) && $record->aiCustomerRecord?->followUps()->exists()),
             ]);
+    }
+
+    /**
+     * One entry per template field, in template order, then any other key
+     * the record holds — e.g. an email typed in on the Follow Up form for a
+     * template that has no email column.
+     *
+     * Built as separate entries because a single TextEntry given the whole
+     * data array formats it one value at a time, which printed every field
+     * as "0: value".
+     *
+     * @return array<int, TextEntry>
+     */
+    protected static function extractedFieldEntries(CustomerAssignment $record): array
+    {
+        $aiRecord = $record->aiCustomerRecord;
+        $data = is_array($aiRecord?->data) ? $aiRecord->data : [];
+
+        $fields = collect($aiRecord?->schema?->getFieldDefinitions() ?? [])
+            ->mapWithKeys(fn (array $field): array => [(string) $field['key'] => $field]);
+
+        foreach (array_keys($data) as $key) {
+            $fields->put((string) $key, $fields->get((string) $key, ['key' => (string) $key]));
+        }
+
+        if ($fields->isEmpty()) {
+            return [
+                TextEntry::make('ai_fields_empty')
+                    ->hiddenLabel()
+                    ->state('No data extracted.')
+                    ->color('gray')
+                    ->columnSpanFull(),
+            ];
+        }
+
+        return $fields->values()
+            ->map(function (array $field, int $index) use ($data): TextEntry {
+                $key = (string) $field['key'];
+                $type = Str::lower((string) ($field['type'] ?? 'text'));
+
+                return TextEntry::make("ai_field_{$index}")
+                    ->label($field['label'] ?? AiRecordProspectFields::FIELDS[$key]['label'] ?? Str::headline($key))
+                    ->state(static::formatExtractedValue($data[$key] ?? null, $type))
+                    ->placeholder('-')
+                    ->copyable(in_array($type, ['mobile', 'pan', 'email'], true))
+                    ->columnSpan($type === 'long_text' ? 'full' : 1);
+            })
+            ->all();
+    }
+
+    protected static function formatExtractedValue(mixed $value, string $type): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (! is_scalar($value)) {
+            return json_encode($value) ?: null;
+        }
+
+        $value = (string) $value;
+
+        if ($type === 'date') {
+            try {
+                return Carbon::parse($value)->format('d M Y');
+            } catch (Throwable) {
+                return $value;
+            }
+        }
+
+        // Template number/decimal fields are amounts (see the OCR rules).
+        if (in_array($type, ['number', 'decimal'], true) && is_numeric($value)) {
+            return indianNumberFormat($value);
+        }
+
+        return $value;
     }
 
     protected static function followUpEntrySchema(): array
