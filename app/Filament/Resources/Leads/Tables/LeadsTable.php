@@ -94,38 +94,14 @@ class LeadsTable
                     ->label('Convert')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
-                    // Show button only when lead status is marked 'Interested'
-                    ->visible(fn (Lead $record) => $record->status === 'Interested' && ! $record->is_converted)
+                    // Interested, Eligible or Eligible for Other Bank leads only.
+                    ->visible(fn (Lead $record) => $record->isConvertible())
                     ->requiresConfirmation()
                     ->modalHeading('Convert Lead to Customer Profile?')
                     ->modalDescription('This will check the PAN number for duplicates and take you to the Customer creation form. If the PAN already belongs to an existing customer, you will need to request admin approval before proceeding.')
                     ->action(function (Lead $record) {
 
-                        $missingFields = [];
-
-                        if (blank($record->pan_number)) {
-                            $missingFields[] = 'PAN Number';
-                        }
-
-                        if (blank($record->job_location)) {
-                            $missingFields[] = 'Job Location';
-                        }
-
-                        if (blank($record->salary)) {
-                            $missingFields[] = 'Salary';
-                        }
-
-                        if (blank($record->email)) {
-                            $missingFields[] = 'Email';
-                        }
-
-                        if (blank($record->residence_location)) {
-                            $missingFields[] = 'Residence Location';
-                        }
-
-                        if (blank($record->current_location)) {
-                            $missingFields[] = 'Current Location';
-                        }
+                        $missingFields = $record->missingConversionFields();
 
                         if (! empty($missingFields)) {
                             Notification::make()

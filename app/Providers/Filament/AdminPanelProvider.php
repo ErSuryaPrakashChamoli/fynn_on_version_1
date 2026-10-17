@@ -5,6 +5,7 @@ namespace App\Providers\Filament;
 use App\Filament\Pages\AssignedLeadFollowUpCalendar;
 use App\Filament\Pages\Auth\Login;
 use App\Filament\Pages\ChangePassword;
+use App\Filament\Pages\CibilAccessSettings;
 use App\Filament\Pages\CustomerFollowUpCalendar;
 use App\Filament\Pages\DailyCommitmentDashboard;
 use App\Filament\Pages\DailyCommitmentReports;
@@ -27,6 +28,7 @@ use App\Filament\Resources\AiCustomerRecords\AiCustomerRecordResource;
 use App\Filament\Resources\AiDocumentSchemas\AiDocumentSchemaResource;
 use App\Filament\Resources\Announcements\AnnouncementResource;
 use App\Filament\Resources\AssignedLeads\AssignedLeadResource;
+use App\Filament\Resources\CibilReports\CibilReportResource;
 use App\Filament\Resources\Cities\CityResource;
 use App\Filament\Resources\ComplaintCategories\ComplaintCategoryResource;
 use App\Filament\Resources\ComplaintPriorities\ComplaintPriorityResource;
@@ -612,6 +614,8 @@ class AdminPanelProvider extends PanelProvider
                 ...$this->navigationItemsFor(CustomerResource::class),
                 ...$this->navigationItemsFor(FollowUpResource::class),
                 ...$this->navigationItemsFor(CustomerFollowUpCalendar::class),
+                // Only for the Admin and whoever the Admin grants on CIBIL Access.
+                ...$this->navigationItemsFor(CibilReportResource::class),
             ]),
 
             // Administrative/operational layer around the existing Customer
@@ -685,6 +689,7 @@ class AdminPanelProvider extends PanelProvider
                 ...$this->navigationItemsFor(UserResource::class),
                 ...$this->navigationItemsFor(ActivityLogResource::class),
                 ...$this->navigationItemsFor(UserLoginSessionResource::class),
+                ...$this->navigationItemsFor(CibilAccessSettings::class),
             ]),
 
             // Admin-maintained lists behind the Employee and User forms.

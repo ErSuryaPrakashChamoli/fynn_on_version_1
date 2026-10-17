@@ -18,6 +18,8 @@ class CustomerAssignment extends Model
         'Pending' => 'Pending',
         'Call Back' => 'Call Back',
         'Interested' => 'Interested',
+        self::BUREAU_CHECK_STATUS => self::BUREAU_CHECK_STATUS,
+        'Eligible' => 'Eligible',
         'Not Interested' => 'Not Interested',
         'Busy' => 'Busy',
         'No Response' => 'No Response',
@@ -27,11 +29,26 @@ class CustomerAssignment extends Model
     ];
 
     /**
+     * A lead marked with this waits for a CIBIL pull: it is listed in the
+     * CIBIL fetch form's lead picker until the manager records the bureau
+     * decision, which moves it to Eligible or Not Eligible.
+     */
+    public const BUREAU_CHECK_STATUS = 'Bureau Check';
+
+    /**
      * Remark types that end the chase, so no next follow-up is expected.
      *
      * @var list<string>
      */
     public const CLOSED_FOLLOW_UP_STATUSES = ['Not Interested', 'Not Eligible', 'Dropped'];
+
+    /**
+     * Remark types from which a lead may be converted to a customer, for
+     * both My Leads and assigned leads.
+     *
+     * @var list<string>
+     */
+    public const CONVERTIBLE_FOLLOW_UP_STATUSES = ['Interested', 'Eligible', 'Eligible for Other Bank'];
 
     protected $fillable = [
         'batch_id',
@@ -218,14 +235,18 @@ class CustomerAssignment extends Model
         return $this->customer_id ? 'Customer' : 'AI Record';
     }
 
+    /**
+     * Ties on created_at (two follow-ups in the same second) go to the later
+     * row, the same order latestFollowUpValueQuery() uses.
+     */
     public function latestFollowUp(): ?FollowUp
     {
         if ($this->customer_id) {
-            return $this->customer?->followUps()->latest()->first();
+            return $this->customer?->followUps()->latest()->latest('id')->first();
         }
 
         if ($this->ai_customer_record_id) {
-            return $this->aiCustomerRecord?->followUps()->latest()->first();
+            return $this->aiCustomerRecord?->followUps()->latest()->latest('id')->first();
         }
 
         return null;
@@ -240,6 +261,18 @@ class CustomerAssignment extends Model
     {
         return blank($this->customer_id)
             && filled($this->ai_customer_record_id)
-            && $this->latestFollowUpStatus() === 'Interested';
+            && in_array($this->latestFollowUpStatus(), self::CONVERTIBLE_FOLLOW_UP_STATUSES, true);
+    }
+
+    /**
+     * The prospect's details from the linked customer, else the AI record.
+     */
+    public function prospectValue(string $field): ?string
+    {
+        $customerColumn = $field === 'mobile_number' ? 'mobile_no' : $field;
+
+        return filled($this->customer?->{$customerColumn})
+            ? (string) $this->customer->{$customerColumn}
+            : $this->aiCustomerRecord?->prospectValue($field);
     }
 }

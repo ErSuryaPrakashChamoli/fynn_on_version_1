@@ -12,9 +12,13 @@ use App\Models\FollowUp;
 use App\Models\Lead;
 use App\Models\User;
 use App\Observers\CustomerObserver;
+use App\Services\Cibil\CibilClient;
+use App\Services\Cibil\FakeCibilClient;
+use App\Services\Cibil\UnconfiguredCibilClient;
 use App\Services\DailyCommitmentGate;
 use App\Services\Journey\CustomerJourneyAccessService;
 use App\Services\MonthlyTargetGate;
+use App\Support\Demo\DemoContext;
 use App\Support\FollowUpCalendarCache;
 use Closure;
 use Filament\Forms\Components\Field;
@@ -51,6 +55,18 @@ class AppServiceProvider extends ServiceProvider
          */
         $this->app->singleton(MonthlyTargetGate::class);
         $this->app->singleton(DailyCommitmentGate::class);
+
+        /*
+         * The credit bureau behind the CIBIL module (config/cibil.php). The
+         * /demo environment always gets the fake bureau, so a demo pull never
+         * reaches (or is billed by) the real one; outside it, the fake bureau
+         * is never bound in production, whatever the env says.
+         */
+        $this->app->bind(CibilClient::class, fn (): CibilClient => match (true) {
+            DemoContext::isActive() => new FakeCibilClient,
+            config('cibil.driver') === 'fake' && ! $this->app->environment('production') => new FakeCibilClient,
+            default => new UnconfiguredCibilClient,
+        });
         //
     }
 

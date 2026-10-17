@@ -1,9 +1,10 @@
 @php
     $statusColor = fn (string $status) => match ($status) {
-        'Interested' => 'bg-success-50 text-success-700 dark:bg-success-400/10 dark:text-success-400',
+        'Interested', 'Eligible' => 'bg-success-50 text-success-700 dark:bg-success-400/10 dark:text-success-400',
         'Not Interested', 'Not Eligible', 'Dropped' => 'bg-danger-50 text-danger-700 dark:bg-danger-400/10 dark:text-danger-400',
         'Busy', 'No Response', 'Call Back' => 'bg-warning-50 text-warning-700 dark:bg-warning-400/10 dark:text-warning-400',
         'Eligible for Other Bank' => 'bg-info-50 text-info-700 dark:bg-info-400/10 dark:text-info-400',
+        'Bureau Check' => 'bg-primary-50 text-primary-700 dark:bg-primary-400/10 dark:text-primary-400',
         default => 'bg-gray-100 text-gray-700 dark:bg-gray-500/10 dark:text-gray-300',
     };
 

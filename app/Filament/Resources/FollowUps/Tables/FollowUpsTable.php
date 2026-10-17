@@ -55,9 +55,10 @@ class FollowUpsTable
                     ->badge()
                     ->sortable()
                     ->color(fn (?string $state): string => match ($state) {
-                        'Interested' => 'success',
+                        'Interested', 'Eligible' => 'success',
                         'Pending', 'Call Back' => 'warning',
                         'Eligible for Other Bank' => 'info',
+                        CustomerAssignment::BUREAU_CHECK_STATUS => 'primary',
                         'Not Interested', 'Not Eligible', 'Dropped', 'Lost' => 'danger',
                         default => 'gray',
                     }),

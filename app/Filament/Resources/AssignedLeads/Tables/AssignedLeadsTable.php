@@ -91,10 +91,11 @@ class AssignedLeadsTable
                         $direction,
                     ))
                     ->color(fn (string $state): string => match ($state) {
-                        'Interested' => 'success',
+                        'Interested', 'Eligible' => 'success',
                         'Not Interested', 'Not Eligible', 'Dropped', 'Lost' => 'danger',
                         'Busy', 'No Response', 'Call Back' => 'warning',
                         'Eligible for Other Bank' => 'info',
+                        CustomerAssignment::BUREAU_CHECK_STATUS => 'primary',
                         default => 'gray',
                     }),
 
