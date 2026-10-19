@@ -10,20 +10,31 @@ use App\Filament\Widgets\CibilStats;
 use App\Models\CibilSetting;
 use App\Services\Cibil\CibilReportService;
 use App\Support\CibilAccess;
+use App\Support\CibilDashboardFilters;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
+use Filament\Pages\Dashboard\Concerns\HasFiltersForm;
 use Filament\Pages\Page;
+use Filament\Schemas\Components\EmbeddedSchema;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use UnitEnum;
 
 /**
- * Entry point for CIBIL Management: request counts by type and outcome,
- * the newest requests and the newest failures — all from the cibil_reports
- * rows the viewer can see (every row for the Admin).
+ * Entry point for CIBIL Management: request counts by type, bureau and
+ * outcome, success and failure rates, provider time, files checked, and the
+ * newest requests and failures — all counted from the cibil_reports rows the
+ * viewer can see (every row for the Admin), narrowed by the filters on top
+ * (period, bureau, request type, customer vs lead; see
+ * CibilDashboardFilters). Nothing is estimated: there is no cost figure
+ * because no pricing is configured.
  */
 class CibilDashboard extends Page
 {
+    use HasFiltersForm;
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedPresentationChartBar;
 
     protected static string|UnitEnum|null $navigationGroup = 'CIBIL Management';
@@ -51,29 +62,39 @@ class CibilDashboard extends Page
         return null;
     }
 
-    protected function getHeaderWidgets(): array
+    public function filtersForm(Schema $schema): Schema
     {
-        return [
-            CibilStats::class,
-        ];
+        return $schema->components(CibilDashboardFilters::components());
     }
 
-    protected function getFooterWidgets(): array
+    public function content(Schema $schema): Schema
     {
-        return [
-            CibilRecentRequests::class,
-            CibilRecentFailures::class,
-        ];
+        return $schema->components([
+            EmbeddedSchema::make('filtersForm'),
+
+            Grid::make(1)->schema(fn (): array => $this->getWidgetsSchemaComponents([
+                CibilStats::class,
+                CibilRecentRequests::class,
+                CibilRecentFailures::class,
+            ])),
+        ]);
     }
 
     protected function getHeaderActions(): array
     {
         return [
             Action::make('fetchReport')
-                ->label('Fetch CIBIL report')
+                ->label('Fetch bureau report')
                 ->icon('heroicon-o-magnifying-glass')
                 ->visible(fn (): bool => CibilReportResource::canCreate())
                 ->url(fn (): string => CibilReportResource::getUrl('create')),
+
+            Action::make('employeeActivity')
+                ->label('Employee activity')
+                ->icon('heroicon-o-user-group')
+                ->color('gray')
+                ->visible(fn (): bool => CibilEmployeeActivity::canAccess())
+                ->url(fn (): string => CibilEmployeeActivity::getUrl()),
 
             Action::make('requests')
                 ->label('All requests')

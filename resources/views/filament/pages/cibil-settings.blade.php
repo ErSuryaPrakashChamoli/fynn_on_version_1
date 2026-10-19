@@ -55,7 +55,31 @@
 
                     <div>
                         <dt class="text-gray-500 dark:text-gray-400">Timeout</dt>
-                        <dd class="text-gray-950 dark:text-white">{{ $bureau['timeout'] }} seconds</dd>
+                        <dd class="text-gray-950 dark:text-white">{{ $bureau['timeout'] }} seconds (connect {{ $bureau['connect_timeout'] }} s)</dd>
+                    </div>
+
+                    <div>
+                        <dt class="text-gray-500 dark:text-gray-400">PDF links fetched from</dt>
+                        <dd class="font-mono break-all text-gray-950 dark:text-white">
+                            {{ $bureau['pdf_hosts'] === [] ? 'Any https host (no allowlist)' : implode(', ', $bureau['pdf_hosts']) }}
+                        </dd>
+                    </div>
+
+                    <div>
+                        <dt class="text-gray-500 dark:text-gray-400">Last answered request</dt>
+                        <dd class="text-gray-950 dark:text-white">{{ $bureau['last_success']?->completed_at?->format('d M Y, h:i A') ?? 'None yet' }}</dd>
+                    </div>
+
+                    <div>
+                        <dt class="text-gray-500 dark:text-gray-400">Last failed request</dt>
+                        <dd class="text-gray-950 dark:text-white">
+                            @if ($bureau['last_failure'])
+                                {{ $bureau['last_failure']->completed_at?->format('d M Y, h:i A') ?? $bureau['last_failure']->created_at?->format('d M Y, h:i A') }}
+                                <span class="text-gray-500 dark:text-gray-400">· {{ $bureau['last_failure']->failure_category?->label() ?? $bureau['last_failure']->status->label() }}</span>
+                            @else
+                                None
+                            @endif
+                        </dd>
                     </div>
 
                     @foreach ($bureau['endpoints'] as $type => $path)

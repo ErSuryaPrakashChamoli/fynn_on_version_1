@@ -6,6 +6,7 @@ use App\Enums\CibilConsentMethod;
 use App\Enums\CibilRequestType;
 use App\Enums\CreditBureau;
 use App\Models\CibilReport;
+use App\Models\CibilSetting;
 use App\Services\Cibil\CibilReportService;
 use Closure;
 use Filament\Forms\Components\Checkbox;
@@ -29,10 +30,14 @@ final class CibilRequestFields
 {
     /**
      * Which bureau to ask: the first choice on every new request. Both are
-     * always offered; CIBIL is preselected.
+     * offered with CIBIL preselected. Only when the Admin has switched
+     * Experian off is it shown as unavailable, with the reason — a request
+     * is never sent to the other bureau instead.
      */
     public static function bureau(): ToggleButtons
     {
+        $switchedOff = fn (CreditBureau $bureau): bool => ! CibilSetting::current()->bureauSwitchedOn($bureau);
+
         return ToggleButtons::make('bureau')
             ->label('Bureau')
             ->options(CreditBureau::options())
@@ -41,6 +46,11 @@ final class CibilRequestFields
             ->required()
             ->default(CreditBureau::Cibil->value)
             ->live()
+            ->disableOptionWhen(fn (string $value): bool => $switchedOff(CreditBureau::from($value)))
+            ->helperText(fn (): ?string => collect(CreditBureau::cases())
+                ->filter($switchedOff)
+                ->map(fn (CreditBureau $bureau): string => "{$bureau->label()} is switched off by the Admin, so it cannot be requested right now.")
+                ->implode(' ') ?: null)
             ->validationMessages(['required' => 'Choose the bureau to request from.']);
     }
 
@@ -81,14 +91,22 @@ final class CibilRequestFields
             ->validationMessages(['regex' => 'Enter a valid 10-digit mobile number.']);
     }
 
-    public static function gender(): Select
+    /**
+     * CIBIL matches on gender, Experian does not take it. $bureau: the
+     * bureau, or null to read the form's own "bureau" field.
+     */
+    public static function gender(?CreditBureau $bureau = null): Select
     {
+        $isCibil = fn (Get $get): bool => ($bureau ?? CreditBureau::tryFrom((string) $get('bureau')) ?? CreditBureau::Cibil) === CreditBureau::Cibil;
+
         return Select::make('gender')
-            ->label('Gender')
+            ->label(fn (Get $get): string => $isCibil($get) ? 'Gender' : 'Gender (optional)')
             ->options(CibilReport::GENDERS)
             ->searchable(false)
-            ->required()
-            ->helperText('Not kept on leads or customer files; the bureau needs it.');
+            ->required($isCibil)
+            ->helperText(fn (Get $get): string => $isCibil($get)
+                ? 'Not kept on leads or customer files; CIBIL needs it.'
+                : 'Experian does not need it; kept for the record only.');
     }
 
     public static function dateOfBirth(): DatePicker

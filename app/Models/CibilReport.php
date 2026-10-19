@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\BureauDecision;
 use App\Enums\CibilConsentMethod;
+use App\Enums\CibilFailureCategory;
 use App\Enums\CibilPdfStatus;
 use App\Enums\CibilReportStatus;
 use App\Enums\CibilRequestType;
@@ -12,6 +13,7 @@ use App\Enums\CreditBureau;
 use App\Support\CibilMask;
 use App\Support\Demo\DemoContext;
 use Database\Factories\CibilReportFactory;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,6 +31,7 @@ use Illuminate\Support\Carbon;
  * verification of a request whose outcome was uncertain.
  *
  * @property int $id
+ * @property string|null $uuid Correlation id for the request, shown on the monitoring screens
  * @property int|null $customer_id
  * @property int|null $lead_id
  * @property int|null $customer_assignment_id
@@ -53,6 +56,11 @@ use Illuminate\Support\Carbon;
  * @property string|null $pdf_path
  * @property string|null $pdf_link
  * @property string|null $error_message
+ * @property CibilFailureCategory|null $failure_category
+ * @property int|null $duration_ms How long the provider call took
+ * @property int|null $pdf_size_bytes
+ * @property string|null $pdf_checksum SHA-256 of the saved PDF
+ * @property Carbon|null $pdf_fetched_at
  * @property BureauDecision|null $bureau_decision
  * @property int|null $decided_by
  * @property Carbon|null $decided_at
@@ -79,7 +87,7 @@ use Illuminate\Support\Carbon;
 class CibilReport extends Model
 {
     /** @use HasFactory<CibilReportFactory> */
-    use HasFactory;
+    use HasFactory, HasUuids;
 
     public const GENDERS = [
         'male' => 'Male',
@@ -110,8 +118,13 @@ class CibilReport extends Model
         'response_payload',
         'pdf_status',
         'pdf_path',
+        'pdf_size_bytes',
+        'pdf_checksum',
+        'pdf_fetched_at',
         'pdf_link',
         'error_message',
+        'failure_category',
+        'duration_ms',
         'bureau_decision',
         'decided_by',
         'decided_at',
@@ -151,6 +164,10 @@ class CibilReport extends Model
             'provider_status_code' => 'integer',
             'response_payload' => 'encrypted:array',
             'pdf_status' => CibilPdfStatus::class,
+            'pdf_size_bytes' => 'integer',
+            'pdf_fetched_at' => 'datetime',
+            'failure_category' => CibilFailureCategory::class,
+            'duration_ms' => 'integer',
             'pdf_link' => 'encrypted',
             'bureau_decision' => BureauDecision::class,
             'decided_at' => 'datetime',
@@ -236,6 +253,32 @@ class CibilReport extends Model
     public function isForLead(): bool
     {
         return $this->lead_id !== null || $this->customer_assignment_id !== null;
+    }
+
+    /**
+     * The uuid is a correlation id beside the integer key, which stays the
+     * primary key and the route key.
+     *
+     * @return list<string>
+     */
+    public function uniqueIds(): array
+    {
+        return ['uuid'];
+    }
+
+    /**
+     * Whether the request reached the provider — factual, not a billing
+     * claim: answered (it responded), not sent (stopped before anything
+     * left this server), or unknown (it may have processed it).
+     */
+    public function providerContact(): string
+    {
+        return match (true) {
+            $this->status === CibilReportStatus::Uncertain, $this->status === CibilReportStatus::Pending => 'Unknown',
+            $this->provider_status_code !== null => 'Answered',
+            $this->status === CibilReportStatus::Success => 'Answered',
+            default => 'Not sent',
+        };
     }
 
     public function scoreBand(): ?CibilScoreBand

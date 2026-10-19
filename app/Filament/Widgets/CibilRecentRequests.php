@@ -4,14 +4,17 @@ namespace App\Filament\Widgets;
 
 use App\Enums\CibilReportStatus;
 use App\Enums\CibilRequestType;
+use App\Enums\CreditBureau;
 use App\Filament\Resources\CibilReports\CibilReportResource;
 use App\Models\CibilReport;
 use App\Models\User;
 use App\Services\Cibil\CibilReportService;
 use App\Support\CibilAccess;
+use App\Support\CibilDashboardFilters;
 use Filament\Facades\Filament;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Filament\Widgets\Concerns\InteractsWithPageFilters;
 use Filament\Widgets\TableWidget;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -21,6 +24,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class CibilRecentRequests extends TableWidget
 {
+    use InteractsWithPageFilters;
+
     protected static ?string $heading = 'Recent requests';
 
     protected int|string|array $columnSpan = 'full';
@@ -47,7 +52,7 @@ class CibilRecentRequests extends TableWidget
                 $query = CibilReport::query()->with('requester');
 
                 return $this->narrow($user instanceof User
-                    ? app(CibilReportService::class)->scopeVisible($query, $user)
+                    ? CibilDashboardFilters::apply(app(CibilReportService::class)->scopeVisible($query, $user), $this->pageFilters)
                     : $query->whereRaw('1 = 0'));
             })
             ->defaultSort('id', 'desc')
@@ -59,6 +64,12 @@ class CibilRecentRequests extends TableWidget
                 TextColumn::make('customer_name')
                     ->label('Customer / lead')
                     ->description(fn (CibilReport $record): ?string => $record->subjectType()),
+
+                TextColumn::make('bureau')
+                    ->label('Bureau')
+                    ->badge()
+                    ->formatStateUsing(fn (CreditBureau $state): string => $state->label())
+                    ->color(fn (CreditBureau $state): string => $state->color()),
 
                 TextColumn::make('request_type')
                     ->label('Request')

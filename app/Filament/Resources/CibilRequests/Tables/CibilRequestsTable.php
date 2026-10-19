@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\CibilRequests\Tables;
 
+use App\Enums\CibilFailureCategory;
 use App\Enums\CibilReportStatus;
 use App\Enums\CibilRequestType;
 use App\Enums\CreditBureau;
@@ -83,6 +84,32 @@ class CibilRequestsTable
                     ->formatStateUsing(fn (int $state, CibilReport $record): string => trim("HTTP {$state} ".($record->provider_message_code ?? '')))
                     ->placeholder('—'),
 
+                TextColumn::make('duration_ms')
+                    ->label('Provider time')
+                    ->sortable()
+                    ->formatStateUsing(fn (int $state): string => $state >= 1000 ? round($state / 1000, 1).' s' : "{$state} ms")
+                    ->placeholder('—'),
+
+                TextColumn::make('failure_category')
+                    ->label('Failure type')
+                    ->badge()
+                    ->sortable()
+                    ->formatStateUsing(fn (CibilFailureCategory $state): string => $state->label())
+                    ->color(fn (CibilFailureCategory $state): string => $state->color())
+                    ->placeholder('—'),
+
+                TextColumn::make('provider_contact')
+                    ->label('Reached provider')
+                    ->state(fn (CibilReport $record): string => $record->providerContact())
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'Answered' => 'success',
+                        'Unknown' => 'warning',
+                        default => 'gray',
+                    })
+                    ->tooltip('Whether the request reached the provider: "Unknown" means it may have been processed (and billed) without an answer reaching the app.')
+                    ->toggleable(),
+
                 TextColumn::make('error_message')
                     ->label('Error')
                     ->limit(80)
@@ -94,6 +121,15 @@ class CibilRequestsTable
                     ->label('Provider reference')
                     ->placeholder('—')
                     ->copyable()
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->visible(fn (): bool => CibilAccess::canViewAudit(Filament::auth()->user())),
+
+                TextColumn::make('uuid')
+                    ->label('Request ID')
+                    ->fontFamily('mono')
+                    ->copyable()
+                    ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true)
                     ->visible(fn (): bool => CibilAccess::canViewAudit(Filament::auth()->user())),
             ])
@@ -109,6 +145,20 @@ class CibilRequestsTable
                 SelectFilter::make('status')
                     ->label('Status')
                     ->options(CibilReportStatus::options()),
+
+                SelectFilter::make('failure_category')
+                    ->label('Failure type')
+                    ->options(CibilFailureCategory::options()),
+
+                SelectFilter::make('fetched_for')
+                    ->label('Fetched for')
+                    ->options(['customer' => 'Customer', 'lead' => 'Lead (My Leads)', 'assigned' => 'Assigned lead'])
+                    ->query(fn (Builder $query, array $data): Builder => match ($data['value'] ?? null) {
+                        'customer' => $query->whereNotNull('customer_id')->whereNull('lead_id')->whereNull('customer_assignment_id'),
+                        'lead' => $query->whereNotNull('lead_id'),
+                        'assigned' => $query->whereNotNull('customer_assignment_id'),
+                        default => $query,
+                    }),
 
                 // Lists every login, so only for the Admin (as on CIBIL Reports).
                 SelectFilter::make('requested_by')

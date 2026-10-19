@@ -40,6 +40,12 @@ return [
         // uncertain" — the provider may still have processed (and billed) it.
         'connect_timeout' => (int) env('SUREPASS_CIBIL_CONNECT_TIMEOUT', 10),
         'timeout' => (int) env('SUREPASS_CIBIL_TIMEOUT', 60),
+
+        // Hosts the CIBIL PDF link may be fetched from (comma-separated; a
+        // leading dot allows subdomains). Empty: any https host, at most
+        // three https redirects — the original rule, kept until the real
+        // CIBIL link host is confirmed.
+        'pdf_hosts' => env('SUREPASS_CIBIL_PDF_HOSTS', ''),
     ],
 
     /*
@@ -49,22 +55,27 @@ return [
     |
     | The Experian bureau, used when the user picks Experian (both bureaus
     | are always offered in the LMS). Its own token: the CIBIL token is never
-    | used in its place. Until the token and an endpoint are set, an Experian
-    | request is recorded as failed ("not connected") and nothing is sent.
-    | Confirm the paths below against the Surepass account's API docs.
+    | used in its place. Until the token is set, an Experian request is
+    | recorded as failed ("not connected") and nothing is sent. The paths are
+    | Surepass's documented Experian APIs (confirmed 2026-10-17); Experian
+    | takes pan, mobile, name and consent — no gender.
     */
     'experian' => [
         'base_url' => env('SUREPASS_EXPERIAN_BASE_URL', env('SUREPASS_CIBIL_BASE_URL', 'https://kyc-api.surepass.app')),
         'token' => env('SUREPASS_EXPERIAN_TOKEN'),
 
         'endpoints' => [
-            'score' => env('SUREPASS_EXPERIAN_SCORE_ENDPOINT'),
+            'score' => env('SUREPASS_EXPERIAN_SCORE_ENDPOINT', '/api/v1/credit-report-experian/score'),
             'full_report' => env('SUREPASS_EXPERIAN_REPORT_ENDPOINT', '/api/v1/credit-report-experian/fetch-report'),
             'pdf' => env('SUREPASS_EXPERIAN_PDF_ENDPOINT', '/api/v1/credit-report-experian/fetch-report-pdf'),
         ],
 
         'connect_timeout' => (int) env('SUREPASS_EXPERIAN_CONNECT_TIMEOUT', env('SUREPASS_CIBIL_CONNECT_TIMEOUT', 10)),
         'timeout' => (int) env('SUREPASS_EXPERIAN_TIMEOUT', env('SUREPASS_CIBIL_TIMEOUT', 60)),
+
+        // The only hosts an Experian PDF link is fetched from; redirects are
+        // not followed. Surepass's documented links are on this S3 bucket.
+        'pdf_hosts' => env('SUREPASS_EXPERIAN_PDF_HOSTS', 'aadhaar-kyc-docs.s3.amazonaws.com,aadhaar-kyc-docs.s3.ap-south-1.amazonaws.com'),
     ],
 
     /*

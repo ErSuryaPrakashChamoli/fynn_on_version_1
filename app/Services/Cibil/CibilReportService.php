@@ -4,6 +4,7 @@ namespace App\Services\Cibil;
 
 use App\Enums\BureauDecision;
 use App\Enums\CibilConsentMethod;
+use App\Enums\CibilFailureCategory;
 use App\Enums\CibilPdfStatus;
 use App\Enums\CibilReportStatus;
 use App\Enums\CibilRequestType;
@@ -103,25 +104,69 @@ class CibilReportService
     public function request(User $user, CibilRequestType $type, array $data, Lead|CustomerAssignment|Customer|null $subject = null, bool $fresh = false, CreditBureau $bureau = CreditBureau::Cibil): CibilRequestOutcome
     {
         $afterUncertain = (bool) ($data['after_uncertain'] ?? false);
+        $context = [
+            'request_type' => $type->value,
+            'bureau' => $bureau->value,
+            'subject_type' => $subject !== null ? CibilSubject::typeLabel($subject) : null,
+            'subject_id' => $subject?->getKey(),
+            'fresh' => $fresh,
+        ];
 
-        if (! CibilAccess::canRequest($user, $type)) {
-            throw new AuthorizationException("You do not have access to request a {$bureau->label()} {$type->label()}.");
-        }
-
-        if (($fresh || $afterUncertain) && ! CibilAccess::canRefresh($user)) {
-            throw new AuthorizationException('You do not have access to request a fresh CIBIL report.');
-        }
-
-        $settings = CibilSetting::current();
-
-        match (true) {
-            ! $settings->requests_enabled => throw CibilRequestRefused::switchedOff(),
-            ! $settings->allows($type) => throw CibilRequestRefused::typeSwitchedOff($type->label()),
-            $fresh && ! $settings->fresh_requests_enabled => throw CibilRequestRefused::freshSwitchedOff(),
+        $denied = match (true) {
+            ! CibilAccess::canRequest($user, $type) => "You do not have access to request a {$bureau->label()} {$type->label()}.",
+            ($fresh || $afterUncertain) && ! CibilAccess::canRefresh($user) => "You do not have access to request a fresh {$bureau->label()} report.",
             default => null,
         };
 
-        $details = $this->validated($data, $subject, needsReason: $fresh || $afterUncertain);
+        if ($denied !== null) {
+            $this->log(null, $user, 'denied', "{$bureau->label()} {$type->label()} request denied: no permission", $context);
+
+            throw new AuthorizationException($denied);
+        }
+
+        try {
+            return $this->requestAllowed($user, $type, $data, $subject, $fresh, $afterUncertain, $bureau);
+        } catch (CibilRequestRefused $refused) {
+            $this->log($refused->blockingReport, $user, 'refused', "{$bureau->label()} {$type->label()} request not sent: {$refused->getMessage()}", [
+                ...$context,
+                'blocking_report_id' => $refused->blockingReport?->getKey(),
+            ]);
+
+            throw $refused;
+        } catch (ValidationException $invalid) {
+            // Which fields failed, never what was typed in them.
+            $this->log(null, $user, 'invalid', "{$bureau->label()} {$type->label()} request not sent: details or consent incomplete", [
+                ...$context,
+                'fields' => array_keys($invalid->errors()),
+            ]);
+
+            throw $invalid;
+        }
+    }
+
+    /**
+     * request() past the permission check: settings, details and consent,
+     * then the locked check-reuse-record step and the bureau call.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function requestAllowed(User $user, CibilRequestType $type, array $data, Lead|CustomerAssignment|Customer|null $subject, bool $fresh, bool $afterUncertain, CreditBureau $bureau): CibilRequestOutcome
+    {
+        $settings = CibilSetting::current();
+
+        $refusal = match (true) {
+            ! $settings->requests_enabled => CibilRequestRefused::switchedOff(),
+            ! $settings->allowsBureau($bureau) => CibilRequestRefused::bureauSwitchedOff($bureau->label()),
+            ! $settings->typeSwitchedOn($type, $bureau) => CibilRequestRefused::typeSwitchedOff($bureau === CreditBureau::Cibil ? $type->label() : "{$bureau->label()} {$type->label()}"),
+            $fresh && ! $settings->fresh_requests_enabled => CibilRequestRefused::freshSwitchedOff(),
+            default => null,
+        };
+
+        if ($refusal !== null) {
+            throw $refusal;
+        }
+
+        $details = $this->validated($data, $subject, $bureau, needsReason: $fresh || $afterUncertain);
         $pan = $details['pan_number'];
 
         $outcome = $this->underLock($pan, $type, $bureau, function () use ($user, $type, $bureau, $details, $pan, $subject, $fresh, $afterUncertain, $settings): CibilRequestOutcome {
@@ -234,8 +279,12 @@ class CibilReportService
      */
     private function send(CibilReport $report, User $user): void
     {
+        $startedAt = hrtime(true);
+        $elapsed = fn (): int => (int) round((hrtime(true) - $startedAt) / 1_000_000);
+
         try {
             $result = $this->client->fetch(CibilApplicant::fromReport($report), $report->request_type, $report->bureau);
+            $report->duration_ms = $elapsed();
             $pdf = $report->request_type === CibilRequestType::Pdf ? $this->storePdf($report, $result) : null;
 
             $report->forceFill([
@@ -247,6 +296,9 @@ class CibilReportService
                 'response_payload' => $result->payload,
                 'pdf_status' => $pdf?->status,
                 'pdf_path' => $pdf?->path,
+                'pdf_size_bytes' => $pdf?->size,
+                'pdf_checksum' => $pdf?->checksum,
+                'pdf_fetched_at' => $pdf?->path !== null ? now() : null,
                 'pdf_link' => $pdf?->keepLink ? $result->pdfLink : null,
                 'fetched_at' => now(),
                 'completed_at' => now(),
@@ -255,8 +307,10 @@ class CibilReportService
             $report->forceFill([
                 'status' => $exception->outcomeUncertain ? CibilReportStatus::Uncertain : CibilReportStatus::Failed,
                 'error_message' => $exception->getMessage(),
+                'failure_category' => $exception->category ?? ($exception->outcomeUncertain ? CibilFailureCategory::UnknownOutcome : CibilFailureCategory::ProviderRejected),
                 'provider_status_code' => $exception->providerStatusCode,
                 'provider_message_code' => $exception->providerMessageCode,
+                'duration_ms' => $elapsed(),
                 'completed_at' => now(),
             ]);
         } catch (Throwable $exception) {
@@ -266,6 +320,8 @@ class CibilReportService
             $report->forceFill([
                 'status' => CibilReportStatus::Uncertain,
                 'error_message' => "Something went wrong while contacting the {$report->bureau->label()} service; the provider may have processed the request. Verify its status before retrying.",
+                'failure_category' => CibilFailureCategory::Internal,
+                'duration_ms' => $report->duration_ms ?? $elapsed(),
                 'completed_at' => now(),
             ]);
         }
@@ -295,6 +351,9 @@ class CibilReportService
                 'status' => $report->status->value,
                 'score' => $report->score,
                 'provider_status_code' => $report->provider_status_code,
+                'failure_category' => $report->failure_category?->value,
+                'duration_ms' => $report->duration_ms,
+                'request_uuid' => $report->uuid,
                 'reason' => $report->request_reason,
             ]);
         });
@@ -338,6 +397,9 @@ class CibilReportService
             $report->forceFill([
                 'pdf_status' => $stored->status,
                 'pdf_path' => $stored->path,
+                'pdf_size_bytes' => $stored->size,
+                'pdf_checksum' => $stored->checksum,
+                'pdf_fetched_at' => $stored->path !== null ? now() : null,
                 'pdf_link' => $stored->keepLink ? $report->pdf_link : null,
             ])->save();
 
@@ -672,6 +734,7 @@ class CibilReportService
             ->when($bureau !== null, fn (Builder $query): Builder => $query->where('bureau', $bureau))
             ->update([
                 'status' => CibilReportStatus::Uncertain->value,
+                'failure_category' => CibilFailureCategory::UnknownOutcome->value,
                 'error_message' => 'The request did not complete — the app stopped waiting for the provider. Its outcome is uncertain; verify its status before retrying.',
                 'completed_at' => now(),
                 'updated_at' => now(),
@@ -780,14 +843,18 @@ class CibilReportService
     /**
      * @param  array<string, mixed>  $properties
      */
-    private function log(CibilReport $report, ?User $user, string $event, string $description, array $properties): void
+    private function log(?CibilReport $report, ?User $user, string $event, string $description, array $properties): void
     {
-        activity(self::LOG_NAME)
-            ->performedOn($report)
+        $logger = activity(self::LOG_NAME)
             ->causedBy($user)
             ->event($event)
-            ->withProperties($properties)
-            ->log($description);
+            ->withProperties($properties);
+
+        if ($report !== null) {
+            $logger->performedOn($report);
+        }
+
+        $logger->log($description);
     }
 
     /** Logs what went wrong without the report, the applicant's details or any link. */
@@ -803,21 +870,21 @@ class CibilReportService
 
     /**
      * @param  array<string, mixed>  $data
-     * @return array{customer_name: string, pan_number: string, mobile_no: string, email: string|null, date_of_birth: Carbon|null, gender: string, pincode: string|null, consent_method: CibilConsentMethod, consent_reference: string|null, reason: string|null}
+     * @return array{customer_name: string, pan_number: string, mobile_no: string, email: string|null, date_of_birth: Carbon|null, gender: string|null, pincode: string|null, consent_method: CibilConsentMethod, consent_reference: string|null, reason: string|null}
      */
-    private function validated(array $data, Lead|CustomerAssignment|Customer|null $subject, bool $needsReason): array
+    private function validated(array $data, Lead|CustomerAssignment|Customer|null $subject, CreditBureau $bureau, bool $needsReason): array
     {
         $data['pan_number'] = Str::upper(trim((string) ($data['pan_number'] ?? '')));
         $mobile = preg_replace('/\D/', '', (string) ($data['mobile_no'] ?? '')) ?: null;
         $data['mobile_no'] = $mobile !== null && strlen($mobile) > 10 ? substr($mobile, -10) : $mobile;
 
-        // Surepass matches the applicant on name, PAN, mobile and gender;
-        // the rest is kept for the record.
+        // Surepass matches the applicant on name, PAN and mobile (CIBIL also
+        // on gender); the rest is kept for the record.
         $validator = Validator::make($data, [
             'customer_name' => ['required', 'string', 'max:255'],
             'pan_number' => ['required', 'regex:'.self::PAN_PATTERN],
             'mobile_no' => ['required', 'regex:'.self::MOBILE_PATTERN],
-            'gender' => ['required', Rule::in(array_keys(CibilReport::GENDERS))],
+            'gender' => [Rule::requiredIf($bureau === CreditBureau::Cibil), 'nullable', Rule::in(array_keys(CibilReport::GENDERS))],
             'date_of_birth' => ['nullable', 'date', 'before:today'],
             'email' => ['nullable', 'email', 'max:255'],
             'pincode' => ['nullable', 'regex:'.self::PINCODE_PATTERN],
@@ -855,7 +922,7 @@ class CibilReportService
             'mobile_no' => $valid['mobile_no'],
             'email' => filled($valid['email'] ?? null) ? trim($valid['email']) : null,
             'date_of_birth' => filled($valid['date_of_birth'] ?? null) ? Carbon::parse($valid['date_of_birth']) : null,
-            'gender' => $valid['gender'],
+            'gender' => filled($valid['gender'] ?? null) ? $valid['gender'] : null,
             'pincode' => $valid['pincode'] ?? null,
             'consent_method' => CibilConsentMethod::from($valid['consent_method']),
             'consent_reference' => filled($valid['consent_reference'] ?? null) ? trim($valid['consent_reference']) : null,
