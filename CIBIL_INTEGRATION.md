@@ -11,9 +11,13 @@ The bureau is the first choice on every new request: the first section of the
 or customer file's credit profile. *Refresh report* on a report page asks that
 report's own bureau again.
 
-- Both bureaus are always offered, with every request type. The choice does not
-  depend on whether a bureau's API is set up. The master switch and the per-type
-  switches in **CIBIL Settings** apply to both.
+- Both bureaus are offered with every request type, and Experian's switches start
+  **on**. The choice does not depend on whether a bureau's API is set up.
+- **CIBIL Settings** has one master switch for all bureaus. Under it, CIBIL and
+  Experian each have their own per-type switches, and Experian also has a switch of
+  its own. Turning Experian off stops new Experian requests only. CIBIL carries on,
+  nothing is sent to CIBIL instead, and the form shows Experian as unavailable with
+  the reason. Earlier Experian reports stay readable.
 - A bureau or request type whose token or endpoint is not set yet fails when sent,
   recorded as *Failed* with "The Experian API is not connected yet". Nothing is sent
   or billed.
@@ -98,20 +102,37 @@ The `/demo` environment always uses the fake bureau.
 
 - **CIBIL Credit Profile**: a section on the **customer view page**, the **My Leads lead
   page** (its edit page, which is the lead's detail page) and the **assigned lead view
-  page**. It shows the name, masked PAN and mobile, latest score, last successful report,
-  latest request status, PDF status and the full request history. Its actions are
+  page**. It shows the name, masked PAN and mobile, the latest **CIBIL** and the latest
+  **Experian** score side by side, the number of requests on the file, last successful
+  report, latest request status, PDF status and the full request history. Its actions are
   *Check credit score*, *Fetch full report*, *Get PDF report* and *Refresh bureau report*
   (each asks for the bureau first),
   each pre-filled from the file. A PAN already on the file is locked. Gender and any
   missing details are typed into the form. Opening a file never contacts the bureau.
 - **CIBIL Management** sidebar group:
-  - **CIBIL Dashboard**: real counts by type and outcome, recent requests, recent failures.
+  - **CIBIL Dashboard**: filters for period (today, yesterday, last 7 / 30 days, this or
+    previous month, custom), bureau, request type and customer vs lead. Totals (with
+    today and this month), succeeded with success rate, failed with failure rate,
+    uncertain (timed out / awaiting verification), pending, each type, PDFs saved,
+    average provider time, customers and leads checked, and reports reused. Recent
+    requests and recent failures follow the same filters. Every figure is counted from
+    request rows. Cost shows "Not configured", because no pricing is set up.
   - **CIBIL Reports**: one row per applicant, with the report page, history, PDF,
     *Refresh report*, and the lead's Eligible / Not Eligible decision.
-  - **CIBIL Requests**: every request with its timings, provider HTTP status and
-    sanitized error. **Failed Requests** is the same list on its *Failed & uncertain* tab.
-  - **CIBIL Settings** (Admin): master switch, per-type switches, reuse window and
-    fresh pulls, plus each bureau's configuration status. Tokens are never shown.
+  - **CIBIL Requests**: every request with its timings, provider time, failure type,
+    whether it reached the provider, provider HTTP status, sanitized error and request ID
+    (UUID). You can search by request ID or provider `client_id` (audit permission), and
+    filter by bureau, type, status, failure type, customer vs lead, requester and dates.
+    **Failed Requests** is the same list on its *Failed & uncertain* tab.
+  - **Employee Activity** (audit permission): per employee, score / full / PDF counts,
+    succeeded, failed or uncertain, success rate, customers and leads checked, average
+    provider time and last request, with the dashboard's filters. The Admin sees
+    everyone; anyone else sees their own reporting branch only.
+  - **CIBIL Settings** (Admin): the master switch, CIBIL's type switches, Experian's own
+    switch and type switches, the reuse window and fresh pulls. For each bureau it also
+    shows the configuration status (token configured, base URL, endpoints, timeouts,
+    PDF host allowlist) and the last answered and last failed request. No health probe
+    is run, because a probe would be a billed request. Tokens are never shown.
   - **CIBIL Access** (Admin): grants each permission to roles and/or individual users.
   - **Audit History**: the `cibil` activity log.
 
@@ -195,8 +216,15 @@ Telescope and Debugbar.
 ## PDF access
 
 - The provider's file (inline base64, or the signed link fetched once, immediately) must
-  start with `%PDF-` and stay within the size limit. It is saved to
-  `storage/app/private/cibil-reports/{report}/…pdf`.
+  start with `%PDF-`, must not be served as HTML, and must stay within the size limit.
+  It is saved to `storage/app/private/cibil-reports/{report}/…pdf` with its size,
+  SHA-256 checksum and download time.
+- **SSRF guard:** an Experian link is fetched only from the hosts in
+  `SUREPASS_EXPERIAN_PDF_HOSTS` (default: Surepass's S3 bucket
+  `aadhaar-kyc-docs.s3.amazonaws.com` and its `ap-south-1` name), and redirects are not
+  followed. A link anywhere else, or one that redirects, is recorded as **Link host not
+  allowed** and nothing is fetched. CIBIL keeps its original rule (any https host, at most
+  three https redirects) until `SUREPASS_CIBIL_PDF_HOSTS` is set.
 - The signed link is never shown or logged. It is kept (encrypted) only if the download
   failed for a reason worth retrying. *Retry PDF download* uses it without a new bureau
   request.
@@ -205,6 +233,41 @@ Telescope and Debugbar.
 - PDFs are opened only through `GET /cibil-reports/{id}/pdf` (and `/demo/…`). The route
   checks login, report visibility (otherwise 404) and `cibil.pdf` (otherwise 403),
   sends `no-store`, and every opening is audited.
+
+## Request tracking and audit
+
+Every request row carries:
+
+- a UUID (the correlation ID, also in its audit entries);
+- the provider time in milliseconds;
+- the provider HTTP status and message code;
+- for a failure, a **failure type**: not configured, authentication, not permitted, rate
+  limited, rejected by provider, provider server error, network, timeout, malformed
+  response, missing expected data, internal error, or unknown outcome.
+
+*Reached provider* tells apart a request the provider answered, one that was never sent,
+and one whose outcome is unknown. It describes contact with the provider, not billing.
+
+The `cibil` activity log records every request (sent, reused, failed, uncertain), report
+views, PDF openings and retries, verifications, bureau decisions, lead-to-customer links,
+and settings and access changes. It also records what was **not** sent: *refused*
+(switched off, duplicate in flight, unverified uncertain request), *invalid* (details or
+consent incomplete, with field names only, never values) and *denied* (no permission).
+Admins and the audit permission see each request's trail on its report page.
+
+## Experian report viewer
+
+An Experian full report is laid out section by section by `App\Support\ExperianReport`:
+
+- **Summary:** score, report date and time, number and version.
+- **Applicant:** PAN and phone numbers masked.
+- **Credit summary:** account counts and outstanding balances.
+- **Credit accounts:** account numbers masked to the last four.
+- **Enquiries.**
+
+Experian's `YYYYMMDD` dates are formatted. A missing value reads "Not available in this
+report". Sections it does not recognise are listed under *Other report sections*, so nothing
+is dropped. All content is escaped. The whole stored answer stays unchanged (encrypted).
 
 ## Lead to customer conversion
 
@@ -224,7 +287,7 @@ is made, and when the CIBIL Dashboard or CIBIL Requests page is opened.
 ```bash
 git pull                                   # the reviewed branch
 composer install --no-dev --optimize-autoloader
-php artisan migrate --force                # cibil_reports columns + permissions, cibil_settings, bureau column
+php artisan migrate --force                # cibil_reports columns + permissions, cibil_settings, bureau column, request tracking + Experian switches
 php artisan demo:migrate                   # if /demo is deployed
 # in the server's .env (never committed):
 #   CIBIL_DRIVER=surepass

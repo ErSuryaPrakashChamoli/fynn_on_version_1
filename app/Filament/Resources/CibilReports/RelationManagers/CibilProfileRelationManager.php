@@ -317,8 +317,20 @@ class CibilProfileRelationManager extends RelationManager
         $latestRequest = (clone $reports)->latest('id')->first();
         $latestPdf = (clone $reports)->where('request_type', CibilRequestType::Pdf)->where('status', CibilReportStatus::Success)->latest('id')->first();
 
+        // The newest successful request from each bureau, side by side.
+        $latestByBureau = collect(CreditBureau::cases())
+            ->mapWithKeys(fn (CreditBureau $bureau): array => [$bureau->label() => (clone $reports)
+                ->where('bureau', $bureau)
+                ->where('status', CibilReportStatus::Success)
+                ->latest('fetched_at')
+                ->latest('id')
+                ->first()])
+            ->all();
+
         return [
             'type' => CibilSubject::typeLabel($subject),
+            'latestByBureau' => $latestByBureau,
+            'requestCount' => (clone $reports)->count(),
             'name' => $details['customer_name'] ?: $latestRequest?->customer_name,
             'pan' => CibilMask::pan($details['pan_number'] ?? $latestRequest?->pan_number),
             'mobile' => CibilMask::mobile($details['mobile_no'] ?? $latestRequest?->mobile_no),

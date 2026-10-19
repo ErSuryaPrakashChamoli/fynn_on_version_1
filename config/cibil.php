@@ -40,6 +40,12 @@ return [
         // uncertain" — the provider may still have processed (and billed) it.
         'connect_timeout' => (int) env('SUREPASS_CIBIL_CONNECT_TIMEOUT', 10),
         'timeout' => (int) env('SUREPASS_CIBIL_TIMEOUT', 60),
+
+        // Hosts the CIBIL PDF link may be fetched from (comma-separated; a
+        // leading dot allows subdomains). Empty: any https host, at most
+        // three https redirects — the original rule, kept until the real
+        // CIBIL link host is confirmed.
+        'pdf_hosts' => env('SUREPASS_CIBIL_PDF_HOSTS', ''),
     ],
 
     /*
@@ -66,6 +72,10 @@ return [
 
         'connect_timeout' => (int) env('SUREPASS_EXPERIAN_CONNECT_TIMEOUT', env('SUREPASS_CIBIL_CONNECT_TIMEOUT', 10)),
         'timeout' => (int) env('SUREPASS_EXPERIAN_TIMEOUT', env('SUREPASS_CIBIL_TIMEOUT', 60)),
+
+        // The only hosts an Experian PDF link is fetched from; redirects are
+        // not followed. Surepass's documented links are on this S3 bucket.
+        'pdf_hosts' => env('SUREPASS_EXPERIAN_PDF_HOSTS', 'aadhaar-kyc-docs.s3.amazonaws.com,aadhaar-kyc-docs.s3.ap-south-1.amazonaws.com'),
     ],
 
     /*

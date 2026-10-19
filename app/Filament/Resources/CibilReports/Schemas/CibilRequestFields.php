@@ -6,6 +6,7 @@ use App\Enums\CibilConsentMethod;
 use App\Enums\CibilRequestType;
 use App\Enums\CreditBureau;
 use App\Models\CibilReport;
+use App\Models\CibilSetting;
 use App\Services\Cibil\CibilReportService;
 use Closure;
 use Filament\Forms\Components\Checkbox;
@@ -29,10 +30,14 @@ final class CibilRequestFields
 {
     /**
      * Which bureau to ask: the first choice on every new request. Both are
-     * always offered; CIBIL is preselected.
+     * offered with CIBIL preselected. Only when the Admin has switched
+     * Experian off is it shown as unavailable, with the reason — a request
+     * is never sent to the other bureau instead.
      */
     public static function bureau(): ToggleButtons
     {
+        $switchedOff = fn (CreditBureau $bureau): bool => ! CibilSetting::current()->bureauSwitchedOn($bureau);
+
         return ToggleButtons::make('bureau')
             ->label('Bureau')
             ->options(CreditBureau::options())
@@ -41,6 +46,11 @@ final class CibilRequestFields
             ->required()
             ->default(CreditBureau::Cibil->value)
             ->live()
+            ->disableOptionWhen(fn (string $value): bool => $switchedOff(CreditBureau::from($value)))
+            ->helperText(fn (): ?string => collect(CreditBureau::cases())
+                ->filter($switchedOff)
+                ->map(fn (CreditBureau $bureau): string => "{$bureau->label()} is switched off by the Admin, so it cannot be requested right now.")
+                ->implode(' ') ?: null)
             ->validationMessages(['required' => 'Choose the bureau to request from.']);
     }
 

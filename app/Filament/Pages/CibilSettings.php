@@ -2,8 +2,11 @@
 
 namespace App\Filament\Pages;
 
+use App\Enums\CibilReportStatus;
 use App\Enums\CreditBureau;
+use App\Models\CibilReport;
 use App\Models\CibilSetting;
+use App\Services\Cibil\CibilPdfStore;
 use App\Services\Cibil\CibilReportService;
 use App\Support\CibilAccess;
 use BackedEnum;
@@ -42,6 +45,9 @@ class CibilSettings extends Page
 
     protected string $view = 'filament.pages.cibil-settings';
 
+    /** @var list<string> */
+    private const array EXPERIAN_SWITCHES = ['experian_enabled', 'experian_score_enabled', 'experian_full_report_enabled', 'experian_pdf_enabled'];
+
     /** @var array<string, mixed>|null */
     public ?array $data = [];
 
@@ -52,6 +58,7 @@ class CibilSettings extends Page
             'score_enabled',
             'full_report_enabled',
             'pdf_enabled',
+            ...self::EXPERIAN_SWITCHES,
             'fresh_requests_enabled',
             'reuse_window_days',
         ]));
@@ -61,13 +68,18 @@ class CibilSettings extends Page
     {
         return $schema
             ->components([
-                Section::make('Requests')
-                    ->description('Nothing is sent to the bureau while the master switch is off. Every request that does go out is billed by the provider.')
+                Section::make('All bureaus')
+                    ->description('Nothing is sent to any bureau while this is off. Every request that does go out is billed by the provider.')
                     ->schema([
                         Toggle::make('requests_enabled')
                             ->label('Send requests to the bureaus')
                             ->live(),
+                    ])
+                    ->columnSpanFull(),
 
+                Section::make('CIBIL')
+                    ->description('Which CIBIL requests users may send. These do not affect Experian.')
+                    ->schema([
                         Toggle::make('score_enabled')
                             ->label('Score checks')
                             ->disabled(fn (Get $get): bool => ! $get('requests_enabled')),
@@ -80,7 +92,31 @@ class CibilSettings extends Page
                             ->label('PDF reports')
                             ->disabled(fn (Get $get): bool => ! $get('requests_enabled')),
                     ])
-                    ->columns(2)
+                    ->columns(3)
+                    ->columnSpanFull(),
+
+                Section::make('Experian')
+                    ->description('Experian on its own: switching it off stops new Experian requests only — CIBIL carries on, nothing is sent to CIBIL instead, and earlier Experian reports stay available.')
+                    ->schema([
+                        Toggle::make('experian_enabled')
+                            ->label('Experian requests')
+                            ->live()
+                            ->disabled(fn (Get $get): bool => ! $get('requests_enabled'))
+                            ->columnSpanFull(),
+
+                        Toggle::make('experian_score_enabled')
+                            ->label('Score checks')
+                            ->disabled(fn (Get $get): bool => ! $get('requests_enabled') || ! $get('experian_enabled')),
+
+                        Toggle::make('experian_full_report_enabled')
+                            ->label('Full reports')
+                            ->disabled(fn (Get $get): bool => ! $get('requests_enabled') || ! $get('experian_enabled')),
+
+                        Toggle::make('experian_pdf_enabled')
+                            ->label('PDF reports')
+                            ->disabled(fn (Get $get): bool => ! $get('requests_enabled') || ! $get('experian_enabled')),
+                    ])
+                    ->columns(3)
                     ->columnSpanFull(),
 
                 Section::make('Reuse and fresh pulls')
@@ -114,6 +150,9 @@ class CibilSettings extends Page
             'score_enabled' => (bool) ($data['score_enabled'] ?? $settings->score_enabled),
             'full_report_enabled' => (bool) ($data['full_report_enabled'] ?? $settings->full_report_enabled),
             'pdf_enabled' => (bool) ($data['pdf_enabled'] ?? $settings->pdf_enabled),
+            ...collect(self::EXPERIAN_SWITCHES)
+                ->mapWithKeys(fn (string $switch): array => [$switch => (bool) ($data[$switch] ?? $settings->{$switch})])
+                ->all(),
             'fresh_requests_enabled' => (bool) ($data['fresh_requests_enabled'] ?? false),
             'reuse_window_days' => filled($data['reuse_window_days'] ?? null) ? (int) $data['reuse_window_days'] : null,
             'updated_by' => Filament::auth()->id(),
@@ -138,7 +177,11 @@ class CibilSettings extends Page
     /**
      * Whether the provider connection is configured — never its secrets.
      *
-     * @return array{driver: string, live: bool, bureaus: array<string, array{label: string, token_configured: bool, base_url: string|null, base_url_valid: bool, endpoints: array<string, string|null>, timeout: int}>, pdf_disk: string, pdf_max_mb: float}
+     * Plus each bureau's last answered and last failed request, read from
+     * the request rows — the app has no separate health probe, because a
+     * probe call would be a billable request.
+     *
+     * @return array{driver: string, live: bool, bureaus: array<string, array{label: string, token_configured: bool, base_url: string|null, base_url_valid: bool, endpoints: array<string, string|null>, timeout: int, connect_timeout: int, pdf_hosts: list<string>, last_success: CibilReport|null, last_failure: CibilReport|null}>, pdf_disk: string, pdf_max_mb: float}
      */
     public function connectionStatus(): array
     {
@@ -156,6 +199,10 @@ class CibilSettings extends Page
                     'base_url_valid' => is_string($baseUrl) && str_starts_with(strtolower($baseUrl), 'https://'),
                     'endpoints' => (array) ($config['endpoints'] ?? []),
                     'timeout' => (int) ($config['timeout'] ?? 0),
+                    'connect_timeout' => (int) ($config['connect_timeout'] ?? 0),
+                    'pdf_hosts' => app(CibilPdfStore::class)->allowedHosts($bureau),
+                    'last_success' => CibilReport::query()->where('bureau', $bureau)->where('status', CibilReportStatus::Success)->latest('id')->first(),
+                    'last_failure' => CibilReport::query()->where('bureau', $bureau)->whereIn('status', [CibilReportStatus::Failed, CibilReportStatus::Uncertain])->latest('id')->first(),
                 ]];
             })->all(),
             'pdf_disk' => (string) config('cibil.pdf.disk'),

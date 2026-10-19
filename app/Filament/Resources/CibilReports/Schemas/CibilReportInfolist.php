@@ -4,6 +4,7 @@ namespace App\Filament\Resources\CibilReports\Schemas;
 
 use App\Enums\BureauDecision;
 use App\Enums\CibilConsentMethod;
+use App\Enums\CibilFailureCategory;
 use App\Enums\CibilPdfStatus;
 use App\Enums\CibilReportStatus;
 use App\Enums\CibilRequestType;
@@ -18,6 +19,7 @@ use App\Models\User;
 use App\Services\Cibil\CibilReportService;
 use App\Support\BureauCheckCandidates;
 use App\Support\CibilAccess;
+use App\Support\ExperianReport;
 use Filament\Facades\Filament;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Grid;
@@ -25,6 +27,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\TextSize;
+use Spatie\Activitylog\Models\Activity;
 
 class CibilReportInfolist
 {
@@ -93,6 +96,45 @@ class CibilReportInfolist
                                 ->formatStateUsing(fn (int $state, CibilReport $record): string => trim("HTTP {$state} ".($record->provider_message_code ?? '')))
                                 ->placeholder('—')
                                 ->visible(fn (): bool => self::viewerAudits()),
+
+                            TextEntry::make('uuid')
+                                ->label('Request ID')
+                                ->fontFamily('mono')
+                                ->copyable()
+                                ->placeholder('—')
+                                ->visible(fn (): bool => self::viewerAudits()),
+
+                            TextEntry::make('duration_ms')
+                                ->label('Provider time')
+                                ->formatStateUsing(fn (int $state): string => $state >= 1000 ? round($state / 1000, 1).' s' : "{$state} ms")
+                                ->placeholder('—')
+                                ->visible(fn (): bool => self::viewerAudits()),
+
+                            TextEntry::make('provider_contact')
+                                ->label('Reached provider')
+                                ->state(fn (CibilReport $record): string => $record->providerContact())
+                                ->visible(fn (): bool => self::viewerAudits()),
+
+                            TextEntry::make('failure_category')
+                                ->label('Failure type')
+                                ->badge()
+                                ->formatStateUsing(fn (CibilFailureCategory $state): string => $state->label())
+                                ->color(fn (CibilFailureCategory $state): string => $state->color())
+                                ->visible(fn (CibilReport $record): bool => $record->failure_category !== null),
+
+                            TextEntry::make('pdf_size_bytes')
+                                ->label('PDF size')
+                                ->formatStateUsing(fn (int $state): string => $state >= 1048576 ? round($state / 1048576, 1).' MB' : round($state / 1024).' KB')
+                                ->helperText(fn (CibilReport $record): ?string => $record->pdf_fetched_at ? 'Saved '.$record->pdf_fetched_at->format('d M Y, h:i A') : null)
+                                ->visible(fn (CibilReport $record): bool => $record->hasPdf() && $record->pdf_size_bytes !== null),
+
+                            TextEntry::make('pdf_checksum')
+                                ->label('PDF SHA-256')
+                                ->fontFamily('mono')
+                                ->limit(16)
+                                ->tooltip(fn (CibilReport $record): ?string => $record->pdf_checksum)
+                                ->copyable()
+                                ->visible(fn (CibilReport $record): bool => $record->hasPdf() && filled($record->pdf_checksum) && self::viewerAudits()),
                         ]),
 
                         TextEntry::make('error_message')
@@ -185,13 +227,42 @@ class CibilReportInfolist
                     ]),
 
                 Section::make('Full report')
-                    ->description('As received from the bureau.')
+                    ->description(fn (CibilReport $record): string => ExperianReport::fromPayload($record->response_payload) !== null && $record->bureau === CreditBureau::Experian
+                        ? 'The Experian report, section by section. Fields the report does not carry are marked "Not available in this report".'
+                        : 'As received from the bureau.')
                     ->columnSpanFull()
                     ->collapsible()
                     ->visible(fn (CibilReport $record): bool => filled($record->response_payload) && self::viewerReadsFullReports())
                     ->schema([
+                        View::make('filament.components.experian-report')
+                            ->visible(fn (CibilReport $record): bool => $record->bureau === CreditBureau::Experian && ExperianReport::fromPayload($record->response_payload) !== null)
+                            ->viewData(fn (CibilReport $record): array => [
+                                'report' => ExperianReport::fromPayload($record->response_payload),
+                                'score' => $record->score,
+                            ]),
+
                         View::make('filament.components.cibil-report-payload')
+                            ->visible(fn (CibilReport $record): bool => $record->bureau !== CreditBureau::Experian || ExperianReport::fromPayload($record->response_payload) === null)
                             ->viewData(fn (CibilReport $record): array => ['payload' => $record->response_payload ?? []]),
+                    ]),
+
+                Section::make('Audit trail')
+                    ->description('Everything logged for this request: sent, reused, viewed, PDF opened, verified.')
+                    ->columnSpanFull()
+                    ->collapsible()
+                    ->collapsed()
+                    ->visible(fn (): bool => self::viewerAudits())
+                    ->schema([
+                        View::make('filament.components.cibil-audit-trail')
+                            ->viewData(fn (CibilReport $record): array => [
+                                'entries' => Activity::query()
+                                    ->with('causer')
+                                    ->where('subject_type', $record->getMorphClass())
+                                    ->where('subject_id', $record->getKey())
+                                    ->latest('id')
+                                    ->limit(100)
+                                    ->get(),
+                            ]),
                     ]),
 
                 Section::make('Previous reports for this PAN')

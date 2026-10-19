@@ -11,11 +11,13 @@ use App\Filament\Resources\CibilReports\Pages\ListCibilReports;
 use App\Filament\Resources\CibilReports\Pages\ViewCibilReport;
 use App\Filament\Resources\CibilReports\RelationManagers\CibilProfileRelationManager;
 use App\Filament\Resources\Customers\Pages\ViewCustomer;
+use App\Filament\Resources\Leads\Pages\EditLead;
 use App\Http\Middleware\EnsureMonthlyTargetIsSet;
 use App\Models\CibilReport;
 use App\Models\CibilSetting;
 use App\Models\Customer;
 use App\Models\Employee;
+use App\Models\Lead;
 use App\Models\User;
 use App\Services\Cibil\CibilApplicant;
 use App\Services\Cibil\CibilClient;
@@ -29,7 +31,6 @@ use Filament\Forms\Components\ToggleButtons;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -126,7 +127,7 @@ class CibilBureauChoiceTest extends TestCase
             ->assertSeeInOrder(['Which credit bureau to ask', 'A report is fetched for a lead or for a customer file.', 'What to request'])
             ->assertSchemaStateSet(['bureau' => 'cibil'])
             ->assertFormFieldExists('bureau', fn (ToggleButtons $field): bool => $field->getOptions() === ['cibil' => 'CIBIL', 'experian' => 'Experian']
-                && ! $field->hasDisabledOptions())
+                && ! $field->isOptionDisabled('cibil', 'CIBIL') && ! $field->isOptionDisabled('experian', 'Experian'))
             ->assertDontSee('switched off');
     }
 
@@ -137,7 +138,7 @@ class CibilBureauChoiceTest extends TestCase
         foreach (['cibil', 'experian'] as $bureau) {
             Livewire::test(CreateCibilReport::class)
                 ->fillForm(['bureau' => $bureau])
-                ->assertFormFieldExists('bureau', fn (ToggleButtons $field): bool => ! $field->hasDisabledOptions())
+                ->assertFormFieldExists('bureau', fn (ToggleButtons $field): bool => ! $field->isOptionDisabled('cibil', 'CIBIL') && ! $field->isOptionDisabled('experian', 'Experian'))
                 ->assertFormFieldExists('request_type', fn (ToggleButtons $field): bool => array_keys($field->getOptions()) === ['score', 'full_report', 'pdf']);
         }
     }
@@ -306,15 +307,56 @@ class CibilBureauChoiceTest extends TestCase
 
     // ---- Settings and the live client --------------------------------------
 
-    public function test_there_is_no_per_bureau_switch_and_settings_show_both_connections(): void
+    public function test_experian_has_its_own_switches_which_start_on_and_never_touch_cibil(): void
     {
-        $this->assertFalse(Schema::hasColumn('cibil_settings', 'cibil_enabled'));
-        $this->assertFalse(Schema::hasColumn('cibil_settings', 'experian_enabled'));
+        $settings = CibilSetting::current();
+
+        $this->assertTrue($settings->allowsBureau(CreditBureau::Experian));
+        $this->assertTrue($settings->allows(CibilRequestType::Score, CreditBureau::Experian));
 
         Livewire::test(CibilSettings::class)
-            ->assertFormFieldDoesNotExist('cibil_enabled')
-            ->assertFormFieldDoesNotExist('experian_enabled')
-            ->assertSeeInOrder(['CIBIL', 'Surepass token', 'Experian', 'Surepass token']);
+            ->assertSchemaStateSet(['experian_enabled' => true, 'experian_score_enabled' => true])
+            ->assertSeeInOrder(['CIBIL', 'Surepass token', 'Experian', 'Surepass token'])
+            ->set('data.experian_enabled', false)
+            ->set('data.pdf_enabled', false)
+            ->call('save')
+            ->assertNotified('CIBIL settings saved');
+
+        $settings = CibilSetting::current();
+
+        // Experian is off; CIBIL keeps working, except the CIBIL type switched off.
+        $this->assertFalse($settings->allowsBureau(CreditBureau::Experian));
+        $this->assertTrue($settings->allows(CibilRequestType::Score, CreditBureau::Cibil));
+        $this->assertFalse($settings->allows(CibilRequestType::Pdf, CreditBureau::Cibil));
+
+        // Turning a CIBIL type off does not reach Experian's own switch.
+        $settings->update(['experian_enabled' => true]);
+        $this->assertTrue($settings->fresh()->allows(CibilRequestType::Pdf, CreditBureau::Experian));
+    }
+
+    public function test_a_switched_off_experian_is_shown_as_unavailable_and_never_falls_back_to_cibil(): void
+    {
+        CibilSetting::current()->update(['experian_enabled' => false]);
+        $customer = $this->customer();
+
+        Livewire::test(CreateCibilReport::class)
+            ->assertSee('Experian is switched off by the Admin')
+            ->assertFormFieldExists('bureau', fn (ToggleButtons $field): bool => $field->isOptionDisabled('experian', 'Experian') && ! $field->isOptionDisabled('cibil', 'CIBIL'))
+            ->fillForm(['bureau' => 'experian', 'fetch_for' => 'customer'])
+            ->fillForm(['customer_id' => $customer->id])
+            ->fillForm(['request_type' => 'full_report', 'consent_method' => 'recorded_call', 'consent' => true])
+            ->call('create')
+            ->assertHasFormErrors(['bureau']);
+
+        try {
+            $this->service()->request($this->admin, CibilRequestType::FullReport, $this->details(), bureau: CreditBureau::Experian);
+            $this->fail('Expected the request to be refused.');
+        } catch (CibilRequestRefused $exception) {
+            $this->assertStringContainsString('Experian requests are switched off', $exception->getMessage());
+        }
+
+        $this->assertSame(0, CibilReport::query()->count());
+        $this->assertSame([], $this->bureau->calls);
     }
 
     public function test_experian_goes_to_its_own_endpoint_with_its_own_token_and_never_the_cibil_token(): void
@@ -465,5 +507,48 @@ class CibilBureauChoiceTest extends TestCase
 
         $this->assertSame(CreditBureau::Experian, $report->bureau);
         $this->assertNull($report->gender);
+    }
+
+    public function test_an_experian_report_on_a_lead_follows_the_lead_into_its_customer_file(): void
+    {
+        $owner = Employee::factory()->create(['designation' => Employee::DESIGNATION_CALLER, 'exit_status' => 'no']);
+        $lead = Lead::create([
+            'employee_id' => $owner->id,
+            'customer_name' => 'Nisha Sharma',
+            'mobile_no' => '8800618269',
+            'pan_number' => 'BBBBB1212J',
+            'follow_up_type' => 'Call',
+            'status' => 'Interested',
+            'remarks' => 'Wants a personal loan',
+        ]);
+
+        // Experian needs no gender; the lead's own details are used.
+        Livewire::test(CibilProfileRelationManager::class, ['ownerRecord' => $lead, 'pageClass' => EditLead::class])
+            ->callAction(TestAction::make('fetchCibilReport')->table(), ['bureau' => 'experian', 'consent_method' => 'digital', 'consent' => true])
+            ->assertHasNoActionErrors();
+
+        $report = CibilReport::query()->sole();
+        $this->assertSame(CreditBureau::Experian, $report->bureau);
+        $this->assertSame($lead->id, $report->lead_id);
+        $this->assertNull($report->gender);
+        $this->assertSame(['experian:full_report'], $this->bureau->calls);
+
+        // Conversion keeps the same row (nothing copied) and adds the customer link.
+        $customer = Customer::factory()->create(['pan_number' => 'BBBBB1212J', 'assign_to' => $owner->id, 'employee_id' => $owner->id]);
+        $this->assertSame(1, $this->service()->linkConvertedLead($customer, $lead->id));
+
+        $report->refresh();
+        $this->assertSame($lead->id, $report->lead_id);
+        $this->assertSame($customer->id, $report->customer_id);
+        $this->assertSame(1, CibilReport::query()->count());
+
+        // The customer file's profile shows the Experian score and reuses the report.
+        Livewire::test(CibilProfileRelationManager::class, ['ownerRecord' => $customer, 'pageClass' => ViewCustomer::class])
+            ->assertSee('Experian score:')
+            ->assertSee((string) $report->score);
+
+        $again = $this->service()->request($this->admin, CibilRequestType::FullReport, $this->details(['customer_name' => 'Nisha Sharma', 'pan_number' => 'BBBBB1212J', 'mobile_no' => '8800618269']), $customer, bureau: CreditBureau::Experian);
+        $this->assertTrue($again->reused);
+        $this->assertSame(['experian:full_report'], $this->bureau->calls);
     }
 }

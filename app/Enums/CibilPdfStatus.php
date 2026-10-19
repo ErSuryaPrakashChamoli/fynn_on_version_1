@@ -24,6 +24,9 @@ enum CibilPdfStatus: string
     /** The provider sent something that is not a valid PDF, or one too large. */
     case Invalid = 'invalid';
 
+    /** The link pointed (or redirected) to a host not on the bureau's allowlist; nothing was fetched from it. */
+    case Blocked = 'blocked';
+
     public function label(): string
     {
         return match ($this) {
@@ -32,6 +35,7 @@ enum CibilPdfStatus: string
             self::DownloadFailed => 'Download pending',
             self::Expired => 'Link expired',
             self::Invalid => 'Invalid file',
+            self::Blocked => 'Link host not allowed',
         };
     }
 
@@ -41,7 +45,7 @@ enum CibilPdfStatus: string
         return match ($this) {
             self::Available => 'success',
             self::DownloadFailed => 'warning',
-            self::Missing, self::Expired, self::Invalid => 'danger',
+            self::Missing, self::Expired, self::Invalid, self::Blocked => 'danger',
         };
     }
 }

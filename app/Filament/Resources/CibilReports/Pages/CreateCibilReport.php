@@ -15,7 +15,9 @@ use App\Models\User;
 use App\Services\Cibil\CibilReportService;
 use App\Services\Cibil\CibilRequestRefused;
 use App\Support\BureauCheckCandidates;
+use App\Support\CibilMask;
 use App\Support\CibilSubject;
+use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
@@ -145,6 +147,35 @@ class CreateCibilReport extends CreateRecord
             ->danger()
             ->title("{$bureau} report could not be fetched")
             ->body($report->error_message);
+    }
+
+    /**
+     * The request may be billed, so it is confirmed first, showing what is
+     * about to be sent — bureau, request, and the applicant with PAN and
+     * mobile masked. Everything is validated again after confirming.
+     */
+    protected function getCreateFormAction(): Action
+    {
+        return parent::getCreateFormAction()
+            ->label('Send request')
+            ->submit(null)
+            ->requiresConfirmation()
+            ->modalIcon('heroicon-o-paper-airplane')
+            ->modalHeading(fn (): string => 'Send this request to '.(CreditBureau::tryFrom((string) ($this->data['bureau'] ?? ''))?->label() ?? 'the bureau').'?')
+            ->modalDescription(fn (): string => $this->confirmationSummary())
+            ->modalSubmitActionLabel('Send request')
+            ->action(fn () => $this->create());
+    }
+
+    protected function confirmationSummary(): string
+    {
+        $bureau = CreditBureau::tryFrom((string) ($this->data['bureau'] ?? ''))?->label() ?? 'the bureau';
+        $type = CibilRequestType::tryFrom((string) ($this->data['request_type'] ?? ''))?->label() ?? 'Request';
+        $name = trim((string) ($this->data['customer_name'] ?? '')) ?: 'the applicant';
+        $mobile = CibilMask::mobile($this->data['mobile_no'] ?? null) ?? '—';
+
+        return "{$bureau} · {$type} for {$name} (PAN ".CibilMask::pan($this->data['pan_number'] ?? null).", mobile {$mobile}). "
+            ."If this file already has a {$bureau} report that answers it, that report is opened and nothing is billed; otherwise the request is sent to {$bureau} and billed.";
     }
 
     protected function getRedirectUrl(): string

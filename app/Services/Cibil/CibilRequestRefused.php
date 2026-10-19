@@ -7,7 +7,7 @@ use RuntimeException;
 
 /**
  * A request the app will not send to the bureau right now — switched off
- * (requests or the request type),
+ * (requests, the bureau or the request type),
  * another one still in flight, or an earlier one whose outcome is uncertain.
  * Nothing is recorded or billed; the message is shown to the user as is.
  */
@@ -26,6 +26,12 @@ class CibilRequestRefused extends RuntimeException
     public static function typeSwitchedOff(string $label): self
     {
         return new self("{$label} requests are switched off in CIBIL Settings.");
+    }
+
+    /** The Admin switched this bureau off. Nothing is sent to another bureau instead. */
+    public static function bureauSwitchedOff(string $bureau): self
+    {
+        return new self("{$bureau} requests are switched off in CIBIL Settings, so this request was not sent. Choose another bureau or ask the Admin to switch {$bureau} on.");
     }
 
     public static function freshSwitchedOff(): self

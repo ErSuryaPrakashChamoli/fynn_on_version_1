@@ -58,6 +58,9 @@ class CibilAuditHistory extends Page implements HasTable
         'uncertain_resolved' => 'Uncertain request verified',
         'linked' => 'Linked to customer file',
         'updated' => 'Settings / access changed',
+        'refused' => 'Request not sent (refused)',
+        'invalid' => 'Details / consent rejected',
+        'denied' => 'Access denied',
     ];
 
     public static function canAccess(): bool

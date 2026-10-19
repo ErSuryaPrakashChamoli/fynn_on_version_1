@@ -8,6 +8,7 @@ use App\Filament\Pages\ChangePassword;
 use App\Filament\Pages\CibilAccessSettings;
 use App\Filament\Pages\CibilAuditHistory;
 use App\Filament\Pages\CibilDashboard;
+use App\Filament\Pages\CibilEmployeeActivity;
 use App\Filament\Pages\CibilSettings;
 use App\Filament\Pages\CustomerFollowUpCalendar;
 use App\Filament\Pages\DailyCommitmentDashboard;
@@ -631,6 +632,7 @@ class AdminPanelProvider extends PanelProvider
                 ...$this->navigationItemsFor(CibilSettings::class),
                 ...$this->navigationItemsFor(CibilAccessSettings::class),
                 ...$this->navigationItemsFor(CibilAuditHistory::class),
+                ...$this->navigationItemsFor(CibilEmployeeActivity::class),
             ]),
 
             // Administrative/operational layer around the existing Customer

@@ -2,6 +2,7 @@
 
 namespace App\Services\Cibil;
 
+use App\Enums\CibilFailureCategory;
 use App\Enums\CibilRequestType;
 use App\Enums\CreditBureau;
 use App\Support\CibilMask;
@@ -107,7 +108,7 @@ class SurepassCibilClient implements CibilClient
                 $status === 401 => CibilApiException::invalidCredentials($status, $bureau->label()),
                 $status === 403 => CibilApiException::notPermitted($status, $bureau->label()),
                 $status === 429 => CibilApiException::rateLimited($status),
-                in_array($status, self::UNCERTAIN_STATUSES, true) => CibilApiException::uncertain($status, $messageCode),
+                in_array($status, self::UNCERTAIN_STATUSES, true) => CibilApiException::uncertain($status, $messageCode, CibilFailureCategory::ProviderError),
                 $status >= 500 => CibilApiException::unavailable($status, $bureau->label()),
                 default => CibilApiException::rejected($status, $providerMessage, $messageCode),
             };
@@ -115,7 +116,7 @@ class SurepassCibilClient implements CibilClient
 
         // A 2xx that cannot be read may still have been processed and billed.
         if ($body === null) {
-            throw CibilApiException::uncertain($status);
+            throw CibilApiException::uncertain($status, category: CibilFailureCategory::MalformedResponse);
         }
 
         if (($body['success'] ?? null) === false) {
@@ -123,7 +124,7 @@ class SurepassCibilClient implements CibilClient
         }
 
         if (($body['success'] ?? null) !== true || ! is_array($body['data'] ?? null)) {
-            throw CibilApiException::uncertain($status, $messageCode);
+            throw CibilApiException::uncertain($status, $messageCode, CibilFailureCategory::MalformedResponse);
         }
 
         $data = $body['data'];
@@ -195,7 +196,11 @@ class SurepassCibilClient implements CibilClient
         $neverSent = in_array($errno, self::NOT_SENT_CURL_ERRORS, true)
             || ($errno === 28 && preg_match('/(Connection|Resolving) timed out/i', $message) === 1);
 
-        return $neverSent ? CibilApiException::unavailable(bureau: $bureau->label()) : CibilApiException::uncertain();
+        if ($neverSent) {
+            return CibilApiException::unavailable(bureau: $bureau->label());
+        }
+
+        return CibilApiException::uncertain(category: $errno === 28 ? CibilFailureCategory::Timeout : CibilFailureCategory::Network);
     }
 
     /**

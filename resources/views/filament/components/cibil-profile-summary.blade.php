@@ -10,8 +10,9 @@
      * @var \App\Models\CibilReport|null $latestRequest
      * @var \App\Models\CibilReport|null $latestPdf
      * @var string|null $pdfUrl
+     * @var array<string, \App\Models\CibilReport|null> $latestByBureau
+     * @var int $requestCount
      */
-    $score = $latestSuccess?->score;
 @endphp
 
 <span class="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
@@ -30,18 +31,25 @@
         <span class="font-mono text-gray-950 dark:text-white">{{ $mobile ?? '—' }}</span>
     </span>
 
-    <span class="inline-flex items-center gap-1">
-        <span class="text-gray-500 dark:text-gray-400">Latest score:</span>
-        @if ($latestSuccess === null)
-            <span class="text-gray-950 dark:text-white">Not checked yet</span>
-        @elseif ($score === null)
-            <span class="text-gray-950 dark:text-white">No score returned</span>
-        @else
-            <x-filament::badge :color="$latestSuccess->scoreBand()?->color() ?? 'gray'">
-                {{ $score < 300 ? 'NH (no history)' : $score }}
-            </x-filament::badge>
-            <span class="text-gray-500 dark:text-gray-400">{{ $latestSuccess->bureau->label() }}</span>
-        @endif
+    @foreach ($latestByBureau as $bureauLabel => $bureauReport)
+        <span class="inline-flex items-center gap-1">
+            <span class="text-gray-500 dark:text-gray-400">{{ $bureauLabel }} score:</span>
+            @if ($bureauReport === null)
+                <span class="text-gray-950 dark:text-white">Not checked yet</span>
+            @elseif ($bureauReport->score === null)
+                <span class="text-gray-950 dark:text-white">No score returned</span>
+            @else
+                <x-filament::badge :color="$bureauReport->scoreBand()?->color() ?? 'gray'">
+                    {{ $bureauReport->score < 300 ? 'NH (no history)' : $bureauReport->score }}
+                </x-filament::badge>
+                <span class="text-gray-500 dark:text-gray-400">{{ $bureauReport->fetched_at?->format('d M Y') }}</span>
+            @endif
+        </span>
+    @endforeach
+
+    <span>
+        <span class="text-gray-500 dark:text-gray-400">Requests on this file:</span>
+        <span class="text-gray-950 dark:text-white">{{ $requestCount }}</span>
     </span>
 
     <span>
