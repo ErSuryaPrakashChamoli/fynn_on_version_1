@@ -23,6 +23,7 @@
     const PIN_GAP = 12;
 
     const LIST_PAGE_CLASS = 'fi-resource-list-records-page';
+    const FROZEN_LISTING_CLASS = 'fynn-frozen-listing-page';
 
     // Built from the same chevron glyph used for the primary "step" arrows,
     // duplicated and offset to read as a double-chevron "jump to edge" icon.
@@ -151,8 +152,11 @@
         const page = container.closest('.fi-page');
         const region = document.querySelector('.fi-body-has-navigation .fi-main-ctn');
 
-        if (page && region && page.classList.contains(LIST_PAGE_CLASS)) {
-            const headerHeight = parseFloat(getComputedStyle(page).getPropertyValue('--fynn-sticky-header-h')) || 0;
+        if (page && region && (page.classList.contains(LIST_PAGE_CLASS) || page.classList.contains(FROZEN_LISTING_CLASS))) {
+            const pageStyle = getComputedStyle(page);
+            // Page header plus any frozen filters / tabs block above the table.
+            const headerHeight = (parseFloat(pageStyle.getPropertyValue('--fynn-sticky-header-h')) || 0)
+                + (parseFloat(pageStyle.getPropertyValue('--fynn-frozen-top-h')) || 0);
             const block = container.closest('.fi-ta')?.querySelector('.fi-ta-header-ctn');
             const blockHeight = block ? block.getBoundingClientRect().height : 0;
             const frozenLine = region.getBoundingClientRect().top + headerHeight + blockHeight + theadHeight;

@@ -119,6 +119,7 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use Livewire\Livewire;
 use Saade\FilamentFullCalendar\FilamentFullCalendarPlugin;
 
 class AdminPanelProvider extends PanelProvider
@@ -313,6 +314,15 @@ class AdminPanelProvider extends PanelProvider
             ->renderHook(
                 TablesRenderHook::TOOLBAR_START,
                 fn (): string => view('filament.components.table-records-per-page-top')->render(),
+            )
+            // The Follow-up Outcomes pages' On time / Late / Missed / Open
+            // tabs, centred in the table toolbar between that per-page
+            // select and the search (theme.css). Scoped hooks render after
+            // the unscoped one, so the per-page select stays first.
+            ->renderHook(
+                TablesRenderHook::TOOLBAR_START,
+                fn (): string => view('filament.pages.follow-up-outcome-tabs', ['livewire' => Livewire::current()])->render(),
+                scopes: [LeadFollowUpOutcomes::class, CustomerFollowUpOutcomes::class],
             )
             // A floating "scroll to top" arrow that hovers over every
             // resource List page's table while the user is scrolled down,

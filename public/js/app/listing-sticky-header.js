@@ -17,6 +17,10 @@
      *  - on resource List pages the table's header block (.fi-ta-header-ctn:
      *    header actions + the per page / search / filters toolbar) is
      *    sticky in CSS at that height;
+     *  - custom pages built as a listing opt in with .fynn-frozen-listing-page
+     *    and may freeze a block above the table (.fynn-frozen-listing-top:
+     *    filters, tabs) under the page header; its height goes into
+     *    --fynn-frozen-top-h and the table's header block stops below it;
      *  - the table's column header row cannot be CSS-sticky against the
      *    page: .fi-ta-content-ctn is overflow-x:auto for wide tables, which
      *    makes IT the header's scroll container, and it no longer scrolls
@@ -30,6 +34,8 @@
      */
 
     const LIST_PAGE_CLASS = 'fi-resource-list-records-page';
+    const FROZEN_LISTING_CLASS = 'fynn-frozen-listing-page';
+    const FROZEN_TOP_SELECTOR = '.fynn-frozen-listing-top';
 
     let frame = null;
     let pageObserver = null;
@@ -41,6 +47,23 @@
 
     function currentPage() {
         return document.querySelector('.fi-page');
+    }
+
+    function isListing(page) {
+        return page.classList.contains(LIST_PAGE_CLASS) || page.classList.contains(FROZEN_LISTING_CLASS);
+    }
+
+    // The element theme.css made sticky for the page's frozen block: the
+    // block itself or the schema wrapper around it. None on small screens,
+    // where the block scrolls away with the page.
+    function frozenTop(page) {
+        for (let node = page.querySelector(FROZEN_TOP_SELECTOR); node && node !== page; node = node.parentElement) {
+            if (getComputedStyle(node).position === 'sticky') {
+                return node;
+            }
+        }
+
+        return null;
     }
 
     function pinHeaderRow(table, stickyLine) {
@@ -95,13 +118,18 @@
 
         page.style.setProperty('--fynn-sticky-header-h', `${Math.round(headerHeight)}px`);
 
-        if (! page.classList.contains(LIST_PAGE_CLASS)) {
+        if (! isListing(page)) {
             return;
         }
 
+        const frozenBlock = frozenTop(page);
+        const frozenHeight = frozenBlock ? frozenBlock.getBoundingClientRect().height : 0;
+
+        page.style.setProperty('--fynn-frozen-top-h', `${Math.round(frozenHeight)}px`);
+
         const scrollRegion = scroller();
         const regionTop = scrollRegion ? scrollRegion.getBoundingClientRect().top : 0;
-        const stickyLine = regionTop + headerHeight;
+        const stickyLine = regionTop + headerHeight + frozenHeight;
 
         page.querySelectorAll('.fi-ta').forEach((table) => pinHeaderRow(table, stickyLine));
     }
@@ -135,7 +163,7 @@
                 sizeObserver.observe(header);
             }
 
-            page.querySelectorAll('.fi-ta-header-ctn, .fi-ta-header-toolbar').forEach((toolbar) => sizeObserver.observe(toolbar));
+            page.querySelectorAll(`.fi-ta-header-ctn, .fi-ta-header-toolbar, ${FROZEN_TOP_SELECTOR}`).forEach((toolbar) => sizeObserver.observe(toolbar));
         }
 
         schedule();

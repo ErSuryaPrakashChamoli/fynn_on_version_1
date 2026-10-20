@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Enums\FollowUpOutcome;
 use App\Models\CustomerAssignment;
+use App\Models\Employee;
 use App\Models\FollowUp;
 use App\Services\FollowUpMonitorService;
 use App\Support\DueDateInput;
@@ -15,15 +16,21 @@ use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Pages\Page;
 use Filament\Resources\Concerns\HasTabs;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\EmbeddedTable;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\FontWeight;
+use Filament\Support\Enums\TextSize;
+use Filament\Support\Enums\Width;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -70,6 +77,13 @@ abstract class FollowUpOutcomeListPage extends Page implements HasTable
      * @return Builder<FollowUp>
      */
     abstract protected function visibleFollowUpQuery(): Builder;
+
+    /**
+     * The kinds of record this page lists, for the Record filter.
+     *
+     * @return array<string, string>
+     */
+    abstract protected function recordSourceOptions(): array;
 
     public function mount(): void
     {
@@ -133,10 +147,25 @@ abstract class FollowUpOutcomeListPage extends Page implements HasTable
     public function content(Schema $schema): Schema
     {
         return $schema->components([
-            EmbeddedSchema::make('form'),
-            $this->getTabsContentComponent(),
+            // Frozen under the page header while the rows scroll (theme.css,
+            // listing-sticky-header.js). The outcome tabs sit in the table
+            // toolbar instead (AdminPanelProvider's TOOLBAR_START hook).
+            Group::make([
+                EmbeddedSchema::make('form'),
+            ])->extraAttributes(['class' => 'fynn-frozen-listing-top']),
             EmbeddedTable::make(),
         ]);
+    }
+
+    /**
+     * Freezes the page like a resource listing: header, filters and tabs,
+     * table toolbar and column header stay put; only the rows scroll.
+     *
+     * @return array<string>
+     */
+    public function getPageClasses(): array
+    {
+        return ['fynn-frozen-listing-page'];
     }
 
     /**
@@ -146,9 +175,48 @@ abstract class FollowUpOutcomeListPage extends Page implements HasTable
     {
         return collect(FollowUpOutcome::legendGroups())
             ->map(fn (array $group, string $key): Tab => Tab::make($group['label'])
-                ->badge(fn (): string => number_format(count($this->idsFor($key))))
+                ->badge(fn (): string => number_format($this->outcomeCount($key)))
                 ->badgeColor($group['color']))
             ->all();
+    }
+
+    /**
+     * The outcome tabs as the pills in the table toolbar draw them; the hint
+     * is the pill's tooltip.
+     *
+     * @return array<string, array{label: string, color: string, hint: string, count: int}>
+     */
+    public function outcomeTabs(): array
+    {
+        $hints = [
+            'on_time' => 'Acted on within the grace period',
+            'late' => 'Acted on after the grace period',
+            'missed' => 'Not acted on and overdue',
+            'open' => 'Due soon or still in grace',
+        ];
+
+        return collect(FollowUpOutcome::legendGroups())
+            ->map(fn (array $group, string $key): array => [
+                'label' => $group['label'],
+                'color' => $group['color'],
+                'hint' => $hints[$key] ?? '',
+                'count' => $this->outcomeCount($key),
+            ])
+            ->all();
+    }
+
+    /**
+     * How many follow-ups one tab holds, after the table's own filters.
+     */
+    public function outcomeCount(string $group): int
+    {
+        $ids = $this->idsFor($group);
+
+        if ($ids === [] || ! $this->getTable()->isFiltered()) {
+            return count($ids);
+        }
+
+        return $this->applyFiltersToTableQuery(FollowUp::query()->whereIn('follow_ups.id', $ids))->count();
     }
 
     public function getDefaultActiveTab(): string|int|null
@@ -166,7 +234,9 @@ abstract class FollowUpOutcomeListPage extends Page implements HasTable
             ->defaultSort('next_follow_up_date', 'asc')
             ->emptyStateHeading('No follow-ups here')
             ->emptyStateDescription('Nothing with this outcome fell due in the chosen dates.')
-            ->recordUrl(fn (FollowUp $record): ?string => FollowUpRecordUrl::for($record))
+            // Clicking a row shows the full mobile number; the listing itself
+            // only ever shows the last four digits.
+            ->recordAction('contact')
             ->columns([
                 TextColumn::make('display_name')
                     ->label('Name')
@@ -188,9 +258,7 @@ abstract class FollowUpOutcomeListPage extends Page implements HasTable
 
                 TextColumn::make('mobile')
                     ->label('Mobile')
-                    ->state(fn (FollowUp $record): ?string => $record->customer?->mobile_no
-                        ?? $record->lead?->mobile_no
-                        ?? $record->aiCustomerRecord?->prospectValue('mobile_number'))
+                    ->state(fn (FollowUp $record): ?string => static::mobileFor($record))
                     ->formatStateUsing(function (?string $state): string {
                         if (blank($state) || strlen($state) < 4) {
                             return $state ?? '-';
@@ -271,7 +339,99 @@ abstract class FollowUpOutcomeListPage extends Page implements HasTable
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->filters([
+                SelectFilter::make('status')
+                    ->label('Status')
+                    ->multiple()
+                    ->options(CustomerAssignment::FOLLOW_UP_STATUSES),
+
+                SelectFilter::make('follow_up_type')
+                    ->label('Type')
+                    ->multiple()
+                    ->options([
+                        'Call' => 'Call',
+                        'WhatsApp' => 'WhatsApp',
+                        'Email' => 'Email',
+                        'Visit' => 'Visit',
+                    ]),
+
+                SelectFilter::make('source')
+                    ->label('Record')
+                    ->multiple()
+                    ->options(fn (): array => $this->recordSourceOptions())
+                    ->visible(fn (): bool => count($this->recordSourceOptions()) > 1)
+                    ->query(fn (Builder $query, array $data): Builder => $query->when(
+                        filled($data['values'] ?? null),
+                        fn (Builder $query): Builder => $query->where(function (Builder $query) use ($data): void {
+                            foreach ($data['values'] as $source) {
+                                match ($source) {
+                                    'customer' => $query->orWhereNotNull('follow_ups.customer_id'),
+                                    'ai_record' => $query->orWhereNotNull('follow_ups.ai_customer_record_id'),
+                                    'lead' => $query->orWhereNotNull('follow_ups.lead_id'),
+                                    default => null,
+                                };
+                            }
+                        }),
+                    )),
+
+                SelectFilter::make('manager_id')
+                    ->label('Manager')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_MANAGER))
+                    ->query(fn (Builder $query, array $data): Builder => $query->when(
+                        filled($data['values'] ?? null),
+                        fn (Builder $query): Builder => $query->whereHas(
+                            'employee',
+                            fn (Builder $employee): Builder => $employee->whereIn('manager_id', $data['values']),
+                        ),
+                    )),
+
+                SelectFilter::make('team_leader_id')
+                    ->label('Team Leader')
+                    ->multiple()
+                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_TEAM_LEADER))
+                    ->query(fn (Builder $query, array $data): Builder => $query->when(
+                        filled($data['values'] ?? null),
+                        fn (Builder $query): Builder => $query->whereHas(
+                            'employee',
+                            fn (Builder $employee): Builder => $employee->whereIn('superviser_id', $data['values']),
+                        ),
+                    )),
+            ])
             ->recordActions([
+                Action::make('contact')
+                    ->label('Contact')
+                    ->icon('heroicon-o-phone')
+                    ->color('gray')
+                    ->modalHeading('Contact details')
+                    ->modalWidth(Width::Medium)
+                    ->schema([
+                        TextEntry::make('display_name')
+                            ->label('Name')
+                            ->weight(FontWeight::Bold),
+                        TextEntry::make('contact_mobile')
+                            ->label('Mobile No')
+                            ->state(fn (FollowUp $record): ?string => static::mobileFor($record))
+                            ->url(fn (?string $state): ?string => filled($state) ? 'tel:'.preg_replace('/[^0-9+]/', '', $state) : null)
+                            ->size(TextSize::Large)
+                            ->weight(FontWeight::Bold)
+                            ->copyable()
+                            ->placeholder('-'),
+                        TextEntry::make('employee.emp_name')
+                            ->label('Owner')
+                            ->placeholder('Admin'),
+                    ])
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Close')
+                    ->extraModalFooterActions(fn (FollowUp $record): array => filled($recordUrl = FollowUpRecordUrl::for($record))
+                        ? [
+                            Action::make('openRecord')
+                                ->label('Open record')
+                                ->icon('heroicon-m-arrow-top-right-on-square')
+                                ->url($recordUrl),
+                        ]
+                        : []),
+
                 Action::make('log')
                     ->label('Log')
                     ->icon('heroicon-o-clock')
@@ -284,6 +444,17 @@ abstract class FollowUpOutcomeListPage extends Page implements HasTable
                         ['history' => $record->historyForSubject(), 'current' => $record],
                     )),
             ]);
+    }
+
+    /**
+     * The prospect's mobile number, from whichever record the follow-up is
+     * tied to.
+     */
+    protected static function mobileFor(FollowUp $record): ?string
+    {
+        return $record->customer?->mobile_no
+            ?? $record->lead?->mobile_no
+            ?? $record->aiCustomerRecord?->prospectValue('mobile_number');
     }
 
     /**

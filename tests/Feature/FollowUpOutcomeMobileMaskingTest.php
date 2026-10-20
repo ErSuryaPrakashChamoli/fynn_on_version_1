@@ -10,6 +10,7 @@ use App\Models\FollowUp;
 use App\Models\Lead;
 use App\Models\User;
 use App\Support\FollowUpRecordUrl;
+use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -18,8 +19,8 @@ use Tests\TestCase;
 
 /**
  * The Lead and Customer Follow-up Outcomes listings show only the last four
- * digits of a prospect's mobile number; clicking the row still opens the
- * record, where the name and full number are shown.
+ * digits of a prospect's mobile number; clicking the row opens a popup with
+ * the name, the full number and a link to the record.
  */
 class FollowUpOutcomeMobileMaskingTest extends TestCase
 {
@@ -40,20 +41,34 @@ class FollowUpOutcomeMobileMaskingTest extends TestCase
         $this->actingAs(User::factory()->create(['employee_id' => $this->caller->id]));
     }
 
-    public function test_the_lead_listing_masks_the_mobile_and_the_row_still_opens_the_lead(): void
+    public function test_the_lead_listing_masks_the_mobile(): void
     {
         $missed = $this->leadFollowUp('Masked Lead', '9876543210');
 
-        $component = Livewire::test(LeadFollowUpOutcomes::class)
+        Livewire::test(LeadFollowUpOutcomes::class)
             ->assertCanSeeTableRecords([$missed])
             ->assertTableColumnFormattedStateSet('mobile', 'XXXXXX3210', $missed)
             ->assertSee('Masked Lead')
             ->assertDontSee('9876543210');
+    }
 
-        $rowUrl = $component->instance()->getTable()->getRecordUrl($missed);
+    public function test_clicking_a_row_shows_the_name_and_full_mobile_with_a_link_to_the_record(): void
+    {
+        $missed = $this->leadFollowUp('Masked Lead', '9876543210');
 
-        $this->assertNotNull($rowUrl);
-        $this->assertSame(FollowUpRecordUrl::for($missed), $rowUrl);
+        $component = Livewire::test(LeadFollowUpOutcomes::class);
+
+        $table = $component->instance()->getTable();
+        $this->assertSame('contact', $table->getRecordAction($missed));
+        $this->assertNull($table->getRecordUrl($missed));
+
+        $component
+            ->mountAction(TestAction::make('contact')->table($missed))
+            ->assertMountedActionModalSee('Masked Lead')
+            ->assertMountedActionModalSee('9876543210')
+            ->assertMountedActionModalSee('tel:9876543210')
+            ->assertMountedActionModalSee('Open record')
+            ->assertMountedActionModalSeeHtml(e(FollowUpRecordUrl::for($missed)));
     }
 
     public function test_the_customer_listing_masks_the_mobile(): void

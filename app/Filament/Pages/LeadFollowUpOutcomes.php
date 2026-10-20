@@ -31,4 +31,9 @@ class LeadFollowUpOutcomes extends FollowUpOutcomeListPage
     {
         return AssignedLeadFollowUpCalendarWidget::visibleLeadFollowUpQuery();
     }
+
+    protected function recordSourceOptions(): array
+    {
+        return ['lead' => 'Lead', 'ai_record' => 'AI record'];
+    }
 }
