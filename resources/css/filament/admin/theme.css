@@ -3340,26 +3340,30 @@ ul.eh-vtree ul.eh-vtree > li::before {
     background-color: rgb(3 7 18);
 }
 
-.fi-body-has-navigation .fi-resource-list-records-page .fi-ta-ctn {
+.fi-body-has-navigation .fi-resource-list-records-page .fi-ta-ctn,
+.fi-body-has-navigation .fynn-frozen-listing-page .fi-ta-ctn {
     overflow: visible;
 }
 
-.fi-body-has-navigation .fi-resource-list-records-page .fi-ta-header-ctn {
+.fi-body-has-navigation .fi-resource-list-records-page .fi-ta-header-ctn,
+.fi-body-has-navigation .fynn-frozen-listing-page .fi-ta-header-ctn {
     position: sticky;
-    top: var(--fynn-sticky-header-h, 0px);
+    top: calc(var(--fynn-sticky-header-h, 0px) + var(--fynn-frozen-top-h, 0px));
     z-index: 24;
     background-color: white;
     border-start-start-radius: 0.75rem;
     border-start-end-radius: 0.75rem;
 }
 
-.dark .fi-body-has-navigation .fi-resource-list-records-page .fi-ta-header-ctn {
+.dark .fi-body-has-navigation .fi-resource-list-records-page .fi-ta-header-ctn,
+.dark .fi-body-has-navigation .fynn-frozen-listing-page .fi-ta-header-ctn {
     background-color: rgb(17 24 39);
 }
 
 /* The pinned column header sits above the rows it slides over; the
    toolbar (z 24) and page header (z 25) stay above it in turn. */
-.fi-resource-list-records-page .fi-ta-table > thead.fynn-thead-pinned > tr > th {
+.fi-resource-list-records-page .fi-ta-table > thead.fynn-thead-pinned > tr > th,
+.fynn-frozen-listing-page .fi-ta-table > thead.fynn-thead-pinned > tr > th {
     z-index: 15;
     box-shadow: 0 1px 0 rgb(15 23 42 / 8%);
 }
@@ -3372,13 +3376,15 @@ ul.eh-vtree ul.eh-vtree > li::before {
    listing-sticky-header.js), let it scroll on its own without chaining
    into the page, and keep the filters' Apply / Reset row pinned to the
    panel's bottom edge. */
-.fi-body-has-navigation .fi-resource-list-records-page .fi-ta-header-ctn .fi-dropdown-panel {
+.fi-body-has-navigation .fi-resource-list-records-page .fi-ta-header-ctn .fi-dropdown-panel,
+.fi-body-has-navigation .fynn-frozen-listing-page .fi-ta-header-ctn .fi-dropdown-panel {
     max-height: max(12rem, calc(100dvh - var(--fynn-toolbar-bottom, 12rem) - 1.5rem));
     overflow-y: auto;
     overscroll-behavior: contain;
 }
 
-.fi-body-has-navigation .fi-resource-list-records-page .fi-ta-filters-dropdown .fi-ta-filters-actions-ctn {
+.fi-body-has-navigation .fi-resource-list-records-page .fi-ta-filters-dropdown .fi-ta-filters-actions-ctn,
+.fi-body-has-navigation .fynn-frozen-listing-page .fi-ta-filters-dropdown .fi-ta-filters-actions-ctn {
     position: sticky;
     bottom: -1.5rem;
     z-index: 1;
@@ -3388,7 +3394,96 @@ ul.eh-vtree ul.eh-vtree > li::before {
     border-top: 1px solid rgb(229 231 235);
 }
 
-.dark .fi-body-has-navigation .fi-resource-list-records-page .fi-ta-filters-dropdown .fi-ta-filters-actions-ctn {
+.dark .fi-body-has-navigation .fi-resource-list-records-page .fi-ta-filters-dropdown .fi-ta-filters-actions-ctn,
+.dark .fi-body-has-navigation .fynn-frozen-listing-page .fi-ta-filters-dropdown .fi-ta-filters-actions-ctn {
     background-color: rgb(17 24 39);
     border-top-color: rgb(255 255 255 / 10%);
+}
+
+/* Custom pages built as a listing (.fynn-frozen-listing-page, e.g. the
+   Lead / Customer Follow-up Outcomes pages) freeze like resource List
+   pages, and also freeze their .fynn-frozen-listing-top block (date and
+   owner filters) between the page header and the table
+   toolbar, so only the rows scroll. The block sits in its own row of the
+   content schema's grid, and a sticky grid item cannot leave its row, so
+   that grid becomes a flex column here. listing-sticky-header.js reads the
+   block's height into --fynn-frozen-top-h for the toolbar and column
+   header below it. Desktop only: on a phone the block would take most of
+   the screen, so it scrolls away there. */
+@media (min-width: 64rem) {
+    .fi-body-has-navigation .fynn-frozen-listing-page .fi-page-content > .fi-sc {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .fi-body-has-navigation .fynn-frozen-listing-page .fi-page-content > .fi-sc > .fi-grid-col:has(.fynn-frozen-listing-top) {
+        position: sticky;
+        top: var(--fynn-sticky-header-h, 0px);
+        /* Above the toolbar (24), so the Owner / date dropdowns open over it. */
+        z-index: 25;
+        /* A strip of page background under the filters, taken from the
+           1.5rem schema gap so the layout at rest does not move. */
+        margin-bottom: -0.75rem;
+        padding-bottom: 0.75rem;
+        background-color: rgb(249 250 251);
+    }
+
+    .dark .fi-body-has-navigation .fynn-frozen-listing-page .fi-page-content > .fi-sc > .fi-grid-col:has(.fynn-frozen-listing-top) {
+        background-color: rgb(3 7 18);
+    }
+}
+
+/* The Follow-up Outcomes pages' On time / Late / Missed / Open tabs
+   (.fynn-outcome-tabs, AdminPanelProvider's scoped TOOLBAR_START hook,
+   rendered after the per-page select) live in the table toolbar. Filament's
+   toolbar is a wrapping flex row that gives its 2nd child
+   margin-inline-start:auto; the tabs are that child now, so the search
+   group takes it back. Narrow screens: the tabs get a centred row of their
+   own under per page / search. */
+.fi-ta-header-toolbar > .fynn-outcome-tabs {
+    order: 1;
+    flex-basis: 100%;
+    justify-content: center;
+    margin-inline-start: 0;
+}
+
+.fi-ta-header-toolbar:has(> .fynn-outcome-tabs) > :last-child {
+    margin-inline-start: auto;
+}
+
+/* Wide screens: one row of three columns — per page, tabs, search — with
+   equal side columns, so the tabs sit at the toolbar's centre even while
+   the per-page select is hidden (no rows). Filament's empty actions slot
+   drops out; should it ever hold actions, they get a row of their own. */
+@media (min-width: 80rem) {
+    .fi-ta-header-toolbar:has(> .fynn-outcome-tabs) {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+    }
+
+    .fi-ta-header-toolbar:has(> .fynn-outcome-tabs) > .fynn-table-records-per-page-top {
+        grid-row: 1;
+        grid-column: 1;
+        justify-self: start;
+    }
+
+    .fi-ta-header-toolbar > .fynn-outcome-tabs {
+        grid-row: 1;
+        grid-column: 2;
+    }
+
+    .fi-ta-header-toolbar:has(> .fynn-outcome-tabs) > :last-child {
+        grid-row: 1;
+        grid-column: 3;
+        justify-self: end;
+    }
+
+    .fi-ta-header-toolbar:has(> .fynn-outcome-tabs) > .fi-ta-actions {
+        grid-row: 2;
+        grid-column: 1 / -1;
+    }
+
+    .fi-ta-header-toolbar:has(> .fynn-outcome-tabs) > .fi-ta-actions:not(:has(*)) {
+        display: none;
+    }
 }

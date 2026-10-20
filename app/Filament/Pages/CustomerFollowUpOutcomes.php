@@ -31,4 +31,9 @@ class CustomerFollowUpOutcomes extends FollowUpOutcomeListPage
     {
         return FollowUpResource::getEloquentQuery();
     }
+
+    protected function recordSourceOptions(): array
+    {
+        return ['customer' => 'Customer'];
+    }
 }
