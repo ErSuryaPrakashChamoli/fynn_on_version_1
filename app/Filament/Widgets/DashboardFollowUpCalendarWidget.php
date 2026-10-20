@@ -2,6 +2,9 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Pages\CustomerFollowUpOutcomes;
+use App\Filament\Pages\FollowUpOutcomeListPage;
+use App\Filament\Pages\LeadFollowUpOutcomes;
 use App\Filament\Resources\FollowUps\FollowUpResource;
 use App\Models\FollowUp;
 use App\Services\FollowUpMonitorService;
@@ -195,6 +198,30 @@ class DashboardFollowUpCalendarWidget extends AssignedLeadFollowUpCalendarWidget
         return FollowUp::query()->where(fn (Builder $query) => $query
             ->whereIn('follow_ups.id', $leadIds)
             ->orWhereIn('follow_ups.id', $customerIds));
+    }
+
+    /**
+     * The outcome list splits into the same Lead / Customer tabs as the
+     * day panel, each linking to its full listing.
+     *
+     * @return array<string, array{label: string, query: Builder<FollowUp>, listing: class-string<FollowUpOutcomeListPage>|null}>
+     */
+    protected function outcomeListSources(): array
+    {
+        return [
+            'lead' => ['label' => 'Lead Follow-ups', 'query' => parent::scopedFollowUpQuery(), 'listing' => LeadFollowUpOutcomes::class],
+            'customer' => ['label' => 'Customer Follow-ups', 'query' => FollowUpResource::getEloquentQuery(), 'listing' => CustomerFollowUpOutcomes::class],
+        ];
+    }
+
+    /**
+     * The outcome list opens on the period on screen (month, week or day).
+     *
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    protected function outcomeListDefaultPeriod(): array
+    {
+        return $this->calendarPeriod();
     }
 
     /**

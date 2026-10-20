@@ -11,6 +11,7 @@ use App\Filament\Pages\CibilDashboard;
 use App\Filament\Pages\CibilEmployeeActivity;
 use App\Filament\Pages\CibilSettings;
 use App\Filament\Pages\CustomerFollowUpCalendar;
+use App\Filament\Pages\CustomerFollowUpOutcomes;
 use App\Filament\Pages\DailyCommitmentDashboard;
 use App\Filament\Pages\DailyCommitmentReports;
 use App\Filament\Pages\DailyCommitmentTeamView;
@@ -20,6 +21,7 @@ use App\Filament\Pages\EmployeeHierarchy;
 use App\Filament\Pages\EmployeePerformanceDashboard;
 use App\Filament\Pages\FollowUpMonitor;
 use App\Filament\Pages\JourneyContinuityDashboard;
+use App\Filament\Pages\LeadFollowUpOutcomes;
 use App\Filament\Pages\LoginPageSettings;
 use App\Filament\Pages\MyDailyCommitment;
 use App\Filament\Pages\MyProfile;
@@ -613,12 +615,14 @@ class AdminPanelProvider extends PanelProvider
                 ...$this->navigationItemsFor(LeadResource::class),
                 ...$this->navigationItemsFor(AssignedLeadResource::class),
                 ...$this->navigationItemsFor(AssignedLeadFollowUpCalendar::class),
+                ...$this->navigationItemsFor(LeadFollowUpOutcomes::class),
             ]),
 
             NavigationGroup::make('Customers')->icon(Heroicon::OutlinedUserCircle)->items([
                 ...$this->navigationItemsFor(CustomerResource::class),
                 ...$this->navigationItemsFor(FollowUpResource::class),
                 ...$this->navigationItemsFor(CustomerFollowUpCalendar::class),
+                ...$this->navigationItemsFor(CustomerFollowUpOutcomes::class),
             ]),
 
             // Credit bureau (Surepass CIBIL): only for the Admin and whoever

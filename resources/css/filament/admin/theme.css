@@ -2530,6 +2530,36 @@ ul.eh-vtree ul.eh-vtree > li::before {
     justify-content: flex-end;
 }
 
+/* Legend chips open the outcome list; inside it they switch the verdict. */
+.followup-outcome-legend--start {
+    justify-content: flex-start;
+    gap: 6px;
+}
+
+.followup-outcome-legend--start .followup-outcome {
+    padding: 5px 10px;
+    font-size: 0.75rem;
+}
+
+.followup-outcome--clickable {
+    cursor: pointer;
+    transition: box-shadow 150ms ease, filter 150ms ease;
+}
+
+.followup-outcome--clickable:hover {
+    filter: brightness(0.96);
+    box-shadow: 0 0 0 1px currentColor;
+}
+
+.followup-outcome--clickable:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+.followup-outcome--active {
+    box-shadow: 0 0 0 2px currentColor;
+}
+
 .followup-outcome {
     display: inline-flex;
     align-items: center;

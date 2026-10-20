@@ -11,29 +11,7 @@
     // A follow-up here is tied to a Customer, an AI-extracted customer
     // record, or a raw Lead — "open the record" means whichever of those
     // three it's linked to.
-    $recordUrl = function ($followUp) {
-        if ($followUp->customer_id) {
-            return \App\Filament\Resources\Customers\CustomerResource::getUrl('view', ['record' => $followUp->customer_id]);
-        }
-
-        if ($followUp->ai_customer_record_id) {
-            return \App\Filament\Resources\AiCustomerRecords\AiCustomerRecordResource::getUrl('view', ['record' => $followUp->ai_customer_record_id]);
-        }
-
-        if ($followUp->lead_id) {
-            // A converted lead drops out of the Leads screen (404) — open
-            // the customer it became instead.
-            if ($followUp->lead?->is_converted && $followUp->lead->converted_customer_id) {
-                return \App\Filament\Resources\Customers\CustomerResource::getUrl('view', ['record' => $followUp->lead->converted_customer_id]);
-            }
-
-            return \App\Filament\Resources\Leads\LeadResource::getEloquentQuery()->whereKey($followUp->lead_id)->exists()
-                ? \App\Filament\Resources\Leads\LeadResource::getUrl('edit', ['record' => $followUp->lead_id])
-                : null;
-        }
-
-        return null;
-    };
+    $recordUrl = fn ($followUp) => \App\Support\FollowUpRecordUrl::for($followUp);
 
     // The full follow-up log for every prospect shown here, loaded in one
     // query so each card can show how many times — and when — the prospect
@@ -69,9 +47,9 @@
                     <dd class="text-gray-700 dark:text-gray-300">{{ $followUp->follow_up_type }}</dd>
                 </div>
                 <div class="flex items-center justify-between gap-2">
-                    <dt>Time</dt>
+                    <dt>{{ ($showDueDate ?? false) ? 'Due' : 'Time' }}</dt>
                     <dd class="text-gray-700 dark:text-gray-300">
-                        {{ $followUp->next_follow_up_date?->format('h:i A') ?? '-' }}
+                        {{ $followUp->next_follow_up_date?->format(($showDueDate ?? false) ? 'd M Y h:i A' : 'h:i A') ?? '-' }}
                     </dd>
                 </div>
                 <div class="flex items-center justify-between gap-2">
@@ -130,7 +108,7 @@
         @endif
     @empty
         <div class="col-span-full rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-            No follow-ups found for this day.
+            {{ $emptyMessage ?? 'No follow-ups found for this day.' }}
         </div>
     @endforelse
 </div>

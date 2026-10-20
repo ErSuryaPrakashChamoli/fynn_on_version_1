@@ -2,6 +2,7 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Pages\CustomerFollowUpOutcomes;
 use App\Filament\Resources\FollowUps\FollowUpResource;
 use App\Filament\Widgets\Concerns\ShowsFollowUpOutcomes;
 use App\Models\FollowUp;
@@ -79,6 +80,11 @@ class CustomerFollowUpCalendarWidget extends FullCalendarWidget
     protected function scopedFollowUpQuery(): Builder
     {
         return FollowUpResource::getEloquentQuery();
+    }
+
+    protected function outcomeListingPage(): ?string
+    {
+        return CustomerFollowUpOutcomes::class;
     }
 
     public function getFormSchema(): array
