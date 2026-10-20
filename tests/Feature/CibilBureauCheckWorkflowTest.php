@@ -180,24 +180,47 @@ class CibilBureauCheckWorkflowTest extends TestCase
 
     // ---- Lead and customer pickers ----------------------------------------
 
-    public function test_the_lead_picker_lists_only_visible_bureau_check_leads_from_both_listings(): void
+    /**
+     * Bureau Check leads come first; the user's other open leads follow and
+     * can all be searched (no lead used "Bureau Check" in production, which
+     * left the picker empty). Someone else's and converted leads never.
+     */
+    public function test_the_lead_picker_lists_bureau_check_leads_first_then_the_users_other_open_leads(): void
     {
         $waiting = $this->lead(['customer_name' => 'Nisha Sharma']);
-        $interested = $this->lead(['customer_name' => 'Imran Interested', 'status' => 'Interested']);
+        $interested = $this->lead(['customer_name' => 'Imran Interested', 'status' => 'Interested', 'pan_number' => 'IMRAN1234I', 'mobile_no' => '9000011111']);
         $someoneElses = $this->lead(['customer_name' => 'Other Owner', 'employee_id' => $this->otherEmployee->id]);
         $converted = $this->lead(['customer_name' => 'Already Converted', 'is_converted' => true]);
         $waitingAssigned = $this->assignedLead(CustomerAssignment::BUREAU_CHECK_STATUS, 'Sunil Verma');
         $interestedAssigned = $this->assignedLead('Interested', 'Kavya Interested');
+        $othersAssigned = $this->assignedLead('Interested', 'Not Yours', $this->otherEmployee->id);
 
         $this->actingAs($this->caller);
 
         $options = BureauCheckCandidates::leadOptions();
 
-        $this->assertSame(['My Leads', 'Assigned Leads'], array_keys($options));
-        $this->assertSame(['lead:'.$waiting->id => 'Nisha Sharma · BBBBB1212J'], $options['My Leads']);
-        $this->assertSame(['assigned:'.$waitingAssigned->id => 'Sunil Verma · LMNOP4321Q'], $options['Assigned Leads']);
+        $this->assertSame(['Waiting for bureau check', 'My Leads', 'Assigned Leads'], array_keys($options));
+        $this->assertSame([
+            'lead:'.$waiting->id => 'Nisha Sharma · BBBBB1212J',
+            'assigned:'.$waitingAssigned->id => 'Sunil Verma · LMNOP4321Q',
+        ], $options['Waiting for bureau check']);
+        $this->assertSame(['lead:'.$interested->id => 'Imran Interested · IMRAN1234I'], $options['My Leads']);
+        $this->assertSame(['assigned:'.$interestedAssigned->id => 'Kavya Interested · LMNOP4321Q'], $options['Assigned Leads']);
 
-        foreach (['lead:'.$interested->id, 'lead:'.$someoneElses->id, 'lead:'.$converted->id, 'assigned:'.$interestedAssigned->id, 'lead:abc', 'customer:1'] as $key) {
+        // Search finds any open lead of the user's by name, mobile or PAN (assigned ones in their uploaded record).
+        $this->assertSame(['My Leads' => ['lead:'.$interested->id => 'Imran Interested · IMRAN1234I']], BureauCheckCandidates::searchLeads('imran'));
+        $this->assertArrayHasKey('lead:'.$interested->id, BureauCheckCandidates::searchLeads('9000011111')['My Leads']);
+        $this->assertArrayHasKey('lead:'.$interested->id, BureauCheckCandidates::searchLeads('IMRAN1234')['My Leads']);
+        $this->assertSame(['Assigned Leads' => ['assigned:'.$interestedAssigned->id => 'Kavya Interested · LMNOP4321Q']], BureauCheckCandidates::searchLeads('kavya'));
+        $this->assertSame([], BureauCheckCandidates::searchLeads('Other Owner'));
+        $this->assertSame([], BureauCheckCandidates::searchLeads('Not Yours'));
+        $this->assertSame([], BureauCheckCandidates::searchLeads('Already Converted'));
+        $this->assertSame([], BureauCheckCandidates::searchLeads('a'));
+
+        $this->assertTrue(BureauCheckCandidates::resolveLead('lead:'.$interested->id)?->is($interested));
+        $this->assertTrue(BureauCheckCandidates::resolveLead('assigned:'.$interestedAssigned->id)?->is($interestedAssigned));
+
+        foreach (['lead:'.$someoneElses->id, 'lead:'.$converted->id, 'assigned:'.$othersAssigned->id, 'lead:abc', 'customer:1'] as $key) {
             $this->assertNull(BureauCheckCandidates::resolveLead($key), $key);
         }
     }

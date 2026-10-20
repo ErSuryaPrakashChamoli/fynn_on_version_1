@@ -5,10 +5,14 @@ namespace App\Filament\Resources\Leads\Schemas;
 use App\Models\Bank;
 use App\Models\City;
 use App\Models\CustomerAssignment;
+use App\Models\Employee;
+use App\Models\Lead;
+use App\Models\User;
+use App\Services\HierarchyService;
+use App\Support\EmployeeOptions;
 use Coolsam\Flatpickr\Forms\Components\Flatpickr;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
-use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -371,10 +375,54 @@ class LeadForm
                             ->required()
                             ->columnSpanFull(),
 
-                        Hidden::make('employee_id')
-                            ->default(fn () => auth()->user()->employee?->id)
-                            ->dehydrated(true),
+                        // The lead's owner. Normally the creator's own employee record,
+                        // kept out of sight; a login without one (the Admin) picks who
+                        // will work the lead instead of leaving it with nobody.
+                        Select::make('employee_id')
+                            ->label('Assign lead to')
+                            ->options(fn (): array => self::ownerOptions())
+                            ->default(fn () => auth()->user()?->employee?->id)
+                            ->required(fn (?Lead $record): bool => self::asksForOwner($record))
+                            ->visible(fn (?Lead $record): bool => self::asksForOwner($record))
+                            ->dehydratedWhenHidden()
+                            ->helperText('Your login has no employee record of its own, so choose who will work this lead.')
+                            ->columnSpanFull(),
                     ])->columns(2),
             ]);
+    }
+
+    /**
+     * Asked when the signed-in login has no employee record — on a new
+     * lead, or on an existing one still without an owner.
+     */
+    public static function asksForOwner(?Lead $record): bool
+    {
+        if (auth()->user()?->employee !== null) {
+            return false;
+        }
+
+        return $record === null || blank($record->employee_id);
+    }
+
+    /**
+     * Current employees the login may hand a lead to (the Admin: everyone).
+     *
+     * @return array<int, string>
+     */
+    protected static function ownerOptions(): array
+    {
+        $user = auth()->user();
+
+        if (! $user instanceof User) {
+            return [];
+        }
+
+        return Employee::query()
+            ->whereIn('id', HierarchyService::visibleEmployeeIds($user))
+            ->where('exit_status', '!=', 'yes')
+            ->orderBy('emp_name')
+            ->get(['id', 'emp_name', 'emp_id'])
+            ->mapWithKeys(fn (Employee $employee): array => [$employee->id => EmployeeOptions::label($employee)])
+            ->all();
     }
 }

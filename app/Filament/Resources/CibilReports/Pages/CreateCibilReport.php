@@ -106,7 +106,7 @@ class CreateCibilReport extends CreateRecord
     {
         return match ($data['fetch_for'] ?? null) {
             CibilReportForm::FOR_LEAD => BureauCheckCandidates::resolveLead($data['lead_key'] ?? null)
-                ?? throw ValidationException::withMessages(['data.lead_key' => 'Pick a lead marked "Bureau Check" that you can see.']),
+                ?? throw ValidationException::withMessages(['data.lead_key' => 'Pick one of your open leads.']),
             CibilReportForm::FOR_CUSTOMER => BureauCheckCandidates::resolveCustomer($data['customer_id'] ?? null)
                 ?? throw ValidationException::withMessages(['data.customer_id' => 'Pick a customer file you can see.']),
             default => throw ValidationException::withMessages(['data.fetch_for' => 'Choose whether the report is for a lead or a customer.']),
@@ -137,10 +137,13 @@ class CreateCibilReport extends CreateRecord
         if ($report->status === CibilReportStatus::Success) {
             $score = $report->score !== null ? "Score: {$report->score}." : null;
 
+            $user = Filament::auth()->user();
+            $asksForDecision = $user instanceof User && app(CibilReportService::class)->canDecide($report, $user);
+
             return Notification::make()
                 ->success()
                 ->title("{$bureau} report fetched")
-                ->body($report->isForLead() ? trim($score.' Now mark the lead Eligible or Not Eligible.') : $score);
+                ->body($asksForDecision ? trim($score.' Now mark the lead Eligible or Not Eligible.') : $score);
         }
 
         return Notification::make()
@@ -152,7 +155,13 @@ class CreateCibilReport extends CreateRecord
     /**
      * The request may be billed, so it is confirmed first, showing what is
      * about to be sent — bureau, request, and the applicant with PAN and
-     * mobile masked. Everything is validated again after confirming.
+     * mobile masked.
+     *
+     * The form is validated before the pop-up opens: a missing lead or
+     * customer, detail or consent is shown on the form itself, and the
+     * pop-up only appears for a request that can actually be sent. If the
+     * server still rejects something after confirming, the pop-up is closed
+     * so the error is visible instead of hidden behind it.
      */
     protected function getCreateFormAction(): Action
     {
@@ -160,11 +169,22 @@ class CreateCibilReport extends CreateRecord
             ->label('Send request')
             ->submit(null)
             ->requiresConfirmation()
+            ->mountUsing(function (): void {
+                $this->form->validate();
+            })
             ->modalIcon('heroicon-o-paper-airplane')
             ->modalHeading(fn (): string => 'Send this request to '.(CreditBureau::tryFrom((string) ($this->data['bureau'] ?? ''))?->label() ?? 'the bureau').'?')
             ->modalDescription(fn (): string => $this->confirmationSummary())
             ->modalSubmitActionLabel('Send request')
-            ->action(fn () => $this->create());
+            ->action(function (): void {
+                try {
+                    $this->create();
+                } catch (ValidationException $exception) {
+                    $this->unmountAction();
+
+                    throw $exception;
+                }
+            });
     }
 
     protected function confirmationSummary(): string

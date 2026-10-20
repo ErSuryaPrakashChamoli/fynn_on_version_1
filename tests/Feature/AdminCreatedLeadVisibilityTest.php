@@ -3,14 +3,19 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\Leads\LeadResource;
+use App\Filament\Resources\Leads\Pages\CreateLead;
+use App\Filament\Resources\Leads\Pages\EditLead;
 use App\Filament\Resources\Leads\Pages\ListLeads;
+use App\Filament\Resources\Leads\Schemas\LeadForm;
 use App\Http\Middleware\EnsureMonthlyTargetIsSet;
+use App\Models\City;
 use App\Models\CustomerAssignment;
 use App\Models\Employee;
 use App\Models\Lead;
 use App\Models\User;
 use App\Support\BureauCheckCandidates;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
@@ -100,7 +105,74 @@ class AdminCreatedLeadVisibilityTest extends TestCase
 
         $this->actingAs($this->admin);
 
-        $this->assertArrayHasKey('lead:'.$ownerless->id, BureauCheckCandidates::leadOptions()['My Leads'] ?? []);
+        $this->assertArrayHasKey('lead:'.$ownerless->id, BureauCheckCandidates::leadOptions()['Waiting for bureau check'] ?? []);
         $this->assertTrue(BureauCheckCandidates::resolveLead('lead:'.$ownerless->id)?->is($ownerless));
+    }
+
+    // ---- Who owns a lead the Admin creates -------------------------------
+
+    public function test_the_admin_assigns_a_new_lead_to_an_employee_who_then_sees_it(): void
+    {
+        City::query()->create(['city' => 'Jaipur', 'state' => 'Rajasthan', 'is_active' => 1]);
+        $leftCompany = Employee::factory()->create(['emp_name' => 'Gone Employee', 'exit_status' => 'yes']);
+
+        $this->actingAs($this->admin);
+
+        Livewire::test(CreateLead::class)
+            ->assertFormFieldExists('employee_id', fn (Select $field): bool => $field->isRequired()
+                && array_key_exists($this->callerEmployee->id, $field->getOptions())
+                && ! array_key_exists($leftCompany->id, $field->getOptions()))
+            ->fillForm([
+                'customer_name' => 'Arohi Mehta',
+                'mobile_no' => '9811122127',
+                'job_location' => 'Jaipur',
+                'follow_up_type' => 'Call',
+                'status' => 'Not Interested',
+                'remarks' => 'Created from the Admin login',
+            ])
+            ->call('create')
+            ->assertHasFormErrors(['employee_id' => 'required'])
+            ->fillForm(['employee_id' => $this->callerEmployee->id])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $lead = Lead::query()->where('customer_name', 'Arohi Mehta')->sole();
+        $this->assertSame($this->callerEmployee->id, $lead->employee_id);
+
+        // The caller now has the lead (and its first follow-up) to work.
+        $this->actingAs($this->caller);
+        $this->assertContains($lead->id, LeadResource::getEloquentQuery()->pluck('id')->all());
+        $this->assertSame($this->callerEmployee->id, $lead->followUps()->value('employee_id'));
+    }
+
+    public function test_the_admin_can_give_an_existing_ownerless_lead_an_owner(): void
+    {
+        City::query()->create(['city' => 'Jaipur', 'state' => 'Rajasthan', 'is_active' => 1]);
+        $ownerless = $this->lead(['employee_id' => null, 'job_location' => 'Jaipur', 'status' => 'Not Interested']);
+        $owned = $this->lead(['customer_name' => 'Owned Lead', 'pan_number' => 'OWNED1234L', 'employee_id' => $this->callerEmployee->id]);
+
+        $this->actingAs($this->admin);
+
+        Livewire::test(EditLead::class, ['record' => $owned->getRouteKey()])
+            ->assertFormFieldIsHidden('employee_id');
+
+        Livewire::test(EditLead::class, ['record' => $ownerless->getRouteKey()])
+            ->assertFormFieldIsVisible('employee_id')
+            ->fillForm(['employee_id' => $this->callerEmployee->id])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame($this->callerEmployee->id, $ownerless->fresh()->employee_id);
+    }
+
+    public function test_an_employee_never_sees_the_owner_picker_and_keeps_owning_their_leads(): void
+    {
+        $this->actingAs($this->caller);
+
+        Livewire::test(CreateLead::class)
+            ->assertFormFieldIsHidden('employee_id')
+            ->assertSchemaStateSet(['employee_id' => $this->callerEmployee->id]);
+
+        $this->assertFalse(LeadForm::asksForOwner(null));
     }
 }
