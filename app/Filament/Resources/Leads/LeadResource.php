@@ -91,6 +91,14 @@ class LeadResource extends Resource
             return $query->whereRaw('1 = 0');
         }
 
+        // The Admin is company-wide, including leads with no owner: a lead
+        // gets its creator's employee record as owner, so one created by an
+        // Admin login without an employee record has none and would
+        // otherwise be visible to nobody.
+        if ($user->hasRole('Admin')) {
+            return $query->where('is_converted', false);
+        }
+
         return $query
             ->where('is_converted', false)
             ->whereIn(

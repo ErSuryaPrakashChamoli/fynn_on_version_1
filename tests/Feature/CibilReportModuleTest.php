@@ -396,7 +396,7 @@ class CibilReportModuleTest extends TestCase
         $caller = $this->caller->fresh();
 
         $older = CibilReport::factory()->create(['requested_by' => $caller->id, 'pan_number' => 'ABCDE1234K', 'score' => 612, 'created_at' => now()->subMonths(3)]);
-        $otherUsers = CibilReport::factory()->create(['requested_by' => $this->manager->id, 'pan_number' => 'ABCDE1234K', 'score' => 801]);
+        $otherUsers = CibilReport::factory()->create(['requested_by' => $this->manager->id, 'pan_number' => 'ABCDE1234K', 'score' => 801, 'created_at' => now()->subMonths(2)->setTime(7, 7)]);
         $latest = CibilReport::factory()->create(['requested_by' => $caller->id, 'pan_number' => 'ABCDE1234K', 'score' => 745, 'response_payload' => ['accounts' => [['lender' => 'Sample Bank', 'status' => 'Active']]]]);
 
         $this->actingAs($caller);
@@ -406,7 +406,9 @@ class CibilReportModuleTest extends TestCase
             ->assertSee('745')
             ->assertSee('Sample Bank')
             ->assertSee($older->created_at->format('d M Y, h:i A'))
-            ->assertDontSee('801');
+            // Another user's report for the same PAN is not in this caller's history
+            // (its timestamp, unlike a bare score, cannot occur by chance in random data).
+            ->assertDontSee($otherUsers->created_at->format('d M Y, h:i A'));
 
         $this->assertSame(
             [$older->id],
