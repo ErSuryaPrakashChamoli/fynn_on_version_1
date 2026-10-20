@@ -14,12 +14,18 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Str;
 
 /**
- * Who a CIBIL report can be fetched for, as the CIBIL fetch form offers them:
- * leads (My Leads and Assigned Leads) marked "Bureau Check", and customer
- * files — those without a fetched report first, any of the user's files by
- * search. Everything is read through the owning listing's own scope, so a
- * crafted post can never attach a report to a lead or file the user cannot
- * see.
+ * Who a bureau report can be fetched for, as the fetch form offers them:
+ * any open lead the user can see (My Leads and Assigned Leads) — those
+ * marked "Bureau Check" first, then the newest, any of them by search — and
+ * customer files — those without a fetched report first, any of the user's
+ * files by search. Everything is read through the owning listing's own
+ * scope, so a crafted post can never attach a report to a lead or file the
+ * user cannot see.
+ *
+ * Until 2026-10-20 only "Bureau Check" leads could be picked; no lead in
+ * production used that status, so the picker was always empty. The bureau
+ * decision (Eligible / Not Eligible) is still only asked for on a lead that
+ * is in "Bureau Check" (CibilReportService::canDecide()).
  *
  * A lead is picked by a key that says which listing it comes from:
  * "lead:12" (My Leads) or "assigned:5" (Assigned Leads).
@@ -30,58 +36,123 @@ final class BureauCheckCandidates
 
     public const string ASSIGNED_LEAD = 'assigned';
 
+    /** How many of the newest leads per listing are offered before typing. */
+    public const int RECENT_LEADS = 25;
+
+    /** How many matches per listing a search returns. */
+    public const int SEARCH_LIMIT = 25;
+
     /**
-     * My Leads waiting for a bureau check (converted leads are already out
-     * of the lead listing's scope).
+     * My Leads the user can see that are still open (converted leads are
+     * already out of the lead listing's scope).
      *
      * @return Builder<Lead>
      */
     public static function leads(): Builder
     {
-        return LeadResource::getEloquentQuery()
-            ->where('status', CustomerAssignment::BUREAU_CHECK_STATUS);
+        return LeadResource::getEloquentQuery();
     }
 
     /**
-     * Assigned leads whose latest follow-up is "Bureau Check".
+     * Assigned leads the user can see that are not converted yet.
      *
      * @return Builder<CustomerAssignment>
      */
     public static function assignedLeads(): Builder
     {
         return AssignedLeadResource::getEloquentQuery()
-            ->whereNull('customer_assignments.converted_at')
-            ->whereLatestFollowUpStatus([CustomerAssignment::BUREAU_CHECK_STATUS]);
+            ->whereNull('customer_assignments.converted_at');
     }
 
     /**
-     * Both kinds of lead, grouped by the listing they come from.
+     * What the lead picker shows before anything is typed: leads marked
+     * "Bureau Check" (both listings) first, then the newest open leads of
+     * each listing, so the list is never empty while the user has leads.
      *
      * @return array<string, array<string, string>>
      */
     public static function leadOptions(): array
     {
-        $myLeads = self::leads()
-            ->orderBy('customer_name')
-            ->get()
-            ->mapWithKeys(fn (Lead $lead): array => [self::MY_LEAD.':'.$lead->id => self::leadLabel($lead)])
-            ->all();
+        $waiting = self::leads()->where('status', CustomerAssignment::BUREAU_CHECK_STATUS)->orderBy('customer_name')->get();
+        $waitingAssigned = self::assignedLeads()->whereLatestFollowUpStatus([CustomerAssignment::BUREAU_CHECK_STATUS])->get();
 
-        $assignedLeads = self::assignedLeads()
-            ->get()
-            ->mapWithKeys(fn (CustomerAssignment $lead): array => [self::ASSIGNED_LEAD.':'.$lead->id => self::leadLabel($lead)])
-            ->sort()
-            ->all();
+        $recent = self::leads()->whereKeyNot($waiting->modelKeys())->latest('id')->limit(self::RECENT_LEADS)->get();
+        $recentAssigned = self::assignedLeads()
+            ->whereNotIn('customer_assignments.id', $waitingAssigned->modelKeys())
+            ->latest('customer_assignments.id')
+            ->limit(self::RECENT_LEADS)
+            ->get();
 
         return array_filter([
-            'My Leads' => $myLeads,
-            'Assigned Leads' => $assignedLeads,
+            'Waiting for bureau check' => [...self::leadKeys($waiting), ...self::leadKeys($waitingAssigned)],
+            'My Leads' => self::leadKeys($recent),
+            'Assigned Leads' => self::leadKeys($recentAssigned),
         ]);
     }
 
     /**
-     * The lead behind a picker key, if it is still waiting for a bureau
-     * check and the user can see it.
+     * Any open lead the user can see, by name, mobile number or PAN — from
+     * the lead itself, or for an assigned lead from its customer file or
+     * its uploaded record.
+     *
+     * @return array<string, array<string, string>>
+     */
+    public static function searchLeads(string $search): array
+    {
+        $search = trim($search);
+
+        if (mb_strlen($search) < 2) {
+            return [];
+        }
+
+        $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search).'%';
+        $lowerLike = mb_strtolower($like);
+
+        $myLeads = self::leads()
+            ->where(fn (Builder $query): Builder => $query
+                ->where('customer_name', 'like', $like)
+                ->orWhere('mobile_no', 'like', $like)
+                ->orWhere('pan_number', 'like', $like))
+            ->orderBy('customer_name')
+            ->limit(self::SEARCH_LIMIT)
+            ->get();
+
+        $assignedLeads = self::assignedLeads()
+            ->where(fn (Builder $query): Builder => $query
+                ->whereHas('customer', fn (Builder $customer): Builder => $customer
+                    ->where('customer_name', 'like', $like)
+                    ->orWhere('mobile_no', 'like', $like)
+                    ->orWhere('pan_number', 'like', $like))
+                // Uploaded records keep the prospect in a JSON document whose
+                // keys vary by template, so the whole document is searched.
+                ->orWhereHas('aiCustomerRecord', fn (Builder $record): Builder => $record
+                    ->whereRaw('LOWER(CAST(ai_customer_records.data AS CHAR)) LIKE ?', [$lowerLike])))
+            ->latest('customer_assignments.id')
+            ->limit(self::SEARCH_LIMIT)
+            ->get();
+
+        return array_filter([
+            'My Leads' => self::leadKeys($myLeads),
+            'Assigned Leads' => self::leadKeys($assignedLeads),
+        ]);
+    }
+
+    /**
+     * @param  iterable<Lead|CustomerAssignment>  $leads
+     * @return array<string, string>
+     */
+    private static function leadKeys(iterable $leads): array
+    {
+        return collect($leads)
+            ->mapWithKeys(fn (Lead|CustomerAssignment $lead): array => [
+                ($lead instanceof Lead ? self::MY_LEAD : self::ASSIGNED_LEAD).':'.$lead->getKey() => self::leadLabel($lead),
+            ])
+            ->all();
+    }
+
+    /**
+     * The lead behind a picker key, if it is still open and the user can
+     * see it.
      */
     public static function resolveLead(mixed $key): Lead|CustomerAssignment|null
     {
