@@ -18,6 +18,7 @@ use Filament\Actions\EditAction;
 use Filament\Actions\ImportAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
@@ -63,8 +64,9 @@ class LeadsTable
                     ->searchable()
                     ->sortable(),
 
-                TextColumn::make('current_location')
-                    ->label('Location')
+                TextColumn::make('job_location')
+                    ->label('Job Location')
+                    ->placeholder('-')
                     ->searchable()
                     ->sortable(),
 
@@ -73,9 +75,11 @@ class LeadsTable
                     ->searchable()
                     ->sortable(),
 
-                TextColumn::make('bank.bank_name')
-                    ->label('Bank')
-                    ->searchable()
+                TextColumn::make('salary')
+                    ->label('Salary')
+                    ->formatStateUsing(fn ($state): string => indianAmount($state))
+                    ->placeholder('-')
+                    ->alignRight()
                     ->sortable(),
 
                 TextColumn::make('next_follow_up_date')
@@ -226,6 +230,38 @@ class LeadsTable
                         return $indicators;
                     }),
 
+                Filter::make('salary')
+                    ->label('Salary')
+                    ->schema([
+                        TextInput::make('salary_from')
+                            ->label('Min Salary')
+                            ->indianAmount(),
+                        TextInput::make('salary_until')
+                            ->label('Max Salary')
+                            ->indianAmount(),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $salaryFrom = self::salaryBound($data['salary_from'] ?? null);
+                        $salaryUntil = self::salaryBound($data['salary_until'] ?? null);
+
+                        return $query
+                            ->when($salaryFrom !== null, fn (Builder $query) => $query->where('salary', '>=', $salaryFrom))
+                            ->when($salaryUntil !== null, fn (Builder $query) => $query->where('salary', '<=', $salaryUntil));
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+
+                        if (($salaryFrom = self::salaryBound($data['salary_from'] ?? null)) !== null) {
+                            $indicators[] = 'Salary from: '.indianAmount($salaryFrom);
+                        }
+
+                        if (($salaryUntil = self::salaryBound($data['salary_until'] ?? null)) !== null) {
+                            $indicators[] = 'Salary to: '.indianAmount($salaryUntil);
+                        }
+
+                        return $indicators;
+                    }),
+
             ])
             ->modifyQueryUsing(
                 fn (Builder $query) => $query->whereBetween('created_at', SelectedMonth::range())
@@ -242,5 +278,16 @@ class LeadsTable
                     ->importer(LeadImporter::class),
 
             ]);
+    }
+
+    /**
+     * Filter state is read raw, so the Indian grouping typed in the box
+     * ("25,000") is still there; strip it before comparing with the column.
+     */
+    private static function salaryBound(mixed $state): ?string
+    {
+        $amount = preg_replace('/[^0-9.]/', '', (string) $state);
+
+        return is_numeric($amount) ? $amount : null;
     }
 }

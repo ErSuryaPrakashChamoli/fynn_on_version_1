@@ -2,6 +2,7 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Pages\LeadFollowUpOutcomes;
 use App\Filament\Widgets\Concerns\ShowsFollowUpOutcomes;
 use App\Models\Bank;
 use App\Models\CustomerAssignment;
@@ -115,6 +116,22 @@ class AssignedLeadFollowUpCalendarWidget extends FullCalendarWidget
     protected function scopedFollowUpQuery(): Builder
     {
         return $this->scopeToVisibleLeadFollowUps(FollowUp::query());
+    }
+
+    /**
+     * The same lead-side follow-ups for screens outside the calendar (the
+     * Lead Follow-up Outcomes listing), so both always agree.
+     *
+     * @return Builder<FollowUp>
+     */
+    public static function visibleLeadFollowUpQuery(): Builder
+    {
+        return (new self)->scopedFollowUpQuery();
+    }
+
+    protected function outcomeListingPage(): ?string
+    {
+        return LeadFollowUpOutcomes::class;
     }
 
     /**

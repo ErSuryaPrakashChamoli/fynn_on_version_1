@@ -59,4 +59,20 @@ enum FollowUpOutcome: string
     {
         return in_array($this, [self::OnTime, self::Late, self::Missed], true);
     }
+
+    /**
+     * The four groups the calendars' day chips and legend count, and the
+     * outcome listings tab by. "Open" is still pending or not due yet.
+     *
+     * @return array<string, array{label: string, color: string, outcomes: list<self>}>
+     */
+    public static function legendGroups(): array
+    {
+        return [
+            'on_time' => ['label' => 'On time', 'color' => 'success', 'outcomes' => [self::OnTime]],
+            'late' => ['label' => 'Late', 'color' => 'warning', 'outcomes' => [self::Late]],
+            'missed' => ['label' => 'Missed', 'color' => 'danger', 'outcomes' => [self::Missed]],
+            'open' => ['label' => 'Open', 'color' => 'info', 'outcomes' => [self::Pending, self::Upcoming]],
+        ];
+    }
 }

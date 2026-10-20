@@ -86,5 +86,7 @@
         </div>
     </x-filament::section>
 
+    @include('filament.widgets.follow-up-outcome-list-modal')
+
     <x-filament-actions::modals />
 </x-filament-widgets::widget>
