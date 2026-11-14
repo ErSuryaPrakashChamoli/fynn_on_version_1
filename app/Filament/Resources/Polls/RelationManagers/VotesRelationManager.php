@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Polls\RelationManagers;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Models\Poll;
 use App\Models\PollVote;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -17,6 +18,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class VotesRelationManager extends RelationManager
 {
+    use HasColumnHeaderFilters;
+
     protected static string $relationship = 'votes';
 
     protected static ?string $title = 'Votes';

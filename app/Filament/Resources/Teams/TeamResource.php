@@ -51,12 +51,16 @@ class TeamResource extends Resource
         ];
     }
 
+    /**
+     * The viewer's team as it stood during the selected period: everyone
+     * who reported straight to them on any day of it, so a past month
+     * lists the team of that month, not today's.
+     */
     public static function getEloquentQuery(): Builder
     {
         [$start, $end] = SelectedMonth::range();
 
-        // dd("called");
-        return HierarchyHelper::directReportees(auth()->user())->activeDuring($start, $end);
+        return HierarchyHelper::directReporteesDuring(auth()->user(), $start, $end)->activeDuring($start, $end);
     }
 
     public static function getPages(): array

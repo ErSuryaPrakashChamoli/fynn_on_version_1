@@ -22,54 +22,67 @@
         $morningDue = \App\Services\DailyCommitmentGate::MORNING_DEADLINE;
         $eveningDue = \App\Services\DailyCommitmentGate::EVENING_DEADLINE;
         $accent = $stage?->hex() ?? '#6b7280';
+        // One look for the raw zero-declaration controls, matching Filament's own inputs.
+        $field = 'block w-full rounded-lg border-none bg-white py-2 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 transition placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-danger-600 dark:bg-white/5 dark:text-white dark:ring-white/20 dark:placeholder:text-gray-500 dark:focus:ring-danger-500';
     @endphp
 
     {{-- WHAT IS DUE, AND WHEN --}}
     @if ($gate['blocked'])
-        <div class="flex items-start gap-3 rounded-xl bg-danger-50 p-4 text-sm text-danger-800 ring-1 ring-danger-600/20 dark:bg-danger-500/10 dark:text-danger-200 dark:ring-danger-400/30">
-            <x-filament::icon icon="heroicon-o-lock-closed" class="mt-0.5 h-5 w-5 shrink-0" />
+        <div class="fynn-callout fynn-callout--danger flex items-start gap-3">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-danger-500/15 text-danger-700 dark:text-danger-300">
+                <x-filament::icon icon="heroicon-o-lock-closed" class="h-5 w-5" />
+            </span>
             <div>
-                <p class="font-semibold">The rest of the LMS is locked.</p>
+                <p class="fynn-callout-title">The rest of the LMS is locked.</p>
                 <p class="mt-0.5">{{ $this->gateMessage }}</p>
             </div>
         </div>
     @else
-        <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-gray-500 dark:text-gray-400">
-            <span class="flex items-center gap-1.5">
-                <x-filament::icon icon="heroicon-m-sun" class="h-4 w-4 shrink-0" />
-                Commit by <strong class="font-semibold text-gray-700 dark:text-gray-200">{{ $morningDue }}</strong>
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="fynn-chip">
+                <x-filament::icon icon="heroicon-m-sun" />
+                <span>Commit by <strong class="font-bold text-gray-950 dark:text-white">{{ $morningDue }}</strong></span>
             </span>
-            <span class="flex items-center gap-1.5">
-                <x-filament::icon icon="heroicon-m-moon" class="h-4 w-4 shrink-0" />
-                Declare by <strong class="font-semibold text-gray-700 dark:text-gray-200">{{ $eveningDue }}</strong>
+            <span class="fynn-chip">
+                <x-filament::icon icon="heroicon-m-moon" />
+                <span>Declare by <strong class="font-bold text-gray-950 dark:text-white">{{ $eveningDue }}</strong></span>
             </span>
         </div>
     @endif
 
     @if (! $row)
-        <div class="rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500 dark:border-gray-700">
-            Your account is not linked to an employee profile yet.
+        <div class="fynn-empty">
+            <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-user-circle" /></span>
+            <span>Your account is not linked to an employee profile yet.</span>
         </div>
     @else
         {{-- ── THE DAY, IN ONE CARD ─────────────────────────────── --}}
         @if ($commitment)
             <div
-                class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:bg-gray-900 dark:ring-white/10"
-                style="border-top: 3px solid {{ $accent }}"
+                class="fynn-card fynn-card--flush"
+                style="--fynn-kpi-accent: {{ $accent }}; border-top: 3px solid {{ $accent }}"
             >
-                <div class="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
-                    <div>
-                        <div class="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                            {{ \Illuminate\Support\Carbon::parse($this->date)->format('l') }}
-                        </div>
-                        <div class="text-lg font-bold text-gray-950 dark:text-white">
-                            {{ \Illuminate\Support\Carbon::parse($this->date)->format('d M Y') }}
+                <div
+                    class="flex flex-wrap items-center justify-between gap-3 px-5 pt-4 pb-1"
+                    style="background: radial-gradient(70% 160% at 0% 0%, color-mix(in oklab, {{ $accent }} 12%, transparent), transparent 70%)"
+                >
+                    <div class="flex items-center gap-3">
+                        <span class="fynn-kpi-icon h-10 w-10 rounded-xl">
+                            <x-filament::icon icon="heroicon-o-calendar-days" class="h-5 w-5" />
+                        </span>
+                        <div>
+                            <div class="fynn-kpi-label">
+                                {{ \Illuminate\Support\Carbon::parse($this->date)->format('l') }}
+                            </div>
+                            <div class="text-lg font-extrabold tracking-tight text-gray-950 dark:text-white">
+                                {{ \Illuminate\Support\Carbon::parse($this->date)->format('d M Y') }}
+                            </div>
                         </div>
                     </div>
 
                     <div class="text-end">
                         <x-daily-commitment.result-chip :result="$row['result']" />
-                        <div class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                        <div class="mt-1 text-xs font-medium text-gray-500 dark:text-gray-400">
                             {{ $submitted ? 'Day closed' : 'Still open' }}
                         </div>
                     </div>
@@ -77,9 +90,9 @@
 
                 {{-- Committed / achieved / still to go. The three numbers that
                      answer "where am I?", said here and nowhere else. --}}
-                <div class="mt-4 grid grid-cols-3 divide-x divide-gray-100 border-y border-gray-100 dark:divide-white/5 dark:border-white/5">
+                <div class="mt-4 grid grid-cols-1 divide-y divide-gray-950/5 border-y border-gray-950/5 sm:grid-cols-3 sm:divide-x sm:divide-y-0 dark:divide-white/5 dark:border-white/5">
                     <div class="px-5 py-4">
-                        <div class="text-xs font-medium text-gray-400 dark:text-gray-500">Committed</div>
+                        <div class="fynn-kpi-label">Committed</div>
                         <div class="mt-1 text-2xl font-extrabold tabular-nums text-gray-950 dark:text-white">
                             <x-daily-commitment.amount :value="$row['target']" :count="$isCount" />
                         </div>
@@ -87,40 +100,35 @@
                     </div>
 
                     <div class="px-5 py-4">
-                        <div class="text-xs font-medium text-gray-400 dark:text-gray-500">Achieved</div>
+                        <div class="fynn-kpi-label">Achieved</div>
                         <div class="mt-1 text-2xl font-extrabold tabular-nums text-green-600 dark:text-green-400">
                             <x-daily-commitment.amount :value="$row['achieved']" :count="$isCount" />
                         </div>
-                        <div class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
+                        <div class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                             at {{ $stage->label() }} or above
                         </div>
                     </div>
 
                     <div class="px-5 py-4">
-                        <div class="text-xs font-medium text-gray-400 dark:text-gray-500">Still to go</div>
+                        <div class="fynn-kpi-label">Still to go</div>
                         <div class="mt-1 text-2xl font-extrabold tabular-nums {{ $row['pending'] > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400 dark:text-gray-600' }}">
                             <x-daily-commitment.amount :value="$row['pending']" :count="$isCount" />
                         </div>
-                        <div class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
+                        <div class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                             {{ $row['percentage'] }}% of the promise
                         </div>
                     </div>
                 </div>
 
                 <div class="px-5 py-4">
-                    <div class="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-white/10">
-                        <div
-                            class="h-full rounded-full transition-all"
-                            style="width: {{ min($row['percentage'], 100) }}%; background: {{ $accent }}"
-                        ></div>
-                    </div>
+                    <x-daily-commitment.progress-bar :percentage="$row['percentage']" :color="$accent" />
 
                     {{-- Business that landed below the promised stage is the
                          difference between a partial day and a failed one, so
                          it is said in words rather than left to a colour. --}}
                     @if (($split['below'] ?? 0) > 0)
-                        <p class="mt-3 flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300">
-                            <x-filament::icon icon="heroicon-m-information-circle" class="mt-px h-4 w-4 shrink-0" />
+                        <p class="fynn-note mt-3 bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-600/15 dark:bg-amber-500/10 dark:text-amber-200 dark:ring-amber-400/20">
+                            <x-filament::icon icon="heroicon-m-information-circle" class="text-amber-600 dark:text-amber-400" />
                             <span>
                                 A further <strong>{{ indianAmount($split['below']) }}</strong> came in below
                                 {{ $stage->label() }} — it counts as <strong>partially met</strong>, not as a pass.
@@ -129,10 +137,13 @@
                     @endif
 
                     @if ($isCount)
-                        <p class="mt-3 text-xs text-gray-400 dark:text-gray-500">
+                        <p class="fynn-note mt-3">
+                            <x-filament::icon icon="heroicon-m-information-circle" />
+                            <span>
                             OTP is the bottom rung, so every case you declare counts toward it.
                             {{ $row['actual_otp'] }} {{ \Illuminate\Support\Str::plural('case', $row['actual_otp']) }}
                             were opened in the LMS today, for reference — that figure does not settle the commitment.
+                            </span>
                         </p>
                     @endif
                 </div>
@@ -140,11 +151,11 @@
                 {{-- Where the declared business actually sits. One ladder, top
                      rung first, dimmed below the committed stage. --}}
                 @if ($entries->isNotEmpty())
-                    <div class="flex flex-wrap gap-x-5 gap-y-2 border-t border-gray-100 bg-gray-50/70 px-5 py-3 dark:border-white/5 dark:bg-white/5">
+                    <div class="flex flex-wrap gap-2 border-t border-gray-950/5 bg-gray-50/70 px-5 py-3 dark:border-white/5 dark:bg-white/5">
                         @foreach ($split['stages'] as $value => $totals)
                             @php $rung = \App\Enums\CommitmentStage::from($value); @endphp
-                            <div class="flex items-center gap-2 text-xs {{ $totals['counts'] ? '' : 'opacity-50' }}">
-                                <span class="inline-block h-2 w-2 rounded-full" style="background: {{ $rung->hex() }}"></span>
+                            <div class="fynn-chip bg-white dark:bg-white/5 {{ $totals['counts'] ? '' : 'opacity-50' }}">
+                                <span class="dc-dot" style="background: {{ $rung->hex() }}"></span>
                                 <span class="text-gray-500 dark:text-gray-400">{{ $rung->label() }}</span>
                                 <span class="font-semibold tabular-nums text-gray-950 dark:text-white">
                                     {{ indianAmount($totals['amount']) }}
@@ -161,8 +172,8 @@
         @if ($this->isCommitmentLocked())
             {{-- Locked is the normal state for most of the day, and a dead
                  form is just noise — so it shrinks to a single line. --}}
-            <div class="flex flex-wrap items-center gap-3 rounded-xl bg-gray-50 px-5 py-3.5 text-sm ring-1 ring-gray-950/5 dark:bg-white/5 dark:ring-white/10">
-                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-bold text-gray-600 dark:bg-white/10 dark:text-gray-300">1</span>
+            <div class="fynn-card fynn-card--muted flex flex-wrap items-center gap-3 text-sm">
+                <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-950/5 text-xs font-bold text-gray-600 ring-1 ring-inset ring-gray-950/10 dark:bg-white/10 dark:text-gray-300 dark:ring-white/10">1</span>
                 <x-filament::icon icon="heroicon-m-lock-closed" class="h-4 w-4 shrink-0 text-gray-400" />
                 <span class="text-gray-600 dark:text-gray-300">
                     Committed to
@@ -177,7 +188,7 @@
                 </span>
 
                 @if ($commitment->remarks)
-                    <span class="w-full text-xs text-gray-500 dark:text-gray-400">{{ $commitment->remarks }}</span>
+                    <span class="w-full ps-10 text-xs text-gray-500 dark:text-gray-400">{{ $commitment->remarks }}</span>
                 @endif
             </div>
         @else
@@ -185,7 +196,7 @@
                 <x-filament::section>
                     <x-slot name="heading">
                         <span class="flex items-center gap-2.5">
-                            <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-600 text-xs font-bold text-white">1</span>
+                            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-500/15 text-xs font-bold text-primary-800 ring-1 ring-inset ring-primary-500/25 dark:text-primary-300">1</span>
                             Give today's commitment
                         </span>
                     </x-slot>
@@ -196,7 +207,7 @@
 
                     {{ $this->form }}
 
-                    <div class="mt-5">
+                    <div class="mt-5 flex justify-end border-t border-gray-950/5 pt-4 dark:border-white/5">
                         <x-filament::button type="submit" icon="heroicon-m-check">
                             {{ $commitment ? 'Update commitment' : 'Submit commitment' }}
                         </x-filament::button>
@@ -210,7 +221,7 @@
             <x-filament::section>
                 <x-slot name="heading">
                     <span class="flex items-center gap-2.5">
-                        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full {{ $submitted ? 'bg-success-600' : 'bg-primary-600' }} text-xs font-bold text-white">2</span>
+                        <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold ring-1 ring-inset {{ $submitted ? 'bg-success-500/15 text-success-800 ring-success-500/25 dark:text-success-300' : 'bg-primary-500/15 text-primary-800 ring-primary-500/25 dark:text-primary-300' }}">2</span>
                         Close the day
                     </span>
                 </x-slot>
@@ -220,18 +231,21 @@
                 </x-slot>
 
                 @if ($submitted)
-                    <div class="flex flex-wrap items-center gap-3 rounded-xl bg-success-50 p-4 text-sm text-success-800 ring-1 ring-success-600/20 dark:bg-success-500/10 dark:text-success-200 dark:ring-success-400/30">
-                        <x-filament::icon icon="heroicon-m-check-badge" class="h-5 w-5 shrink-0" />
-                        <span class="flex-1">Submitted {{ $commitment->submitted_at->format('d M Y, H:i') }}.</span>
+                    <div class="fynn-callout fynn-callout--success flex flex-wrap items-center gap-3">
+                        <x-filament::icon icon="heroicon-m-check-badge" class="h-5 w-5 shrink-0 text-success-600 dark:text-success-400" />
+                        <span class="flex-1 font-semibold text-gray-950 dark:text-white">Submitted {{ $commitment->submitted_at->format('d M Y, H:i') }}.</span>
                         <x-filament::button size="xs" color="gray" icon="heroicon-m-pencil-square" wire:click="reopenFinalStatus">
                             Edit
                         </x-filament::button>
                     </div>
 
                     @if ($commitment->declaration_note)
-                        <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">
-                            <span class="font-semibold text-gray-700 dark:text-gray-200">Note:</span>
-                            {{ $commitment->declaration_note }}
+                        <p class="fynn-note">
+                            <x-filament::icon icon="heroicon-m-chat-bubble-left-ellipsis" />
+                            <span>
+                                <span class="font-semibold text-gray-700 dark:text-gray-200">Note:</span>
+                                {{ $commitment->declaration_note }}
+                            </span>
                         </p>
                     @endif
                 @elseif ($this->declarationMode === null)
@@ -241,7 +255,7 @@
                          never put in front of somebody who had no customers.
                          Solid, pressable buttons on purpose: this is a choice,
                          not another panel of fields. --}}
-                    <p class="mb-3 text-sm font-semibold text-gray-950 dark:text-white">How did today end?</p>
+                    <p class="fynn-subheading">How did today end?</p>
 
                     <div class="grid gap-3 sm:grid-cols-2">
                         <button
@@ -249,7 +263,9 @@
                             wire:click="chooseDeclarationMode('cases')"
                             class="group flex cursor-pointer items-center gap-3 rounded-xl bg-success-600 px-5 py-4 text-start text-white shadow-sm transition hover:bg-success-500 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-success-600 active:scale-[0.99]"
                         >
-                            <x-filament::icon icon="heroicon-o-check-badge" class="h-7 w-7 shrink-0" />
+                            <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white/15 ring-1 ring-inset ring-white/20">
+                                <x-filament::icon icon="heroicon-o-check-badge" class="h-6 w-6" />
+                            </span>
                             <span class="flex-1">
                                 <span class="block text-base font-bold">I have business to declare</span>
                                 <span class="mt-0.5 block text-xs text-white/80">Name each case with its customer and mobile</span>
@@ -262,7 +278,9 @@
                             wire:click="chooseDeclarationMode('failed')"
                             class="group flex cursor-pointer items-center gap-3 rounded-xl bg-danger-600 px-5 py-4 text-start text-white shadow-sm transition hover:bg-danger-500 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger-600 active:scale-[0.99]"
                         >
-                            <x-filament::icon icon="heroicon-o-x-circle" class="h-7 w-7 shrink-0" />
+                            <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white/15 ring-1 ring-inset ring-white/20">
+                                <x-filament::icon icon="heroicon-o-x-circle" class="h-6 w-6" />
+                            </span>
                             <span class="flex-1">
                                 <span class="block text-base font-bold">Nothing came through</span>
                                 <span class="mt-0.5 block text-xs text-white/80">Record a zero against every stage</span>
@@ -274,7 +292,7 @@
                     <form wire:submit="submitFinalStatus">
                         {{ $this->fulfilmentForm }}
 
-                        <div class="mt-5 flex flex-wrap items-center gap-3">
+                        <div class="mt-5 flex flex-wrap items-center gap-3 border-t border-gray-950/5 pt-4 dark:border-white/5">
                             <x-filament::button type="submit" icon="heroicon-m-check-badge" color="success">
                                 Submit final status
                             </x-filament::button>
@@ -286,7 +304,7 @@
                             <button
                                 type="button"
                                 wire:click="chooseDeclarationMode(null)"
-                                class="text-xs text-gray-500 underline-offset-2 hover:underline dark:text-gray-400"
+                                class="ms-auto text-xs font-medium text-gray-500 underline-offset-2 hover:text-gray-950 hover:underline dark:text-gray-400 dark:hover:text-white"
                             >
                                 Nothing came through after all
                             </button>
@@ -295,8 +313,8 @@
                 @else
                     {{-- The zeros ARE the declaration: a figure against every
                          rung, rather than one vague "nothing". --}}
-                    <div class="rounded-xl bg-gray-50 p-5 dark:bg-white/5">
-                        <p class="text-sm font-semibold text-gray-950 dark:text-white">Nothing at any stage today</p>
+                    <div class="fynn-callout fynn-callout--danger">
+                        <p class="fynn-callout-title">Nothing at any stage today</p>
                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                             Confirm the zeros below. This closes the day as <strong>failed</strong> and unlocks the rest of
                             the LMS. Anything that did come through belongs on a named case instead.
@@ -305,15 +323,15 @@
                         <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                             @foreach ($ladder as $rung)
                                 <label class="block">
-                                    <span class="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
-                                        <span class="inline-block h-2 w-2 rounded-full" style="background: {{ $rung->hex() }}"></span>
+                                    <span class="flex items-center gap-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                        <span class="dc-dot" style="background: {{ $rung->hex() }}"></span>
                                         {{ $rung->label() }}
                                     </span>
                                     <input
                                         type="number"
                                         min="0"
                                         wire:model="nilStages.{{ $rung->value }}"
-                                        class="mt-1 block w-full rounded-lg border-none bg-white py-2 text-sm tabular-nums text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
+                                        class="mt-1 tabular-nums {{ $field }}"
                                     />
                                 </label>
                             @endforeach
@@ -323,7 +341,7 @@
                             wire:model="nothingReason"
                             rows="2"
                             placeholder="Anything worth noting? (optional)"
-                            class="mt-4 block w-full rounded-lg border-none bg-white py-2 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
+                            class="mt-4 {{ $field }}"
                         ></textarea>
 
                         <div class="mt-4 flex flex-wrap items-center gap-3">
@@ -334,7 +352,7 @@
                             <button
                                 type="button"
                                 wire:click="chooseDeclarationMode('cases')"
-                                class="text-xs text-gray-500 underline-offset-2 hover:underline dark:text-gray-400"
+                                class="text-xs font-medium text-gray-500 underline-offset-2 hover:text-gray-950 hover:underline dark:text-gray-400 dark:hover:text-white"
                             >
                                 Actually, I do have something to declare
                             </button>
@@ -346,7 +364,7 @@
                      under the name; the table is for scanning, not for holding
                      every field the row owns. --}}
                 @if ($entries->isNotEmpty())
-                    <div class="mt-6 overflow-x-auto">
+                    <div class="fynn-table-wrap mt-6">
                         <table class="dc-table">
                             <thead>
                                 <tr>
@@ -381,7 +399,7 @@
                                                 <x-daily-commitment.stage-chip :stage="$entry->outcome" />
                                             @endif
                                         </td>
-                                        <td class="dc-num font-semibold tabular-nums">
+                                        <td class="dc-num font-semibold">
                                             <x-daily-commitment.amount :value="$entry->amount" />
                                         </td>
                                         <td>
@@ -408,15 +426,18 @@
                 collapsible
                 collapsed
             >
-                <p class="mb-4 text-xs text-gray-500 dark:text-gray-400">
+                <p class="fynn-note mt-0 mb-4">
+                    <x-filament::icon icon="heroicon-m-information-circle" />
+                    <span>
                     Everything you are carrying right now, at whatever stage it is sitting. Separate from today's
                     achievement, and excludes disbursal, dropped and rejected.
+                    </span>
                 </p>
 
                 <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                     @foreach ($ladder as $rung)
                         @php $totals = $row['pipeline']['stages'][$rung->value] ?? ['amount' => 0, 'count' => 0]; @endphp
-                        <div class="dc-card" style="border-color: {{ $rung->hex() }}55; box-shadow: inset 3px 0 0 0 {{ $rung->hex() }}">
+                        <div class="dc-card" style="--dc-accent: {{ $rung->hex() }}">
                             <x-daily-commitment.stage-chip :stage="$rung" />
                             <div class="dc-card-value dc-card-amount">{{ indianAmount($totals['amount']) }}</div>
                             <div class="dc-card-hint">{{ $totals['count'] }} {{ \Illuminate\Support\Str::plural('case', $totals['count']) }}</div>
@@ -441,22 +462,27 @@
                             :count="$monthly['is_count']"
                             :hint="$monthly['stage']->label()"
                             :accent="$monthly['stage']->hex()"
+                            icon="heroicon-o-flag"
                         />
-                        <x-daily-commitment.kpi label="MTD achievement" :amount="$monthly['achieved']" :count="$monthly['is_count']" accent="#22c55e" />
-                        <x-daily-commitment.kpi label="Pending" :amount="$monthly['pending']" :count="$monthly['is_count']" accent="#f97316" />
-                        <x-daily-commitment.kpi label="Achievement %" :value="$monthly['percentage'] . '%'" accent="#3b82f6" />
+                        <x-daily-commitment.kpi label="MTD achievement" :amount="$monthly['achieved']" :count="$monthly['is_count']" accent="#22c55e" icon="heroicon-o-banknotes" />
+                        <x-daily-commitment.kpi label="Pending" :amount="$monthly['pending']" :count="$monthly['is_count']" accent="#f97316" icon="heroicon-o-clock" />
+                        <x-daily-commitment.kpi label="Achievement %" :value="$monthly['percentage'] . '%'" accent="#3b82f6" icon="heroicon-o-chart-pie" />
                         <x-daily-commitment.kpi
                             label="DRR"
                             :amount="$monthly['drr']"
                             :count="$monthly['is_count']"
                             hint="{{ $mFmt($monthly['achieved']) }} ÷ {{ $monthly['elapsed_working_days'] }} working days"
                             accent="#a855f7"
+                            icon="heroicon-o-arrow-trending-up"
                         />
                     </div>
-                    <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                        Needed per remaining working day: <strong>{{ $mFmt($monthly['required_drr']) }}</strong>
+                    <p class="fynn-note">
+                        <x-filament::icon icon="heroicon-m-information-circle" />
+                        <span>
+                        Needed per remaining working day: <strong class="text-gray-950 dark:text-white">{{ $mFmt($monthly['required_drr']) }}</strong>
                         ({{ $mFmt($monthly['pending']) }} ÷ {{ $monthly['remaining_working_days'] }} days left of
                         {{ $monthly['total_working_days'] }}). MTD is the sum of each day's submitted fulfilment.
+                        </span>
                     </p>
                 </x-filament::section>
             @endif

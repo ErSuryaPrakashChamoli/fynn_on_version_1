@@ -16,6 +16,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Carbon;
 
 class EmployeeInactivityRequestForm
@@ -25,6 +26,7 @@ class EmployeeInactivityRequestForm
         return $schema
             ->components([
                 Section::make('Inactivity ticket')
+                    ->icon(Heroicon::OutlinedUserMinus)
                     ->description('Raise this instead of inventing a monthly target for somebody who has gone inactive. Their target is skipped for the month straight away; the Admin reviews the ticket afterwards.')
                     ->schema([
                         Select::make('employee_id')

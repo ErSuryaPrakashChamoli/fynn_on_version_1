@@ -27,6 +27,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\TextSize;
+use Filament\Support\Icons\Heroicon;
 use Spatie\Activitylog\Models\Activity;
 
 class CibilReportInfolist
@@ -36,6 +37,7 @@ class CibilReportInfolist
         return $schema
             ->components([
                 Section::make(fn (CibilReport $record): string => "{$record->bureau->label()} score")
+                    ->icon(Heroicon::OutlinedChartBar)
                     ->columnSpanFull()
                     ->schema([
                         Grid::make(4)->schema([
@@ -156,6 +158,7 @@ class CibilReportInfolist
                     ]),
 
                 Section::make('Bureau decision')
+                    ->icon(Heroicon::OutlinedCheckBadge)
                     ->description(fn (CibilReport $record): ?string => self::decisionPrompt($record))
                     ->columnSpanFull()
                     ->visible(fn (CibilReport $record): bool => $record->isForLead())
@@ -183,6 +186,7 @@ class CibilReportInfolist
                     ]),
 
                 Section::make('Customer details')
+                    ->icon(Heroicon::OutlinedUser)
                     ->columnSpanFull()
                     ->schema([
                         Grid::make(4)->schema([
@@ -206,6 +210,7 @@ class CibilReportInfolist
                     ]),
 
                 Section::make('Fetched by')
+                    ->icon(Heroicon::OutlinedUserCircle)
                     ->columnSpanFull()
                     ->schema([
                         Grid::make(3)->schema([
@@ -227,6 +232,7 @@ class CibilReportInfolist
                     ]),
 
                 Section::make('Full report')
+                    ->icon(Heroicon::OutlinedDocumentChartBar)
                     ->description(fn (CibilReport $record): string => ExperianReport::fromPayload($record->response_payload) !== null && $record->bureau === CreditBureau::Experian
                         ? 'The Experian report, section by section. Fields the report does not carry are marked "Not available in this report".'
                         : 'As received from the bureau.')
@@ -247,6 +253,7 @@ class CibilReportInfolist
                     ]),
 
                 Section::make('Audit trail')
+                    ->icon(Heroicon::OutlinedClock)
                     ->description('Everything logged for this request: sent, reused, viewed, PDF opened, verified.')
                     ->columnSpanFull()
                     ->collapsible()
@@ -266,6 +273,7 @@ class CibilReportInfolist
                     ]),
 
                 Section::make('Previous reports for this PAN')
+                    ->icon(Heroicon::OutlinedArchiveBox)
                     ->columnSpanFull()
                     ->collapsible()
                     ->schema([

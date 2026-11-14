@@ -11,11 +11,11 @@
 
     @php($status = $this->connectionStatus())
 
-    <x-filament::section heading="Provider connection" description="Read from the server's environment (config/cibil.php). Tokens are never shown.">
-        <dl class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-            <div>
-                <dt class="text-gray-500 dark:text-gray-400">Bureau driver</dt>
-                <dd class="flex items-center gap-2 text-gray-950 dark:text-white">
+    <x-filament::section icon="heroicon-o-signal" heading="Provider connection" description="Read from the server's environment (config/cibil.php). Tokens are never shown.">
+        <dl class="fynn-dl text-sm sm:grid-cols-2">
+            <div class="fynn-dl-item">
+                <dt>Bureau driver</dt>
+                <dd class="flex flex-wrap items-center gap-2">
                     <span class="font-mono">{{ $status['driver'] }}</span>
                     <x-filament::badge :color="$status['live'] ? 'success' : 'gray'">
                         {{ $status['live'] ? 'Live Surepass' : 'Not live' }}
@@ -23,19 +23,19 @@
                 </dd>
             </div>
 
-            <div>
-                <dt class="text-gray-500 dark:text-gray-400">PDF storage</dt>
-                <dd class="text-gray-950 dark:text-white">Private disk "{{ $status['pdf_disk'] }}", up to {{ $status['pdf_max_mb'] }} MB</dd>
+            <div class="fynn-dl-item">
+                <dt>PDF storage</dt>
+                <dd>Private disk "{{ $status['pdf_disk'] }}", up to {{ $status['pdf_max_mb'] }} MB</dd>
             </div>
         </dl>
 
         @foreach ($status['bureaus'] as $bureau)
-            <div class="mt-6 border-t border-gray-200 pt-4 dark:border-white/10">
-                <h3 class="mb-3 text-sm font-semibold text-gray-950 dark:text-white">{{ $bureau['label'] }}</h3>
+            <div class="mt-6 border-t border-(--fynn-border-soft) pt-5">
+                <h3 class="fynn-subheading">{{ $bureau['label'] }}</h3>
 
-                <dl class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-                    <div>
-                        <dt class="text-gray-500 dark:text-gray-400">Surepass token</dt>
+                <dl class="fynn-dl text-sm sm:grid-cols-2">
+                    <div class="fynn-dl-item">
+                        <dt>Surepass token</dt>
                         <dd>
                             <x-filament::badge :color="$bureau['token_configured'] ? 'success' : 'danger'">
                                 {{ $bureau['token_configured'] ? 'Configured' : 'Not configured' }}
@@ -43,9 +43,9 @@
                         </dd>
                     </div>
 
-                    <div>
-                        <dt class="text-gray-500 dark:text-gray-400">Base URL</dt>
-                        <dd class="flex items-center gap-2 text-gray-950 dark:text-white">
+                    <div class="fynn-dl-item">
+                        <dt>Base URL</dt>
+                        <dd class="flex flex-wrap items-center gap-2">
                             <span class="font-mono break-all">{{ $bureau['base_url'] ?? '—' }}</span>
                             @unless ($bureau['base_url_valid'])
                                 <x-filament::badge color="danger">Must be https</x-filament::badge>
@@ -53,29 +53,29 @@
                         </dd>
                     </div>
 
-                    <div>
-                        <dt class="text-gray-500 dark:text-gray-400">Timeout</dt>
-                        <dd class="text-gray-950 dark:text-white">{{ $bureau['timeout'] }} seconds (connect {{ $bureau['connect_timeout'] }} s)</dd>
+                    <div class="fynn-dl-item">
+                        <dt>Timeout</dt>
+                        <dd>{{ $bureau['timeout'] }} seconds (connect {{ $bureau['connect_timeout'] }} s)</dd>
                     </div>
 
-                    <div>
-                        <dt class="text-gray-500 dark:text-gray-400">PDF links fetched from</dt>
-                        <dd class="font-mono break-all text-gray-950 dark:text-white">
+                    <div class="fynn-dl-item">
+                        <dt>PDF links fetched from</dt>
+                        <dd class="font-mono break-all">
                             {{ $bureau['pdf_hosts'] === [] ? 'Any https host (no allowlist)' : implode(', ', $bureau['pdf_hosts']) }}
                         </dd>
                     </div>
 
-                    <div>
-                        <dt class="text-gray-500 dark:text-gray-400">Last answered request</dt>
-                        <dd class="text-gray-950 dark:text-white">{{ $bureau['last_success']?->completed_at?->format('d M Y, h:i A') ?? 'None yet' }}</dd>
+                    <div class="fynn-dl-item">
+                        <dt>Last answered request</dt>
+                        <dd>{{ $bureau['last_success']?->completed_at?->format('d M Y, h:i A') ?? 'None yet' }}</dd>
                     </div>
 
-                    <div>
-                        <dt class="text-gray-500 dark:text-gray-400">Last failed request</dt>
-                        <dd class="text-gray-950 dark:text-white">
+                    <div class="fynn-dl-item">
+                        <dt>Last failed request</dt>
+                        <dd>
                             @if ($bureau['last_failure'])
                                 {{ $bureau['last_failure']->completed_at?->format('d M Y, h:i A') ?? $bureau['last_failure']->created_at?->format('d M Y, h:i A') }}
-                                <span class="text-gray-500 dark:text-gray-400">· {{ $bureau['last_failure']->failure_category?->label() ?? $bureau['last_failure']->status->label() }}</span>
+                                <span class="font-medium text-gray-500 dark:text-gray-400">· {{ $bureau['last_failure']->failure_category?->label() ?? $bureau['last_failure']->status->label() }}</span>
                             @else
                                 None
                             @endif
@@ -83,9 +83,9 @@
                     </div>
 
                     @foreach ($bureau['endpoints'] as $type => $path)
-                        <div>
-                            <dt class="text-gray-500 dark:text-gray-400">{{ \App\Enums\CibilRequestType::tryFrom($type)?->label() ?? $type }} endpoint</dt>
-                            <dd class="font-mono break-all text-gray-950 dark:text-white">
+                        <div class="fynn-dl-item">
+                            <dt>{{ \App\Enums\CibilRequestType::tryFrom($type)?->label() ?? $type }} endpoint</dt>
+                            <dd class="font-mono break-all">
                                 @if (filled($path))
                                     POST {{ $path }}
                                 @else

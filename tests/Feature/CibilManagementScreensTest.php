@@ -81,7 +81,7 @@ class CibilManagementScreensTest extends TestCase
     {
         $this->actingAs($this->admin);
 
-        $response = $this->followingRedirects()->get('/admin')->assertOk()->assertSee('CIBIL Management');
+        $response = $this->followingRedirects()->get('/admin')->assertOk()->assertSee('Credit & Accounts');
 
         foreach ($this->screenUrls() as $url) {
             $response->assertSee(e($url), false);
@@ -115,7 +115,7 @@ class CibilManagementScreensTest extends TestCase
     {
         $this->actingAs($this->caller);
 
-        $this->followingRedirects()->get('/admin')->assertOk()->assertDontSee('CIBIL Management');
+        $this->followingRedirects()->get('/admin')->assertOk()->assertDontSee('Credit & Accounts');
 
         foreach ($this->screenUrls() as $url) {
             $this->get($url)->assertForbidden();

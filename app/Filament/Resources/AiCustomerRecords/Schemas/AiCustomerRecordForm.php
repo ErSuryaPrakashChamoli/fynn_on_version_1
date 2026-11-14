@@ -3,11 +3,13 @@
 namespace App\Filament\Resources\AiCustomerRecords\Schemas;
 
 use App\Models\AiCustomerRecord;
+use Carbon\Carbon;
 use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class AiCustomerRecordForm
 {
@@ -51,7 +53,6 @@ class AiCustomerRecordForm
             // };
 
             // $component->label($label)->required((bool) ($field['required'] ?? false));
-
 
             $component = match ($type) {
                 'long_text' => Textarea::make("data.$key"),
@@ -97,7 +98,7 @@ class AiCustomerRecordForm
 
                         try {
                             $component->state(
-                                \Carbon\Carbon::parse($state)->format('Y-m-d')
+                                Carbon::parse($state)->format('Y-m-d')
                             );
                         } catch (\Throwable) {
                             $component->state(null);
@@ -109,7 +110,7 @@ class AiCustomerRecordForm
                         }
 
                         try {
-                            return \Carbon\Carbon::parse($state)->format('Y-m-d');
+                            return Carbon::parse($state)->format('Y-m-d');
                         } catch (\Throwable) {
                             return null;
                         }
@@ -158,7 +159,8 @@ class AiCustomerRecordForm
 
         return $schema->components([
             Section::make('Customer Data')
-                ->description($model?->schema?->name ? 'Configuration: ' . $model->schema->name : null)
+                ->icon(Heroicon::OutlinedSparkles)
+                ->description($model?->schema?->name ? 'Configuration: '.$model->schema->name : null)
                 ->schema($components)
                 ->columns(2),
         ]);

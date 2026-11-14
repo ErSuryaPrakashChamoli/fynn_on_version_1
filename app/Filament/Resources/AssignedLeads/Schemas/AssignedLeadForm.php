@@ -5,6 +5,7 @@ namespace App\Filament\Resources\AssignedLeads\Schemas;
 use App\Models\Bank;
 use App\Models\City;
 use App\Models\CustomerAssignment;
+use App\Services\PanDuplicateService;
 use Coolsam\Flatpickr\Forms\Components\Flatpickr;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -13,6 +14,8 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\HtmlString;
 
 class AssignedLeadForm
 {
@@ -24,6 +27,29 @@ class AssignedLeadForm
     protected static function isLockedToCustomer(?CustomerAssignment $record): bool
     {
         return filled($record?->customer_id);
+    }
+
+    /**
+     * The PAN is checked against customers and open leads as soon as it is
+     * shown or typed. It is only recorded on the AI record here; the clash
+     * is enforced when the lead is converted (CustomerForm), where the
+     * Admin-approval request is raised.
+     */
+    protected static function panStatusText(?string $pan, ?CustomerAssignment $record): ?HtmlString
+    {
+        if (self::isLockedToCustomer($record) || ! PanDuplicateService::isWellFormed($pan)) {
+            return null;
+        }
+
+        $match = app(PanDuplicateService::class)->firstMatch($pan, ignoreCustomerId: $record?->customer_id);
+
+        if (! $match) {
+            return new HtmlString('<span class="text-sm font-bold text-success-600">✅ PAN Available</span>');
+        }
+
+        return new HtmlString('<span class="text-sm font-bold text-danger-600">⚠️ This PAN is already used by '
+            .e($match->description())
+            .'. Converting this lead will need Admin approval.</span>');
     }
 
     /**
@@ -61,6 +87,7 @@ class AssignedLeadForm
         return $schema
             ->components([
                 Section::make('Prospect Details')
+                    ->icon(Heroicon::OutlinedUser)
                     ->description(fn (?CustomerAssignment $record) => self::isLockedToCustomer($record)
                         ? 'This lead already has a linked Customer profile — edit these details from the Customers resource instead.'
                         : 'Name and mobile number come from the source record. Fill in the rest so this lead is ready to convert to a customer.')
@@ -84,6 +111,8 @@ class AssignedLeadForm
                             ->dehydrateStateUsing(fn ($state) => filled($state) ? strtoupper($state) : $state)
                             ->rules(['nullable', 'regex:/^[A-Z]{5}[0-9]{4}[A-Z]$/'])
                             ->validationMessages(['regex' => 'Please enter a valid PAN number like ABCDE1234F.'])
+                            ->live(onBlur: true)
+                            ->helperText(fn (?string $state, ?CustomerAssignment $record): ?HtmlString => self::panStatusText($state, $record))
                             ->disabled(fn (?CustomerAssignment $record) => self::isLockedToCustomer($record))
                             ->dehydrated(fn (?CustomerAssignment $record) => ! self::isLockedToCustomer($record)),
 
@@ -137,6 +166,7 @@ class AssignedLeadForm
                     ->columns(2),
 
                 Section::make('Follow Up Details')
+                    ->icon(Heroicon::OutlinedPhoneArrowUpRight)
                     ->description('This follow-up is recorded against today. The next follow-up date you set here replaces the one set previously — every change is kept in the follow-up log below.')
                     ->schema([
                         Select::make('follow_up_type')

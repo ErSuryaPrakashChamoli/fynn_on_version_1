@@ -67,15 +67,15 @@ class DailyCommitmentStats extends StatsOverviewWidget
                 ];
             }
 
-            $employeeIds = HierarchyHelper::subordinateIds(
-                $employee
+            // Each case counted for the team its owner was in on the day it
+            // was created, so a reporting change never moves past cases.
+            $customersQuery = HierarchyHelper::scopeToBranchDuring(
+                Customer::query(),
+                $employee,
+                ...SelectedMonth::range(),
+                employeeColumn: 'employee_id',
+                dateColumn: 'created_at',
             );
-
-            $customersQuery = Customer::query()
-                ->whereIn(
-                    'employee_id',
-                    $employeeIds
-                );
 
             $scope = '👥 Your Portfolio';
         }

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\CibilRequests\Pages;
 
 use App\Enums\CibilReportStatus;
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\CibilRequests\CibilRequestResource;
 use App\Services\Cibil\CibilReportService;
 use Filament\Resources\Pages\ListRecords;
@@ -11,6 +12,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 class ListCibilRequests extends ListRecords
 {
+    use HasColumnHeaderFilters;
+
     protected static string $resource = CibilRequestResource::class;
 
     /** Requests the app gave up waiting for are shown as uncertain, not as still pending. */

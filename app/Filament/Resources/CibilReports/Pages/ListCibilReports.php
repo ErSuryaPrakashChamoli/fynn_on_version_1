@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\CibilReports\Pages;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Pages\CibilAccessSettings;
 use App\Filament\Resources\CibilReports\CibilReportResource;
 use Filament\Actions\Action;
@@ -10,6 +11,8 @@ use Filament\Resources\Pages\ListRecords;
 
 class ListCibilReports extends ListRecords
 {
+    use HasColumnHeaderFilters;
+
     protected static string $resource = CibilReportResource::class;
 
     protected function getHeaderActions(): array

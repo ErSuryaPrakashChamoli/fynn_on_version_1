@@ -145,22 +145,16 @@ class PerformanceStats extends BaseWidget
                 );
         } else {
 
-            $employeeIds = HierarchyHelper::subordinateIds(
-                $employee
-            );
-
-            $approvedAmount = (float) Customer::query()
-                ->whereIn(
-                    'employee_id',
-                    $employeeIds
-                )
-                ->whereBetween(
-                    'created_at',
-                    [$monthStart, $monthEnd]
-                )
-                ->sum(
-                    'approved_loan_amount'
-                );
+            // Each case counted for the team its owner was in on the day
+            // it was created, so a reporting change never moves past cases.
+            $approvedAmount = (float) HierarchyHelper::scopeToBranchDuring(
+                Customer::query(),
+                $employee,
+                $monthStart,
+                $monthEnd,
+                'employee_id',
+                'created_at',
+            )->sum('approved_loan_amount');
         }
 
         /*

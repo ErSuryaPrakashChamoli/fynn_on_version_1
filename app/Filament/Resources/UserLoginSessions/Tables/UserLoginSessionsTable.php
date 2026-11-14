@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\UserLoginSessions\Tables;
 
+use App\Filament\Actions\DataDownloadApproval;
 use App\Filament\Exports\UserLoginSessionExporter;
 use App\Models\Employee;
 use App\Models\UserLoginSession;
@@ -255,21 +256,20 @@ class UserLoginSessionsTable
             ])
             ->headerActions([
 
-                ExportAction::make('export')
-                    ->label('Export Excel')
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->color('success')
-                    ->visible(
-                        fn (): bool => auth()->user()?->hasRole('Admin') === true
-                    )
-                    ->exporter(
-                        UserLoginSessionExporter::class
-                    )
-                    ->formats([
-                        ExportFormat::Xlsx,
-                    ])
-                    ->columnMapping(false)
-                    ->chunkSize(500),
+                DataDownloadApproval::adminOnly(
+                    ExportAction::make('export')
+                        ->label('Export Excel')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->exporter(
+                            UserLoginSessionExporter::class
+                        )
+                        ->formats([
+                            ExportFormat::Xlsx,
+                        ])
+                        ->columnMapping(false)
+                        ->chunkSize(500),
+                ),
 
             ])
 

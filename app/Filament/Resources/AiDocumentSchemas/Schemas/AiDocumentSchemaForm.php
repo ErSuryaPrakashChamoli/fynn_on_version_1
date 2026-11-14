@@ -8,6 +8,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class AiDocumentSchemaForm
 {
@@ -15,6 +16,7 @@ class AiDocumentSchemaForm
     {
         return $schema->components([
             Section::make('Import Configuration')
+                ->icon(Heroicon::OutlinedCog6Tooth)
                 ->description('Define the columns that your final AI Customer Data table should contain.')
                 ->schema([
                     TextInput::make('name')
@@ -31,6 +33,7 @@ class AiDocumentSchemaForm
                 ->columns(2),
 
             Section::make('Define Columns')
+                ->icon(Heroicon::OutlinedViewColumns)
                 ->description('Each row becomes one flexible column in the imported customer data.')
                 ->schema([
                     Repeater::make('fields')

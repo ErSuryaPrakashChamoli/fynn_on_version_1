@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\Employees;
 
+use App\Filament\Actions\DataDownloadApproval;
 use App\Filament\Imports\EmployeeImporter;
+use App\Filament\Imports\EmployeeUpdateImporter;
 use App\Filament\Resources\Employees\Pages\CreateEmployee;
 use App\Filament\Resources\Employees\Pages\EditEmployee;
 use App\Filament\Resources\Employees\Pages\ListEmployees;
@@ -16,11 +18,15 @@ use App\Models\Employee;
 use App\Models\Position;
 use App\Models\TargetCategory;
 use App\Models\Unit;
+use App\Services\EmployeeDependencyService;
 use App\Services\ReportingLineService;
 use App\Support\EmployeeOptions;
+use App\Support\HierarchyHelper;
 use App\Support\SelectedMonth;
 use BackedEnum;
 use Closure;
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -34,12 +40,15 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\Size;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class EmployeeResource extends Resource
 {
@@ -55,6 +64,7 @@ class EmployeeResource extends Resource
         return $schema->schema([
 
             Section::make('Employee Details')
+                ->icon(Heroicon::OutlinedIdentification)
                 ->schema([
 
                     TextInput::make('emp_id')
@@ -142,6 +152,14 @@ class EmployeeResource extends Resource
 
                             if ($problem !== null) {
                                 $fail($problem);
+
+                                return;
+                            }
+
+                            $problem = $record ? self::moveProblem($record, self::designationOf($get('designation')), filled($value) ? (int) $value : null) : null;
+
+                            if ($problem !== null) {
+                                $fail($problem);
                             }
                         })
                         ->live()
@@ -172,6 +190,10 @@ class EmployeeResource extends Resource
                         ->required()
                         ->native(false),
 
+                    // Someone on the rolls is taken off them only through
+                    // the page's "Mark Inactive" action, which clears what
+                    // depends on them first; here an exited employee can be
+                    // brought back or have their exit date corrected.
                     Select::make('exit_status')
                         ->label('Active Status')
                         ->options([
@@ -180,6 +202,11 @@ class EmployeeResource extends Resource
                         ])
                         ->default('no')
                         ->required()
+                        ->disabled(fn (?Employee $record): bool => $record !== null && ! self::hasLeft($record))
+                        ->dehydrated(fn (?Employee $record): bool => $record === null || self::hasLeft($record))
+                        ->helperText(fn (?Employee $record): ?string => $record !== null && ! self::hasLeft($record)
+                            ? 'Use “Mark Inactive” at the top of this page — it clears anything still assigned to them and records the effective date.'
+                            : null)
                         ->native(false)
                         ->live()
                         ->afterStateUpdated(function (Set $set, $state) {
@@ -203,6 +230,39 @@ class EmployeeResource extends Resource
                 ->columnSpanFull(),
         ]);
         // return EmployeeForm::configure($schema);
+    }
+
+    /**
+     * Whether the employee is off the rolls (employees.exit_status).
+     */
+    public static function hasLeft(Employee $employee): bool
+    {
+        return strtolower(trim((string) $employee->exit_status)) === 'yes';
+    }
+
+    /**
+     * Why the form cannot move $employee to $bossId, or null when it can.
+     *
+     * A straight move (same position, different boss) is a transfer: like
+     * the "Transfer Employee" action it needs nothing attached to them. A
+     * promotion or demotion re-slots their team instead, so it is allowed.
+     */
+    private static function moveProblem(Employee $employee, ?int $designation, ?int $bossId): ?string
+    {
+        if (
+            self::hasLeft($employee)
+            || $designation !== (int) $employee->designation
+            || $bossId === HierarchyHelper::directBossId($employee)
+        ) {
+            return null;
+        }
+
+        $dependencies = app(EmployeeDependencyService::class)->dependencyCounts($employee);
+
+        return $dependencies === []
+            ? null
+            : "{$employee->emp_name} still has ".app(EmployeeDependencyService::class)->describe($dependencies)
+                .'. Use “Transfer Employee” at the top of this page — it hands them over and moves '.$employee->emp_name.' on the spot.';
     }
 
     /**
@@ -348,11 +408,46 @@ class EmployeeResource extends Resource
                 ViewAction::make(),
             ])
             ->headerActions([
-                ImportAction::make()
+                ActionGroup::make([
+                    ImportAction::make('importNewEmployees')
+                        ->label('Upload New Employees')
+                        ->icon(Heroicon::OutlinedUserPlus)
+                        ->modalHeading('Upload New Employees')
+                        ->importer(EmployeeImporter::class)
+                        ->options(['mode' => EmployeeImporter::MODE_CREATE]),
+
+                    ImportAction::make('updateExistingEmployees')
+                        ->label('Update Existing Employees')
+                        ->icon(Heroicon::OutlinedPencilSquare)
+                        ->modalHeading('Update Existing Employees')
+                        ->modalDescription(null)
+                        ->modalContent(fn (ImportAction $action): View => view('filament.components.employee-update-import-steps', [
+                            'downloadAction' => $action->getModalAction('downloadExistingEmployees'),
+                        ]))
+                        ->registerModalActions([
+                            DataDownloadApproval::adminOnly(
+                                Action::make('downloadExistingEmployees')
+                                    ->label('Download existing data')
+                                    ->icon(Heroicon::OutlinedArrowDownTray)
+                                    ->color('gray')
+                                    ->size(Size::Small)
+                                    ->action(fn (): StreamedResponse => response()->streamDownload(
+                                        function (): void {
+                                            echo EmployeeImporter::existingEmployeesCsv();
+                                        },
+                                        'employees-'.now()->format('Y-m-d').'.csv',
+                                        ['Content-Type' => 'text/csv; charset=UTF-8'],
+                                    )),
+                            ),
+                        ])
+                        ->importer(EmployeeUpdateImporter::class)
+                        ->visible(fn (): bool => auth()->user()?->hasRole('Admin') === true),
+                ])
                     ->label('Import Employees')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('primary')
-                    ->importer(EmployeeImporter::class),
+                    ->button()
+                    ->dropdownPlacement('bottom-end'),
             ])
             ->toolbarActions([
                 DeleteBulkAction::make(),

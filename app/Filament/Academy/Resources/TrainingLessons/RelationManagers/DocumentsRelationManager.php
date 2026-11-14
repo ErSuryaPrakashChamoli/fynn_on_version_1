@@ -2,6 +2,7 @@
 
 namespace App\Filament\Academy\Resources\TrainingLessons\RelationManagers;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
@@ -24,6 +25,8 @@ use Filament\Tables\Table;
  */
 class DocumentsRelationManager extends RelationManager
 {
+    use HasColumnHeaderFilters;
+
     protected static string $relationship = 'documents';
 
     protected static ?string $title = 'Material';

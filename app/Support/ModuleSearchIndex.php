@@ -13,6 +13,8 @@ use function Filament\Support\generate_icon_html;
  * (navigation group) and its sub-modules (items), exactly as the current
  * user's sidebar shows them. It reads the built navigation, so a role or
  * IT restriction that hides a screen from the sidebar hides it here too.
+ * The unlabelled top group (the standalone Dashboard) is left out: it is
+ * one click away in the sidebar and only cluttered the pop-up.
  */
 class ModuleSearchIndex
 {
@@ -28,11 +30,12 @@ class ModuleSearchIndex
         $entries = [];
 
         foreach (Filament::getNavigation() as $group) {
-            if (! $group instanceof NavigationGroup) {
+            // Favourites / Recent only repeat submodules listed in their own
+            // module; the unlabelled top group is the standalone Dashboard.
+            if ((! $group instanceof NavigationGroup) || blank($group->getLabel()) || SidebarShortcuts::isShortcutSection($group)) {
                 continue;
             }
 
-            // A standalone item (Dashboard) has no group icon: use its own.
             $moduleIcon = self::iconHtml($group->getIcon() ?? collect($group->getItems())->first()?->getIcon());
 
             foreach ($group->getItems() as $item) {
@@ -43,8 +46,7 @@ class ModuleSearchIndex
                     }
 
                     $entries[] = [
-                        // A standalone item (Dashboard) is its own module.
-                        'module' => $group->getLabel() ?? $navigationItem->getLabel(),
+                        'module' => $group->getLabel(),
                         'label' => $navigationItem->getLabel(),
                         'url' => $navigationItem->getUrl(),
                         'newTab' => $navigationItem->shouldOpenUrlInNewTab(),

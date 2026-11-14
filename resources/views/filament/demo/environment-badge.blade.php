@@ -21,9 +21,11 @@
         font-weight: 700;
         letter-spacing: 0.06em;
         text-transform: uppercase;
+        line-height: 1rem;
         color: rgb(180 83 9);
-        background: rgb(245 158 11 / 0.16);
+        background: rgb(245 158 11 / 0.14);
         border: 1px solid rgb(245 158 11 / 0.45);
+        box-shadow: 0 1px 2px rgb(16 24 40 / 0.05);
         white-space: nowrap;
     }
 
@@ -32,9 +34,12 @@
         height: 0.4375rem;
         border-radius: 9999px;
         background: rgb(245 158 11);
+        box-shadow: 0 0 0 3px rgb(245 158 11 / 0.22);
     }
 
     .dark .demo-environment-badge {
         color: rgb(252 211 77);
+        background: rgb(245 158 11 / 0.12);
+        border-color: rgb(245 158 11 / 0.35);
     }
 </style>

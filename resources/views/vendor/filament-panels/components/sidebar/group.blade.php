@@ -17,6 +17,20 @@
     a small rail marker above the items while it is collapsed, so the icon
     rail reads as module → submodules. Groups whose items have no icons keep
     Filament's stock dropdown behaviour. See AdminPanelProvider::buildNavigation().
+
+    Modules open as an accordion behind a "+" toggle (user decision 2026-11-14,
+    resources/js/sidebar-accordion.js): one open at a time, the open one
+    collapsing before the next expands, so the module list fits unscrolled.
+    In the collapsed rail the module marker is a button and only the open
+    module's submodule icons show beneath it.
+
+    Starring a submodule (sidebar/item.blade.php) re-renders the sidebar and
+    can add or drop the Favourites / Recent sections above and below the
+    modules (App\Support\SidebarShortcuts), so every main-sidebar group
+    carries a wire:key: without it Livewire's morph reuses an <li> in its old
+    slot and its x-data `label` keeps pointing at the group that used to be
+    there. Those two sections are not collapsible, so they stay open beside
+    the accordion and get no "+".
 --}}
 @php
     $sidebarCollapsible = $sidebarCollapsible && filament()->isSidebarCollapsibleOnDesktop();
@@ -30,11 +44,18 @@
     // A short hash of the raw label keeps the id unique per label and stable across renders.
     $groupLabel = $subNavigation ? "sub_navigation_{$label}" : (string) $label;
     $groupItemsId = 'fi-sidebar-group-items-' . \Illuminate\Support\Str::slug($groupLabel) . '-' . substr(md5($groupLabel), 0, 8);
+    // Sub-navigation groups, and any page without the accordion script, keep Filament's own toggle.
+    $toggleGroupJs = $subNavigation
+        ? '$store.sidebar.toggleCollapsedGroup(label)'
+        : 'window.fynnSidebarAccordion ? window.fynnSidebarAccordion.toggle(label) : $store.sidebar.toggleCollapsedGroup(label)';
 @endphp
 
 <li
     x-data="{ label: @js($subNavigation ? "sub_navigation_{$label}" : $label) }"
     data-group-label="{{ $subNavigation ? "sub_navigation_{$label}" : $label }}"
+    @unless ($subNavigation)
+        wire:key="fynn-sidebar-module-{{ md5((string) $label) }}"
+    @endunless
     x-bind:class="{ 'fi-collapsed': $store.sidebar.groupIsCollapsed(label) }"
     {{
         $attributes->class([
@@ -47,7 +68,7 @@
     @if ($label)
         <div
             @if ($collapsible)
-                x-on:click="$store.sidebar.toggleCollapsedGroup(label)"
+                x-on:click="{{ $toggleGroupJs }}"
             @endif
             @if ($sidebarCollapsible)
                 x-show="$store.sidebar.isOpen"
@@ -61,36 +82,42 @@
                 {{ \Filament\Support\generate_icon_html($icon, size: \Filament\Support\Enums\IconSize::Large) }}
             @endif
 
-            <span class="fi-sidebar-group-label">
+            <span title="{{ $label }}" class="fi-sidebar-group-label">
                 {{ $label }}
             </span>
 
             @if ($collapsible)
-                <x-filament::icon-button
-                    color="gray"
-                    :icon="\Filament\Support\Icons\Heroicon::ChevronUp"
-                    :icon-alias="\Filament\View\PanelsIconAlias::SIDEBAR_GROUP_COLLAPSE_BUTTON"
-                    :label="$label"
-                    :aria-controls="$groupItemsId"
+                {{-- The +/- glyph is drawn in theme.css and turns into "-" while the module is open. --}}
+                <button
+                    type="button"
+                    aria-label="{{ $label }}"
+                    aria-controls="{{ $groupItemsId }}"
                     x-bind:aria-expanded="! $store.sidebar.groupIsCollapsed(label)"
-                    x-on:click.stop="$store.sidebar.toggleCollapsedGroup(label)"
-                    class="fi-sidebar-group-collapse-btn"
-                />
+                    x-on:click.stop="{{ $toggleGroupJs }}"
+                    class="fynn-sidebar-group-toggle"
+                ></button>
             @endif
         </div>
     @endif
 
     @if ($hasRailMarker)
-        <div
+        <button
+            type="button"
             x-show="! $store.sidebar.isOpen"
             x-transition:enter="fi-transition-enter"
             x-transition:enter-start="fi-transition-enter-start"
             x-transition:enter-end="fi-transition-enter-end"
             title="{{ $label }}"
+            aria-label="{{ $label }}"
+            @if ($collapsible)
+                aria-controls="{{ $groupItemsId }}"
+                x-bind:aria-expanded="! $store.sidebar.groupIsCollapsed(label)"
+                x-on:click="{{ $toggleGroupJs }}"
+            @endif
             class="fynn-sidebar-group-rail-icon"
         >
-            {{ \Filament\Support\generate_icon_html($icon, size: \Filament\Support\Enums\IconSize::Small) }}
-        </div>
+            {{ \Filament\Support\generate_icon_html($icon, size: \Filament\Support\Enums\IconSize::Large) }}
+        </button>
     @endif
 
     @if ($hasDropdown)
@@ -190,7 +217,7 @@
         @if (filled($label))
             id="{{ $groupItemsId }}"
 
-            @if ($sidebarCollapsible)
+            @if ($sidebarCollapsible && (! $hasRailMarker))
                 x-show="$store.sidebar.isOpen ? ! $store.sidebar.groupIsCollapsed(label) : ! @js($hasDropdown)"
             @else
                 x-show="! $store.sidebar.groupIsCollapsed(label)"

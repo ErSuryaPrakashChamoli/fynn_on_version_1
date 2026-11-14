@@ -21,6 +21,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 
@@ -54,6 +55,7 @@ class CibilReportForm
         return $schema
             ->components([
                 Section::make('Bureau')
+                    ->icon(Heroicon::OutlinedBuildingLibrary)
                     ->description('Which credit bureau to ask. Each bureau bills separately, and a report from one never stands in for the other.')
                     ->schema([
                         CibilRequestFields::bureau()
@@ -62,6 +64,7 @@ class CibilReportForm
                     ->columnSpanFull(),
 
                 Section::make('Fetch for')
+                    ->icon(Heroicon::OutlinedFolderOpen)
                     ->description('A report is fetched for a lead or for a customer file.')
                     ->schema([
                         ToggleButtons::make('fetch_for')
@@ -121,6 +124,7 @@ class CibilReportForm
                     ->columnSpanFull(),
 
                 Section::make('What to request')
+                    ->icon(Heroicon::OutlinedQueueList)
                     ->description(fn (Get $get): string => 'Each request is billed by '.(self::bureau($get('bureau'))?->label() ?? 'the bureau').'. If the file already has a report from it that answers the request, that report is opened instead.')
                     ->schema([
                         ToggleButtons::make('request_type')
@@ -136,6 +140,7 @@ class CibilReportForm
                     ->columnSpanFull(),
 
                 Section::make('Applicant details')
+                    ->icon(Heroicon::OutlinedUser)
                     ->description('Name, PAN, mobile number and gender are required by the bureau; the rest is kept for the record.')
                     ->schema([
                         CibilRequestFields::name(),
@@ -163,6 +168,7 @@ class CibilReportForm
                     ->columnSpanFull(),
 
                 Section::make('Consent')
+                    ->icon(Heroicon::OutlinedShieldCheck)
                     ->schema(CibilRequestFields::consent(
                         fn (Get $get): ?CibilRequestType => CibilRequestType::tryFrom((string) $get('request_type')),
                         fn (Get $get): ?CreditBureau => self::bureau($get('bureau')),

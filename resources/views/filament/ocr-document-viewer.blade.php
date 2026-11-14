@@ -1,15 +1,26 @@
 <div class="space-y-3">
-    <div class="flex items-center justify-between gap-3">
-        <div>
-            <div class="text-sm font-medium">{{ $document->original_name }}</div>
-            <div class="text-xs text-gray-500">{{ $document->page_count ? $document->page_count . ' page(s)' : 'Page count pending' }}</div>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex min-w-0 items-center gap-3">
+            <span class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-(--fynn-accent-soft) text-(--fynn-accent-text) ring-1 ring-inset ring-primary-500/20">
+                <x-filament::icon icon="heroicon-o-document-text" class="size-5" />
+            </span>
+            <div class="min-w-0">
+                <div class="truncate text-sm font-semibold text-gray-950 dark:text-white">{{ $document->original_name }}</div>
+                <div class="fynn-list-meta">{{ $document->page_count ? $document->page_count . ' page(s)' : 'Page count pending' }}</div>
+            </div>
         </div>
-        <a href="{{ $document->file_url }}" target="_blank" class="fi-btn fi-btn-size-md fi-btn-color-gray inline-flex items-center rounded-lg px-3 py-2 text-sm font-semibold ring-1 ring-gray-950/10 dark:ring-white/20">
+        <x-filament::button
+            tag="a"
+            :href="$document->file_url"
+            target="_blank"
+            color="gray"
+            icon="heroicon-m-arrow-top-right-on-square"
+        >
             Open Document
-        </a>
+        </x-filament::button>
     </div>
 
-    <div class="overflow-hidden rounded-xl border border-gray-200 bg-gray-50 dark:border-white/10 dark:bg-white/5">
+    <div class="fynn-card fynn-card--flush bg-(--fynn-surface-2)">
         <iframe
             src="{{ $document->file_url }}"
             class="h-[75vh] w-full"

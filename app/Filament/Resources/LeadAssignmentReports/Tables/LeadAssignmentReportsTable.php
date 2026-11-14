@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\LeadAssignmentReports\Tables;
 
+use App\Filament\Actions\DataDownloadApproval;
 use App\Filament\Exports\LeadAssignmentReportExporter;
 use App\Filament\Resources\AssignedLeads\AssignedLeadResource;
 use App\Models\CustomerAssignment;
@@ -394,9 +395,13 @@ class LeadAssignmentReportsTable
                     }),
             ])
             ->headerActions([
-                ExportAction::make()
-                    ->exporter(LeadAssignmentReportExporter::class)
-                    ->label('Download Report'),
+                // Admin only, with the owner's authenticator code.
+                DataDownloadApproval::protect(
+                    ExportAction::make()
+                        ->exporter(LeadAssignmentReportExporter::class)
+                        ->label('Download Report'),
+                    'the lead assignment report',
+                ),
             ]);
     }
 }

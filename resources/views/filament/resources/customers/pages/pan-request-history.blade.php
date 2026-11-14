@@ -1,200 +1,194 @@
 <div class="w-full min-w-0">
 
     {{-- Header --}}
-    <div class="mb-3 flex items-center justify-between gap-3">
+    <div class="mb-4 flex items-center justify-between gap-3">
         <div class="min-w-0">
-            <h3 class="truncate text-sm font-semibold text-gray-950 dark:text-white">
+            <h3 class="fynn-subheading mb-0.5">
                 PAN Request History
             </h3>
 
-            <p class="text-xs text-gray-500 dark:text-gray-400">
+            <p class="fynn-list-meta">
                 Previous duplicate PAN requests
             </p>
         </div>
 
-        <span
-            class="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+        <span class="fynn-chip shrink-0 tabular-nums">
+            <x-filament::icon icon="heroicon-m-clipboard-document-list" />
             {{ $requests->count() }}
         </span>
     </div>
 
 
-    {{-- Requests --}}
-    <div class="space-y-3">
+    {{-- Requests: newest first, one card per request on a vertical timeline --}}
+    <div>
 
         @forelse ($requests as $request)
-            <div
-                class="w-full min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+            <div class="group/tl flex gap-3">
 
-                {{-- Top --}}
-                <div class="flex min-w-0 items-start justify-between gap-3">
+                <div class="flex flex-col items-center" aria-hidden="true">
+                    <span class="mt-5 size-2.5 shrink-0 rounded-full bg-primary-500 ring-4 ring-primary-500/15"></span>
+                    <span class="mt-1.5 w-px flex-1 bg-gray-200 group-last/tl:hidden dark:bg-white/10"></span>
+                </div>
 
-                    <div class="min-w-0 flex-1">
+                <div class="min-w-0 flex-1 pb-4 group-last/tl:pb-0">
+                    <div class="fynn-card w-full p-4">
 
-                        <div class="truncate text-sm font-semibold text-gray-900 dark:text-white">
-                            {{ $request->request_no ?? 'PR-' . str_pad($request->id, 6, '0', STR_PAD_LEFT) }}
+                        {{-- Top --}}
+                        <div class="flex min-w-0 items-start justify-between gap-3">
+
+                            <div class="min-w-0 flex-1">
+
+                                <div class="truncate text-sm font-semibold text-gray-950 dark:text-white">
+                                    {{ $request->request_no ?? 'PR-' . str_pad($request->id, 6, '0', STR_PAD_LEFT) }}
+                                </div>
+
+                                <div class="fynn-list-meta mt-0.5">
+                                    {{ $request->created_at?->format('d M Y, h:i A') }}
+                                </div>
+
+                            </div>
+
+                            {{-- Status --}}
+                            <div class="shrink-0">
+
+                                @if ($request->status === 'approved')
+                                    <span
+                                        class="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700 ring-1 ring-inset ring-green-600/20 dark:bg-green-500/10 dark:text-green-400 dark:ring-green-400/20">
+                                        <span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+                                        Approved
+                                    </span>
+                                @elseif ($request->status === 'rejected')
+                                    <span
+                                        class="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 ring-1 ring-inset ring-red-600/20 dark:bg-red-500/10 dark:text-red-400 dark:ring-red-400/20">
+                                        <span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
+                                        Rejected
+                                    </span>
+                                @else
+                                    <span
+                                        class="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-400/20">
+                                        <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+                                        Pending
+                                    </span>
+                                @endif
+
+                            </div>
+
                         </div>
 
-                        <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                            {{ $request->created_at?->format('d M Y, h:i A') }}
-                        </div>
 
-                    </div>
+                        {{-- Details --}}
+                        <dl class="fynn-dl mt-4 grid-cols-1 sm:grid-cols-2">
 
-                    {{-- Status --}}
-                    <div class="shrink-0">
+                            <div class="fynn-dl-item">
+                                <dt>
+                                    Requested By
+                                </dt>
 
-                        @if ($request->status === 'approved')
-                            <span
-                                class="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-semibold text-green-700 dark:bg-green-500/10 dark:text-green-400">
-                                <span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>
-                                Approved
-                            </span>
-                        @elseif ($request->status === 'rejected')
-                            <span
-                                class="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 dark:bg-red-500/10 dark:text-red-400">
-                                <span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
-                                Rejected
-                            </span>
-                        @else
-                            <span
-                                class="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
-                                <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-                                Pending
-                            </span>
+                                <dd class="truncate">
+                                    {{ $request->requested_by_name ?? '-' }}
+                                </dd>
+                            </div>
+
+
+                            <div class="fynn-dl-item">
+                                <dt>
+                                    Bank
+                                </dt>
+
+                                <dd class="truncate">
+                                    {{ $request->requested_bank_name ?? '-' }}
+                                </dd>
+                            </div>
+
+
+                            <div class="fynn-dl-item">
+                                <dt>
+                                    Loan Type
+                                </dt>
+
+                                <dd class="truncate">
+                                    {{ filled($request->requested_loan_type) ? ucwords(str_replace('_', ' ', $request->requested_loan_type)) : '-' }}
+                                </dd>
+                            </div>
+
+
+                            <div class="fynn-dl-item">
+                                <dt>
+                                    Request ID
+                                </dt>
+
+                                <dd class="truncate font-mono">
+                                    PR-{{ str_pad($request->id, 6, '0', STR_PAD_LEFT) }}
+                                </dd>
+                            </div>
+
+                        </dl>
+
+
+                        {{-- Reason --}}
+                        @if ($request->reason)
+                            <div class="fynn-callout fynn-callout--neutral mt-4 px-4 py-3">
+
+                                <div class="fynn-kpi-label">
+                                    Reason
+                                </div>
+
+                                <div class="mt-1 break-words text-sm">
+                                    {{ $request->reason }}
+                                </div>
+
+                            </div>
+                        @endif
+
+
+                        {{-- Admin Remarks --}}
+                        @if ($request->remarks)
+                            <div class="fynn-callout fynn-callout--info mt-3 px-4 py-3">
+
+                                <div class="fynn-kpi-label">
+                                    Admin Remarks
+                                </div>
+
+                                <div class="mt-1 break-words text-sm">
+                                    {{ $request->remarks }}
+                                </div>
+
+                            </div>
+                        @endif
+
+
+                        {{-- Continue --}}
+                        @if ($request->status === 'approved' && ! $request->isUsed())
+                            <div class="mt-4 border-t border-(--fynn-border-soft) pt-3">
+
+                                <x-filament::button
+                                    tag="a"
+                                    :href="$request->continueUrl()"
+                                    icon="heroicon-m-plus"
+                                    class="w-full"
+                                >
+                                    {{ $request->isForLead() ? 'Continue Lead' : 'Continue Application' }}
+                                </x-filament::button>
+
+                            </div>
                         @endif
 
                     </div>
-
                 </div>
-
-
-                {{-- Details --}}
-                <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-
-                    <div class="min-w-0">
-                        <div class="text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                            Requested By
-                        </div>
-
-                        <div class="mt-1 truncate text-sm text-gray-800 dark:text-gray-200">
-                            {{ $request->requested_by_name ?? '-' }}
-                        </div>
-                    </div>
-
-
-                    <div class="min-w-0">
-                        <div class="text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                            Bank
-                        </div>
-
-                        <div class="mt-1 truncate text-sm text-gray-800 dark:text-gray-200">
-                            {{ $request->requested_bank_name ?? '-' }}
-                        </div>
-                    </div>
-
-
-                    <div class="min-w-0">
-                        <div class="text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                            Loan Type
-                        </div>
-
-                        <div class="mt-1 truncate text-sm text-gray-800 dark:text-gray-200">
-                            {{ ucwords(str_replace('_', ' ', $request->requested_loan_type)) }}
-                        </div>
-                    </div>
-
-
-                    <div class="min-w-0">
-                        <div class="text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                            Request ID
-                        </div>
-
-                        <div class="mt-1 truncate text-sm text-gray-800 dark:text-gray-200">
-                            PR-{{ str_pad($request->id, 6, '0', STR_PAD_LEFT) }}
-                        </div>
-                    </div>
-
-                </div>
-
-
-                {{-- Reason --}}
-                @if ($request->reason)
-                    <div class="mt-4 rounded-lg bg-gray-50 p-3 dark:bg-gray-800/70">
-
-                        <div class="text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                            Reason
-                        </div>
-
-                        <div class="mt-1 break-words text-sm text-gray-700 dark:text-gray-300">
-                            {{ $request->reason }}
-                        </div>
-
-                    </div>
-                @endif
-
-
-                {{-- Admin Remarks --}}
-                @if ($request->remarks)
-                    <div class="mt-3 rounded-lg bg-gray-50 p-3 dark:bg-gray-800/70">
-
-                        <div class="text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                            Admin Remarks
-                        </div>
-
-                        <div class="mt-1 break-words text-sm text-gray-700 dark:text-gray-300">
-                            {{ $request->remarks }}
-                        </div>
-
-                    </div>
-                @endif
-
-
-                {{-- Continue --}}
-                @if ($request->status === 'approved' && blank($request->application_id))
-                    <div class="mt-4 border-t border-gray-100 pt-3 dark:border-gray-800">
-
-                        <a href="{{ \App\Filament\Resources\Customers\CustomerResource::getUrl('create', [
-                            'pan_request' => $request->id,
-                        ]) }}"
-                            class="!flex !w-full !items-center !justify-center !gap-2 !rounded-lg
-                            !bg-primary-600 !px-4 !py-2.5 !text-sm !font-semibold
-                            !leading-5 !text-white
-                            !shadow-sm
-                            !transition-all !duration-200 !ease-in-out
-                            hover:!bg-primary-700
-                            hover:!shadow-md
-                            hover:!scale-[1.01]
-                            active:!scale-[0.99]"
-                            style="height: 42px; min-height: 42px; max-height: 42px;">
-
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
-                                stroke="currentColor" class="!h-4 !w-4 !shrink-0 !transition-transform !duration-200"
-                                style="width: 16px; height: 16px;">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-                            </svg>
-
-                            <span>
-                                Continue Application
-                            </span>
-
-                        </a>
-
-                    </div>
-                @endif
 
             </div>
 
         @empty
 
-            <div
-                class="rounded-xl border border-gray-200 bg-white p-8 text-center dark:border-gray-700 dark:bg-gray-900">
+            <div class="fynn-empty fynn-empty--compact">
 
-                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-clipboard-document-list" /></span>
+
+                <p class="fynn-empty-title">
                     No PAN requests found
                 </p>
 
-                <p class="mt-1 text-xs text-gray-400">
+                <p class="text-xs">
                     Previous requests will appear here.
                 </p>
 

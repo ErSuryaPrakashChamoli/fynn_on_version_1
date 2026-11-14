@@ -16,6 +16,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Carbon;
 
 class MonthlyCommitmentTargetForm
@@ -25,6 +26,7 @@ class MonthlyCommitmentTargetForm
         return $schema
             ->components([
                 Section::make('Monthly target')
+                    ->icon(Heroicon::OutlinedFlag)
                     ->description('Used only by the Daily Commitment module. The existing LMS target and incentive calculation are not affected.')
                     ->schema([
                         Select::make('employee_id')

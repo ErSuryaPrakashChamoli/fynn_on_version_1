@@ -3,8 +3,6 @@
 namespace App\Filament\Resources\Customers\Schemas;
 
 use App\Enums\JourneyModule;
-use App\Enums\NotificationCategory;
-use App\Filament\Resources\CustomerPanRequests\CustomerPanRequestResource;
 use App\Filament\Resources\Customers\Pages\CreateCustomer;
 use App\Models\Bank;
 use App\Models\City;
@@ -13,12 +11,16 @@ use App\Models\CustomerDocument;
 use App\Models\CustomerPanRequest;
 use App\Models\CustomerStageHistory;
 use App\Models\Employee;
+use App\Models\Lead;
 use App\Models\User;
+use App\Rules\PanIsAvailable;
 use App\Services\CustomerEligibilityService;
 use App\Services\CustomerJourneyService;
 use App\Services\Journey\CustomerJourneyAccessService;
 use App\Services\OtherBankSupportService;
+use App\Services\PanDuplicateService;
 use App\Support\HierarchyHelper;
+use App\Support\PanMatch;
 use Filament\Actions\Action;
 use Filament\Actions\Action as FormAction;
 use Filament\Facades\Filament;
@@ -37,6 +39,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\HtmlString;
@@ -87,6 +90,47 @@ class CustomerForm
 
         return self::lockCallerFields($record)
             || filled($livewire->existingCustomer);
+    }
+
+    /**
+     * The typed PAN already belongs to another customer file or open lead
+     * (set by the pan_number field / CreateCustomer::mount).
+     */
+    protected static function hasPanConflict(Get $get): bool
+    {
+        return filled($get('existing_customer_id')) || filled($get('existing_lead_id'));
+    }
+
+    protected static function existingPanRecord($livewire): ?PanMatch
+    {
+        if (! $livewire instanceof CreateCustomer) {
+            return null;
+        }
+
+        if ($livewire->existingCustomer) {
+            return PanMatch::fromCustomer($livewire->existingCustomer);
+        }
+
+        return $livewire->existingLead ? PanMatch::fromLead($livewire->existingLead) : null;
+    }
+
+    /**
+     * A PAN typed on a new file is always checked against customers and
+     * open leads (the lead being converted excluded). On an existing file
+     * only a changed PAN is checked — older files may already share one.
+     * The approved-request flow skips the check: the Admin allowed it.
+     */
+    protected static function panNeedsDuplicateCheck(?Customer $record, $livewire, ?string $pan): bool
+    {
+        if (self::isApprovedPanRequest($livewire)) {
+            return false;
+        }
+
+        if (! $record) {
+            return true;
+        }
+
+        return PanDuplicateService::normalize($record->pan_number) !== PanDuplicateService::normalize($pan);
     }
 
     protected static function lockAfterFilled(?Customer $record, string $field): bool
@@ -191,15 +235,18 @@ class CustomerForm
 
                 CustomerEligibilitySection::make(),
 
-                Section::make('Existing Customer')
+                Section::make(fn (Get $get): string => filled($get('existing_lead_id')) && blank($get('existing_customer_id'))
+                    ? 'Existing Lead (Duplicate PAN)'
+                    : 'Existing Customer')
                     ->key('existingCustomerSection')
+                    ->icon(Heroicon::OutlinedExclamationTriangle)
                     // ->visible(function (Get $get, $livewire): bool {
 
                     //     if ($livewire->isApprovedPanRequest) {
                     //         return false;
                     //     }
 
-                    //     return filled($get('existing_customer_id'));
+                    //     return self::hasPanConflict($get);
                     // })
                     ->visible(function (Get $get, $livewire): bool {
 
@@ -207,7 +254,7 @@ class CustomerForm
                             return false;
                         }
 
-                        return filled($get('existing_customer_id'));
+                        return self::hasPanConflict($get);
                     })
 
                     ->headerActions([
@@ -247,46 +294,31 @@ class CustomerForm
                             ])
                             ->action(function (array $data, $livewire, Get $get) {
 
-                                // $employee = auth()->user()->employee;
                                 $employee = Filament::auth()->user()?->employee;
 
-                                $bank = Bank::find($data['requested_bank_id']);
+                                // The clashing record: an existing customer file or
+                                // an open lead (PanDuplicateService searches both).
+                                $match = filled($get('existing_customer_id'))
+                                    ? PanMatch::fromCustomer(Customer::findOrFail($get('existing_customer_id')))
+                                    : PanMatch::fromLead(Lead::findOrFail($get('existing_lead_id')));
 
-                                $customer = Customer::findOrFail(
-                                    $get('existing_customer_id')
+                                if (! $employee) {
+                                    Notification::make()
+                                        ->title('Only a login with an employee profile can request approval.')
+                                        ->warning()
+                                        ->send();
+
+                                    return;
+                                }
+
+                                app(PanDuplicateService::class)->raise(
+                                    $employee,
+                                    $match,
+                                    CustomerPanRequest::FOR_CUSTOMER,
+                                    $data,
+                                    leadId: $livewire->leadId ?? null,
+                                    aiCustomerRecordId: $livewire->aiCustomerRecordId ?? null,
                                 );
-
-                                $panRequest = CustomerPanRequest::create([
-                                    // 'customer_id' => $get('existing_customer_id'),
-                                    'customer_id' => $customer->id,
-                                    'ai_customer_record_id' => $livewire->aiCustomerRecordId ?? null,
-                                    'lead_id' => $livewire->leadId ?? null,
-                                    'pan_number' => $customer->pan_number,
-
-                                    'requested_by' => $employee->id,
-                                    'requested_by_emp_id' => $employee->emp_id,
-                                    'requested_by_name' => $employee->emp_name,
-
-                                    'team_leader_id' => $employee->superviser_id,
-                                    'team_leader_name' => optional($employee->superviser)->emp_name,
-
-                                    'manager_id' => $employee->manager_id,
-                                    'manager_name' => optional($employee->manager)->emp_name,
-
-                                    'cluster_manager_id' => $employee->cluster_id,
-                                    'cluster_manager_name' => optional($employee->cluster)->emp_name,
-
-                                    'business_head_id' => $employee->business_head_id,
-                                    'business_head_name' => optional($employee->businessHead)->emp_name,
-
-                                    'requested_bank_id' => $data['requested_bank_id'],
-                                    'requested_bank_name' => $bank?->bank_name,
-
-                                    'requested_loan_type' => $data['requested_loan_type'],
-                                    'reason' => $data['reason'],
-
-                                    'status' => CustomerPanRequest::STATUS_PENDING,
-                                ]);
 
                                 $livewire->approvalRequested = true;
 
@@ -295,20 +327,6 @@ class CustomerForm
                                     ->body('Your request has been sent to Admin for approval.')
                                     ->success()
                                     ->send();
-
-                                Notification::make()
-                                    ->title('New Duplicate PAN Request')
-                                    ->body("{$employee->emp_name} requested approval for {$customer->customer_name} (PAN: {$panRequest->pan_number}) with {$bank?->bank_name}.")
-                                    ->warning()
-                                    ->icon('heroicon-o-shield-check')
-                                    ->actions([
-                                        Action::make('review')
-                                            ->label('Review Request')
-                                            ->url(CustomerPanRequestResource::getUrl('index'))
-                                            ->markAsRead(),
-                                    ])
-                                    ->viewData(NotificationCategory::PanRequest->viewData())
-                                    ->sendToDatabase(User::role('Admin')->get());
                             }),
 
                         // VIEW / HIDE REQUESTS
@@ -335,34 +353,36 @@ class CustomerForm
                         Placeholder::make('customer_name')
                             ->label('Customer Name')
                             ->content(
-                                fn ($livewire) => $livewire->existingCustomer?->customer_name
+                                fn ($livewire) => self::existingPanRecord($livewire)?->name
                             ),
 
                         Placeholder::make('mobile')
                             ->label('Mobile')
                             ->content(
-                                fn ($livewire) => $livewire->existingCustomer?->mobile_no
+                                fn ($livewire) => self::existingPanRecord($livewire)?->mobile
                             ),
 
                         Placeholder::make('owner')
                             ->label('Owner')
                             ->content(
-                                fn ($livewire) => $livewire->existingCustomer?->employee?->emp_name
+                                fn ($livewire) => self::existingPanRecord($livewire)?->ownerName
                             ),
 
                         Placeholder::make('status')
                             ->label('Current Status')
                             ->content(
-                                fn ($livewire) => $livewire->existingCustomer?->journey_status
+                                fn ($livewire) => self::existingPanRecord($livewire)?->status
                             ),
 
                         ViewField::make('pan_request_history')
                             ->view('filament.resources.customers.pages.pan-request-history')
                             ->viewData(function (Get $get) {
 
-                                $customerId = $get('existing_customer_id');
+                                // Every earlier request for this PAN, whether it
+                                // clashed with a customer file or a lead.
+                                $pan = PanDuplicateService::normalize($get('pan_number'));
 
-                                if (! $customerId) {
+                                if (! $pan || ! self::hasPanConflict($get)) {
                                     return [
                                         'requests' => collect(),
                                     ];
@@ -380,7 +400,7 @@ class CustomerForm
                                 }
 
                                 $query = CustomerPanRequest::query()
-                                    ->where('customer_id', $customerId)
+                                    ->where('pan_number', $pan)
                                     ->latest();
 
                                 /*
@@ -474,6 +494,7 @@ class CustomerForm
 
                 // STAGE 0: Core Profile Details
                 Section::make('Customer Basic Details')
+                    ->icon(Heroicon::OutlinedUser)
                     // ->visible(
                     //     fn($livewire) =>
                     //     $livewire->panVerified
@@ -481,6 +502,9 @@ class CustomerForm
                     ->schema([
 
                         Hidden::make('existing_customer_id')
+                            ->dehydrated(false),
+
+                        Hidden::make('existing_lead_id')
                             ->dehydrated(false),
 
                         Hidden::make('pan_status')
@@ -491,6 +515,9 @@ class CustomerForm
                             ->default(false)
                             ->dehydrated(false),
 
+                        // Checked against BOTH customers and open leads
+                        // (PanDuplicateService). A clash blocks the file until
+                        // an Admin approves a duplicate PAN request.
                         TextInput::make('pan_number')
                             ->label('PAN Number')
                             ->required()
@@ -498,33 +525,54 @@ class CustomerForm
                             ->maxLength(10)
                             ->minLength(10)
 
-                            ->afterStateUpdated(function ($state, callable $set, $livewire) {
+                            ->afterStateUpdated(function ($state, callable $set, $livewire, ?Customer $record) {
 
                                 $set('pan_loading', true);
                                 $set('pan_status', 'checking');
 
-                                // usleep(800000);
-
-                                $state = strtoupper($state);
+                                $state = (string) PanDuplicateService::normalize($state);
 
                                 $set('pan_number', $state);
 
-                                if (strlen($state) !== 10) {
+                                if (! PanDuplicateService::isWellFormed($state)) {
+                                    $set('pan_status', '');
                                     $set('pan_loading', false);
+
+                                    if (strlen($state) === 10) {
+                                        $livewire->validateOnly('data.pan_number');
+                                    }
 
                                     return;
                                 }
 
-                                // Validate PAN format
-                                $livewire->validateOnly('data.pan_number');
+                                $match = app(PanDuplicateService::class)->firstMatch(
+                                    $state,
+                                    ignoreCustomerId: $record?->id,
+                                    ignoreLeadId: $livewire instanceof CreateCustomer ? $livewire->leadId : null,
+                                );
 
-                                // Search existing customer
-                                $customer = Customer::where('pan_number', $state)->first();
+                                // An existing file: only report, the PanIsAvailable
+                                // rule refuses a changed PAN that clashes.
+                                if ($record) {
+                                    $set('pan_status', match (true) {
+                                        PanDuplicateService::normalize($record->pan_number) === $state => '',
+                                        $match !== null => 'exists',
+                                        default => 'available',
+                                    });
+                                    $set('pan_loading', false);
 
-                                if ($customer) {
+                                    $livewire->validateOnly('data.pan_number');
+
+                                    return;
+                                }
+
+                                if ($match?->isCustomer()) {
 
                                     // Existing customer found
+                                    $customer = Customer::find($match->id);
+
                                     $set('existing_customer_id', $customer->id);
+                                    $set('existing_lead_id', null);
                                     $set('pan_status', 'exists');
 
                                     $set('customer_name', $customer->customer_name);
@@ -532,14 +580,27 @@ class CustomerForm
                                     $set('email', $customer->email);
 
                                     $livewire->existingCustomer = $customer;
+                                    $livewire->existingLead = null;
+                                    $livewire->panVerified = false;
+                                } elseif ($match?->isLead()) {
+
+                                    // Another open lead already carries this PAN
+                                    $set('existing_customer_id', null);
+                                    $set('existing_lead_id', $match->id);
+                                    $set('pan_status', 'exists_lead');
+
+                                    $livewire->existingCustomer = null;
+                                    $livewire->existingLead = Lead::find($match->id);
                                     $livewire->panVerified = false;
                                 } else {
 
                                     // PAN available
                                     $set('existing_customer_id', null);
+                                    $set('existing_lead_id', null);
                                     $set('pan_status', 'available');
 
                                     $livewire->existingCustomer = null;
+                                    $livewire->existingLead = null;
                                     $livewire->panVerified = true;
                                 }
 
@@ -547,13 +608,20 @@ class CustomerForm
                             })
 
                             ->dehydrateStateUsing(
-                                fn ($state) => strtoupper($state)
+                                fn ($state) => PanDuplicateService::normalize($state)
                             )
 
                             ->rules([
                                 'required',
                                 'regex:/^[A-Z]{5}[0-9]{4}[A-Z]$/',
                             ])
+                            ->rule(
+                                fn (?Customer $record, $livewire): PanIsAvailable => new PanIsAvailable(
+                                    ignoreCustomerId: $record?->id,
+                                    ignoreLeadId: $livewire instanceof CreateCustomer ? $livewire->leadId : null,
+                                ),
+                                fn (?Customer $record, $livewire, Get $get): bool => self::panNeedsDuplicateCheck($record, $livewire, $get('pan_number')),
+                            )
 
                             ->placeholder('ABCDE1234F')
 
@@ -594,6 +662,12 @@ class CustomerForm
                                         </span>'
                                     ),
 
+                                    'exists_lead' => new HtmlString(
+                                        '<span class="font-bold text-danger-600 text-sm">
+                                            ⚠️ Existing Lead Found
+                                        </span>'
+                                    ),
+
                                     default => null,
                                 };
                             })
@@ -609,7 +683,7 @@ class CustomerForm
                             ->live()
                             ->disabled(
                                 fn (Get $get, ?Customer $record) => self::lockCallerFields($record)
-                                    || filled($get('existing_customer_id'))
+                                    || self::hasPanConflict($get)
                             )
                             ->dehydrated(true)
                             ->afterStateUpdated(
@@ -659,7 +733,7 @@ class CustomerForm
 
                             ->disabled(
                                 fn (Get $get, ?Customer $record) => self::lockCallerFields($record)
-                                    || filled($get('existing_customer_id'))
+                                    || self::hasPanConflict($get)
                             )
 
                             // Important: submit even when disabled
@@ -673,7 +747,7 @@ class CustomerForm
 
                             ->disabled(function (?Customer $record, Get $get): bool {
 
-                                if (filled($get('existing_customer_id'))) {
+                                if (self::hasPanConflict($get)) {
                                     return true;
                                 }
 
@@ -704,7 +778,7 @@ class CustomerForm
 
                         //     ->disabled(function (?Customer $record, Get $get): bool {
 
-                        //         if (filled($get('existing_customer_id'))) {
+                        //         if (self::hasPanConflict($get)) {
                         //             return true;
                         //         }
 
@@ -729,7 +803,7 @@ class CustomerForm
                             ->disabled(
                                 fn (Get $get, ?Customer $record, $livewire) => self::lockCallerFields($record)
                                     || (
-                                        filled($get('existing_customer_id'))
+                                        self::hasPanConflict($get)
                                         && ! $livewire->isApprovedPanRequest
                                     )
                             )
@@ -744,7 +818,7 @@ class CustomerForm
                             ->disabled(
                                 fn (Get $get, ?Customer $record, $livewire) => self::lockCallerFields($record)
                                     || (
-                                        filled($get('existing_customer_id'))
+                                        self::hasPanConflict($get)
                                         && ! $livewire->isApprovedPanRequest
                                     )
                             )
@@ -764,7 +838,7 @@ class CustomerForm
                             ->disabled(
                                 fn (Get $get, ?Customer $record, $livewire) => self::lockCallerFields($record)
                                     || (
-                                        filled($get('existing_customer_id'))
+                                        self::hasPanConflict($get)
                                         && ! $livewire->isApprovedPanRequest
                                     )
                             )
@@ -785,7 +859,7 @@ class CustomerForm
                             ->disabled(
                                 fn (Get $get, ?Customer $record, $livewire) => self::lockCallerFields($record)
                                     || (
-                                        filled($get('existing_customer_id'))
+                                        self::hasPanConflict($get)
                                         && ! $livewire->isApprovedPanRequest
                                     )
                             )
@@ -823,7 +897,7 @@ class CustomerForm
                                 : null)
                             ->disabled(fn (Get $get, string $operation, $livewire): bool => $operation === 'edit'
                                 || (
-                                    filled($get('existing_customer_id'))
+                                    self::hasPanConflict($get)
                                     && ! $livewire->isApprovedPanRequest
                                 )),
 
@@ -836,7 +910,7 @@ class CustomerForm
                         //         fn(Get $get, ?Customer $record, $livewire): bool =>
                         //         self::lockCallerFields($record)
                         //             || (
-                        //                 filled($get('existing_customer_id'))
+                        //                 self::hasPanConflict($get)
                         //                 && ! $livewire->isApprovedPanRequest
                         //             )
                         //     )
@@ -870,7 +944,7 @@ class CustomerForm
                             ->disabled(
                                 fn (Get $get, ?Customer $record, $livewire): bool => self::lockCallerFields($record)
                                     || (
-                                        filled($get('existing_customer_id'))
+                                        self::hasPanConflict($get)
                                         && ! $livewire->isApprovedPanRequest
                                     )
                                     || (
@@ -888,7 +962,7 @@ class CustomerForm
                             ->options(CustomerEligibilityService::NOT_ELIGIBLE_REASONS)
                             ->disabled(
                                 fn (Get $get, string $operation) => $operation === 'edit'
-                                    || filled($get('existing_customer_id'))
+                                    || self::hasPanConflict($get)
                             )
                             ->visible(fn (Get $get): bool => $get('eligibility_status') === 'not_eligible')
                             ->required(fn (Get $get): bool => $get('eligibility_status') === 'not_eligible'),
@@ -902,6 +976,7 @@ class CustomerForm
 
                 // PIPELINE AREA: Dynamic Sequential Sections Layout Container
                 Section::make('Application Progress Steps')
+                    ->icon(Heroicon::OutlinedNumberedList)
                     ->visible(fn (?Customer $record): bool => ! auth()->user()->hasRole('Caller') || self::actsForOwner($record))
                     ->schema([
 
@@ -950,6 +1025,7 @@ class CustomerForm
 
                         // STAGE 1: Journey Requirements (Always Visible for Admin/Manager)
                         Section::make('Journey Configuration')
+                            ->icon(Heroicon::OutlinedCog6Tooth)
                             ->visible(
                                 fn (?Customer $record): bool => auth()->user()->employee?->designation !== Employee::DESIGNATION_CALLER
                                     || self::actsForOwner($record, JourneyModule::DocumentVerification, JourneyModule::Approval)
@@ -1065,6 +1141,7 @@ class CustomerForm
 
                         // ---------------- PROGRESSIVE STEP 1: SFL SECTION ----------------
                         Section::make('Step 1: SFL (Source File Logging)')
+                            ->icon(Heroicon::OutlinedFolderPlus)
                             ->schema([
 
                                 TextInput::make('application_no')
@@ -1215,6 +1292,7 @@ class CustomerForm
                         // ---------------- PROGRESSIVE STEP 2: UNDERWRITING SECTION ----------------
 
                         Section::make('Step 2: Underwriting Analysis')
+                            ->icon(Heroicon::OutlinedDocumentMagnifyingGlass)
                             ->disabled(
                                 fn (Get $get): bool => in_array(
                                     strtolower((string) $get('journey_status')),
@@ -1278,6 +1356,7 @@ class CustomerForm
 
                         // ---------------- PROGRESSIVE STEP 3: APPROVAL SECTION ----------------
                         Section::make('Step 3: Credit Approval Information')
+                            ->icon(Heroicon::OutlinedCheckBadge)
                             ->schema([
                                 TextInput::make('approved_loan_amount')
                                     ->label('Approved Sanctioned Amount')
@@ -1400,6 +1479,7 @@ class CustomerForm
 
                         // ---------------- PROGRESSIVE STEP 4: DISBURSED SECTION ----------------
                         Section::make('Step 4: Disbursal Payouts & Close')
+                            ->icon(Heroicon::OutlinedBanknotes)
                             // ->disabled(fn(Get $get) => (bool) $get('disbursal_finalized'))
 
                             ->schema([
@@ -1632,6 +1712,7 @@ class CustomerForm
                             ),
 
                         Section::make('Disbursal Documents')
+                            ->icon(Heroicon::OutlinedPaperClip)
                             ->schema([
 
                                 Hidden::make('documents_submitted')
@@ -2006,6 +2087,7 @@ class CustomerForm
                             ),
                         // ---------------- GLOBAL REJECTION TERMINAL AREA ----------------
                         Section::make('Pipeline Exception / Rejection System')
+                            ->icon(Heroicon::OutlinedXCircle)
                             ->schema([
                                 Select::make('journey_not_approved_reason')
                                     ->label('Not Approved Stage Reason')

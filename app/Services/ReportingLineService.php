@@ -25,6 +25,11 @@ use Illuminate\Validation\ValidationException;
  * reporting_date is never touched: a reporting-line change moves an
  * existing employee and must not make them look like a new joiner to
  * AchievementCalculatorService.
+ *
+ * The effective date matters: every month-based figure (targets,
+ * achievement, incentives, team listings) follows the reporting line of
+ * each day, rebuilt from the history rows written here (ReportingTimeline),
+ * so a change only moves somebody from its effective date onward.
  */
 class ReportingLineService
 {
@@ -204,9 +209,11 @@ class ReportingLineService
      * Make $employee report to $bossId, and re-fill the reporting columns
      * of everyone below them to match.
      *
-     * A history row is written for every employee on the rolls whose
-     * columns actually changed; an exited employee's columns are kept in
-     * step without adding to a lifecycle that ended at their exit.
+     * A history row is written for every employee whose columns actually
+     * changed — an exited employee too: their cases can still disburse
+     * after they leave, and ReportingTimeline rebuilds past months from
+     * these rows, so an unrecorded move would restate every month since
+     * their last recorded line. Their exit row is left as it is.
      *
      * @return Collection<int, int> ids of every employee whose columns changed
      *
@@ -296,12 +303,9 @@ class ReportingLineService
 
         $employee->forceFill($columns)->save();
 
-        if (strtolower(trim((string) $employee->exit_status)) === 'yes') {
-            return true;
-        }
-
         EmployeeReportingHistory::query()
             ->where('employee_id', $employee->id)
+            ->where('change_type', '!=', 'exit')
             ->whereNull('effective_to')
             ->update([
                 'effective_to' => $effectiveDate,

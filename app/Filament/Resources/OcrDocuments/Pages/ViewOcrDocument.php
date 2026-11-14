@@ -3,11 +3,12 @@
 namespace App\Filament\Resources\OcrDocuments\Pages;
 
 use App\Filament\Resources\OcrDocuments\OcrDocumentResource;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\Section;
-use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class ViewOcrDocument extends ViewRecord
 {
@@ -17,6 +18,7 @@ class ViewOcrDocument extends ViewRecord
     {
         return $schema->components([
             Section::make('Document')
+                ->icon(Heroicon::OutlinedDocumentText)
                 ->schema([
                     View::make('filament.ocr-document-viewer')
                         ->viewData(['document' => $this->record])
@@ -24,6 +26,7 @@ class ViewOcrDocument extends ViewRecord
                 ]),
 
             Section::make('Extraction')
+                ->icon(Heroicon::OutlinedViewfinderCircle)
                 ->schema([
                     TextEntry::make('status')->badge(),
                     TextEntry::make('document_type')->label('Document Type'),
@@ -36,6 +39,7 @@ class ViewOcrDocument extends ViewRecord
                 ->columns(4),
 
             Section::make('Structured Customer Data')
+                ->icon(Heroicon::OutlinedTableCells)
                 ->schema([
                     View::make('filament.ocr-document-data-table')
                         ->viewData(['document' => $this->record])
@@ -43,6 +47,7 @@ class ViewOcrDocument extends ViewRecord
                 ]),
 
             Section::make('Processing Error')
+                ->icon(Heroicon::OutlinedExclamationCircle)
                 ->schema([
                     TextEntry::make('error_message')->label('Error')->columnSpanFull(),
                 ])

@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\Leads\Tables;
 
+use App\Filament\Actions\DataDownloadApproval;
 use App\Filament\Actions\DropFollowUpActions;
+use App\Filament\Exports\LeadExporter;
 use App\Filament\Imports\LeadImporter;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\CustomerAssignment;
@@ -15,6 +17,8 @@ use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ExportAction;
+use Filament\Actions\ExportBulkAction;
 use Filament\Actions\ImportAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
@@ -138,6 +142,13 @@ class LeadsTable
                         ->map(fn (Lead $lead) => $lead->followUps()->latest('id')->first())
                         ->filter()),
                 ]),
+
+                DataDownloadApproval::protect(
+                    ExportBulkAction::make()
+                        ->exporter(LeadExporter::class)
+                        ->label('Export Selected'),
+                    'leads',
+                ),
             ])
             ->filters([
 
@@ -267,6 +278,14 @@ class LeadsTable
                 fn (Builder $query) => $query->whereBetween('created_at', SelectedMonth::range())
             )
             ->headerActions([
+
+                DataDownloadApproval::protect(
+                    ExportAction::make()
+                        ->exporter(LeadExporter::class)
+                        ->label('Export Leads')
+                        ->icon('heroicon-o-arrow-down-tray'),
+                    'leads',
+                ),
 
                 // ImportAction::make()
                 // ->importer(LeadImporter::class),

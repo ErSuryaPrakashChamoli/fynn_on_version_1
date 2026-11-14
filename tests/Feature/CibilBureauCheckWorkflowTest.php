@@ -292,14 +292,18 @@ class CibilBureauCheckWorkflowTest extends TestCase
         $this->assertSame($assigned->id, CibilReport::query()->sole()->customer_assignment_id);
     }
 
-    public function test_the_form_refuses_a_lead_that_is_not_waiting_for_a_bureau_check(): void
+    /**
+     * Any open lead of the user's can be picked since 2026-10-20, so the
+     * form refuses only a lead the user cannot see.
+     */
+    public function test_the_form_refuses_a_lead_the_user_cannot_see(): void
     {
-        $interested = $this->lead(['status' => 'Interested']);
+        $someoneElses = $this->lead(['employee_id' => $this->otherEmployee->id]);
 
         $this->actingAs($this->caller);
 
         Livewire::test(CreateCibilReport::class)
-            ->fillForm(['fetch_for' => 'lead', 'lead_key' => 'lead:'.$interested->id, 'customer_name' => 'Nisha Sharma', 'pan_number' => 'BBBBB1212J', 'date_of_birth' => '1994-03-09', 'consent' => true])
+            ->fillForm(['fetch_for' => 'lead', 'lead_key' => 'lead:'.$someoneElses->id, 'customer_name' => 'Nisha Sharma', 'pan_number' => 'BBBBB1212J', 'mobile_no' => '9123456780', 'gender' => 'male', 'date_of_birth' => '1994-03-09', 'consent_method' => 'digital', 'consent' => true])
             ->call('create')
             ->assertHasFormErrors(['lead_key']);
 

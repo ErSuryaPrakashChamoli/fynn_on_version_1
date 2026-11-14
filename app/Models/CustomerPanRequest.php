@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Filament\Resources\Customers\CustomerResource;
+use App\Filament\Resources\Leads\LeadResource;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -13,6 +15,8 @@ class CustomerPanRequest extends Model
         'customer_id',
         'ai_customer_record_id',
         'lead_id',
+        'matched_lead_id',
+        'request_for',
 
         'requested_by',
         'requested_by_emp_id',
@@ -44,12 +48,14 @@ class CustomerPanRequest extends Model
         'remarks',
 
         'application_id',
+        'used_at',
 
         'pan_number',
     ];
 
     protected $casts = [
         'approved_at' => 'datetime',
+        'used_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -76,9 +82,65 @@ class CustomerPanRequest extends Model
         return $this->belongsTo(AiCustomerRecord::class);
     }
 
+    /**
+     * The requester's own lead: the one being converted (customer requests)
+     * or the one being edited / created (lead requests).
+     */
     public function lead(): BelongsTo
     {
         return $this->belongsTo(Lead::class);
+    }
+
+    /**
+     * The existing open lead whose PAN clashed (customer_id is null then).
+     */
+    public function matchedLead(): BelongsTo
+    {
+        return $this->belongsTo(Lead::class, 'matched_lead_id');
+    }
+
+    /**
+     * Spent approvals: a customer file was created from it (application_id)
+     * or a lead was saved with it (used_at).
+     */
+    public function isUsed(): bool
+    {
+        return filled($this->application_id) || filled($this->used_at);
+    }
+
+    public function isForLead(): bool
+    {
+        return $this->request_for === self::FOR_LEAD;
+    }
+
+    /**
+     * Where the requester picks up an approved request.
+     */
+    public function continueUrl(): string
+    {
+        if ($this->isForLead()) {
+            return filled($this->lead_id)
+                ? LeadResource::getUrl('edit', ['record' => $this->lead_id, 'pan_request' => $this->id])
+                : LeadResource::getUrl('create', ['pan_request' => $this->id]);
+        }
+
+        return CustomerResource::getUrl('create', ['pan_request' => $this->id]);
+    }
+
+    /**
+     * e.g. "Customer: Rahul Sharma" / "Lead: Priya Singh".
+     */
+    public function matchedRecordLabel(): ?string
+    {
+        if ($this->customer) {
+            return 'Customer: '.$this->customer->customer_name;
+        }
+
+        if ($this->matchedLead) {
+            return 'Lead: '.$this->matchedLead->customer_name;
+        }
+
+        return null;
     }
 
     /**
@@ -156,4 +218,14 @@ class CustomerPanRequest extends Model
     public const STATUS_APPROVED = 'approved';
 
     public const STATUS_REJECTED = 'rejected';
+
+    /*
+    |--------------------------------------------------------------------------
+    | What the requester wants to save with the duplicate PAN
+    |--------------------------------------------------------------------------
+    */
+
+    public const FOR_CUSTOMER = 'customer';
+
+    public const FOR_LEAD = 'lead';
 }

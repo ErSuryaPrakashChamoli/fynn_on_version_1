@@ -12,6 +12,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Carbon;
 
 class OtherBankSupportTargetForm
@@ -21,6 +22,7 @@ class OtherBankSupportTargetForm
         return $schema
             ->components([
                 Section::make('Monthly target')
+                    ->icon(Heroicon::OutlinedFlag)
                     ->description('Other-bank count achievement this user is expected to reach in the month. Set it before the month starts. The LMS target and incentive calculation are not affected.')
                     ->schema([
                         Select::make('user_id')

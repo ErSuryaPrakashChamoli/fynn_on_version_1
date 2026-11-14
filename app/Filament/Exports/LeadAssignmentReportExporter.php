@@ -2,6 +2,7 @@
 
 namespace App\Filament\Exports;
 
+use App\Filament\Actions\DataDownloadApproval;
 use App\Filament\Resources\LeadAssignmentReports\Tables\LeadAssignmentReportsTable;
 use App\Models\Employee;
 use Filament\Actions\Exports\ExportColumn;
@@ -54,6 +55,13 @@ class LeadAssignmentReportExporter extends Exporter
             ExportColumn::make('suggested_action')
                 ->label('Suggested Action')
                 ->state(fn (Employee $record): string => LeadAssignmentReportsTable::suggestedAction($record)),
+        ];
+    }
+
+    public static function getOptionsFormComponents(): array
+    {
+        return [
+            DataDownloadApproval::codeField(),
         ];
     }
 

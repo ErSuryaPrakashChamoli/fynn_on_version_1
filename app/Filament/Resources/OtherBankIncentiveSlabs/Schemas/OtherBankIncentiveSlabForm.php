@@ -10,6 +10,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Carbon;
 
 class OtherBankIncentiveSlabForm
@@ -19,6 +20,7 @@ class OtherBankIncentiveSlabForm
         return $schema
             ->components([
                 Section::make('Incentive slab')
+                    ->icon(Heroicon::OutlinedReceiptPercent)
                     ->description('Slabs sharing an effective month form one ladder. A ladder applies from its effective month until a later month defines a new one. The highest slab whose minimum the other-bank count achievement reaches is paid.')
                     ->schema([
                         DatePicker::make('effective_month')

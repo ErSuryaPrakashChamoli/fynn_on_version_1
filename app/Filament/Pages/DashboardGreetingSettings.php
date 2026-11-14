@@ -42,6 +42,7 @@ class DashboardGreetingSettings extends Page
         return $schema
             ->components([
                 Section::make('Tagline')
+                    ->icon(Heroicon::OutlinedChatBubbleBottomCenterText)
                     ->description("Shown under the \"Good Morning/Afternoon/Evening\" greeting on everyone's Dashboard.")
                     ->schema([
                         TextInput::make('tagline')

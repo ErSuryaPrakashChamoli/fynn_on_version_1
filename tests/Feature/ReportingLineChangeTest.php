@@ -18,7 +18,6 @@ use Filament\Actions\Imports\Exceptions\RowImportFailedException;
 use Filament\Actions\Imports\Models\Import;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
@@ -215,28 +214,25 @@ class ReportingLineChangeTest extends TestCase
     |--------------------------------------------------------------------------
     */
 
-    public function test_moving_a_manager_carries_their_whole_team_to_the_new_cluster_manager(): void
+    /**
+     * Since 2026-11-14 a move needs nothing attached: the Manager's team is
+     * handed over first ("Transfer Employee" does it on the spot), so the
+     * form refuses a straight move while the team is still there. Whole
+     * teams still move together through a Full Cluster Transfer.
+     */
+    public function test_moving_a_manager_who_still_has_a_team_is_refused_until_the_team_is_handed_over(): void
     {
         Livewire::test(EditEmployee::class, ['record' => $this->manager->getRouteKey()])
             ->assertSchemaStateSet(['reports_to' => $this->cluster->id])
             ->fillForm(['reports_to' => $this->otherCluster->id])
             ->call('save')
-            ->assertHasNoFormErrors();
+            ->assertHasFormErrors(['reports_to']);
 
         foreach ([$this->manager, $this->teamLeader, $this->caller] as $employee) {
-            $employee->refresh();
-
-            $this->assertSame($this->otherCluster->id, $employee->cluster_id);
-            $this->assertSame(self::REPORTING_DATE, Carbon::parse($employee->reporting_date)->toDateString());
-            $this->assertTrue(EmployeeReportingHistory::query()
-                ->where('employee_id', $employee->id)
-                ->where('old_cluster_id', $this->cluster->id)
-                ->where('new_cluster_id', $this->otherCluster->id)
-                ->exists());
+            $this->assertSame($this->cluster->id, $employee->refresh()->cluster_id);
         }
 
-        $this->assertTrue(HierarchyHelper::subordinateIds($this->otherCluster)->contains($this->caller->id));
-        $this->assertFalse(HierarchyHelper::subordinateIds($this->cluster)->contains($this->caller->id));
+        $this->assertTrue(HierarchyHelper::subordinateIds($this->cluster)->contains($this->caller->id));
     }
 
     public function test_promoting_a_team_leader_moves_their_callers_into_the_manager_column(): void

@@ -2,12 +2,15 @@
 
 namespace App\Filament\Resources\CustomerEligibilityRequests\Pages;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\CustomerEligibilityRequests\CustomerEligibilityRequestResource;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 
 class ListCustomerEligibilityRequests extends ListRecords
 {
+    use HasColumnHeaderFilters;
+
     protected static string $resource = CustomerEligibilityRequestResource::class;
 
     protected function getHeaderActions(): array

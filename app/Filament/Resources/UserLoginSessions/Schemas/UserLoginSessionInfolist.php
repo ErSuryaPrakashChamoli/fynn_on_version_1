@@ -5,6 +5,7 @@ namespace App\Filament\Resources\UserLoginSessions\Schemas;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class UserLoginSessionInfolist
 {
@@ -14,6 +15,7 @@ class UserLoginSessionInfolist
             ->components([
 
                 Section::make('Employee')
+                    ->icon(Heroicon::OutlinedIdentification)
                     ->schema([
                         TextEntry::make('employee.emp_name')
                             ->label('Employee'),
@@ -25,6 +27,7 @@ class UserLoginSessionInfolist
                     ->columns(2),
 
                 Section::make('Login Session')
+                    ->icon(Heroicon::OutlinedArrowRightEndOnRectangle)
                     ->schema([
                         TextEntry::make('login_at')
                             ->label('Login Date & Time')
@@ -43,8 +46,7 @@ class UserLoginSessionInfolist
                         TextEntry::make('logout_reason')
                             ->label('Logout Reason')
                             ->formatStateUsing(
-                                fn (?string $state): string =>
-                                    $state
+                                fn (?string $state): string => $state
                                         ? ucfirst(
                                             str_replace(
                                                 '_',
@@ -58,6 +60,7 @@ class UserLoginSessionInfolist
                     ->columns(2),
 
                 Section::make('Screen Time')
+                    ->icon(Heroicon::OutlinedClock)
                     ->schema([
                         TextEntry::make('screen_time_seconds')
                             ->label('Actual Screen Time')
@@ -90,6 +93,7 @@ class UserLoginSessionInfolist
                     ]),
 
                 Section::make('Device Information')
+                    ->icon(Heroicon::OutlinedComputerDesktop)
                     ->schema([
                         TextEntry::make('ip_address')
                             ->label('IP Address'),

@@ -9,6 +9,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class AccountVerificationForm
 {
@@ -16,6 +17,7 @@ class AccountVerificationForm
     {
         return $schema->components([
             Section::make('Sales Input — Read Only')
+                ->icon(Heroicon::OutlinedBriefcase)
                 ->columns(3)
                 ->schema([
                     TextInput::make('sales_loan_type')->label('Loan Type')->disabled()->dehydrated(false),
@@ -27,6 +29,7 @@ class AccountVerificationForm
                 ]),
 
             Section::make('Bank MIS — MIS Team Only')
+                ->icon(Heroicon::OutlinedBuildingLibrary)
                 ->columns(3)
                 ->schema([
                     TextInput::make('mis_lan_no')->label('LAN')->required(),
@@ -54,6 +57,7 @@ class AccountVerificationForm
                 ]),
 
             Section::make('Sales vs Bank Reconciliation')
+                ->icon(Heroicon::OutlinedScale)
                 ->columns(3)
                 ->schema([
                     TextInput::make('variance_amount')->label('Loan Amount Difference')->disabled()->dehydrated(false)->indianAmount(words: false, allowNegative: true),
@@ -69,6 +73,7 @@ class AccountVerificationForm
                 ]),
 
             Section::make('MIS Verification')
+                ->icon(Heroicon::OutlinedCheckBadge)
                 ->schema([
                     Textarea::make('account_remark')->label('MIS Remarks')->rows(3),
                     Toggle::make('mis_verified')

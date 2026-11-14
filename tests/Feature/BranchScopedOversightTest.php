@@ -185,13 +185,17 @@ class BranchScopedOversightTest extends TestCase
         $this->assertSame($this->manager->id, $this->ownCustomer->fresh()->assign_to);
     }
 
-    public function test_the_users_screen_is_closed_to_everyone_but_admin_and_it(): void
+    /**
+     * Admin only since 2026-09-26: IT is limited to Employee Hierarchy and
+     * Complaints (App\Support\ItModuleAccess).
+     */
+    public function test_the_users_screen_is_closed_to_everyone_but_admin(): void
     {
         $this->actingAs(User::factory()->create(['employee_id' => $this->manager->id])->assignRole('Manager'));
         $this->assertFalse(UserResource::canAccess());
 
         $this->actingAs(User::factory()->create()->assignRole('IT'));
-        $this->assertTrue(UserResource::canAccess());
+        $this->assertFalse(UserResource::canAccess());
 
         $this->actingAs($this->adminLogin());
         $this->assertTrue(UserResource::canAccess());

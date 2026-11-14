@@ -14,108 +14,131 @@
         };
     @endphp
 
-    <div>
-        <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">
+    <div class="space-y-4">
+        <div class="fynn-callout fynn-callout--info">
             A follow-up counts as <strong>on time</strong> when anything is logged for the prospect by the end of the due day plus {{ $grace }} hours.
             Logged after that is <strong>late</strong>; nothing logged at all is <strong>missed</strong>. Daily limit: {{ $capacity }} open follow-ups per caller.
-        </p>
+        </div>
 
-        {{ $this->form }}
+        <div class="fynn-card">
+            {{ $this->form }}
+        </div>
     </div>
 
     {{-- Headline figures --}}
     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">On-time rate</div>
-            <div class="mt-1 text-2xl font-extrabold {{ $rateColor($summary['on_time_rate']) }}">
+        <div class="fynn-kpi" style="--fynn-kpi-accent: #3b82f6">
+            <div class="fynn-kpi-head">
+                <span class="fynn-kpi-icon"><x-filament::icon icon="heroicon-o-chart-pie" /></span>
+                <div class="fynn-kpi-label">On-time rate</div>
+            </div>
+            <div class="fynn-kpi-value {{ $rateColor($summary['on_time_rate']) }}">
                 {{ $summary['on_time_rate'] !== null ? $summary['on_time_rate'].'%' : '—' }}
             </div>
-            <div class="text-xs text-gray-500">of {{ $summary['judged'] }} due</div>
+            <div class="fynn-kpi-hint">of {{ $summary['judged'] }} due</div>
         </div>
-        <div class="rounded-xl border border-success-200 bg-success-50 p-4 dark:border-success-900 dark:bg-success-950/40">
-            <div class="text-xs font-semibold uppercase tracking-wide text-success-700 dark:text-success-400">On time</div>
-            <div class="mt-1 text-2xl font-extrabold text-gray-950 dark:text-white">{{ $summary['on_time'] }}</div>
+        <div class="fynn-kpi" style="--fynn-kpi-accent: #22c55e">
+            <div class="fynn-kpi-head">
+                <span class="fynn-kpi-icon"><x-filament::icon icon="heroicon-o-check-circle" /></span>
+                <div class="fynn-kpi-label">On time</div>
+            </div>
+            <div class="fynn-kpi-value">{{ $summary['on_time'] }}</div>
         </div>
-        <div class="rounded-xl border border-warning-200 bg-warning-50 p-4 dark:border-warning-900 dark:bg-warning-950/40">
-            <div class="text-xs font-semibold uppercase tracking-wide text-warning-700 dark:text-warning-400">Late</div>
-            <div class="mt-1 text-2xl font-extrabold text-gray-950 dark:text-white">{{ $summary['late'] }}</div>
-            <div class="text-xs text-gray-500">
+        <div class="fynn-kpi" style="--fynn-kpi-accent: #f59e0b">
+            <div class="fynn-kpi-head">
+                <span class="fynn-kpi-icon"><x-filament::icon icon="heroicon-o-clock" /></span>
+                <div class="fynn-kpi-label">Late</div>
+            </div>
+            <div class="fynn-kpi-value">{{ $summary['late'] }}</div>
+            <div class="fynn-kpi-hint">
                 {{ $summary['average_late_hours'] !== null ? 'avg '.$summary['average_late_hours'].' h after due' : '' }}
             </div>
         </div>
-        <div class="rounded-xl border border-danger-200 bg-danger-50 p-4 dark:border-danger-900 dark:bg-danger-950/40">
-            <div class="text-xs font-semibold uppercase tracking-wide text-danger-700 dark:text-danger-400">Missed</div>
-            <div class="mt-1 text-2xl font-extrabold text-gray-950 dark:text-white">{{ $summary['missed'] }}</div>
+        <div class="fynn-kpi" style="--fynn-kpi-accent: #ef4444">
+            <div class="fynn-kpi-head">
+                <span class="fynn-kpi-icon"><x-filament::icon icon="heroicon-o-x-circle" /></span>
+                <div class="fynn-kpi-label">Missed</div>
+            </div>
+            <div class="fynn-kpi-value">{{ $summary['missed'] }}</div>
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Open overdue now</div>
-            <div class="mt-1 text-2xl font-extrabold text-gray-950 dark:text-white">{{ $report['open_overdue'] }}</div>
-            <div class="text-xs text-gray-500">any date</div>
+        <div class="fynn-kpi" style="--fynn-kpi-accent: #f97316">
+            <div class="fynn-kpi-head">
+                <span class="fynn-kpi-icon"><x-filament::icon icon="heroicon-o-exclamation-triangle" /></span>
+                <div class="fynn-kpi-label">Open overdue now</div>
+            </div>
+            <div class="fynn-kpi-value">{{ $report['open_overdue'] }}</div>
+            <div class="fynn-kpi-hint">any date</div>
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-            <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Overloaded days</div>
-            <div class="mt-1 text-2xl font-extrabold {{ $report['overloaded_next_week'] ? 'text-danger-600 dark:text-danger-400' : 'text-gray-950 dark:text-white' }}">
+        <div class="fynn-kpi" style="--fynn-kpi-accent: #e11d48">
+            <div class="fynn-kpi-head">
+                <span class="fynn-kpi-icon"><x-filament::icon icon="heroicon-o-fire" /></span>
+                <div class="fynn-kpi-label">Overloaded days</div>
+            </div>
+            <div class="fynn-kpi-value {{ $report['overloaded_next_week'] ? 'text-danger-600 dark:text-danger-400' : 'text-gray-950 dark:text-white' }}">
                 {{ $report['overloaded_next_week'] }}
             </div>
-            <div class="text-xs text-gray-500">caller-days over {{ $capacity }}, next 7 days</div>
+            <div class="fynn-kpi-hint">caller-days over {{ $capacity }}, next 7 days</div>
         </div>
     </div>
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {{-- Backlog age --}}
-        <x-filament::section heading="How old is the open backlog?" description="Open follow-ups already past their date, by how long they have waited.">
+        <x-filament::section heading="How old is the open backlog?" description="Open follow-ups already past their date, by how long they have waited." icon="heroicon-o-inbox-stack">
             @php($backlogMax = max(1, max($report['backlog'])))
-            <div class="space-y-2">
+            <div class="space-y-3">
                 @foreach ($report['backlog'] as $label => $count)
                     <div class="flex items-center gap-3 text-sm">
-                        <span class="w-28 shrink-0 text-gray-600 dark:text-gray-400">{{ $label }}</span>
-                        <div class="h-3 flex-1 rounded-full bg-gray-100 dark:bg-gray-800">
+                        <span class="w-28 shrink-0 font-medium text-gray-600 dark:text-gray-400">{{ $label }}</span>
+                        <div class="h-2.5 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-white/5">
                             <div @class([
-                                'h-3 rounded-full',
+                                'h-2.5 rounded-full',
                                 'bg-info-500' => $loop->index === 0,
                                 'bg-warning-500' => $loop->index === 1,
                                 'bg-danger-500' => $loop->index === 2,
                                 'bg-danger-700' => $loop->index === 3,
                             ]) style="width: {{ round($count / $backlogMax * 100) }}%"></div>
                         </div>
-                        <span class="w-10 shrink-0 text-right font-semibold text-gray-900 dark:text-white">{{ $count }}</span>
+                        <span class="w-10 shrink-0 text-right font-semibold tabular-nums text-gray-900 dark:text-white">{{ $count }}</span>
                     </div>
                 @endforeach
             </div>
         </x-filament::section>
 
         {{-- Outcomes logged --}}
-        <x-filament::section heading="What callers are logging" description="Status of every follow-up entry logged in the period.">
+        <x-filament::section heading="What callers are logging" description="Status of every follow-up entry logged in the period." icon="heroicon-o-chat-bubble-left-right">
             <div class="flex flex-wrap gap-2">
                 @forelse ($report['statuses'] as $status => $count)
-                    <span class="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                        {{ $status }} <span class="font-bold text-gray-950 dark:text-white">{{ $count }}</span>
+                    <span class="fynn-chip">
+                        {{ $status }} <span class="font-bold tabular-nums text-gray-950 dark:text-white">{{ $count }}</span>
                     </span>
                 @empty
-                    <span class="text-sm text-gray-500">Nothing logged in this period.</span>
+                    <div class="fynn-empty fynn-empty--compact w-full">
+                        <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-chat-bubble-left-right" /></span>
+                        <span>Nothing logged in this period.</span>
+                    </div>
                 @endforelse
             </div>
         </x-filament::section>
     </div>
 
     {{-- Team table --}}
-    <x-filament::section heading="Team discipline" description="Due {{ $rangeStart->format('d M Y') }} – {{ $rangeEnd->format('d M Y') }}. Worst first. Click a row to see that person's missed follow-ups.">
-        <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm">
-                <thead class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500 dark:border-gray-700 dark:text-gray-400">
+    <x-filament::section heading="Team discipline" description="Due {{ $rangeStart->format('d M Y') }} – {{ $rangeEnd->format('d M Y') }}. Worst first. Click a row to see that person's missed follow-ups." icon="heroicon-o-user-group">
+        <div class="fynn-table-wrap overflow-x-auto">
+            <table class="fynn-table">
+                <thead>
                     <tr>
-                        <th class="py-2 pe-3">Employee</th>
-                        <th class="px-2 py-2 text-right">On-time %</th>
-                        <th class="px-2 py-2 text-right">On time</th>
-                        <th class="px-2 py-2 text-right">Late</th>
-                        <th class="px-2 py-2 text-right">Missed</th>
-                        <th class="px-2 py-2 text-right">Pending</th>
-                        <th class="px-2 py-2 text-right">Open overdue</th>
-                        <th class="px-2 py-2 text-right">Next 7 days</th>
-                        <th class="px-2 py-2 text-right">Days over {{ $capacity }}</th>
+                        <th>Employee</th>
+                        <th class="text-end">On-time %</th>
+                        <th class="text-end">On time</th>
+                        <th class="text-end">Late</th>
+                        <th class="text-end">Missed</th>
+                        <th class="text-end">Pending</th>
+                        <th class="text-end">Open overdue</th>
+                        <th class="text-end">Next 7 days</th>
+                        <th class="text-end">Days over {{ $capacity }}</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                <tbody>
                     @forelse ($report['team'] as $row)
                         <tr
                             @if ($row['employee_id']) wire:click="focusEmployee({{ $row['employee_id'] }})" @endif
@@ -124,22 +147,22 @@
                                 'bg-primary-50 dark:bg-primary-500/10' => $row['employee_id'] === $focusEmployeeId,
                             ])
                         >
-                            <td class="py-2 pe-3">
-                                <div class="font-medium text-gray-950 dark:text-white">{{ $row['name'] }}</div>
+                            <td>
+                                <div class="font-medium">{{ $row['name'] }}</div>
                                 @if ($row['emp_id'])
-                                    <div class="text-xs text-gray-500">{{ $row['emp_id'] }}</div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-400">{{ $row['emp_id'] }}</div>
                                 @endif
                             </td>
-                            <td class="px-2 py-2 text-right font-bold {{ $rateColor($row['on_time_rate']) }}">
+                            <td class="fynn-num font-bold {{ $rateColor($row['on_time_rate']) }}">
                                 {{ $row['on_time_rate'] !== null ? $row['on_time_rate'].'%' : '—' }}
                             </td>
-                            <td class="px-2 py-2 text-right">{{ $row['on_time'] }}</td>
-                            <td class="px-2 py-2 text-right">{{ $row['late'] }}</td>
-                            <td class="px-2 py-2 text-right font-semibold {{ $row['missed'] ? 'text-danger-600 dark:text-danger-400' : '' }}">{{ $row['missed'] }}</td>
-                            <td class="px-2 py-2 text-right">{{ $row['pending'] }}</td>
-                            <td class="px-2 py-2 text-right">{{ $row['open_overdue'] }}</td>
-                            <td class="px-2 py-2 text-right">{{ $row['next_week'] }}</td>
-                            <td class="px-2 py-2 text-right {{ $row['overloaded_days'] ? 'font-semibold text-danger-600 dark:text-danger-400' : '' }}">{{ $row['overloaded_days'] }}</td>
+                            <td class="fynn-num">{{ $row['on_time'] }}</td>
+                            <td class="fynn-num">{{ $row['late'] }}</td>
+                            <td class="fynn-num font-semibold {{ $row['missed'] ? 'text-danger-600 dark:text-danger-400' : '' }}">{{ $row['missed'] }}</td>
+                            <td class="fynn-num">{{ $row['pending'] }}</td>
+                            <td class="fynn-num">{{ $row['open_overdue'] }}</td>
+                            <td class="fynn-num">{{ $row['next_week'] }}</td>
+                            <td class="fynn-num {{ $row['overloaded_days'] ? 'font-semibold text-danger-600 dark:text-danger-400' : '' }}">{{ $row['overloaded_days'] }}</td>
                         </tr>
                     @empty
                         <tr>
@@ -154,7 +177,7 @@
     {{-- Drill-down --}}
     @if ($focused = $this->focusedEmployee())
         @php($missed = $this->focusedMissedFollowUps())
-        <x-filament::section>
+        <x-filament::section icon="heroicon-o-exclamation-circle">
             <x-slot name="heading">Missed follow-ups — {{ $focused->emp_name }}</x-slot>
             <x-slot name="afterHeader">
                 <div class="flex items-center gap-2">
@@ -166,26 +189,26 @@
                 </div>
             </x-slot>
 
-            <div class="overflow-x-auto">
-                <table class="w-full text-left text-sm">
-                    <thead class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500 dark:border-gray-700 dark:text-gray-400">
+            <div class="fynn-table-wrap overflow-x-auto">
+                <table class="fynn-table">
+                    <thead>
                         <tr>
-                            <th class="py-2 pe-3">Prospect</th>
-                            <th class="px-2 py-2">Was due</th>
-                            <th class="px-2 py-2">Status</th>
-                            <th class="px-2 py-2">Last remark</th>
+                            <th>Prospect</th>
+                            <th>Was due</th>
+                            <th>Status</th>
+                            <th>Last remark</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                    <tbody>
                         @forelse ($missed as $followUp)
                             <tr>
-                                <td class="py-2 pe-3 font-medium text-gray-950 dark:text-white">{{ $followUp->display_name }}</td>
-                                <td class="px-2 py-2 whitespace-nowrap">
+                                <td class="font-medium">{{ $followUp->display_name }}</td>
+                                <td class="whitespace-nowrap">
                                     {{ $followUp->next_follow_up_date->format('d M Y h:i A') }}
                                     <span class="text-xs text-danger-600 dark:text-danger-400">({{ $followUp->next_follow_up_date->diffForHumans() }})</span>
                                 </td>
-                                <td class="px-2 py-2">{{ $followUp->status }}</td>
-                                <td class="px-2 py-2 text-gray-600 dark:text-gray-400">{{ str($followUp->remarks)->limit(80) }}</td>
+                                <td>{{ $followUp->status }}</td>
+                                <td class="text-gray-600 dark:text-gray-400">{{ str($followUp->remarks)->limit(80) }}</td>
                             </tr>
                         @empty
                             <tr>
@@ -200,7 +223,7 @@
 
     {{-- Heat grid --}}
     @if (filled($report['heat']))
-        <x-filament::section heading="Missed follow-ups by day" description="Darker is worse. Spot a bad day for the whole team, or one caller falling behind.">
+        <x-filament::section heading="Missed follow-ups by day" description="Darker is worse. Spot a bad day for the whole team, or one caller falling behind." icon="heroicon-o-table-cells">
             <div class="overflow-x-auto">
                 <table class="text-xs">
                     <thead>

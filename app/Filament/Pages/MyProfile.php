@@ -2,10 +2,12 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Actions\OwnerAuthenticatorActions;
 use App\Models\CostCenter;
 use App\Models\Employee;
 use App\Models\TargetCategory;
 use App\Models\Unit;
+use App\Services\DataDownloadAuthenticatorService;
 use App\Support\HierarchyHelper;
 use Carbon\Carbon;
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
@@ -14,6 +16,7 @@ use Filament\Forms\Components\Placeholder;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use NumberFormatter;
 
 /**
@@ -76,18 +79,49 @@ class MyProfile extends BaseEditProfile
                 ]),
 
             Section::make('Employee Information')
+                ->icon(Heroicon::OutlinedIdentification)
                 ->schema($this->employeeInfoFields($employee))
                 ->columns(2),
 
             Section::make('Organization')
+                ->icon(Heroicon::OutlinedBuildingOffice2)
                 ->schema($this->organizationFields($employee))
                 ->columns(2)
                 ->visible((bool) $employee),
 
             Section::make('Account')
+                ->icon(Heroicon::OutlinedKey)
                 ->schema($this->accountFields())
                 ->columns(2),
+
+            // The owner authenticator that approves every data download —
+            // the same actions as on the Data Download page, Admin only.
+            Section::make('Data download approval')
+                ->key('downloadAuthenticator')
+                ->icon(Heroicon::OutlinedShieldCheck)
+                ->description('The owner\'s authenticator app. Every leads or customers export needs the 6-digit code it shows.')
+                ->headerActions([
+                    OwnerAuthenticatorActions::setUp(),
+                    OwnerAuthenticatorActions::replace(),
+                ])
+                ->schema([
+                    Placeholder::make('download_authenticator_status')
+                        ->label('Status')
+                        ->content(fn (): string => $this->downloadAuthenticatorStatus()),
+                ])
+                ->visible(fn (): bool => DataDownload::canAccess()),
         ]);
+    }
+
+    protected function downloadAuthenticatorStatus(): string
+    {
+        $authenticator = app(DataDownloadAuthenticatorService::class)->current();
+
+        if ($authenticator === null) {
+            return 'Not set up. Leads and customers exports stay switched off until the owner sets up an authenticator.';
+        }
+
+        return "Set up on {$authenticator->owner_name}'s phone since ".($authenticator->configured_at?->format('d M Y') ?? '—').'.';
     }
 
     /**

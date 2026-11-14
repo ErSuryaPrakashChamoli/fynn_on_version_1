@@ -8,6 +8,7 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
 
@@ -18,6 +19,7 @@ class ComplaintInfolist
         return $schema
             ->components([
                 Section::make(fn (Complaint $record): string => $record->ticket_no.' — '.$record->subject)
+                    ->icon(Heroicon::OutlinedTicket)
                     ->columnSpanFull()
                     ->schema([
                         Grid::make(4)->schema([
@@ -70,6 +72,7 @@ class ComplaintInfolist
                     ]),
 
                 Section::make('Description')
+                    ->icon(Heroicon::OutlinedDocumentText)
                     ->columnSpanFull()
                     ->schema([
                         TextEntry::make('description')
@@ -95,6 +98,7 @@ class ComplaintInfolist
                     ]),
 
                 Section::make('Resolution')
+                    ->icon(Heroicon::OutlinedCheckCircle)
                     ->columnSpanFull()
                     ->visible(fn (Complaint $record): bool => filled($record->resolution_note))
                     ->schema([

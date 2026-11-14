@@ -3,6 +3,7 @@
 namespace App\Filament\Academy\Resources\TrainingLessons\RelationManagers;
 
 use App\Filament\Academy\Resources\TrainingQuizzes\TrainingQuizResource;
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Models\Training\TrainingQuiz;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
@@ -18,6 +19,8 @@ use Filament\Tables\Table;
 
 class QuizzesRelationManager extends RelationManager
 {
+    use HasColumnHeaderFilters;
+
     protected static string $relationship = 'quizzes';
 
     protected static ?string $title = 'Quizzes';

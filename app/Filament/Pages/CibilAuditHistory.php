@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\CibilReports\CibilReportResource;
 use App\Models\CibilReport;
 use App\Models\User;
@@ -31,6 +32,7 @@ use UnitEnum;
  */
 class CibilAuditHistory extends Page implements HasTable
 {
+    use HasColumnHeaderFilters;
     use InteractsWithTable;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedArchiveBox;

@@ -3,6 +3,7 @@
 namespace App\Filament\Academy\Resources\TrainingBatches\RelationManagers;
 
 use App\Enums\PortalRole;
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Models\Training\TrainingBatch;
 use App\Models\Training\TrainingCourse;
 use App\Models\Training\TrainingEnrollment;
@@ -28,6 +29,8 @@ use Filament\Tables\Table;
  */
 class TraineesRelationManager extends RelationManager
 {
+    use HasColumnHeaderFilters;
+
     protected static string $relationship = 'trainees';
 
     protected static ?string $title = 'Trainees';

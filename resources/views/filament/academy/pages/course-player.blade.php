@@ -1,27 +1,27 @@
-<x-filament-panels::page>
+<x-filament-panels::page class="academy-page">
     @php($lesson = $this->getCurrentLesson())
     @php($completedIds = $this->getCompletedLessonIds())
     @php($quiz = $this->getCurrentQuiz())
     @php($assessment = $this->getFinalAssessment())
 
-    <div class="grid gap-4 lg:grid-cols-[20rem_minmax(0,1fr)]">
+    <div class="academy-player">
         {{-- Course outline --}}
-        <x-filament::section class="lg:sticky lg:top-4 lg:self-start">
+        <x-filament::section class="academy-player__outline" icon="heroicon-o-queue-list">
             <x-slot name="heading">Course Outline</x-slot>
 
-            <div class="academy-progress mb-4" role="progressbar"
+            <div class="academy-progress academy-outline__progress" role="progressbar"
                  aria-valuenow="{{ $enrollment->progress_percentage }}" aria-valuemin="0" aria-valuemax="100">
                 <div class="academy-progress__bar" style="width: {{ $enrollment->progress_percentage }}%"></div>
             </div>
 
-            <div class="space-y-4">
+            <div>
                 @foreach ($enrollment->course?->modules ?? [] as $module)
-                    <div>
-                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <div class="academy-module">
+                        <p class="academy-module__title">
                             {{ $module->title }}
                         </p>
 
-                        <ul class="mt-2 space-y-1">
+                        <ul class="academy-lessons">
                             @foreach ($module->lessons as $moduleLesson)
                                 @php($isDone = in_array($moduleLesson->getKey(), $completedIds, true))
                                 @php($isCurrent = $lesson?->getKey() === $moduleLesson->getKey())
@@ -31,22 +31,17 @@
                                         type="button"
                                         wire:click="selectLesson({{ $moduleLesson->getKey() }})"
                                         @class([
-                                            'flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition',
-                                            'bg-primary-50 font-medium text-primary-700 dark:bg-primary-950 dark:text-primary-300' => $isCurrent,
-                                            'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/5' => ! $isCurrent,
+                                            'academy-lesson',
+                                            'is-current' => $isCurrent,
+                                            'is-done' => $isDone,
                                         ])
+                                        @if ($isCurrent) aria-current="step" @endif
                                     >
-                                        <span class="mt-0.5 shrink-0">
+                                        <span class="academy-lesson__icon">
                                             @if ($isDone)
-                                                <x-filament::icon
-                                                    icon="heroicon-s-check-circle"
-                                                    class="h-4 w-4 text-success-600"
-                                                />
+                                                <x-filament::icon icon="heroicon-s-check-circle" />
                                             @else
-                                                <x-filament::icon
-                                                    icon="heroicon-o-play-circle"
-                                                    class="h-4 w-4 text-gray-400"
-                                                />
+                                                <x-filament::icon icon="heroicon-o-play-circle" />
                                             @endif
                                         </span>
 
@@ -60,12 +55,12 @@
             </div>
 
             @if ($assessment)
-                <div class="mt-6 border-t border-gray-200 pt-4 dark:border-white/10">
+                <div class="academy-outline__assessment">
                     <x-filament::button
                         tag="a"
                         size="sm"
                         color="warning"
-                        class="w-full"
+                        icon="heroicon-m-clipboard-document-check"
                         :href="\App\Filament\Academy\Pages\TakeQuiz::getUrl([
                             'quiz' => $assessment->getKey(),
                             'enrollment' => $enrollment->getKey(),
@@ -78,9 +73,9 @@
         </x-filament::section>
 
         {{-- Lesson body --}}
-        <div class="space-y-4">
+        <div class="academy-stack">
             @if ($lesson)
-                <x-filament::section>
+                <x-filament::section :icon="$lesson->content_type === 'video' ? 'heroicon-o-film' : 'heroicon-o-book-open'">
                     <x-slot name="heading">{{ $lesson->title }}</x-slot>
 
                     @if ($lesson->summary)
@@ -88,11 +83,10 @@
                     @endif
 
                     @if ($lesson->content_type === 'video' && $lesson->video_url)
-                        <div class="mb-4 overflow-hidden rounded-xl bg-black">
+                        <div class="academy-video">
                             {{-- Native player: no third-party embed, so no
                                  external script runs inside the portal. --}}
                             <video
-                                class="aspect-video w-full"
                                 controls
                                 preload="metadata"
                                 src="{{ $lesson->video_url }}"
@@ -103,18 +97,18 @@
                     @endif
 
                     @if ($lesson->content)
-                        <div class="prose prose-sm max-w-none text-gray-700 dark:prose-invert dark:text-gray-300">
+                        <div class="academy-prose">
                             {!! nl2br(e($lesson->content)) !!}
                         </div>
                     @endif
 
                     @if ($lesson->documents->isNotEmpty())
-                        <div class="mt-6">
-                            <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        <div class="academy-materials">
+                            <p class="academy-eyebrow">
                                 Material
                             </p>
 
-                            <ul class="space-y-1">
+                            <ul class="academy-docs">
                                 @foreach ($lesson->documents as $document)
                                     @continue (! $document->is_downloadable)
 
@@ -127,10 +121,10 @@
                                         --}}
                                         <a
                                             href="{{ route('filament.academy.training.documents.download', ['document' => $document->getKey()]) }}"
-                                            class="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:underline dark:text-primary-400"
+                                            class="academy-doc"
                                         >
-                                            <x-filament::icon icon="heroicon-o-document-arrow-down" class="h-4 w-4" />
-                                            {{ $document->title }}
+                                            <span class="academy-icon-tile"><x-filament::icon icon="heroicon-o-document-arrow-down" /></span>
+                                            <span class="academy-doc__title">{{ $document->title }}</span>
                                         </a>
                                     </li>
                                 @endforeach
@@ -139,19 +133,20 @@
                     @endif
 
                     <x-slot name="footer">
-                        <div class="flex flex-wrap items-center gap-3">
+                        <div class="academy-actions">
                             @if (! in_array($lesson->getKey(), $completedIds, true))
                                 <x-filament::button wire:click="completeLesson" icon="heroicon-o-check">
                                     Mark as complete
                                 </x-filament::button>
                             @else
-                                <x-filament::badge color="success">Completed</x-filament::badge>
+                                <x-filament::badge color="success" icon="heroicon-m-check-circle">Completed</x-filament::badge>
                             @endif
 
                             @if ($quiz)
                                 <x-filament::button
                                     tag="a"
                                     color="gray"
+                                    icon="heroicon-m-clipboard-document-check"
                                     :href="\App\Filament\Academy\Pages\TakeQuiz::getUrl([
                                         'quiz' => $quiz->getKey(),
                                         'enrollment' => $enrollment->getKey(),
@@ -164,11 +159,10 @@
                     </x-slot>
                 </x-filament::section>
             @else
-                <x-filament::section>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">
-                        This course has no published lessons yet.
-                    </p>
-                </x-filament::section>
+                <div class="academy-empty">
+                    <span class="academy-empty__icon"><x-filament::icon icon="heroicon-o-book-open" /></span>
+                    <span>This course has no published lessons yet.</span>
+                </div>
             @endif
         </div>
     </div>

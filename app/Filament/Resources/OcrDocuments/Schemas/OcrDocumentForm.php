@@ -7,6 +7,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class OcrDocumentForm
 {
@@ -14,6 +15,7 @@ class OcrDocumentForm
     {
         return $schema->components([
             Section::make('Document Upload')
+                ->icon(Heroicon::OutlinedPaperClip)
                 ->schema([
                     FileUpload::make('original_path')
                         ->label('PDF / Image')

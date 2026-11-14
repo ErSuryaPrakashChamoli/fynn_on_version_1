@@ -5,6 +5,7 @@ namespace App\Filament\Widgets;
 use App\Enums\CibilReportStatus;
 use App\Enums\CibilRequestType;
 use App\Enums\CreditBureau;
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\CibilReports\CibilReportResource;
 use App\Models\CibilReport;
 use App\Models\User;
@@ -24,6 +25,7 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class CibilRecentRequests extends TableWidget
 {
+    use HasColumnHeaderFilters;
     use InteractsWithPageFilters;
 
     protected static ?string $heading = 'Recent requests';

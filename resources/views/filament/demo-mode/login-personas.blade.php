@@ -43,16 +43,31 @@
     }
 
     .fynn-demo-persona {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.375rem;
         width: 100%;
-        padding: 0.55rem 0.5rem;
-        border-radius: 0.5rem;
+        min-height: 2.5rem;
+        padding: 0.5rem 0.625rem;
+        border-radius: 0.625rem;
         border: 1px solid rgb(226 232 240);
-        background: rgb(248 250 252);
+        background: rgb(255 255 255);
+        box-shadow: 0 1px 2px rgb(16 24 40 / 0.05);
         font-size: 0.8125rem;
         font-weight: 600;
+        line-height: 1.2;
         color: rgb(30 41 59);
         cursor: pointer;
-        transition: border-color 120ms, background-color 120ms, box-shadow 120ms;
+        transition: border-color 120ms, background-color 120ms, box-shadow 120ms, transform 120ms;
+    }
+
+    .fynn-demo-persona svg {
+        flex-shrink: 0;
+        width: 1rem;
+        height: 1rem;
+        color: rgb(148 163 184);
+        transition: color 120ms;
     }
 
     .fynn-demo-persona:hover,
@@ -60,7 +75,24 @@
         border-color: var(--primary-500);
         background: var(--primary-50);
         box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-400) 25%, transparent);
+        transform: translateY(-1px);
         outline: none;
+    }
+
+    .fynn-demo-persona:hover svg,
+    .fynn-demo-persona:focus-visible svg {
+        color: var(--primary-700);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .fynn-demo-persona {
+            transition: none;
+        }
+
+        .fynn-demo-persona:hover,
+        .fynn-demo-persona:focus-visible {
+            transform: none;
+        }
     }
 </style>
 
@@ -76,7 +108,8 @@
             <form method="POST" action="{{ route('demo-persona.switch', $slug) }}">
                 @csrf
                 <button type="submit" class="fynn-demo-persona" title="{{ $persona['description'] }}">
-                    {{ $persona['label'] }}
+                    <x-filament::icon icon="heroicon-m-user-circle" />
+                    <span>{{ $persona['label'] }}</span>
                 </button>
             </form>
         @endforeach

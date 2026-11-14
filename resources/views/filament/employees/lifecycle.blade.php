@@ -1,76 +1,78 @@
 <div class="space-y-6">
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <div>
-            <div class="text-xs font-medium text-gray-500">Employee ID</div>
-            <div class="font-semibold text-gray-950 dark:text-white">{{ $employee->emp_id }}</div>
+    <dl class="fynn-dl">
+        <div class="fynn-dl-item">
+            <dt>Employee ID</dt>
+            <dd>{{ $employee->emp_id }}</dd>
         </div>
-        <div>
-            <div class="text-xs font-medium text-gray-500">Date of Joining</div>
-            <div class="font-semibold text-gray-950 dark:text-white">
+        <div class="fynn-dl-item">
+            <dt>Date of Joining</dt>
+            <dd>
                 {{ $employee->doj ? \Illuminate\Support\Carbon::parse($employee->doj)->format('d M Y') : '-' }}
-            </div>
+            </dd>
         </div>
-        <div>
-            <div class="text-xs font-medium text-gray-500">Current Reporting Date</div>
-            <div class="font-semibold text-gray-950 dark:text-white">
+        <div class="fynn-dl-item">
+            <dt>Current Reporting Date</dt>
+            <dd>
                 {{ $employee->reporting_date ? \Illuminate\Support\Carbon::parse($employee->reporting_date)->format('d M Y') : '-' }}
-            </div>
+            </dd>
         </div>
-        <div>
-            <div class="text-xs font-medium text-gray-500">Exit Date</div>
-            <div class="font-semibold text-gray-950 dark:text-white">
+        <div class="fynn-dl-item">
+            <dt>Exit Date</dt>
+            <dd>
                 {{ $employee->exit_date ? \Illuminate\Support\Carbon::parse($employee->exit_date)->format('d M Y') : 'Active' }}
-            </div>
+            </dd>
         </div>
-    </div>
+    </dl>
 
-    <div class="grid grid-cols-1 gap-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700 md:grid-cols-2 lg:grid-cols-4">
-        <div>
-            <div class="text-xs font-medium text-gray-500">Current Team Leader</div>
-            <div class="font-semibold text-gray-950 dark:text-white">
-                {{ $employee->superviser?->emp_name ?? '-' }}
+    <div class="fynn-card">
+        <dl class="fynn-dl">
+            <div class="fynn-dl-item">
+                <dt>Current Team Leader</dt>
+                <dd>
+                    {{ $employee->superviser?->emp_name ?? '-' }}
+                </dd>
             </div>
-        </div>
-        <div>
-            <div class="text-xs font-medium text-gray-500">Current Manager</div>
-            <div class="font-semibold text-gray-950 dark:text-white">
-                {{ $employee->manager?->emp_name ?? '-' }}
+            <div class="fynn-dl-item">
+                <dt>Current Manager</dt>
+                <dd>
+                    {{ $employee->manager?->emp_name ?? '-' }}
+                </dd>
             </div>
-        </div>
-        <div>
-            <div class="text-xs font-medium text-gray-500">Current Cluster Manager</div>
-            <div class="font-semibold text-gray-950 dark:text-white">
-                {{ $employee->clusterManager?->emp_name ?? '-' }}
+            <div class="fynn-dl-item">
+                <dt>Current Cluster Manager</dt>
+                <dd>
+                    {{ $employee->clusterManager?->emp_name ?? '-' }}
+                </dd>
             </div>
-        </div>
-        <div>
-            <div class="text-xs font-medium text-gray-500">Current Business Head</div>
-            <div class="font-semibold text-gray-950 dark:text-white">
-                {{ $employee->businessHead?->emp_name ?? '-' }}
+            <div class="fynn-dl-item">
+                <dt>Current Business Head</dt>
+                <dd>
+                    {{ $employee->businessHead?->emp_name ?? '-' }}
+                </dd>
             </div>
-        </div>
+        </dl>
     </div>
 
     <div>
-        <h3 class="mb-3 text-sm font-semibold text-gray-950 dark:text-white">
+        <h3 class="fynn-subheading">
             Complete Reporting / Transfer History
         </h3>
 
-        <div class="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-            <table class="w-full text-left text-sm">
-                <thead class="bg-gray-50 dark:bg-gray-800">
+        <div class="fynn-table-wrap overflow-x-auto">
+            <table class="fynn-table">
+                <thead>
                     <tr>
-                        <th class="px-4 py-3 font-semibold">Event</th>
-                        <th class="px-4 py-3 font-semibold">Reporting Date</th>
-                        <th class="px-4 py-3 font-semibold">Transfer / End Date</th>
-                        <th class="px-4 py-3 font-semibold">Team Leader</th>
-                        <th class="px-4 py-3 font-semibold">Manager</th>
-                        <th class="px-4 py-3 font-semibold">Cluster Manager</th>
-                        <th class="px-4 py-3 font-semibold">Business Head</th>
-                        <th class="px-4 py-3 font-semibold">Updated By</th>
+                        <th>Event</th>
+                        <th>Reporting Date</th>
+                        <th>Transfer / End Date</th>
+                        <th>Team Leader</th>
+                        <th>Manager</th>
+                        <th>Cluster Manager</th>
+                        <th>Business Head</th>
+                        <th>Updated By</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody>
                     @forelse ($histories as $history)
                         @php
                             $eventDate = $history->effective_date?->format('d M Y');
@@ -91,35 +93,35 @@
                         @endphp
 
                         <tr>
-                            <td class="whitespace-nowrap px-4 py-3 font-medium text-gray-950 dark:text-white">
+                            <td class="whitespace-nowrap font-medium">
                                 {{ $eventLabel }}
                             </td>
-                            <td class="whitespace-nowrap px-4 py-3">
+                            <td class="whitespace-nowrap">
                                 {{ $eventDate ?? '-' }}
                             </td>
-                            <td class="whitespace-nowrap px-4 py-3">
+                            <td class="whitespace-nowrap">
                                 {{ $endDate ?? ($history->change_type === 'exit' ? $eventDate : 'Present') }}
                             </td>
-                            <td class="px-4 py-3">
+                            <td>
                                 {{ $teamLeader ?? '-' }}
                             </td>
-                            <td class="px-4 py-3">
+                            <td>
                                 {{ $manager ?? '-' }}
                             </td>
-                            <td class="px-4 py-3">
+                            <td>
                                 {{ $cluster ?? '-' }}
                             </td>
-                            <td class="px-4 py-3">
+                            <td>
                                 {{ $businessHead ?? '-' }}
                             </td>
-                            <td class="px-4 py-3">
+                            <td>
                                 {{ $history->updatedBy?->name ?? 'System' }}
                             </td>
                         </tr>
 
                         @if ($history->change_type === 'transfer')
-                            <tr class="bg-gray-50/60 dark:bg-gray-900/40">
-                                <td colspan="8" class="px-4 pb-3 pt-0 text-xs text-gray-500">
+                            <tr class="is-muted bg-gray-50/60 dark:bg-gray-900/40">
+                                <td colspan="8" class="text-xs">
                                     Previous reporting:
                                     {{ $history->oldSupervisor?->emp_name ?? '-' }}
                                     →
@@ -133,7 +135,7 @@
                         @endif
                     @empty
                         <tr>
-                            <td colspan="8" class="px-4 py-6 text-center text-gray-500">
+                            <td colspan="8" class="py-6 text-center text-gray-500">
                                 No reporting history found.
                             </td>
                         </tr>

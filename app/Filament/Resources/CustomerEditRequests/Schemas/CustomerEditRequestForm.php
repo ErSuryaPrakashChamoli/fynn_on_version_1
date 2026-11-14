@@ -15,6 +15,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 /**
  * Pick the file, then the journey section, then one row per field to
@@ -29,6 +30,7 @@ class CustomerEditRequestForm
         return $schema
             ->components([
                 Section::make('Which file and section?')
+                    ->icon(Heroicon::OutlinedFolderOpen)
                     ->description('The Admin reviews every request. Once approved, the new values are written onto the customer file automatically and the change is logged.')
                     ->schema([
                         Select::make('customer_id')
@@ -52,6 +54,7 @@ class CustomerEditRequestForm
                     ->columnSpanFull(),
 
                 Section::make('Fields to change')
+                    ->icon(Heroicon::OutlinedPencilSquare)
                     ->visible(fn (Get $get): bool => filled($get('customer_id')) && filled($get('section')))
                     ->schema([
                         Repeater::make('changes')
@@ -112,6 +115,7 @@ class CustomerEditRequestForm
                     ->columnSpanFull(),
 
                 Section::make('Why?')
+                    ->icon(Heroicon::OutlinedChatBubbleLeftEllipsis)
                     ->schema([
                         Textarea::make('reason')
                             ->label('Reason for the change')

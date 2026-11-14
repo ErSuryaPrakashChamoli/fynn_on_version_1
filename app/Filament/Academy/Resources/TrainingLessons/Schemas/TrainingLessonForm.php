@@ -12,6 +12,7 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class TrainingLessonForm
 {
@@ -19,6 +20,7 @@ class TrainingLessonForm
     {
         return $schema->components([
             Section::make('Lesson')
+                ->icon(Heroicon::OutlinedBookOpen)
                 ->schema([
                     Grid::make(2)->schema([
                         Select::make('training_module_id')
@@ -52,6 +54,7 @@ class TrainingLessonForm
                 ->columnSpanFull(),
 
             Section::make('Content')
+                ->icon(Heroicon::OutlinedDocumentText)
                 ->schema([
                     Select::make('content_type')
                         ->options([
@@ -79,6 +82,7 @@ class TrainingLessonForm
                 ->columnSpanFull(),
 
             Section::make('Settings')
+                ->icon(Heroicon::OutlinedCog6Tooth)
                 ->schema([
                     Grid::make(4)->schema([
                         TextInput::make('duration_minutes')

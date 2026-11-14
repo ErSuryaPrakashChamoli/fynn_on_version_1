@@ -8,6 +8,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class CustomerSettlementForm
 {
@@ -17,6 +18,7 @@ class CustomerSettlementForm
 
         return $schema->components([
             Section::make('Sales Snapshot — Read Only')
+                ->icon(Heroicon::OutlinedBriefcase)
                 ->columns(3)
                 ->schema([
                     TextInput::make('sales_loan_type')->label('Loan Type')->disabled()->dehydrated(false),
@@ -28,6 +30,7 @@ class CustomerSettlementForm
                 ]),
 
             Section::make('Latest Bank / MIS Position — Read Only')
+                ->icon(Heroicon::OutlinedBuildingLibrary)
                 ->columns(3)
                 ->schema([
                     TextInput::make('mis_lan_no')->label('LAN')->disabled()->dehydrated(false),
@@ -51,6 +54,7 @@ class CustomerSettlementForm
                 ]),
 
             Section::make('Sales vs Bank Reconciliation')
+                ->icon(Heroicon::OutlinedScale)
                 ->columns(3)
                 ->schema([
                     TextInput::make('variance_amount')->label('Loan Amount Difference')->disabled()->dehydrated(false)->indianAmount(words: false, allowNegative: true),
@@ -64,6 +68,7 @@ class CustomerSettlementForm
                 ]),
 
             Section::make('Sales Achievement / Incentive Impact')
+                ->icon(Heroicon::OutlinedTrophy)
                 ->columns(3)
                 ->schema([
                     TextInput::make('achievement_before')->label('Achievement Before MIS')->disabled()->dehydrated(false)->indianAmount(words: false, allowNegative: true),
@@ -75,6 +80,7 @@ class CustomerSettlementForm
                 ]),
 
             Section::make('Accounts Settlement')
+                ->icon(Heroicon::OutlinedDocumentCurrencyRupee)
                 ->columns(3)
                 ->schema([
                     TextInput::make('gross_payable_amount')->label('Gross Payable')->indianAmount(min: 0),
@@ -106,6 +112,7 @@ class CustomerSettlementForm
                 ]),
 
             Section::make('Accounts Remarks')
+                ->icon(Heroicon::OutlinedChatBubbleLeftEllipsis)
                 ->schema([
                     Textarea::make('remarks')->rows(4),
                 ]),

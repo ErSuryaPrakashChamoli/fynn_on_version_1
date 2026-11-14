@@ -6,6 +6,7 @@ use App\Enums\CibilPdfStatus;
 use App\Enums\CibilReportStatus;
 use App\Enums\CibilRequestType;
 use App\Enums\CreditBureau;
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\CibilReports\CibilReportResource;
 use App\Filament\Resources\CibilReports\Schemas\CibilRequestFields;
 use App\Models\CibilReport;
@@ -50,6 +51,8 @@ use Illuminate\Validation\ValidationException;
  */
 class CibilProfileRelationManager extends RelationManager
 {
+    use HasColumnHeaderFilters;
+
     protected static string $relationship = 'cibilReports';
 
     protected static ?string $title = 'CIBIL Credit Profile';

@@ -1,14 +1,11 @@
 <x-filament-panels::page>
-    <div>
-        <label class="mb-1 block text-sm font-semibold text-gray-700 dark:text-gray-300">
-            Find Employee
-        </label>
-        <p class="mb-3 text-xs text-gray-500">
-            Start typing an employee ID or name — matching employees appear in a dropdown so you can pick the right one.
-        </p>
-
+    <x-filament::section
+        heading="Find Employee"
+        description="Start typing an employee ID or name — matching employees appear in a dropdown so you can pick the right one."
+        icon="heroicon-o-magnifying-glass"
+    >
         {{ $this->form }}
-    </div>
+    </x-filament::section>
 
     @if ($employee)
         @php
@@ -18,38 +15,55 @@
         @endphp
 
         {{-- Profile header --}}
-        <div class="flex flex-wrap items-center gap-4 border-b border-gray-200 pb-5 dark:border-gray-700">
-            <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+        <div class="fynn-hero">
+            <span class="fynn-avatar fynn-avatar--lg">
                 {{ $employee->initials }}
             </span>
 
-            <div class="min-w-0">
-                <div class="flex flex-wrap items-baseline gap-x-2">
-                    <span class="text-xl font-bold text-gray-950 dark:text-white">{{ $employee->emp_name }}</span>
-                    <span class="text-xs font-bold uppercase tracking-wide {{ $roleColor }}">{{ $roleLabel }}</span>
+            <div class="fynn-hero-main">
+                <div class="fynn-hero-title">
+                    <span>{{ $employee->emp_name }}</span>
+                    <span class="dc-level {{ $roleColor }}">{{ $roleLabel }}</span>
                     @if ($employee->exit_status === 'yes')
-                        <span class="text-xs font-semibold uppercase tracking-wide text-rose-500">Exited</span>
+                        <x-filament::badge color="danger" size="sm">Exited</x-filament::badge>
                     @endif
                 </div>
-                <div class="text-sm text-gray-600 dark:text-gray-400">
-                    <span class="font-bold text-gray-800 dark:text-gray-200">ID: {{ $employee->emp_id }}</span>
-                    @if ($employee->position) &middot; {{ $employee->position }} @endif
-                    @if ($employee->email) &middot; {{ $employee->email }} @endif
+                <div class="fynn-hero-meta">
+                    <span class="fynn-chip">
+                        <x-filament::icon icon="heroicon-m-identification" />
+                        ID: {{ $employee->emp_id }}
+                    </span>
+                    @if ($employee->position)
+                        <span class="fynn-chip">
+                            <x-filament::icon icon="heroicon-m-briefcase" />
+                            {{ $employee->position }}
+                        </span>
+                    @endif
+                    @if ($employee->email)
+                        <span class="fynn-chip">
+                            <x-filament::icon icon="heroicon-m-envelope" />
+                            {{ $employee->email }}
+                        </span>
+                    @endif
                 </div>
-                <div class="text-base font-extrabold text-gray-900 dark:text-white">
+            </div>
+
+            <div class="fynn-hero-aside">
+                <span class="fynn-chip fynn-chip--accent px-3 py-1 text-sm font-bold">
+                    <x-filament::icon icon="heroicon-m-flag" />
                     Current Month Target: {{ \App\Filament\Pages\EmployeeHierarchy::targetLabel($employee) }}
-                </div>
+                </span>
             </div>
         </div>
 
         {{-- Reporting To --}}
-        <div>
-            <h3 class="border-b border-gray-200 pb-2 text-sm font-bold uppercase tracking-wide text-gray-700 dark:border-gray-700 dark:text-gray-300">
-                Reporting To <span class="font-normal normal-case text-gray-400">— bottom to top</span>
-            </h3>
+        <x-filament::section icon="heroicon-o-arrow-up-circle">
+            <x-slot name="heading">
+                Reporting To <span class="font-normal text-gray-500 dark:text-gray-400">— bottom to top</span>
+            </x-slot>
 
             <div class="overflow-x-auto">
-                <div class="eh-chain py-6">
+                <div class="eh-chain py-2">
                     @foreach ($chainTopFirst as $index => $person)
                         @include('filament.pages.partials.employee-hierarchy-node-label', ['person' => $person, 'isHighlighted' => $person->is($employee)])
 
@@ -61,25 +75,31 @@
             </div>
 
             @if (count($chainTopFirst) === 1)
-                <p class="text-sm text-gray-500">This employee has no one above them in the hierarchy.</p>
+                <p class="fynn-note">
+                    <x-filament::icon icon="heroicon-m-information-circle" />
+                    <span>This employee has no one above them in the hierarchy.</span>
+                </p>
             @endif
-        </div>
+        </x-filament::section>
 
         {{-- Reportees --}}
-        <div>
-            <h3 class="border-b border-gray-200 pb-2 text-sm font-bold uppercase tracking-wide text-gray-700 dark:border-gray-700 dark:text-gray-300">
-                Reportees <span class="font-normal normal-case text-gray-400">— top to bottom</span>
-            </h3>
+        <x-filament::section icon="heroicon-o-user-group">
+            <x-slot name="heading">
+                Reportees <span class="font-normal text-gray-500 dark:text-gray-400">— top to bottom</span>
+            </x-slot>
 
             @php $tree = $this->downwardTree; @endphp
 
             @if (empty($tree['children']))
-                <p class="pt-3 text-sm text-gray-500">No one currently reports to {{ $employee->emp_name }}.</p>
+                <div class="fynn-empty fynn-empty--compact">
+                    <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-user-minus" /></span>
+                    <span>No one currently reports to {{ $employee->emp_name }}.</span>
+                </div>
             @else
-                <ul class="eh-vtree py-4">
+                <ul class="eh-vtree">
                     @include('filament.pages.partials.employee-hierarchy-node', ['node' => $tree, 'highlightId' => $employee->id])
                 </ul>
             @endif
-        </div>
+        </x-filament::section>
     @endif
 </x-filament-panels::page>

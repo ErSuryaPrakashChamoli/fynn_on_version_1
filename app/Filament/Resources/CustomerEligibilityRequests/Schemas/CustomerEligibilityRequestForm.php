@@ -13,6 +13,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -29,6 +30,7 @@ class CustomerEligibilityRequestForm
         return $schema
             ->components([
                 Section::make('Ask the Admin to make a Not Eligible file eligible')
+                    ->icon(Heroicon::OutlinedShieldCheck)
                     ->description('Only Not Eligible files in your team without a waiting request are listed. Once approved, the file becomes Eligible, moves to SFL and is locked.')
                     ->columnSpanFull()
                     ->schema([

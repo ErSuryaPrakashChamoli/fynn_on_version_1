@@ -13,6 +13,7 @@ use App\Models\FollowUp;
 use App\Models\Lead;
 use App\Services\Cibil\CibilReportService;
 use App\Services\CustomerEligibilityService;
+use App\Services\PanDuplicateService;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
@@ -22,6 +23,11 @@ class CreateCustomer extends CreateRecord
     protected static string $resource = CustomerResource::class;
 
     public ?Customer $existingCustomer = null;
+
+    /**
+     * An open lead that already carries the typed PAN.
+     */
+    public ?Lead $existingLead = null;
 
     public bool $panExists = false;
 
@@ -107,7 +113,7 @@ class CreateCustomer extends CreateRecord
 
                 // The upload template may store these under its own keys
                 // ("mobile", "pan", "city"...) — prospectValue() finds them.
-                $panNumber = $aiRecord->prospectValue('pan_number');
+                $panNumber = PanDuplicateService::normalize($aiRecord->prospectValue('pan_number'));
 
                 $fill = [
                     'pan_number' => $panNumber,
@@ -121,28 +127,7 @@ class CreateCustomer extends CreateRecord
                     'salary' => $aiRecord->prospectValue('salary'),
                 ];
 
-                // Run the same duplicate-PAN lookup used by the live
-                // pan_number field, since the field is pre-filled here
-                // and its afterStateUpdated hook will not fire on blur.
-                $existingCustomer = $panNumber
-                    ? Customer::where('pan_number', $panNumber)->first()
-                    : null;
-
-                if ($existingCustomer) {
-                    $fill['existing_customer_id'] = $existingCustomer->id;
-                    $fill['pan_status'] = 'exists';
-                    $fill['customer_name'] = $existingCustomer->customer_name;
-                    $fill['mobile_no'] = $existingCustomer->mobile_no;
-                    $fill['email'] = $existingCustomer->email;
-
-                    $this->existingCustomer = $existingCustomer;
-                    $this->panVerified = false;
-                } else {
-                    $fill['pan_status'] = $panNumber ? 'available' : '';
-                    $this->panVerified = (bool) $panNumber;
-                }
-
-                $this->form->fill($fill);
+                $this->form->fill($this->withPanCheck($fill));
             }
         }
 
@@ -173,7 +158,7 @@ class CreateCustomer extends CreateRecord
 
                 $this->leadId = $lead->id;
 
-                $panNumber = filled($lead->pan_number) ? strtoupper($lead->pan_number) : null;
+                $panNumber = PanDuplicateService::normalize($lead->pan_number);
 
                 $fill = [
                     'pan_number' => $panNumber,
@@ -186,28 +171,7 @@ class CreateCustomer extends CreateRecord
                     'salary' => $lead->salary,
                 ];
 
-                // Run the same duplicate-PAN lookup used by the live
-                // pan_number field, since the field is pre-filled here
-                // and its afterStateUpdated hook will not fire on blur.
-                $existingCustomer = $panNumber
-                    ? Customer::where('pan_number', $panNumber)->first()
-                    : null;
-
-                if ($existingCustomer) {
-                    $fill['existing_customer_id'] = $existingCustomer->id;
-                    $fill['pan_status'] = 'exists';
-                    $fill['customer_name'] = $existingCustomer->customer_name;
-                    $fill['mobile_no'] = $existingCustomer->mobile_no;
-                    $fill['email'] = $existingCustomer->email;
-
-                    $this->existingCustomer = $existingCustomer;
-                    $this->panVerified = false;
-                } else {
-                    $fill['pan_status'] = $panNumber ? 'available' : '';
-                    $this->panVerified = (bool) $panNumber;
-                }
-
-                $this->form->fill($fill);
+                $this->form->fill($this->withPanCheck($fill));
             }
         }
 
@@ -217,11 +181,12 @@ class CreateCustomer extends CreateRecord
             return;
         }
 
-        $this->panRequest = CustomerPanRequest::with('customer')
+        $this->panRequest = CustomerPanRequest::with(['customer', 'matchedLead', 'lead'])
             ->findOrFail($panRequestId);
 
         abort_unless(
-            $this->panRequest->status === CustomerPanRequest::STATUS_APPROVED,
+            $this->panRequest->status === CustomerPanRequest::STATUS_APPROVED
+                && ! $this->panRequest->isForLead(),
             403
         );
 
@@ -230,7 +195,7 @@ class CreateCustomer extends CreateRecord
             403
         );
 
-        if (filled($this->panRequest?->application_id)) {
+        if ($this->panRequest->isUsed()) {
             Notification::make()
                 ->title('PAN Request Already Used')
                 ->body('This PAN approval request has already been used to create a customer.')
@@ -258,28 +223,99 @@ class CreateCustomer extends CreateRecord
             $this->leadId = $this->panRequest->lead_id;
         }
 
-        $this->form->fill([
-
-            // Existing customer
-            'existing_customer_id' => $customer->id,
-
-            'pan_number' => $customer->pan_number,
-            'customer_name' => $customer->customer_name,
-            'mobile_no' => $customer->mobile_no,
-            'email' => $customer->email,
-
-            // Approved request data
+        // Approved data shared by both kinds of clash
+        $approved = [
+            'pan_number' => $this->panRequest->pan_number,
             'requested_bank_id' => $this->panRequest->requested_bank_id,
             // 'loan_type' => $this->panRequest->requested_loan_type,
             'loan_applied' => $this->panRequest->requested_loan_type,
+        ];
+
+        if ($customer) {
+            $this->form->fill([
+                ...$approved,
+
+                // Existing customer
+                'existing_customer_id' => $customer->id,
+
+                'pan_number' => $customer->pan_number,
+                'customer_name' => $customer->customer_name,
+                'mobile_no' => $customer->mobile_no,
+                'email' => $customer->email,
+            ]);
+
+            return;
+        }
+
+        // The PAN clashed with an open lead: the person's details come from
+        // the lead being converted, else from the clashing lead.
+        $this->existingLead = $this->panRequest->matchedLead;
+        $source = $this->panRequest->lead ?? $this->existingLead;
+
+        $this->form->fill([
+            ...$approved,
+            'existing_lead_id' => $this->existingLead?->id,
+            'customer_name' => $source?->customer_name,
+            'mobile_no' => $source?->mobile_no,
+            'email' => $source?->email,
+            'current_location' => $source?->current_location,
+            'job_location' => $source?->job_location,
+            'residence_location' => $source?->residence_location,
+            'salary' => $source?->salary,
         ]);
+    }
+
+    /**
+     * Runs the duplicate-PAN lookup the live pan_number field would run, for
+     * a form pre-filled on mount (its afterStateUpdated hook never fires
+     * then). Searches customers and open leads; the lead being converted is
+     * not a clash with itself.
+     *
+     * @param  array<string, mixed>  $fill
+     * @return array<string, mixed>
+     */
+    private function withPanCheck(array $fill): array
+    {
+        $panNumber = $fill['pan_number'] ?? null;
+
+        $match = app(PanDuplicateService::class)->firstMatch($panNumber, ignoreLeadId: $this->leadId);
+
+        if ($match?->isCustomer()) {
+            $existingCustomer = Customer::find($match->id);
+
+            $fill['existing_customer_id'] = $existingCustomer->id;
+            $fill['pan_status'] = 'exists';
+            $fill['customer_name'] = $existingCustomer->customer_name;
+            $fill['mobile_no'] = $existingCustomer->mobile_no;
+            $fill['email'] = $existingCustomer->email;
+
+            $this->existingCustomer = $existingCustomer;
+            $this->panVerified = false;
+
+            return $fill;
+        }
+
+        if ($match?->isLead()) {
+            $fill['existing_lead_id'] = $match->id;
+            $fill['pan_status'] = 'exists_lead';
+
+            $this->existingLead = Lead::find($match->id);
+            $this->panVerified = false;
+
+            return $fill;
+        }
+
+        $fill['pan_status'] = $panNumber ? 'available' : '';
+        $this->panVerified = (bool) $panNumber;
+
+        return $fill;
     }
 
     protected function getCreateFormAction(): Action
     {
         return parent::getCreateFormAction()
             ->hidden(function (): bool {
-                return filled($this->data['existing_customer_id'] ?? null)
+                return (filled($this->data['existing_customer_id'] ?? null) || filled($this->data['existing_lead_id'] ?? null))
                     && ! $this->isApprovedPanRequest;
             });
     }
@@ -355,6 +391,12 @@ class CreateCustomer extends CreateRecord
             $this->halt();
         }
 
+        // The approved flow may only create the file with the PAN the Admin
+        // approved (the field is locked, but never trust the browser).
+        if ($this->isApprovedPanRequest && $this->panRequest) {
+            $data['pan_number'] = $this->panRequest->pan_number;
+        }
+
         switch ($data['eligibility_status']) {
 
             case 'eligible':
@@ -409,6 +451,7 @@ class CreateCustomer extends CreateRecord
         if ($this->isApprovedPanRequest && $this->panRequest) {
             $this->panRequest->updateOrFail([
                 'application_id' => $this->record->id,
+                'used_at' => now(),
             ]);
         }
 

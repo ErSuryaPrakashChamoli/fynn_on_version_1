@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\LeadAssignmentReports\Pages;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\LeadAssignmentReports\LeadAssignmentReportResource;
 use App\Filament\Resources\LeadAssignmentReports\Widgets\LeadAssignmentSummary;
 use App\Support\SelectedMonth;
@@ -11,6 +12,7 @@ use Filament\Resources\Pages\ListRecords;
 class ListLeadAssignmentReports extends ListRecords
 {
     use ExposesTableToWidgets;
+    use HasColumnHeaderFilters;
 
     protected static string $resource = LeadAssignmentReportResource::class;
 

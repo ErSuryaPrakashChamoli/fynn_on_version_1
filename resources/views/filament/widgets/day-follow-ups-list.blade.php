@@ -28,38 +28,38 @@
         <{{ $url ? 'a' : 'div' }}
             @if ($url) href="{{ $url }}" @endif
             @class([
-                'block rounded-lg border border-gray-200 p-3 dark:border-gray-700',
-                'transition-colors hover:border-primary-400 hover:bg-primary-50/50 dark:hover:border-primary-500 dark:hover:bg-primary-500/5' => $url,
+                'fynn-card block p-3.5',
+                'transition hover:border-primary-400 hover:bg-primary-50/50 hover:shadow-md dark:hover:border-primary-500 dark:hover:bg-primary-500/5' => $url,
             ])
         >
             <div class="flex items-start justify-between gap-2">
-                <p class="text-sm font-medium text-gray-900 dark:text-gray-100">
+                <p class="text-sm font-semibold text-gray-950 dark:text-white">
                     {{ $followUp->display_name }}
                 </p>
-                <span class="inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium {{ $statusColor($followUp->status) }}">
+                <span class="inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ring-current/15 {{ $statusColor($followUp->status) }}">
                     {{ $followUp->status }}
                 </span>
             </div>
 
-            <dl class="mt-2 space-y-1 text-xs text-gray-500 dark:text-gray-400">
+            <dl class="mt-2.5 space-y-1.5 border-t border-(--fynn-border-soft) pt-2.5 text-xs text-gray-500 dark:text-gray-400">
                 <div class="flex items-center justify-between gap-2">
                     <dt>Type</dt>
-                    <dd class="text-gray-700 dark:text-gray-300">{{ $followUp->follow_up_type }}</dd>
+                    <dd class="font-medium text-gray-700 dark:text-gray-300">{{ $followUp->follow_up_type }}</dd>
                 </div>
                 <div class="flex items-center justify-between gap-2">
                     <dt>{{ ($showDueDate ?? false) ? 'Due' : 'Time' }}</dt>
-                    <dd class="text-gray-700 dark:text-gray-300">
+                    <dd class="font-medium tabular-nums text-gray-700 dark:text-gray-300">
                         {{ $followUp->next_follow_up_date?->format(($showDueDate ?? false) ? 'd M Y h:i A' : 'h:i A') ?? '-' }}
                     </dd>
                 </div>
                 <div class="flex items-center justify-between gap-2">
                     <dt>Owner</dt>
-                    <dd class="text-gray-700 dark:text-gray-300">{{ $followUp->employee?->emp_name ?? '-' }}</dd>
+                    <dd class="font-medium text-gray-700 dark:text-gray-300">{{ $followUp->employee?->emp_name ?? '-' }}</dd>
                 </div>
                 @if ($followUp->monitor_outcome instanceof \App\Enums\FollowUpOutcome)
                     <div class="flex items-center justify-between gap-2">
                         <dt>Outcome</dt>
-                        <dd class="flex items-center gap-1 text-gray-700 dark:text-gray-300">
+                        <dd class="flex items-center gap-1 font-medium text-gray-700 dark:text-gray-300">
                             @if ($followUp->acted_at)
                                 <span>{{ $followUp->acted_at->format('d M h:i A') }}</span>
                             @endif
@@ -72,43 +72,56 @@
             </dl>
 
             @if ($followUp->remarks)
-                <p class="mt-2 border-t border-gray-100 pt-2 text-xs text-gray-700 dark:border-gray-800 dark:text-gray-300">
+                <p class="mt-2.5 rounded-md bg-(--fynn-surface-2) px-2.5 py-1.5 text-xs text-gray-700 dark:text-gray-300">
                     {{ $followUp->remarks }}
                 </p>
             @endif
         </{{ $url ? 'a' : 'div' }}>
 
         @if ($history->count() > 1)
-            <details class="-mt-2 rounded-b-lg border border-t-0 border-gray-200 px-3 pb-2 dark:border-gray-700">
-                <summary class="cursor-pointer py-2 text-xs font-medium text-gray-500 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400">
+            <details class="fynn-card fynn-card--muted group/log -mt-2 px-3 py-0">
+                <summary class="flex cursor-pointer list-none items-center gap-1.5 py-2 text-xs font-medium text-gray-500 hover:text-(--fynn-accent-text) dark:text-gray-400 [&::-webkit-details-marker]:hidden">
+                    <x-filament::icon icon="heroicon-m-chevron-right" class="size-3.5 shrink-0 transition-transform group-open/log:rotate-90" />
                     Followed up {{ $history->count() }} times — view log
                 </summary>
 
-                <ol class="space-y-2 border-t border-gray-100 pt-2 dark:border-gray-800">
+                {{-- The prospect's follow-up log as a small vertical timeline; the one in force has the accent dot. --}}
+                <ol class="border-t border-(--fynn-border-soft) py-2.5">
                     @foreach ($history as $index => $entry)
-                        <li class="flex items-start justify-between gap-2 text-xs">
-                            <span class="text-gray-500 dark:text-gray-400">
-                                {{ $index + 1 }}.
-                                {{ $entry->created_at?->format('d M Y h:i A') }}
-                                <span class="text-gray-400 dark:text-gray-500">
-                                    · {{ $entry->employee?->emp_name ?? 'Admin' }}
+                        <li class="group/tl flex gap-2.5 text-xs">
+                            <div class="flex flex-col items-center" aria-hidden="true">
+                                <span @class([
+                                    'mt-1 size-2 shrink-0 rounded-full',
+                                    'bg-primary-500 ring-3 ring-primary-500/20' => $entry->is($followUp),
+                                    'bg-gray-300 dark:bg-gray-600' => ! $entry->is($followUp),
+                                ])></span>
+                                <span class="mt-1 w-px flex-1 bg-gray-200 group-last/tl:hidden dark:bg-white/10"></span>
+                            </div>
+                            <div class="flex min-w-0 flex-1 items-start justify-between gap-2 pb-2 group-last/tl:pb-0">
+                                <span class="text-gray-500 dark:text-gray-400">
+                                    {{ $index + 1 }}.
+                                    {{ $entry->created_at?->format('d M Y h:i A') }}
+                                    <span class="text-gray-400 dark:text-gray-500">
+                                        · {{ $entry->employee?->emp_name ?? 'Admin' }}
+                                    </span>
                                 </span>
-                            </span>
-                            <span @class([
-                                'shrink-0 text-right',
-                                'font-semibold text-primary-600 dark:text-primary-400' => $entry->is($followUp),
-                                'text-gray-400 line-through dark:text-gray-500' => ! $entry->is($followUp),
-                            ])>
-                                {{ $entry->next_follow_up_date?->format('d M Y h:i A') ?? 'No next date' }}
-                            </span>
+                                <span @class([
+                                    'shrink-0 text-right',
+                                    'font-semibold text-(--fynn-accent-text)' => $entry->is($followUp),
+                                    'text-gray-400 line-through dark:text-gray-500' => ! $entry->is($followUp),
+                                ])>
+                                    {{ $entry->next_follow_up_date?->format('d M Y h:i A') ?? 'No next date' }}
+                                </span>
+                            </div>
                         </li>
                     @endforeach
                 </ol>
             </details>
         @endif
     @empty
-        <div class="col-span-full rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-            {{ $emptyMessage ?? 'No follow-ups found for this day.' }}
+        <div class="fynn-empty fynn-empty--compact col-span-full">
+            <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-calendar-days" /></span>
+            <span>{{ $emptyMessage ?? 'No follow-ups found for this day.' }}</span>
         </div>
     @endforelse
 </div>

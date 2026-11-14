@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\CustomerSettlements\RelationManagers;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -10,6 +11,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class SettlementHistoryRelationManager extends RelationManager
 {
+    use HasColumnHeaderFilters;
+
     protected static string $relationship = 'histories';
 
     protected static ?string $title = 'Change History';

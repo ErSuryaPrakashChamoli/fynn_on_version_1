@@ -124,9 +124,10 @@ class DailyCommitmentTeamView extends Page
         // nothing to focus until they drill in — start them at the top of
         // the tree (Cluster Managers) via the same helper the rest of the
         // app uses for "who reports to me".
+        // The team as it stood on the day being viewed, not today's.
         $ids = $this->focus
-            ? HierarchyHelper::children($this->focus)->pluck('id')
-            : HierarchyHelper::directReportees(Filament::auth()->user())->pluck('id');
+            ? HierarchyHelper::childrenDuring($this->focus, $this->date, $this->date)->pluck('id')
+            : HierarchyHelper::directReporteesDuring(Filament::auth()->user(), $this->date, $this->date)->pluck('id');
 
         return app(DailyCommitmentService::class)->dailyRows($ids, $this->date);
     }
@@ -153,7 +154,7 @@ class DailyCommitmentTeamView extends Page
             return collect();
         }
 
-        return $service->dailyRows(HierarchyHelper::callerIds($this->focus), $this->date);
+        return $service->dailyRows(HierarchyHelper::callerIdsDuring($this->focus, $this->date, $this->date), $this->date);
     }
 
     /**

@@ -88,6 +88,7 @@ class LoginPageSettings extends Page
         return $schema
             ->components([
                 Section::make('Left banner')
+                    ->icon(Heroicon::OutlinedPhoto)
                     ->description('The panel shown beside the sign-in form.')
                     ->schema([
                         FileUpload::make('left_banner_path')
@@ -190,6 +191,7 @@ class LoginPageSettings extends Page
                     ]),
 
                 Section::make('Right panel')
+                    ->icon(Heroicon::OutlinedArrowRightEndOnRectangle)
                     ->description('Shown above the sign-in form itself.')
                     ->schema([
                         TextInput::make('right_tagline')

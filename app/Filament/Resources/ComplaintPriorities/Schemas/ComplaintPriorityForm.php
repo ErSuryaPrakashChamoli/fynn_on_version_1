@@ -8,6 +8,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class ComplaintPriorityForm
 {
@@ -16,6 +17,7 @@ class ComplaintPriorityForm
         return $schema
             ->components([
                 Section::make('Priority')
+                    ->icon(Heroicon::OutlinedBolt)
                     ->description('The hours set here become the deadline on every ticket raised with this priority. Past the deadline the ticket escalates to the handler\'s supervisor; after a second window of the same length, to the boss above.')
                     ->schema([
                         TextInput::make('name')

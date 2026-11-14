@@ -6,6 +6,7 @@ use App\Models\Customer;
 use App\Models\Employee;
 use App\Models\TargetCategory;
 use App\Support\HierarchyHelper;
+use App\Support\ReportingTimeline;
 use App\Support\SelectedMonth;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -129,25 +130,49 @@ class AchievementCalculatorService
 
     public function getCountAchievement(Employee $employee, ?Carbon $referenceMonth = null): float
     {
-        if ($employee->designation === Employee::DESIGNATION_ADMIN) {
-
-            $customers = Customer::query();
-        } else {
-
-            $employeeIds = HierarchyHelper::subordinateIds($employee);
-
-            $customers = Customer::query()
-                ->whereIn('employee_id', $employeeIds);
-        }
-
         $referenceMonth = $this->resolveReferenceMonth($referenceMonth);
 
-        $customers->whereBetween('customers.disbursal_date', [
+        return $this->computeAchievementTotals($this->disbursedCustomersFor(
+            $employee,
             $referenceMonth->copy()->startOfMonth(),
             $referenceMonth->copy()->endOfMonth(),
-        ]);
+        ))['count_achievement'];
+    }
 
-        return $this->computeAchievementTotals($customers)['count_achievement'];
+    /**
+     * The customers disbursed in [$start, $end] that count for $employee.
+     *
+     * Admin: the whole company. Anyone else: their own cases plus their
+     * branch's, each case counted for the team its owner was in ON ITS
+     * DISBURSAL DATE (HierarchyHelper::scopeToBranchDuring). If A reports to
+     * B until 25 Oct and to C from 26 Oct, A's cases disbursed up to 25 Oct
+     * stay with B and later ones go to C — a reporting change never moves
+     * achievement that was already earned.
+     *
+     * $within keeps only the days $employee sat in $within's branch (their
+     * contribution to that boss); $callersOnly drops everyone but callers.
+     */
+    public function disbursedCustomersFor(
+        Employee $employee,
+        Carbon $start,
+        Carbon $end,
+        ?Employee $within = null,
+        bool $callersOnly = false,
+    ): Builder {
+        if ($employee->designation === Employee::DESIGNATION_ADMIN) {
+            return Customer::query()->whereBetween('customers.disbursal_date', [$start, $end]);
+        }
+
+        return HierarchyHelper::scopeToBranchDuring(
+            Customer::query(),
+            $employee,
+            $start,
+            $end,
+            'customers.employee_id',
+            'customers.disbursal_date',
+            $within,
+            $callersOnly,
+        );
     }
 
     /**
@@ -271,7 +296,7 @@ class AchievementCalculatorService
             ]);
     }
 
-    public function getTarget(Employee $employee, ?Carbon $referenceMonth = null): float
+    public function getTarget(Employee $employee, ?Carbon $referenceMonth = null, ?Employee $within = null): float
     {
         // Deliberately NOT resolveReferenceMonth() here: target is
         // joining/exit-date boundary logic anchored to a real calendar
@@ -284,7 +309,8 @@ class AchievementCalculatorService
         return $this->getTargetForPeriod(
             $employee,
             $referenceMonth->copy()->startOfMonth(),
-            $referenceMonth->copy()->endOfMonth()
+            $referenceMonth->copy()->endOfMonth(),
+            $within,
         );
     }
 
@@ -293,22 +319,42 @@ class AchievementCalculatorService
      *
      * getTarget() (current month) is a thin wrapper around this method —
      * both current-month and historical-period target calculations go
-     * through the exact same business rules. The ₹30L understaffed-team
-     * top-up structure (thresholds, which callers/TLs are counted) is
-     * unchanged from the original current-month-only implementation; only
-     * the per-caller target value now comes from
-     * getHierarchyCallerTargetForPeriod() instead of a "today"-only calc.
+     * through the exact same business rules, month by month.
+     *
+     * A boss's month is counted on the reporting tree of each DAY of that
+     * month (ReportingTimeline), never today's tree: a caller's target is
+     * shared pro-rata to the days they reported into the branch, and the
+     * ₹30L understaffed-team top-up of a Team Leader likewise follows the
+     * days that Team Leader sat in it. With no reporting change in the
+     * month this is exactly the whole-month figure it always was.
+     *
+     * $within narrows the figure to the days $employee sat in $within's
+     * branch — what $employee's team contributes to that boss.
      */
-    public function getTargetForPeriod(Employee $employee, Carbon $start, Carbon $end): float
+    public function getTargetForPeriod(Employee $employee, Carbon $start, Carbon $end, ?Employee $within = null): float
     {
         /*
     |--------------------------------------------------------------------------
     | Caller
     |--------------------------------------------------------------------------
+    |
+    | Their own target is the flat category value. Seen from inside a boss's
+    | team ($within), it is the share of their month that counts there.
+    |
     */
 
         if ($employee->designation === Employee::DESIGNATION_CALLER) {
-            return $this->getCallerTarget($employee);
+            if ($within === null) {
+                return $this->getCallerTarget($employee);
+            }
+
+            $total = 0.0;
+
+            foreach ($this->monthsOf($start, $end) as $month) {
+                $total += $this->callerTargetShares($within, ReportingTimeline::forMonth($month))[$employee->id] ?? 0.0;
+            }
+
+            return $total;
         }
 
         /*
@@ -326,14 +372,13 @@ class AchievementCalculatorService
 
         if (Employee::designationRank($employee->designation) > 0) {
 
-            $target = Employee::whereIn('id', HierarchyHelper::callerIds($employee))
-                ->get()
-                ->sum(fn (Employee $caller) => $this->getHierarchyCallerTargetForPeriod($caller, $start, $end));
+            $target = 0.0;
 
-            foreach (HierarchyHelper::teamLeaderCallerCounts($employee) as $callerCount) {
-                if ($callerCount < self::UNDERSTAFFED_TEAM_CALLERS) {
-                    $target += self::UNDERSTAFFED_TEAM_TOP_UP;
-                }
+            foreach ($this->monthsOf($start, $end) as $month) {
+                $timeline = ReportingTimeline::forMonth($month);
+
+                $target += array_sum($this->callerTargetShares($employee, $timeline, $within));
+                $target += $this->understaffedTeamTopUps($employee, $timeline, $within);
             }
 
             return $target;
@@ -353,6 +398,105 @@ class AchievementCalculatorService
         }
 
         return 0;
+    }
+
+    /**
+     * Each caller's share of their month target that counts for $boss.
+     *
+     * A caller's month target (category, partial-month or nil — see
+     * hierarchyCallerTargetForMonth()) is spread over the days they are on
+     * the rolls that month, and $boss carries the days the caller reported
+     * into their branch. Moved on the 26th of a 31-day month: the old boss
+     * carries 25/31, the new one 6/31, together exactly one target.
+     *
+     * @return array<int, float> caller id => share
+     */
+    public function callerTargetShares(Employee $boss, ReportingTimeline $timeline, ?Employee $within = null): array
+    {
+        $spans = $timeline->branchSpans(
+            $boss->id,
+            skipExitedLevels: true,
+            includeBoss: $boss->designation === Employee::DESIGNATION_CALLER,
+            withinId: $within?->id,
+            onlyDesignation: Employee::DESIGNATION_CALLER,
+        );
+
+        if ($spans === []) {
+            return [];
+        }
+
+        $monthStart = Carbon::parse($timeline->start()->toDateString());
+        $monthEnd = Carbon::parse($timeline->end()->toDateString());
+        $shares = [];
+
+        foreach (Employee::query()->whereIn('id', array_keys($spans))->get() as $caller) {
+            $window = $this->activeWindowForMonth($caller, $monthStart, $monthEnd);
+            $target = $this->hierarchyCallerTargetForMonth($caller, $monthStart, $monthEnd);
+
+            if ($window === null || $target <= 0 || $window['days'] <= 0) {
+                $shares[$caller->id] = 0.0;
+
+                continue;
+            }
+
+            $daysInBranch = ReportingTimeline::overlapDays($spans[$caller->id], $window['start'], $window['end']);
+
+            $shares[$caller->id] = $daysInBranch >= $window['days']
+                ? $target
+                : $target * $daysInBranch / $window['days'];
+        }
+
+        return $shares;
+    }
+
+    /**
+     * The ₹30L top-up for every Team Leader in $boss's branch — $boss too,
+     * if they are one — whose headcount that month is under
+     * UNDERSTAFFED_TEAM_CALLERS. The headcount is the callers reporting
+     * straight to them for at least ReportingTimeline::MIN_HEADCOUNT_DAYS;
+     * the top-up is carried pro-rata to the days the Team Leader sat in the
+     * branch, like a caller's target.
+     */
+    private function understaffedTeamTopUps(Employee $boss, ReportingTimeline $timeline, ?Employee $within = null): float
+    {
+        $teamLeaderDays = $timeline->branchDays(
+            $boss->id,
+            skipExitedLevels: true,
+            includeBoss: true,
+            withinId: $within?->id,
+            onlyDesignation: Employee::DESIGNATION_TEAM_LEADER,
+        );
+
+        $monthDays = $timeline->days();
+        $topUp = 0.0;
+
+        foreach ($teamLeaderDays as $teamLeaderId => $days) {
+            if (count($timeline->headcountCallerIds($teamLeaderId, directOnly: true)) >= self::UNDERSTAFFED_TEAM_CALLERS) {
+                continue;
+            }
+
+            $topUp += $days >= $monthDays
+                ? self::UNDERSTAFFED_TEAM_TOP_UP
+                : self::UNDERSTAFFED_TEAM_TOP_UP * $days / $monthDays;
+        }
+
+        return $topUp;
+    }
+
+    /**
+     * The first day of every calendar month [$start, $end] touches.
+     *
+     * @return list<Carbon>
+     */
+    private function monthsOf(Carbon $start, Carbon $end): array
+    {
+        $months = [];
+
+        for ($cursor = $start->copy()->startOfMonth(); $cursor->lte($end); $cursor = $cursor->copy()->addMonthNoOverflow()->startOfMonth()) {
+            $months[] = $cursor->copy();
+        }
+
+        return $months;
     }
 
     public function getPercentage(Employee $employee): float
@@ -383,34 +527,32 @@ class AchievementCalculatorService
     {
         /*
     |--------------------------------------------------------------------------
-    | Get all callers under this Manager
-    |--------------------------------------------------------------------------
-    */
-
-        $callerIds = HierarchyHelper::callerIds($manager);
-
-        if ($callerIds->isEmpty()) {
-            return 0;
-        }
-
-        $callers = Employee::whereIn('id', $callerIds)->get();
-
-        /*
-    |--------------------------------------------------------------------------
     | Eligible Caller
     |--------------------------------------------------------------------------
     |
-    | A caller is eligible if his/her target for the current month is
-    | greater than zero. This must use the same reporting-date/exit-status
-    | aware target (getHierarchyCallerTarget) as the rest of this service —
-    | getCallerTarget() only returns the caller's static category value (or
-    | a 2,500,000 default) and is never zero, so it would count a
-    | not-yet-eligible new joiner (<10 days into the month) or an
-    | already-exited caller as "eligible", inflating the PPP denominator.
+    | A caller is eligible if they count in this branch's headcount for the
+    | month — at least ReportingTimeline::MIN_HEADCOUNT_DAYS in it, so a
+    | caller moved mid-month can count in both teams — AND their target for
+    | the month is greater than zero. The target must be the same
+    | reporting-date/exit-status aware one (getHierarchyCallerTarget) as the
+    | rest of this service — getCallerTarget() only returns the caller's
+    | static category value (or a 2,500,000 default) and is never zero, so
+    | it would count a not-yet-eligible new joiner (<10 days into the month)
+    | or an already-exited caller as "eligible", inflating the PPP
+    | denominator.
     |
     */
 
-        return $callers
+        $referenceMonth ??= SelectedMonth::current();
+
+        $callerIds = ReportingTimeline::forMonth($referenceMonth)->headcountCallerIds($manager->id);
+
+        if ($callerIds === []) {
+            return 0;
+        }
+
+        return Employee::whereIn('id', $callerIds)
+            ->get()
             ->filter(fn (Employee $caller) => $this->getHierarchyCallerTarget($caller, $referenceMonth) > 0)
             ->count();
     }
@@ -509,27 +651,31 @@ class AchievementCalculatorService
     public function getTeamLeaderIncentiveBreakdown(Employee $teamLeader, ?Carbon $referenceMonth = null): array
     {
         $referenceMonth = $this->resolveReferenceMonth($referenceMonth);
+        $monthStart = $referenceMonth->copy()->startOfMonth();
+        $monthEnd = $referenceMonth->copy()->endOfMonth();
 
-        $callerIds = HierarchyHelper::callerIds($teamLeader);
+        // The month is read off the reporting tree of each of its days: a
+        // caller is in this team's headcount if they spent at least
+        // ReportingTimeline::MIN_HEADCOUNT_DAYS in it, the team target is
+        // each caller's pro-rata share, and the achievement is the cases
+        // disbursed while each caller was in the team.
+        $timeline = ReportingTimeline::forMonth($referenceMonth);
 
-        $callerCount = $callerIds->count();
+        $callers = Employee::whereIn('id', $timeline->headcountCallerIds($teamLeader->id))->get();
 
-        $eligibleCallers = $this->getEligibleCallerCount($teamLeader, $referenceMonth);
+        $callerCount = $callers->count();
 
-        $callers = Employee::whereIn('id', $callerIds)->get();
+        $eligibleCallers = $callers
+            ->filter(fn (Employee $caller) => $this->getHierarchyCallerTarget($caller, $referenceMonth) > 0)
+            ->count();
 
-        $teamTarget = $callers->sum(
-            fn (Employee $caller) => $this->getHierarchyCallerTarget($caller, $referenceMonth)
-        );
+        $targetShares = $this->callerTargetShares($teamLeader, $timeline);
 
-        $teamCustomers = Customer::query()->whereIn('employee_id', $callerIds);
+        $teamTarget = array_sum($targetShares);
 
-        $teamCustomers->whereBetween('customers.disbursal_date', [
-            $referenceMonth->copy()->startOfMonth(),
-            $referenceMonth->copy()->endOfMonth(),
-        ]);
-
-        $teamAchievement = $this->computeAchievementTotals($teamCustomers)['count_achievement'];
+        $teamAchievement = $this->computeAchievementTotals(
+            $this->disbursedCustomersFor($teamLeader, $monthStart, $monthEnd, callersOnly: true)
+        )['count_achievement'];
 
         $achievementPercentage = $teamTarget > 0
             ? ($teamAchievement / $teamTarget) * 100
@@ -584,9 +730,11 @@ class AchievementCalculatorService
 
         $baseIncentive = ($grossRevenue * $grossRevenuePercent) + ($extraRevenue * 0.05);
 
+        // Each caller against the part of their month spent in this team.
         $allCallersAchieved = $callers->every(
-            fn (Employee $caller) => $this->getCountAchievement($caller, $referenceMonth)
-                >= $this->getHierarchyCallerTarget($caller, $referenceMonth)
+            fn (Employee $caller) => $this->computeAchievementTotals(
+                $this->disbursedCustomersFor($caller, $monthStart, $monthEnd, within: $teamLeader)
+            )['count_achievement'] >= ($targetShares[$caller->id] ?? 0.0)
         );
 
         if ($callerCount >= 3 && $allCallersAchieved) {
@@ -606,7 +754,17 @@ class AchievementCalculatorService
         ];
     }
 
-    public function getPerformance(?Employee $employee, ?Carbon $referenceMonth = null): array
+    /**
+     * Target, achievement and incentive for one employee (or the company)
+     * for one month.
+     *
+     * With $within, target and achievement are $employee's contribution to
+     * $within's figures — only the days $employee sat in $within's branch —
+     * so the rows of a team listing add up to the team's own total even
+     * when somebody moved in or out during the month. The incentive is
+     * always the employee's own.
+     */
+    public function getPerformance(?Employee $employee, ?Carbon $referenceMonth = null, ?Employee $within = null): array
     {
         $referenceMonth = $this->resolveReferenceMonth($referenceMonth);
 
@@ -639,26 +797,21 @@ class AchievementCalculatorService
         if ($isCompanyView) {
 
             // Admin dashboard: all company customers
-            $customers = Customer::query();
+            $customers = Customer::query()->whereBetween('customers.disbursal_date', [
+                $referenceMonth->copy()->startOfMonth(),
+                $referenceMonth->copy()->endOfMonth(),
+            ]);
         } else {
 
-            // Employee/Team table: only this employee's hierarchy
-            $employeeIds = HierarchyHelper::subordinateIds($employee);
-
-            $customers = Customer::query()
-                ->whereIn('employee_id', $employeeIds);
+            // Employee/Team table: this employee's hierarchy, each case
+            // counted for the team its owner was in on its disbursal date.
+            $customers = $this->disbursedCustomersFor(
+                $employee,
+                $referenceMonth->copy()->startOfMonth(),
+                $referenceMonth->copy()->endOfMonth(),
+                $within,
+            );
         }
-
-        /*
-    |--------------------------------------------------------------------------
-    | Reference Month
-    |--------------------------------------------------------------------------
-    */
-
-        $customers->whereBetween('customers.disbursal_date', [
-            $referenceMonth->copy()->startOfMonth(),
-            $referenceMonth->copy()->endOfMonth(),
-        ]);
 
         /*
     |--------------------------------------------------------------------------
@@ -701,7 +854,7 @@ class AchievementCalculatorService
 
             // Teams table / employee dashboard:
             // target belongs to the employee being evaluated
-            $target = $this->getTarget($employee, $referenceMonth);
+            $target = $this->getTarget($employee, $referenceMonth, $within);
         }
 
         /*
@@ -992,6 +1145,40 @@ class AchievementCalculatorService
     {
         return TargetCategory::targetAmountFor($employee->category)
             ?? self::DEFAULT_CATEGORY_TARGET;
+    }
+
+    /**
+     * Which days of the month $member counted in $boss's team, for a team
+     * listing — or null when it was the whole month. With $withRule, also
+     * says what that means for the figures.
+     */
+    public function reportingSpanNote(Employee $member, Employee $boss, ?Carbon $referenceMonth = null, bool $withRule = false): ?string
+    {
+        $timeline = ReportingTimeline::forMonth($referenceMonth ?? SelectedMonth::current());
+
+        $spans = $timeline->branchSpans($boss->id, skipExitedLevels: true, includeBoss: false)[$member->id] ?? [];
+        $days = ReportingTimeline::overlapDays($spans, $timeline->start(), $timeline->end());
+
+        if ($days >= $timeline->days()) {
+            return null;
+        }
+
+        if ($days === 0) {
+            return 'Not in this team this month.';
+        }
+
+        $stretches = implode(', ', array_map(
+            fn (array $span): string => $span[0]->format('d M').' – '.$span[1]->format('d M'),
+            $spans,
+        ));
+
+        $note = "In this team {$stretches} ({$days} of {$timeline->days()} days).";
+
+        if ($withRule) {
+            $note .= ' Only cases disbursed on those days count here, and the target counts pro-rata to them.';
+        }
+
+        return $note;
     }
 
     /**

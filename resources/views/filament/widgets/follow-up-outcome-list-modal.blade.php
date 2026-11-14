@@ -34,15 +34,15 @@
                 @endforeach
             </div>
 
-            <div class="grid grid-cols-2 gap-3">
-                <label class="block space-y-1">
-                    <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Due from</span>
+            <div class="fynn-card fynn-card--muted grid grid-cols-2 gap-3 p-3">
+                <label class="block space-y-1.5">
+                    <span class="fynn-toolbar-label">Due from</span>
                     <x-filament::input.wrapper>
                         <x-filament::input type="date" wire:model.live.debounce.500ms="outcomeListFrom" />
                     </x-filament::input.wrapper>
                 </label>
-                <label class="block space-y-1">
-                    <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Due to</span>
+                <label class="block space-y-1.5">
+                    <span class="fynn-toolbar-label">Due to</span>
                     <x-filament::input.wrapper>
                         <x-filament::input type="date" wire:model.live.debounce.500ms="outcomeListTo" :min="$outcomeListFrom" />
                     </x-filament::input.wrapper>
@@ -57,7 +57,7 @@
             <div wire:loading.remove wire:target="openOutcomeList">
                 @if (count($outcomeList) > 1)
                     <div x-data="{ outcomeTab: @js(array_key_first($outcomeList)) }">
-                        <div class="flex border-b border-gray-200 dark:border-gray-700" role="tablist" aria-label="Follow-up type">
+                        <div class="flex border-b border-(--fynn-border)" role="tablist" aria-label="Follow-up type">
                             @foreach ($outcomeList as $source => $list)
                                 <button type="button" role="tab"
                                     x-on:click="outcomeTab = @js($source)"
@@ -67,7 +67,7 @@
                                         : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
                                     class="flex flex-1 items-center justify-center gap-2 border-b-2 px-3 py-2.5 text-sm font-semibold transition">
                                     <span>{{ $list['label'] }}</span>
-                                    <span class="rounded-full bg-primary-50 px-2 py-0.5 text-xs text-primary-700 dark:bg-primary-500/10 dark:text-primary-400">{{ number_format($list['total']) }}</span>
+                                    <span class="fynn-chip fynn-chip--accent tabular-nums">{{ number_format($list['total']) }}</span>
                                 </button>
                             @endforeach
                         </div>

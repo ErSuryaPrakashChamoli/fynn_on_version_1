@@ -2,6 +2,7 @@
 
 namespace App\Filament\Academy\Widgets;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Models\Training\TrainingEnrollment;
 use App\Support\Portal\PortalContext;
 use Filament\Tables\Columns\TextColumn;
@@ -14,6 +15,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class BatchProgressTable extends TableWidget
 {
+    use HasColumnHeaderFilters;
+
     protected static ?int $sort = 2;
 
     protected int|string|array $columnSpan = 'full';

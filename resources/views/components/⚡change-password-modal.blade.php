@@ -1,14 +1,15 @@
 <x-filament-panels::page>
 
-    <form wire:submit="changePassword">
-        {{ $this->form }}
+    <form wire:submit="changePassword" class="max-w-2xl">
+        <x-filament::section>
+            {{ $this->form }}
 
-        <div class="mt-6">
-            <x-filament::button type="submit">
-                Change Password
-            </x-filament::button>
-        </div>
+            <x-slot name="footer">
+                <x-filament::button type="submit" icon="heroicon-o-key">
+                    Change Password
+                </x-filament::button>
+            </x-slot>
+        </x-filament::section>
     </form>
 
 </x-filament-panels::page>
-

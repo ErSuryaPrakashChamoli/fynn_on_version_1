@@ -15,6 +15,7 @@ use Filament\Forms\Components\ToggleButtons;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\HtmlString;
 use Spatie\Permission\Models\Role;
 
@@ -25,6 +26,7 @@ class PollForm
         return $schema
             ->components([
                 Section::make('Poll')
+                    ->icon(Heroicon::OutlinedHandRaised)
                     ->description('The answer dropdown comes from the poll type, which only the Admin defines (Setting → Poll Types).')
                     ->schema([
                         TextInput::make('title')
@@ -101,6 +103,7 @@ class PollForm
                     ->columnSpanFull(),
 
                 Section::make('Send to')
+                    ->icon(Heroicon::OutlinedUserGroup)
                     ->description(fn (string $operation): string => $operation === 'create'
                         ? 'Pick who votes. Only people whose login is active get it.'
                         : 'The audience is fixed once a poll has been sent.')

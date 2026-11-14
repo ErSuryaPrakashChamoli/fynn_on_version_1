@@ -8,6 +8,7 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\HtmlString;
 
 class PollInfolist
@@ -17,6 +18,7 @@ class PollInfolist
         return $schema
             ->components([
                 Section::make(fn (Poll $record): string => $record->title)
+                    ->icon(Heroicon::OutlinedHandRaised)
                     ->columnSpanFull()
                     ->schema([
                         TextEntry::make('question')
@@ -56,6 +58,7 @@ class PollInfolist
                     ]),
 
                 Section::make('Results')
+                    ->icon(Heroicon::OutlinedChartPie)
                     ->columnSpanFull()
                     ->schema([
                         TextEntry::make('results')

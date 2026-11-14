@@ -3,6 +3,8 @@
 namespace App\Filament\Imports;
 
 use App\Models\Lead;
+use App\Rules\PanIsAvailable;
+use App\Services\PanDuplicateService;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
@@ -27,10 +29,14 @@ class LeadImporter extends Importer
                     'digits:10',
                 ]),
 
+            // Rows whose PAN another customer file or open lead already
+            // carries are rejected — an import cannot ask for Admin approval.
             ImportColumn::make('pan_number')
+                ->castStateUsing(fn (?string $state): ?string => PanDuplicateService::normalize($state))
                 ->rules([
                     'nullable',
                     'size:10',
+                    new PanIsAvailable(mentionApproval: false),
                 ]),
 
             ImportColumn::make('current_location'),
