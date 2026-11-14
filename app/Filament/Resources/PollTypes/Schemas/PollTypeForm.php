@@ -12,6 +12,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class PollTypeForm
 {
@@ -20,6 +21,7 @@ class PollTypeForm
         return $schema
             ->components([
                 Section::make('Poll type')
+                    ->icon(Heroicon::OutlinedTag)
                     ->description('The options become the answer dropdown on every poll of this type. Polls already sent keep the options they were sent with.')
                     ->schema([
                         TextInput::make('name')
@@ -62,6 +64,7 @@ class PollTypeForm
                     ->columnSpanFull(),
 
                 Section::make('Reason dropdown')
+                    ->icon(Heroicon::OutlinedListBullet)
                     ->description('Optional. Reasons a voter can pick to explain their answer — tied to one answer (reasons for "Bad" differ from reasons for "Good") or offered for any answer. Whoever raises a poll of this type decides, poll by poll, whether to ask for a reason.')
                     ->schema([
                         Repeater::make('reasons')

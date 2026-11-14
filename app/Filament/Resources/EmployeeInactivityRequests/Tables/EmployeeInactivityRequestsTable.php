@@ -4,20 +4,28 @@ namespace App\Filament\Resources\EmployeeInactivityRequests\Tables;
 
 use App\Enums\InactivityRequestStatus;
 use App\Filament\Resources\EmployeeInactivityRequests\EmployeeInactivityRequestResource;
+use App\Filament\Resources\Employees\EmployeeResource;
 use App\Models\Employee;
 use App\Models\EmployeeInactivityRequest;
+use App\Services\EmployeeDependencyService;
+use App\Services\EmployeeInactivationService;
 use App\Services\MonthlyTargetGate;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\View;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class EmployeeInactivityRequestsTable
 {
@@ -113,43 +121,104 @@ class EmployeeInactivityRequestsTable
     /**
      * Approving is the point the employee actually comes off the rolls —
      * exit_status is the app's single "is this person still with us?"
-     * flag, so the modal says so in as many words.
+     * flag, so the modal says so in as many words. It goes through
+     * EmployeeInactivationService like "Mark Inactive" does: while anything
+     * still depends on the employee the modal lists it and cannot be
+     * submitted, and otherwise it asks for the effective (exit) date.
      */
     protected static function approveAction(): Action
     {
+        $service = fn (): EmployeeDependencyService => app(EmployeeDependencyService::class);
+
+        $stillOnRolls = fn (EmployeeInactivityRequest $record): bool => $record->employee !== null
+            && ! EmployeeResource::hasLeft($record->employee);
+
+        $dependencies = fn (EmployeeInactivityRequest $record): array => $stillOnRolls($record)
+            ? $service()->dependencyCounts($record->employee)
+            : [];
+
         return Action::make('approve')
             ->label('Approve')
             ->icon('heroicon-o-check-circle')
             ->color('success')
             ->requiresConfirmation()
-            ->modalHeading('Approve this inactivity ticket')
-            ->modalDescription('The employee is marked inactive across the whole LMS (exit status), and no commitment target is asked of them.')
-            ->schema([
-                Textarea::make('review_note')
-                    ->label('Note (optional)')
-                    ->rows(2)
-                    ->maxLength(500),
-            ])
+            ->modalHeading(fn (EmployeeInactivityRequest $record): string => $dependencies($record) === []
+                ? 'Approve this inactivity ticket'
+                : "{$record->employee->emp_name} still has work attached")
+            ->modalDescription(fn (EmployeeInactivityRequest $record): string => ($counts = $dependencies($record)) === []
+                ? 'The employee is marked inactive across the whole LMS (exit status) from the effective date, and no commitment target is asked of them.'
+                : 'Still attached: '.$service()->describe($counts).'. Move it to somebody else on their Employee page (“Mark Inactive” lists and clears it), then approve.')
+            ->schema(fn (EmployeeInactivityRequest $record): array => ($counts = $dependencies($record)) !== []
+                ? [
+                    View::make('filament.components.delete-dependencies')
+                        ->viewData([
+                            'dependents' => collect($counts)
+                                ->map(fn (int $count, string $kind): array => [
+                                    'label' => $count.' '.Str::plural(EmployeeDependencyService::NOUNS[$kind], $count),
+                                    'url' => EmployeeResource::getUrl('edit', ['record' => $record->employee]),
+                                ])
+                                ->values()
+                                ->all(),
+                            'total' => count($counts),
+                            'noun' => 'dependency',
+                            'heading' => 'Still attached',
+                            'linkLabel' => 'Clear on employee page',
+                        ]),
+                ]
+                : [
+                    DatePicker::make('exit_date')
+                        ->label('Effective date')
+                        ->helperText('Their last day on the rolls. Targets, incentives and team counts stop counting them after it.')
+                        ->default(today())
+                        ->maxDate(now())
+                        ->minDate(filled($record->employee?->doj) ? Carbon::parse($record->employee->doj) : null)
+                        ->required()
+                        ->native(false)
+                        ->displayFormat('d F Y')
+                        ->visible($stillOnRolls($record)),
+
+                    Textarea::make('review_note')
+                        ->label('Note (optional)')
+                        ->rows(2)
+                        ->maxLength(500),
+                ])
+            ->modalSubmitAction(fn (Action $action, EmployeeInactivityRequest $record): Action|false => $dependencies($record) === [] ? $action : false)
             ->visible(fn (EmployeeInactivityRequest $record): bool => EmployeeInactivityRequestResource::isReviewer()
                 && $record->isPending())
-            ->action(function (EmployeeInactivityRequest $record, array $data): void {
+            ->action(function (EmployeeInactivityRequest $record, array $data, Action $action) use ($stillOnRolls): void {
                 if (! EmployeeInactivityRequestResource::isReviewer()) {
                     Notification::make()->title('Only an Admin can review a ticket.')->danger()->send();
 
                     return;
                 }
 
-                $record->update([
-                    'status' => InactivityRequestStatus::Approved,
-                    'reviewed_by' => Filament::auth()->id(),
-                    'reviewed_at' => now(),
-                    'review_note' => $data['review_note'] ?? null,
-                ]);
+                DB::transaction(function () use ($record, $data, $action, $stillOnRolls): void {
+                    if ($stillOnRolls($record)) {
+                        try {
+                            app(EmployeeInactivationService::class)->inactivate(
+                                $record->employee,
+                                Carbon::parse($data['exit_date'] ?? today()),
+                                $data['review_note'] ?? null,
+                                Filament::auth()->user(),
+                            );
+                        } catch (ValidationException $exception) {
+                            Notification::make()
+                                ->title('Not approved')
+                                ->body(collect($exception->errors())->flatten()->first())
+                                ->danger()
+                                ->send();
 
-                $record->employee?->forceFill([
-                    'exit_status' => 'yes',
-                    'exit_date' => $record->employee->exit_date ?? today()->toDateString(),
-                ])->save();
+                            $action->halt();
+                        }
+                    }
+
+                    $record->update([
+                        'status' => InactivityRequestStatus::Approved,
+                        'reviewed_by' => Filament::auth()->id(),
+                        'reviewed_at' => now(),
+                        'review_note' => $data['review_note'] ?? null,
+                    ]);
+                });
 
                 app(MonthlyTargetGate::class)->forget();
 

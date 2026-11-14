@@ -49,7 +49,7 @@
                 wire:click="$set('activeTab', '{{ $key }}')"
                 wire:loading.attr="disabled"
                 @class([
-                    'inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+                    'inline-flex items-center gap-2 rounded-full border py-1.5 ps-3.5 pe-1.5 text-sm font-semibold shadow-xs transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
                     $colors['active'] => $isActive,
                     $colors['idle'] => ! $isActive,
                 ])
@@ -57,7 +57,7 @@
                 <span>{{ $tab['label'] }}</span>
 
                 <span @class([
-                    'min-w-6 rounded-md px-1.5 py-0.5 text-center text-xs font-bold tabular-nums',
+                    'min-w-6 rounded-full px-2 py-0.5 text-center text-xs font-bold tabular-nums',
                     $colors['activeCount'] => $isActive,
                     $colors['idleCount'] => ! $isActive,
                 ])>{{ number_format($tab['count']) }}</span>

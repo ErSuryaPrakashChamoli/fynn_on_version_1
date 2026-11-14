@@ -9,6 +9,7 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Str;
 
 class TrainingCourseForm
@@ -18,6 +19,7 @@ class TrainingCourseForm
         return $schema
             ->components([
                 Section::make('Course')
+                    ->icon(Heroicon::OutlinedAcademicCap)
                     ->schema([
                         Grid::make(2)->schema([
                             TextInput::make('title')
@@ -49,6 +51,7 @@ class TrainingCourseForm
                     ->columnSpanFull(),
 
                 Section::make('Settings')
+                    ->icon(Heroicon::OutlinedCog6Tooth)
                     ->schema([
                         Grid::make(4)->schema([
                             Select::make('level')

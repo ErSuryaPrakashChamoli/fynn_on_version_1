@@ -234,6 +234,12 @@ class ExitedEmployeeRecordVisibilityTest extends TestCase
             'reporting_date' => null,
         ])->save();
 
+        // Left before this month began: their team counts for none of it
+        // (in the month they leave, it counts up to their exit date).
+        $this->exitedTeamLeader->forceFill([
+            'exit_date' => now()->subMonthNoOverflow()->endOfMonth()->toDateString(),
+        ])->save();
+
         // Only the three callers under the ACTIVE team leader count.
         $this->assertSame(
             7500000.0,

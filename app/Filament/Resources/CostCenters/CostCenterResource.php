@@ -3,18 +3,18 @@
 namespace App\Filament\Resources\CostCenters;
 
 use App\Filament\Actions\DeleteWithDependenciesAction;
+use App\Filament\Actions\EmployeeOptionActivationActions;
 use App\Filament\Resources\CostCenters\Pages\ManageCostCenters;
 use App\Models\CostCenter;
 use BackedEnum;
 use Filament\Actions\EditAction;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
@@ -22,7 +22,9 @@ use UnitEnum;
 
 /**
  * The "Cost Center" choices on the Employee form (employees.cost_center).
- * Employees hold the generated code, so renaming is safe.
+ * Employees hold the generated code, so renaming is safe. Switched off only
+ * through the Inactivate action: its employees are moved first, then the
+ * effective date is recorded.
  */
 class CostCenterResource extends Resource
 {
@@ -48,11 +50,6 @@ class CostCenterResource extends Resource
                     ->required()
                     ->maxLength(255)
                     ->unique(ignoreRecord: true),
-
-                Toggle::make('is_active')
-                    ->label('Active')
-                    ->helperText('An inactive one is no longer offered on the Employee form; employees who already have it keep it.')
-                    ->default(true),
             ]);
     }
 
@@ -66,8 +63,15 @@ class CostCenterResource extends Resource
                     ->searchable()
                     ->sortable(),
 
-                ToggleColumn::make('is_active')
-                    ->label('Active'),
+                IconColumn::make('is_active')
+                    ->label('Active')
+                    ->boolean(),
+
+                TextColumn::make('inactive_from')
+                    ->label('Inactive from')
+                    ->date('d M Y')
+                    ->placeholder('—')
+                    ->sortable(),
 
                 TextColumn::make('employees_count')
                     ->label('Employees')
@@ -79,6 +83,15 @@ class CostCenterResource extends Resource
             ])
             ->recordActions([
                 EditAction::make(),
+                EmployeeOptionActivationActions::inactivate(
+                    optionLabel: 'cost center',
+                    fieldLabel: 'Cost Center',
+                    canManage: fn (): bool => static::canAccess(),
+                ),
+                EmployeeOptionActivationActions::activate(
+                    optionLabel: 'cost center',
+                    canManage: fn (): bool => static::canAccess(),
+                ),
                 DeleteWithDependenciesAction::forEmployeeOption(
                     optionLabel: 'cost center',
                     fieldLabel: 'Cost Center',

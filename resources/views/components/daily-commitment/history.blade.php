@@ -12,44 +12,40 @@
 --}}
 @props(['rows', 'tally', 'filtered', 'range', 'result'])
 
+@php
+    // One look for the raw filter controls, matching Filament's own inputs.
+    $field = 'rounded-lg border-none bg-white py-2 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 transition focus:outline-none focus:ring-2 focus:ring-primary-600 dark:bg-white/5 dark:text-white dark:ring-white/20 dark:focus:ring-primary-500';
+@endphp
+
 <div>
     {{-- How the range landed --}}
     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <div class="dc-card">
-            <div class="dc-card-label">Days committed</div>
-            <div class="dc-card-value">{{ $tally['days'] }}</div>
-            <div class="dc-card-hint">{{ $tally['in_progress'] }} still open</div>
-        </div>
-        <div class="dc-card" style="box-shadow: inset 3px 0 0 0 #22c55e">
-            <div class="dc-card-label">Met</div>
-            <div class="dc-card-value">{{ $tally['met'] }}</div>
-        </div>
-        <div class="dc-card" style="box-shadow: inset 3px 0 0 0 #059669">
-            <div class="dc-card-label">Overachieved</div>
-            <div class="dc-card-value">{{ $tally['overachieved'] }}</div>
-        </div>
-        <div class="dc-card" style="box-shadow: inset 3px 0 0 0 #f59e0b">
-            <div class="dc-card-label">Partially met</div>
-            <div class="dc-card-value">{{ $tally['partial'] }}</div>
-        </div>
-        <div class="dc-card" style="box-shadow: inset 3px 0 0 0 #ef4444">
-            <div class="dc-card-label">Failed</div>
-            <div class="dc-card-value">{{ $tally['failed'] }}</div>
-        </div>
-        <div class="dc-card" style="box-shadow: inset 3px 0 0 0 #3b82f6">
-            <div class="dc-card-label">Kept</div>
-            <div class="dc-card-value">{{ $tally['kept_percentage'] }}%</div>
-            <div class="dc-card-hint">{{ $tally['kept'] }} of {{ $tally['closed'] }} closed {{ \Illuminate\Support\Str::plural('day', $tally['closed']) }}</div>
-        </div>
+        <x-daily-commitment.kpi
+            label="Days committed"
+            :value="$tally['days']"
+            :hint="$tally['in_progress'] . ' still open'"
+            icon="heroicon-o-calendar-days"
+        />
+        <x-daily-commitment.kpi label="Met" :value="$tally['met']" accent="#22c55e" icon="heroicon-o-check-circle" />
+        <x-daily-commitment.kpi label="Overachieved" :value="$tally['overachieved']" accent="#059669" icon="heroicon-o-rocket-launch" />
+        <x-daily-commitment.kpi label="Partially met" :value="$tally['partial']" accent="#f59e0b" icon="heroicon-o-adjustments-horizontal" />
+        <x-daily-commitment.kpi label="Failed" :value="$tally['failed']" accent="#ef4444" icon="heroicon-o-x-circle" />
+        <x-daily-commitment.kpi
+            label="Kept"
+            :value="$tally['kept_percentage'] . '%'"
+            :hint="$tally['kept'] . ' of ' . $tally['closed'] . ' closed ' . \Illuminate\Support\Str::plural('day', $tally['closed'])"
+            accent="#3b82f6"
+            icon="heroicon-o-trophy"
+        />
     </div>
 
     {{-- Filters --}}
-    <div class="mt-5 flex flex-wrap items-end gap-3">
+    <div class="fynn-toolbar mt-5 items-end">
         <label class="block">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Period</span>
+            <span class="fynn-toolbar-label">Period</span>
             <select
                 wire:model.live="historyRange"
-                class="mt-1 block w-48 rounded-lg border-none bg-white py-2 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
+                class="mt-1 block w-48 {{ $field }}"
             >
                 @foreach (\App\Services\DailyCommitmentService::rangeOptions() as $value => $label)
                     <option value="{{ $value }}">{{ $label }}</option>
@@ -59,29 +55,29 @@
 
         @if ($range === 'custom')
             <label class="block">
-                <span class="text-xs font-medium text-gray-500 dark:text-gray-400">From</span>
+                <span class="fynn-toolbar-label">From</span>
                 <input
                     type="date"
                     wire:model.live="historyFrom"
-                    class="mt-1 block rounded-lg border-none bg-white py-2 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
+                    class="mt-1 block {{ $field }}"
                 />
             </label>
 
             <label class="block">
-                <span class="text-xs font-medium text-gray-500 dark:text-gray-400">To</span>
+                <span class="fynn-toolbar-label">To</span>
                 <input
                     type="date"
                     wire:model.live="historyTo"
-                    class="mt-1 block rounded-lg border-none bg-white py-2 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
+                    class="mt-1 block {{ $field }}"
                 />
             </label>
         @endif
 
         <label class="block">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Result</span>
+            <span class="fynn-toolbar-label">Result</span>
             <select
                 wire:model.live="historyResult"
-                class="mt-1 block w-44 rounded-lg border-none bg-white py-2 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20"
+                class="mt-1 block w-44 {{ $field }}"
             >
                 <option value="all">All results</option>
                 @foreach (\App\Enums\CommitmentResult::options() as $value => $label)
@@ -94,15 +90,16 @@
             <button
                 type="button"
                 wire:click="$set('historyResult', 'all')"
-                class="pb-2 text-xs text-gray-500 underline-offset-2 hover:underline dark:text-gray-400"
+                class="inline-flex items-center gap-1 pb-2.5 text-xs font-semibold text-gray-500 transition hover:text-gray-950 dark:text-gray-400 dark:hover:text-white"
             >
+                <x-filament::icon icon="heroicon-m-x-mark" class="h-3.5 w-3.5" />
                 Clear
             </button>
         @endif
     </div>
 
     {{-- The days themselves --}}
-    <div class="mt-4 overflow-x-auto">
+    <div class="fynn-table-wrap mt-4">
         <table class="dc-table">
             <thead>
                 <tr>
@@ -137,7 +134,7 @@
                                 {{ $day['cases'] }} {{ \Illuminate\Support\Str::plural('case', $day['cases']) }}
                             </div>
                         </td>
-                        <td class="dc-num tabular-nums">{{ $day['percentage'] }}%</td>
+                        <td class="dc-num">{{ $day['percentage'] }}%</td>
                         <td>
                             <x-daily-commitment.result-chip :result="$day['result']" />
                             @if ($day['note'])
@@ -150,8 +147,11 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="7" class="text-sm text-gray-500">
-                            No commitments {{ $result === 'all' ? 'in this period' : 'with that result in this period' }}.
+                        <td colspan="7">
+                            <div class="fynn-empty fynn-empty--compact">
+                                <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-calendar-days" /></span>
+                                <span>No commitments {{ $result === 'all' ? 'in this period' : 'with that result in this period' }}.</span>
+                            </div>
                         </td>
                     </tr>
                 @endforelse

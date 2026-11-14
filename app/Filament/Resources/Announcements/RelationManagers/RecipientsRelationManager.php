@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Announcements\RelationManagers;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Models\AnnouncementRecipient;
 use App\Models\Employee;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -17,6 +18,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class RecipientsRelationManager extends RelationManager
 {
+    use HasColumnHeaderFilters;
+
     protected static string $relationship = 'recipients';
 
     protected static ?string $title = 'Acknowledgements';

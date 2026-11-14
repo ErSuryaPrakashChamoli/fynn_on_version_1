@@ -13,6 +13,7 @@ use Filament\Forms\Components\ToggleButtons;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Spatie\Permission\Models\Role;
 
 class AnnouncementForm
@@ -22,6 +23,7 @@ class AnnouncementForm
         return $schema
             ->components([
                 Section::make('Announcement')
+                    ->icon(Heroicon::OutlinedMegaphone)
                     ->description('Every recipient must read and acknowledge it before they can carry on using the LMS. It also stays in their notification bell to read again.')
                     ->schema([
                         TextInput::make('title')
@@ -66,6 +68,7 @@ class AnnouncementForm
                     ->columnSpanFull(),
 
                 Section::make('Send to')
+                    ->icon(Heroicon::OutlinedUserGroup)
                     ->description(fn (string $operation): string => $operation === 'create'
                         ? 'Pick who receives it. Only people whose login is active get it.'
                         : 'The audience is fixed once an announcement has been sent.')

@@ -1,0 +1,9 @@
+---
+paths:
+  - 'app/Services/PanDuplicateService.php, app/Rules/PanIsAvailable.php, app/Support/PanMatch.php, app/Models/CustomerPanRequest.php, app/Filament/Resources/Leads/**, app/Filament/Resources/Customers/**, app/Filament/Resources/CustomerPanRequests/**, app/Filament/Resources/AssignedLeads/**, app/Filament/Imports/**, app/Services/CustomerEditRequestService.php'
+---
+
+# Duplicate PAN checks
+
+## Every PAN entry checks customers AND open leads through PanDuplicateService; a clash needs an Admin-approved request
+User decision 2026-11-14: a PAN typed or changed anywhere is checked against both tables, never one. Use PanDuplicateService::matches()/firstMatch() (customers + leads with is_converted = false; a converted lead lives on as its customer) or the PanIsAvailable rule, never a bare `unique('leads')` / `Customer::where('pan_number')`. Wired into: LeadForm (create + edit, "Duplicate PAN Found" section → Request Approval, request_for = lead), CustomerForm/CreateCustomer (lead/AI conversion ignores the lead being converted; a lead clash fills existing_lead_id / $existingLead, a customer clash existing_customer_id), customer edit (only a CHANGED PAN), CustomerEditRequestService (raise + again at approve), LeadImporter/CustomerImporter (row rejected, no approval path), AssignedLeadForm (warning only — conversion enforces it). An existing record whose PAN is unchanged is never blocked: older data already shares PANs and editing a follow-up must not trip on it. customer_pan_requests: customer_id OR matched_lead_id is the clash; lead_id is the requester's own lead (converted, or edited); request_for says what is being saved; an approval is spent via application_id (customer) or used_at (lead) — check CustomerPanRequest::isUsed(), and send "Continue" to continueUrl(). Admins are checked too (they approve their own request). Covered by tests/Feature/PanDuplicateCheckTest.php.

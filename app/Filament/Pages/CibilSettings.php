@@ -69,6 +69,7 @@ class CibilSettings extends Page
         return $schema
             ->components([
                 Section::make('All bureaus')
+                    ->icon(Heroicon::OutlinedPower)
                     ->description('Nothing is sent to any bureau while this is off. Every request that does go out is billed by the provider.')
                     ->schema([
                         Toggle::make('requests_enabled')
@@ -78,6 +79,7 @@ class CibilSettings extends Page
                     ->columnSpanFull(),
 
                 Section::make('CIBIL')
+                    ->icon(Heroicon::OutlinedBuildingLibrary)
                     ->description('Which CIBIL requests users may send. These do not affect Experian.')
                     ->schema([
                         Toggle::make('score_enabled')
@@ -96,6 +98,7 @@ class CibilSettings extends Page
                     ->columnSpanFull(),
 
                 Section::make('Experian')
+                    ->icon(Heroicon::OutlinedBuildingLibrary)
                     ->description('Experian on its own: switching it off stops new Experian requests only — CIBIL carries on, nothing is sent to CIBIL instead, and earlier Experian reports stay available.')
                     ->schema([
                         Toggle::make('experian_enabled')
@@ -120,6 +123,7 @@ class CibilSettings extends Page
                     ->columnSpanFull(),
 
                 Section::make('Reuse and fresh pulls')
+                    ->icon(Heroicon::OutlinedArrowPath)
                     ->description('A request for a lead or customer file is answered from a report the file already has whenever that report covers it, so the bureau is not paid twice for the same answer.')
                     ->schema([
                         TextInput::make('reuse_window_days')

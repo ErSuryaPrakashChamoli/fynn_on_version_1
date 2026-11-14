@@ -9,25 +9,35 @@
     @endphp
 
     {{-- Who / when --}}
-    <div class="flex flex-wrap items-center gap-4 border-b border-gray-200 pb-5 dark:border-gray-700">
-        <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+    <div class="fynn-hero">
+        <span class="fynn-avatar fynn-avatar--lg">
             {{ $commitment->employee?->initials }}
         </span>
-        <div class="min-w-0">
-            <div class="flex flex-wrap items-baseline gap-x-2">
-                <span class="text-xl font-bold text-gray-950 dark:text-white">{{ $commitment->employee?->emp_name }}</span>
-                <span class="text-xs font-bold uppercase tracking-wide {{ \App\Models\Employee::designationColorClass($commitment->employee?->designation) }}">
-                    {{ \App\Models\Employee::designationOptions()[$commitment->employee?->designation] ?? '—' }}
+        <div class="fynn-hero-main">
+            <div class="fynn-hero-title">
+                <span>{{ $commitment->employee?->emp_name }}</span>
+                <span class="dc-level {{ \App\Models\Employee::designationColorClass($commitment->employee?->designation) }}">{{ \App\Models\Employee::designationOptions()[$commitment->employee?->designation] ?? '—' }}</span>
+                <span class="fynn-chip">
+                    <x-filament::icon icon="heroicon-m-identification" />
+                    {{ $commitment->employee?->emp_id }}
                 </span>
-                <span class="text-xs text-gray-500">{{ $commitment->employee?->emp_id }}</span>
             </div>
-            <div class="text-sm text-gray-600 dark:text-gray-400">
-                {{ $commitment->date->format('l, d M Y') }}
-                · {{ $row['present'] ? 'Present' : 'Absent' }}
+            <div class="fynn-hero-meta">
+                <span class="fynn-chip">
+                    <x-filament::icon icon="heroicon-m-calendar-days" />
+                    {{ $commitment->date->format('l, d M Y') }}
+                </span>
+                <x-daily-commitment.presence-chip :present="$row['present']" />
                 @if ($commitment->submitted_at)
-                    · final status submitted {{ $commitment->submitted_at->format('d M Y, H:i') }}
+                    <span class="fynn-chip">
+                        <x-filament::icon icon="heroicon-m-check-circle" />
+                        final status submitted {{ $commitment->submitted_at->format('d M Y, H:i') }}
+                    </span>
                 @else
-                    · final status not submitted
+                    <span class="fynn-chip">
+                        <x-filament::icon icon="heroicon-m-clock" />
+                        final status not submitted
+                    </span>
                 @endif
             </div>
         </div>
@@ -35,17 +45,23 @@
 
     {{-- Headline --}}
     <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <x-daily-commitment.kpi label="Commitment" :amount="$row['target']" :count="$isCount" :hint="$stage->label()" :accent="$stage->hex()" />
-        <x-daily-commitment.kpi label="Achievement" :amount="$row['achieved']" :count="$isCount" accent="#22c55e" />
-        <x-daily-commitment.kpi label="Pending" :amount="$row['pending']" :count="$isCount" accent="#f97316" />
-        <x-daily-commitment.kpi label="Achievement %" :value="$row['percentage'] . '%'" accent="#3b82f6" />
-        <div class="dc-card">
-            <div class="dc-card-label">Final stage</div>
-            <div class="mt-2"><x-daily-commitment.stage-chip :stage="$row['current_stage']" muted="Not started" /></div>
+        <x-daily-commitment.kpi label="Commitment" :amount="$row['target']" :count="$isCount" :hint="$stage->label()" :accent="$stage->hex()" icon="heroicon-o-hand-raised" />
+        <x-daily-commitment.kpi label="Achievement" :amount="$row['achieved']" :count="$isCount" accent="#22c55e" icon="heroicon-o-banknotes" />
+        <x-daily-commitment.kpi label="Pending" :amount="$row['pending']" :count="$isCount" accent="#f97316" icon="heroicon-o-clock" />
+        <x-daily-commitment.kpi label="Achievement %" :value="$row['percentage'] . '%'" accent="#3b82f6" icon="heroicon-o-chart-pie" />
+        <div class="dc-card" style="--dc-accent: #64748b">
+            <div class="fynn-kpi-head">
+                <span class="fynn-kpi-icon"><x-filament::icon icon="heroicon-o-flag" /></span>
+                <div class="dc-card-label">Final stage</div>
+            </div>
+            <div class="mt-2.5"><x-daily-commitment.stage-chip :stage="$row['current_stage']" muted="Not started" /></div>
         </div>
-        <div class="dc-card">
-            <div class="dc-card-label">Result</div>
-            <div class="mt-2"><x-daily-commitment.result-chip :result="$row['result']" /></div>
+        <div class="dc-card" style="--dc-accent: #8b5cf6">
+            <div class="fynn-kpi-head">
+                <span class="fynn-kpi-icon"><x-filament::icon icon="heroicon-o-check-badge" /></span>
+                <div class="dc-card-label">Result</div>
+            </div>
+            <div class="mt-2.5"><x-daily-commitment.result-chip :result="$row['result']" /></div>
             <div class="dc-card-hint">{{ $row['changes'] }} recorded {{ \Illuminate\Support\Str::plural('change', $row['changes']) }}</div>
         </div>
     </div>
@@ -55,9 +71,9 @@
     </div>
 
     @if (! $this->canEditCommitment())
-        <p class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-            <x-filament::icon icon="heroicon-o-lock-closed" class="h-4 w-4" />
-            The morning commitment is locked. Only an Admin can correct it, and any correction is logged below.
+        <p class="fynn-note mt-0">
+            <x-filament::icon icon="heroicon-m-lock-closed" />
+            <span>The morning commitment is locked. Only an Admin can correct it, and any correction is logged below.</span>
         </p>
     @endif
 
@@ -74,9 +90,12 @@
         :description="$entries->count() . ' ' . \Illuminate\Support\Str::plural('case', $entries->count()) . ' claimed against this commitment'"
     >
         @if ($entries->isEmpty())
-            <p class="text-sm text-gray-500">No customers have been declared against this commitment yet.</p>
+            <div class="fynn-empty fynn-empty--compact">
+                <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-users" /></span>
+                <span>No customers have been declared against this commitment yet.</span>
+            </div>
         @else
-            <div class="overflow-x-auto">
+            <div class="fynn-table-wrap overflow-x-auto">
                 <table class="dc-table">
                     <thead>
                         <tr>
@@ -126,7 +145,7 @@
             <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                 @foreach ($ladder as $rung)
                     @php $totals = $row['breakdown']['stages'][$rung->value] ?? ['amount' => 0, 'count' => 0]; @endphp
-                    <div class="dc-card" style="border-color: {{ $rung->hex() }}55; box-shadow: inset 3px 0 0 0 {{ $rung->hex() }}">
+                    <div class="dc-card" style="--dc-accent: {{ $rung->hex() }}">
                         <x-daily-commitment.stage-chip :stage="$rung" />
                         <div class="dc-card-value dc-card-amount">{{ indianAmount($totals['amount']) }}</div>
                         <div class="dc-card-words">{{ indianAmountInWords($totals['amount']) }}</div>
@@ -163,9 +182,12 @@
         :description="$this->logs->count() . ' recorded ' . \Illuminate\Support\Str::plural('change', $this->logs->count())"
     >
         @if ($this->logs->isEmpty())
-            <p class="text-sm text-gray-500">Nothing has changed since this commitment was given.</p>
+            <div class="fynn-empty fynn-empty--compact">
+                <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-clock" /></span>
+                <span>Nothing has changed since this commitment was given.</span>
+            </div>
         @else
-            <div class="overflow-x-auto">
+            <div class="fynn-table-wrap overflow-x-auto">
                 <table class="dc-table">
                     <thead>
                         <tr>

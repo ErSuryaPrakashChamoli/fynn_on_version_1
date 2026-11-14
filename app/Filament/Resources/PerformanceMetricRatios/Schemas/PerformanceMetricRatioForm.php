@@ -9,6 +9,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class PerformanceMetricRatioForm
 {
@@ -17,6 +18,7 @@ class PerformanceMetricRatioForm
         return $schema
             ->components([
                 Section::make('Ratio Definition')
+                    ->icon(Heroicon::OutlinedDivide)
                     ->description('Pick any two metrics — the ratio is computed live for every employee, on every report, in every period.')
                     ->schema([
                         TextInput::make('name')

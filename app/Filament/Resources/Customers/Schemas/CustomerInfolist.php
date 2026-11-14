@@ -15,6 +15,7 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Storage;
 // use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -37,6 +38,7 @@ class CustomerInfolist
                 // so the normal Manager workflow stays visually unchanged
                 // when no delegation/takeover exists — see spec item 13.
                 Section::make('Journey Access')
+                    ->icon(Heroicon::OutlinedKey)
                     ->columnSpanFull()
                     ->visible(function (Customer $record): bool {
                         $user = auth()->user();
@@ -77,7 +79,8 @@ class CustomerInfolist
 
                 CustomerEligibilitySection::make(),
 
-                Section::make('👤 Customer Overview')
+                Section::make('Customer Overview')
+                    ->icon(Heroicon::OutlinedUser)
                     ->columnSpanFull()
                     ->schema([
                         Grid::make(3)
@@ -160,7 +163,8 @@ class CustomerInfolist
                             ]),
                     ]),
 
-                Section::make('📍 Personal Details')
+                Section::make('Personal Details')
+                    ->icon(Heroicon::OutlinedIdentification)
                     ->columnSpanFull()
                     ->schema([
 
@@ -186,7 +190,8 @@ class CustomerInfolist
                             ]),
                     ]),
 
-                Section::make('🏦 Loan Application Details')
+                Section::make('Loan Application Details')
+                    ->icon(Heroicon::OutlinedCurrencyRupee)
                     ->columnSpanFull()
                     ->schema([
 
@@ -214,7 +219,8 @@ class CustomerInfolist
                             ]),
                     ]),
 
-                Section::make('📑 Step 1 - Source File Logging')
+                Section::make('Step 1 - Source File Logging')
+                    ->icon(Heroicon::OutlinedFolderPlus)
                     ->columnSpanFull()
                     ->schema([
                         Grid::make(3)
@@ -241,7 +247,8 @@ class CustomerInfolist
 
                     ]),
 
-                Section::make('🔍 Step 2 - Underwriting')
+                Section::make('Step 2 - Underwriting')
+                    ->icon(Heroicon::OutlinedDocumentMagnifyingGlass)
                     ->columnSpanFull()
                     ->schema([
 
@@ -259,7 +266,8 @@ class CustomerInfolist
                             ]),
                     ]),
 
-                Section::make('✅ Step 3 - Credit Approval')
+                Section::make('Step 3 - Credit Approval')
+                    ->icon(Heroicon::OutlinedCheckBadge)
                     ->columnSpanFull()
                     ->schema([
 
@@ -277,7 +285,8 @@ class CustomerInfolist
                             ]),
                     ]),
 
-                Section::make('💰 Step 4 - Disbursal')
+                Section::make('Step 4 - Disbursal')
+                    ->icon(Heroicon::OutlinedBanknotes)
                     ->columnSpanFull()
                     ->schema([
 
@@ -329,6 +338,7 @@ class CustomerInfolist
                     ]),
 
                 Section::make('Customer Documents')
+                    ->icon(Heroicon::OutlinedPaperClip)
                     ->columnSpanFull()
                     ->schema([
 
@@ -371,7 +381,8 @@ class CustomerInfolist
                     ->visible(fn ($record) => $record?->documents()->exists())
                     ->columnSpanFull(),
 
-                Section::make('❌ Rejection Details')
+                Section::make('Rejection Details')
+                    ->icon(Heroicon::OutlinedXCircle)
                     ->columnSpanFull()
                     ->visible(
                         fn ($record) => $record->journey_status === 'rejected'
@@ -384,7 +395,8 @@ class CustomerInfolist
 
                     ]),
 
-                Section::make('📝 Complete Activity Timeline')
+                Section::make('Complete Activity Timeline')
+                    ->icon(Heroicon::OutlinedClock)
                     ->columnSpanFull()
                     ->schema([
 
@@ -415,6 +427,7 @@ class CustomerInfolist
                     ]),
 
                 Section::make('Customer Settlement')
+                    ->icon(Heroicon::OutlinedDocumentCurrencyRupee)
                     ->schema([
                         TextEntry::make('latestSettlement.settlement_no')
                             ->label('Settlement No.')

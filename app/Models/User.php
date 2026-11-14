@@ -36,6 +36,8 @@ use Spatie\Permission\Traits\HasRoles;
  * @property Carbon|null $updated_at
  * @property int|null $employee_id
  * @property string $role
+ * @property list<string>|null $sidebar_favourites
+ * @property list<string>|null $sidebar_recents
  * @property-read Employee|null $employee
  * @property-read DatabaseNotificationCollection<int, DatabaseNotification> $notifications
  * @property-read int|null $notifications_count
@@ -90,12 +92,92 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'sidebar_favourites' => 'array',
+            'sidebar_recents' => 'array',
         ];
     }
 
     public function employee()
     {
         return $this->belongsTo(Employee::class, 'employee_id');
+    }
+
+    /**
+     * Sidebar submodules this user starred, in the order they were starred
+     * (keys from App\Support\SidebarShortcuts::keyFor()).
+     *
+     * @return list<string>
+     */
+    public function sidebarFavourites(): array
+    {
+        return self::sidebarKeys($this->sidebar_favourites);
+    }
+
+    /**
+     * Sidebar submodules this user opened last, most recent first.
+     *
+     * @return list<string>
+     */
+    public function sidebarRecents(): array
+    {
+        return self::sidebarKeys($this->sidebar_recents);
+    }
+
+    /**
+     * Stars the submodule, or un-stars it when it already is one.
+     *
+     * @return bool Whether the submodule is a favourite afterwards.
+     */
+    public function toggleSidebarFavourite(string $key): bool
+    {
+        $favourites = $this->sidebarFavourites();
+        $isFavourite = ! in_array($key, $favourites, true);
+
+        $this->sidebar_favourites = $isFavourite
+            ? [...$favourites, $key]
+            : array_values(array_diff($favourites, [$key]));
+
+        $this->saveSidebarShortcuts();
+
+        return $isFavourite;
+    }
+
+    /**
+     * Puts the submodule first in the recent list, keeping at most $limit.
+     * Skips the write when it already is first (the sidebar is built more
+     * than once per page).
+     */
+    public function recordSidebarVisit(string $key, int $limit): void
+    {
+        $recents = $this->sidebarRecents();
+
+        if (($recents[0] ?? null) === $key) {
+            return;
+        }
+
+        $this->sidebar_recents = array_slice([$key, ...array_diff($recents, [$key])], 0, $limit);
+
+        $this->saveSidebarShortcuts();
+    }
+
+    /**
+     * Sidebar preferences are not account changes: no model events and no
+     * updated_at bump.
+     */
+    private function saveSidebarShortcuts(): void
+    {
+        static::withoutTimestamps(fn (): bool => $this->saveQuietly());
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function sidebarKeys(mixed $keys): array
+    {
+        return array_values(array_unique(array_filter(
+            (array) ($keys ?? []),
+            fn (mixed $key): bool => is_string($key) && $key !== '',
+        )));
     }
 
     /**

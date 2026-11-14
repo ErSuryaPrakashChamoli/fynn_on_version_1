@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\CustomerSettlements\RelationManagers;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Models\CustomerSettlement;
 use App\Models\CustomerSettlementTransaction;
 use App\Services\Settlement\SettlementTransactionService;
@@ -17,6 +18,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class TransactionsRelationManager extends RelationManager
 {
+    use HasColumnHeaderFilters;
+
     protected static string $relationship = 'transactions';
 
     protected static ?string $title = 'Financial Transactions';

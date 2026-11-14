@@ -1,9 +1,12 @@
 ---
 paths:
-  - 'app/Filament/Actions/AssignCustomersToUserBulkAction.php, app/Filament/Resources/AiCustomerRecords/**, app/Services/CustomerAssignmentService.php'
+  - 'app/Filament/Actions/AssignCustomersToUserBulkAction.php, app/Filament/Resources/AiCustomerRecords/**, app/Services/CustomerAssignmentService.php, app/Support/AiRecordSerialRanges.php, app/Filament/Exports/AiCustomerRecordExporter.php'
 ---
 
 # Ai Customer Records Services
 
 ## Assign customers/AI records only through CustomerAssignmentService
 Since 2026-09-18 every hand-over (customer_assignment_batches + customer_assignments rows) goes through App\Services\CustomerAssignmentService::assign(ids, employeeId, targetType, assignedBy). It dedupes ids, skips targets that already have an assignment, wraps the batch + rows in one transaction and returns ['assigned','skipped','batch']. Callers: AssignCustomersToUserBulkAction (Customers + Customer Data bulk "Assign to User") and the Customer Data header action "Assign by S. No." (AiCustomerRecordsTable::assignBySerialNumberAction, Admin-only, whereBetween on ai_customer_records.id — the "#" column). Do not create batches/assignments inline in a new action; extend the service instead. Covered by tests/Feature/AiCustomerRecordAssignBySerialNumberTest.php.
+
+## "Unassigned" AI record = no assignment row AND not converted
+Since 2026-11-14 AiCustomerRecord::scopeUnassigned() is the definition: customer_id IS NULL and no customer_assignments row. Conversion (CreateCustomer::afterCreate) moves the assignment from ai_customer_record_id to customer_id, so CustomerAssignmentService::assign() also skips AI records whose customer_id is set — before this a converted record looked free and could be handed out again. AiRecordSerialRanges::unassigned() repeats the same rule in raw SQL (gaps-and-islands with ROW_NUMBER(); runs break at taken records and at a template change, not at deleted ids) — keep the two in step. "Assign by S. No." is now a Repeater of From/To/user rows ("Range 1, 2, …"; each row's picker offers only what the rows above left free via AiRecordSerialRanges::without(), a row overlapping one above fails on its from_id, all rows run in one transaction) with the unassigned runs listed on top (resources/views/filament/components/unassigned-serial-ranges.blade.php). "Export Customer Data" (AiCustomerRecordExporter, DataDownloadApproval::protect — lead data) reads the holder via AiCustomerRecord::currentAssignment() (latestAssignment, else convertedAssignment by customer_id) and the latest follow-up via subqueries on ai_customer_record_id OR the converted customer_id. Covered by tests/Feature/AiCustomerRecordAssignBySerialNumberTest.php and AiCustomerRecordExportTest.php.

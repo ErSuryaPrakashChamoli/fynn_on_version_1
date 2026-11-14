@@ -15,7 +15,7 @@
     $mode = \App\Support\SelectedMonth::mode();
     $financialYearStart = \App\Support\SelectedMonth::financialYearStart();
     $currentFinancialYearStart = \App\Support\SelectedMonth::financialYearStartFor(now());
-    $selectClass = 'fi-input fi-select-input block w-full rounded-lg border-none bg-white py-1.5 text-sm text-gray-950 shadow-sm ring-1 ring-gray-950/10 dark:bg-white/5 dark:text-white dark:ring-white/20';
+    $selectClass = 'fi-input fi-select-input block w-full cursor-pointer rounded-[0.625rem] border-none bg-white py-1.5 text-sm font-medium text-gray-950 shadow-xs ring-1 ring-gray-950/15 transition hover:ring-gray-950/25 dark:bg-white/5 dark:text-white dark:ring-white/20 dark:hover:ring-white/30';
 @endphp
 <div
     x-data="{

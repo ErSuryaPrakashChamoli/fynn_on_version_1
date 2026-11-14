@@ -3,7 +3,9 @@
 namespace App\Filament\Imports;
 
 use App\Models\Customer;
+use App\Rules\PanIsAvailable;
 use App\Services\CustomerEligibilityService;
+use App\Services\PanDuplicateService;
 use Filament\Actions\Imports\ImportColumn;
 use Filament\Actions\Imports\Importer;
 use Filament\Actions\Imports\Models\Import;
@@ -24,8 +26,11 @@ class CustomerImporter extends Importer
                 ->rules(['required', 'max:20']),
             ImportColumn::make('email')
                 ->rules(['email', 'max:255']),
+            // Rows whose PAN another customer file or open lead already
+            // carries are rejected — an import cannot ask for Admin approval.
             ImportColumn::make('pan_number')
-                ->rules(['max:255']),
+                ->castStateUsing(fn (?string $state): ?string => PanDuplicateService::normalize($state))
+                ->rules(['max:255', new PanIsAvailable(mentionApproval: false)]),
             ImportColumn::make('job_location')
                 ->rules(['max:255']),
             ImportColumn::make('residence_location')

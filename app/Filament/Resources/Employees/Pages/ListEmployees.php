@@ -2,8 +2,12 @@
 
 namespace App\Filament\Resources\Employees\Pages;
 
+use App\Filament\Actions\EmployeeDependencyStep;
+use App\Filament\Actions\ReopenAction;
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\Employees\EmployeeResource;
 use App\Models\Employee;
+use App\Services\EmployeeTransferService;
 use App\Services\HierarchyReassignmentService;
 use App\Services\ReportingLineService;
 use App\Support\ReportingTree;
@@ -17,11 +21,16 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
+use Filament\Support\Enums\Width;
+use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\Arr;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class ListEmployees extends ListRecords
 {
+    use HasColumnHeaderFilters;
+
     protected static string $resource = EmployeeResource::class;
 
     protected function getHeaderActions(): array
@@ -35,9 +44,11 @@ class ListEmployees extends ListRecords
                 ->color('warning')
                 ->visible(fn (): bool => auth()->user()?->hasRole('Admin') === true)
                 ->modalHeading('Transfer / Reassign Employees')
-                ->modalDescription('Use Full Cluster to move a Cluster Manager\'s direct reports, with their teams, to another Cluster Manager. Use Flexible Reassignment to move any employee to anyone more senior — levels in between may be skipped, and each row can have a different destination.')
+                ->modalDescription('Use Full Cluster to move a Cluster Manager\'s direct reports, with their teams, to another Cluster Manager. Use Flexible Reassignment to move any employee alone to anyone more senior — levels in between may be skipped, and each row can have a different destination. Anything still attached to them (team, open customers, leads, delegations) is handed over first, right here.')
                 ->modalSubmitActionLabel('Confirm Transfer')
                 ->modalWidth('5xl')
+                // Back from the hand-over step with the rows as they were.
+                ->fillForm(fn (array $arguments): ?array => $arguments['batch'] ?? null)
                 ->form([
                     Select::make('transfer_type')
                         ->label('Transfer Mode')
@@ -126,7 +137,7 @@ class ListEmployees extends ListRecords
                                         ->count() > 1;
                                 })
                                 ->afterStateUpdated(fn (Set $set): mixed => $set('target_id', null))
-                                ->helperText('Everyone below the employee moves with them.'),
+                                ->helperText('They move alone: anything still attached to them is handed over first.'),
 
                             Select::make('target_id')
                                 ->label('Move To')
@@ -167,7 +178,19 @@ class ListEmployees extends ListRecords
                         $service = app(HierarchyReassignmentService::class);
 
                         if (($data['transfer_type'] ?? null) === 'flexible_reassignment') {
-                            $log = $service->reassign(
+                            $transfers = app(EmployeeTransferService::class);
+                            $blockers = $transfers->blockers($data['assignments'] ?? []);
+
+                            if ($blockers !== []) {
+                                $this->replaceMountedAction('clearTransferDependencies', [
+                                    'employee' => array_key_first($blockers),
+                                    'batch' => Arr::only($data, ['transfer_type', 'assignments', 'effective_date', 'remarks']),
+                                ]);
+
+                                return;
+                            }
+
+                            $log = $transfers->reassign(
                                 assignments: $data['assignments'] ?? [],
                                 performedBy: (int) auth()->id(),
                                 effectiveDate: $data['effective_date'] ?? null,
@@ -208,6 +231,56 @@ class ListEmployees extends ListRecords
                     }
                 }),
         ];
+    }
+
+    /**
+     * The Flexible Reassignment's hand-over step, mounted in its place when
+     * somebody being moved still has something attached. Once that person
+     * is clear it moves on to the next one, and finally back to the
+     * transfer form with the same rows, ready to confirm.
+     */
+    public function clearTransferDependenciesAction(): Action
+    {
+        $transfers = app(EmployeeTransferService::class);
+
+        $employee = fn (array $arguments): Employee => once(fn (): Employee => Employee::query()->findOrFail((int) ($arguments['employee'] ?? 0)));
+
+        $alsoMoving = fn (array $arguments): array => $transfers->alsoMovingIds($arguments['batch']['assignments'] ?? [], (int) ($arguments['employee'] ?? 0));
+
+        return Action::make('clearTransferDependencies')
+            ->modalWidth(Width::ThreeExtraLarge)
+            ->modalIcon(Heroicon::OutlinedExclamationTriangle)
+            ->modalIconColor('warning')
+            ->modalHeading(fn (array $arguments): string => EmployeeDependencyStep::heading($employee($arguments)))
+            ->modalDescription(fn (array $arguments): string => EmployeeDependencyStep::description(
+                $employee($arguments),
+                'The transfer comes back for you to confirm once nothing is left.',
+                $alsoMoving($arguments),
+            ))
+            ->fillForm(fn (array $arguments): array => [
+                'handover_date' => $arguments['batch']['effective_date'] ?? today()->toDateString(),
+            ])
+            ->schema(fn (array $arguments): array => EmployeeDependencyStep::schema($employee($arguments), $alsoMoving($arguments)))
+            ->modalSubmitActionLabel('Hand over & continue')
+            ->action(function (array $arguments, array $data, Action $action) use ($transfers, $employee, $alsoMoving): void {
+                $remaining = EmployeeDependencyStep::clear($employee($arguments), $data, $action, $alsoMoving($arguments));
+
+                if ($remaining !== []) {
+                    ReopenAction::for($action, $arguments);
+
+                    return;
+                }
+
+                $blockers = $transfers->blockers($arguments['batch']['assignments'] ?? []);
+
+                if ($blockers !== []) {
+                    ReopenAction::for($action, [...$arguments, 'employee' => array_key_first($blockers)]);
+
+                    return;
+                }
+
+                $this->replaceMountedAction('transferCluster', ['batch' => $arguments['batch']]);
+            });
     }
 
     private function clusterManagerOptions(int $exceptId = 0): array

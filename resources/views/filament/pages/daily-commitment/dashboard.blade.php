@@ -27,40 +27,42 @@
     </x-filament::section>
 
     {{-- Headline counts (people, not money — these do add up across levels) --}}
-    <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-6">
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-6">
         <x-daily-commitment.kpi
             label="Committed"
             :value="$summary['with_commitment'] . ' / ' . $summary['people']"
             hint="{{ $summary['submitted'] }} submitted a final status"
             accent="#3b82f6"
+            icon="heroicon-o-hand-raised"
         />
-        <x-daily-commitment.kpi label="Met" :value="$summary['met']" accent="#22c55e" />
-        <x-daily-commitment.kpi label="Partially met" :value="$summary['partial'] ?? 0" accent="#f59e0b" />
-        <x-daily-commitment.kpi label="Failed" :value="$summary['failed']" accent="#ef4444" />
-        <x-daily-commitment.kpi label="Overachieved" :value="$summary['overachieved']" accent="#0d9488" />
-        <x-daily-commitment.kpi label="In progress" :value="$summary['in_progress']" accent="#eab308" />
+        <x-daily-commitment.kpi label="Met" :value="$summary['met']" accent="#22c55e" icon="heroicon-o-check-circle" />
+        <x-daily-commitment.kpi label="Partially met" :value="$summary['partial'] ?? 0" accent="#f59e0b" icon="heroicon-o-adjustments-horizontal" />
+        <x-daily-commitment.kpi label="Failed" :value="$summary['failed']" accent="#ef4444" icon="heroicon-o-x-circle" />
+        <x-daily-commitment.kpi label="Overachieved" :value="$summary['overachieved']" accent="#0d9488" icon="heroicon-o-rocket-launch" />
+        <x-daily-commitment.kpi label="In progress" :value="$summary['in_progress']" accent="#eab308" icon="heroicon-o-clock" />
     </div>
 
     {{-- Attendance + OTP + MTD --}}
     <div class="grid gap-4 lg:grid-cols-2">
         <x-filament::section icon="heroicon-o-users" heading="Callers today" compact>
             <div class="grid grid-cols-2 gap-3">
-                <x-daily-commitment.kpi label="Present" :value="$summary['present']" accent="#22c55e" />
-                <x-daily-commitment.kpi label="Absent" :value="$summary['absent']" accent="#6b7280" />
+                <x-daily-commitment.kpi label="Present" :value="$summary['present']" accent="#22c55e" icon="heroicon-o-user-group" />
+                <x-daily-commitment.kpi label="Absent" :value="$summary['absent']" accent="#6b7280" icon="heroicon-o-user-minus" />
             </div>
-            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                Anyone with a login in the existing Screen Time sessions counts as Present — {{ $rangeLabel }}.
+            <p class="fynn-note">
+                <x-filament::icon icon="heroicon-m-information-circle" />
+                <span>Anyone with a login in the existing Screen Time sessions counts as Present — {{ $rangeLabel }}.</span>
             </p>
         </x-filament::section>
 
         <x-filament::section icon="heroicon-o-device-phone-mobile" heading="OTP performance" compact>
             <div class="grid grid-cols-3 gap-3">
-                <x-daily-commitment.kpi label="Expected" :value="number_format($summary['expected_otp'])" accent="#eab308" />
-                <x-daily-commitment.kpi label="Actual" :value="number_format($summary['actual_otp'])" accent="#3b82f6" />
-                <x-daily-commitment.kpi label="Achievement" :value="$summary['otp_percentage'] . '%'" accent="#22c55e" />
+                <x-daily-commitment.kpi label="Expected" :value="number_format($summary['expected_otp'])" accent="#eab308" icon="heroicon-o-flag" />
+                <x-daily-commitment.kpi label="Actual" :value="number_format($summary['actual_otp'])" accent="#3b82f6" icon="heroicon-o-device-phone-mobile" />
+                <x-daily-commitment.kpi label="Achievement" :value="$summary['otp_percentage'] . '%'" accent="#22c55e" icon="heroicon-o-chart-bar" />
             </div>
-            <div class="mt-3">
-                <x-daily-commitment.progress-bar :percentage="$summary['otp_percentage']" color="#eab308" />
+            <div class="mt-4">
+                <x-daily-commitment.progress-bar :percentage="$summary['otp_percentage']" color="#eab308" show-value />
             </div>
         </x-filament::section>
 
@@ -76,12 +78,15 @@
     >
         <x-daily-commitment.monthly-level-summary :levels="$monthlyLevels" />
 
-        <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+        <p class="fynn-note">
+            <x-filament::icon icon="heroicon-m-information-circle" />
+            <span>
             {{ $monthly['people_with_target'] }} {{ \Illuminate\Support\Str::plural('person', $monthly['people_with_target']) }}
             in scope {{ $monthly['people_with_target'] === 1 ? 'has' : 'have' }} a target this month ·
             {{ $monthly['elapsed_working_days'] }} working {{ \Illuminate\Support\Str::plural('day', $monthly['elapsed_working_days']) }} elapsed,
             {{ $monthly['remaining_working_days'] }} remaining.
             DRR is each level's own MTD ÷ working days elapsed; "needed / day" closes that level's own gap.
+            </span>
         </p>
     </x-filament::section>
 
@@ -91,11 +96,11 @@
         heading="Current pipeline"
         description="Built only from this module: cases declared on commitments in this period that have not closed out. Never counted as achievement."
     >
-        <div class="mb-4 flex flex-wrap items-baseline gap-x-3">
-            <span class="text-2xl font-extrabold text-gray-950 dark:text-white">
+        <div class="fynn-headline">
+            <span class="fynn-headline-value">
                 {{ indianAmount($summary['pipeline_amount']) }}
             </span>
-            <span class="text-sm text-gray-500">
+            <span class="fynn-headline-caption">
                 across {{ number_format($summary['pipeline_count']) }} open
                 {{ \Illuminate\Support\Str::plural('case', $summary['pipeline_count']) }}
                 (excludes disbursal, dropped and rejected)
@@ -105,7 +110,7 @@
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             @foreach ($ladder as $stage)
                 @php $totals = $summary['pipeline_totals'][$stage->value]; @endphp
-                <div class="dc-card" style="border-color: {{ $stage->hex() }}55; box-shadow: inset 3px 0 0 0 {{ $stage->hex() }}">
+                <div class="dc-card" style="--dc-accent: {{ $stage->hex() }}">
                     <x-daily-commitment.stage-chip :stage="$stage" />
                     <div class="dc-card-value dc-card-amount">{{ indianAmount($totals['amount']) }}</div>
                     <div class="dc-card-words">{{ indianAmountInWords($totals['amount']) }}</div>
@@ -124,7 +129,7 @@
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
             @foreach (\App\Enums\CommitmentStage::reportable() as $stage)
                 @php $totals = $stageTotals[$stage->value]; @endphp
-                <div class="dc-card" style="border-color: {{ $stage->hex() }}55; box-shadow: inset 3px 0 0 0 {{ $stage->hex() }}">
+                <div class="dc-card" style="--dc-accent: {{ $stage->hex() }}">
                     <x-daily-commitment.stage-chip :stage="$stage" />
                     <div class="dc-card-value">{{ $totals['count'] }}</div>
                     @if ($stage->rank())
@@ -144,9 +149,12 @@
         :description="$rows->count() . ' of ' . $allRows->count() . ' ' . \Illuminate\Support\Str::plural('person', $allRows->count()) . ' shown — click a row for full details'"
     >
         @if ($rows->isEmpty())
-            <p class="text-sm text-gray-500">Nothing matches these filters.</p>
+            <div class="fynn-empty fynn-empty--compact">
+                <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-funnel" /></span>
+                <span>Nothing matches these filters.</span>
+            </div>
         @else
-            <div class="overflow-x-auto">
+            <div class="fynn-table-wrap overflow-x-auto">
                 <table class="dc-table">
                     <thead>
                         <tr>
@@ -193,8 +201,8 @@
                                     @endif
                                     <div class="text-xs text-gray-500">{{ $row['employee']->emp_id }}</div>
                                 </td>
-                                <td class="text-xs font-bold uppercase {{ \App\Models\Employee::designationColorClass($row['designation']) }}">
-                                    {{ \App\Models\Employee::designationOptions()[$row['designation']] ?? '—' }}
+                                <td>
+                                    <span class="dc-level {{ \App\Models\Employee::designationColorClass($row['designation']) }}">{{ \App\Models\Employee::designationOptions()[$row['designation']] ?? '—' }}</span>
                                 </td>
                                 <td>
                                     <x-daily-commitment.presence-chip :present="$row['present']" />

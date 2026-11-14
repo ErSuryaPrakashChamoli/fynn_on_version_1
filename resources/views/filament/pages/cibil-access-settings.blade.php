@@ -11,19 +11,25 @@
 
     @php($usersWithAccess = $this->usersWithAccess())
 
-    <x-filament::section :heading="'Who has access now ('.$usersWithAccess->count().')'" description="Updated when you save.">
+    <x-filament::section icon="heroicon-o-user-group" :heading="'Who has access now ('.$usersWithAccess->count().')'" description="Updated when you save.">
         @if ($usersWithAccess->isEmpty())
-            <p class="text-sm text-gray-500 dark:text-gray-400">Nobody yet.</p>
+            <div class="fynn-empty fynn-empty--compact">
+                <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-user-minus" /></span>
+                <span>Nobody yet.</span>
+            </div>
         @else
-            <ul class="divide-y divide-gray-200 text-sm dark:divide-white/10">
+            <ul class="fynn-list text-sm">
                 @foreach ($usersWithAccess as $row)
-                    <li class="flex flex-wrap items-center justify-between gap-2 py-2">
-                        <div>
-                            <span class="font-medium text-gray-950 dark:text-white">{{ $row['name'] }}</span>
-                            <span class="text-gray-500 dark:text-gray-400">· {{ $row['emp_id'] ?? $row['email'] }}</span>
-                            @if ($row['extras'] !== [])
-                                <span class="text-gray-500 dark:text-gray-400">· also {{ implode(', ', $row['extras']) }}</span>
-                            @endif
+                    <li class="fynn-list-row flex-wrap">
+                        <div class="fynn-list-main">
+                            <span class="fynn-avatar fynn-avatar--sm" aria-hidden="true">{{ \Illuminate\Support\Str::of($row['name'])->explode(' ')->filter()->take(2)->map(fn ($part) => mb_strtoupper(mb_substr($part, 0, 1)))->implode('') }}</span>
+                            <div class="min-w-0">
+                                <span class="fynn-list-title">{{ $row['name'] }}</span>
+                                <span class="fynn-list-meta">· {{ $row['emp_id'] ?? $row['email'] }}</span>
+                                @if ($row['extras'] !== [])
+                                    <span class="fynn-list-meta">· also {{ implode(', ', $row['extras']) }}</span>
+                                @endif
+                            </div>
                         </div>
                         <x-filament::badge :color="$row['via'] === 'Admin' ? 'primary' : ($row['via'] === 'Individually' ? 'info' : 'gray')">
                             {{ $row['via'] }}

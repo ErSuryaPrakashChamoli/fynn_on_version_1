@@ -2,35 +2,35 @@
 
     <div class="space-y-4">
 
-        <x-filament::section>
+        <x-filament::section icon="heroicon-o-identification" heading="Continue Approved PAN Request">
 
-            <h2 class="text-lg font-bold">
-                Continue Approved PAN Request
-            </h2>
+            <dl class="fynn-dl">
 
-            <div>
+                <div class="fynn-dl-item">
 
-                <strong>Customer</strong>
+                    <dt>Customer</dt>
 
-                {{ $this->customer->customer_name }}
+                    <dd>{{ $this->customer->customer_name }}</dd>
 
-            </div>
+                </div>
 
-            <div>
+                <div class="fynn-dl-item">
 
-                <strong>PAN</strong>
+                    <dt>PAN</dt>
 
-                {{ $this->customer->pan_number }}
+                    <dd class="font-mono">{{ $this->customer->pan_number }}</dd>
 
-            </div>
+                </div>
 
-            <div>
+                <div class="fynn-dl-item">
 
-                <strong>Mobile</strong>
+                    <dt>Mobile</dt>
 
-                {{ $this->customer->mobile_no }}
+                    <dd class="font-mono">{{ $this->customer->mobile_no }}</dd>
 
-            </div>
+                </div>
+
+            </dl>
 
         </x-filament::section>
 

@@ -13,6 +13,7 @@ use App\Services\MonthlyTargetGate;
 use App\Support\HierarchyHelper;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -262,7 +263,11 @@ class SkipLevelReportingTest extends TestCase
 
     public function test_an_exited_skip_level_team_leader_stops_counting_but_stays_visible(): void
     {
-        $this->leave($this->skipLevelTeamLeader);
+        // Left before this month began, so none of this month counts.
+        $this->skipLevelTeamLeader->forceFill([
+            'exit_status' => 'yes',
+            'exit_date' => now()->subMonthNoOverflow()->endOfMonth()->toDateString(),
+        ])->save();
 
         $this->assertSame(
             2 * self::CALLER_TARGET + self::TOP_UP,
@@ -270,6 +275,27 @@ class SkipLevelReportingTest extends TestCase
         );
         $this->assertFalse(HierarchyHelper::subordinateIds($this->cluster)->contains($this->callerUnderSkipLevel->id));
         $this->assertTrue(HierarchyHelper::visibleSubordinateIds($this->cluster)->contains($this->callerUnderSkipLevel->id));
+    }
+
+    public function test_a_team_leader_who_leaves_mid_month_counts_until_their_exit_date(): void
+    {
+        $this->travelTo(Carbon::create(2026, 10, 20));
+
+        $this->skipLevelTeamLeader->forceFill(['exit_status' => 'yes', 'exit_date' => '2026-10-15'])->save();
+
+        // 15 of October's 31 days: their caller's target and their own
+        // understaffed top-up count for the Cluster Manager until they left.
+        $this->assertEqualsWithDelta(
+            2 * self::CALLER_TARGET + self::TOP_UP + (self::CALLER_TARGET + self::TOP_UP) * 15 / 31,
+            (new AchievementCalculatorService)->getTarget($this->cluster, Carbon::create(2026, 10, 1)),
+            0.01,
+        );
+
+        // A month they never worked in counts nothing of their team.
+        $this->assertSame(
+            2 * self::CALLER_TARGET + self::TOP_UP,
+            (new AchievementCalculatorService)->getTarget($this->cluster, Carbon::create(2026, 11, 1)),
+        );
     }
 
     /*

@@ -1,7 +1,7 @@
 {{-- One source's cards in the outcome list; $list comes from ShowsFollowUpOutcomes::outcomeList(). --}}
 <div class="space-y-3">
     <div class="flex flex-wrap items-center justify-between gap-2">
-        <p class="text-xs text-gray-500 dark:text-gray-400">
+        <p class="fynn-list-meta tabular-nums">
             @if ($list['total'] > 0)
                 Showing {{ number_format($list['followUps']->count()) }} of {{ number_format($list['total']) }}
             @endif

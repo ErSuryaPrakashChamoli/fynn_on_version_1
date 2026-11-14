@@ -94,7 +94,7 @@
             @if (count($categoryTabs) > 1)
                 <div
                     wire:key="database-notifications.tabs"
-                    class="-mx-1 mb-3 flex gap-1 overflow-x-auto px-1 pb-1"
+                    class="fynn-segmented mx-4 mt-4 mb-3 max-w-[calc(100%-2rem)] self-start overflow-x-auto"
                     role="tablist"
                     aria-label="Notification types"
                 >
@@ -106,13 +106,12 @@
                             wire:click="showCategory('{{ $value }}')"
                             aria-selected="{{ $this->activeCategory === $value ? 'true' : 'false' }}"
                             @class([
-                                'inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition',
-                                'bg-primary-50 text-primary-700 ring-1 ring-primary-600/20 dark:bg-primary-400/10 dark:text-primary-400' => $this->activeCategory === $value,
-                                'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/5' => $this->activeCategory !== $value,
+                                'fynn-segmented-btn inline-flex shrink-0 items-center gap-1.5 text-xs',
+                                'is-active' => $this->activeCategory === $value,
                             ])
                         >
                             @if ($tab['icon'])
-                                <x-filament::icon :icon="$tab['icon']" class="h-4 w-4" />
+                                <x-filament::icon :icon="$tab['icon']" class="size-4" />
                             @endif
                             {{ $tab['label'] }}
                             @if ($tab['unread'])
@@ -132,8 +131,9 @@
             @endif
 
             @if (! $notifications->count())
-                <p wire:key="database-notifications.tab-empty" class="py-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                    No notifications of this type.
+                <p wire:key="database-notifications.tab-empty" class="fynn-empty fynn-empty--compact mx-4 my-3">
+                    <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-inbox" class="size-6" /></span>
+                    <span>No notifications of this type.</span>
                 </p>
             @endif
 
@@ -148,7 +148,7 @@
                         wire:key="{{ $notification->getKey() }}.database-notifications.ctn"
                         @class([
                             'fi-no-notification-read-ctn' => ! $notification->unread(),
-                            'fi-no-notification-unread-ctn' => $notification->unread(),
+                            'fi-no-notification-unread-ctn bg-primary-50/60 dark:bg-primary-400/5' => $notification->unread(),
                         ])
                     >
                         @if ($notification->unread())

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\EmployeePerformanceReports\Tables;
 
+use App\Filament\Actions\DataDownloadApproval;
 use App\Filament\Exports\EmployeePerformanceReportExporter;
 use App\Filament\Resources\EmployeePerformanceReports\Support\ReportPeriodContext;
 use App\Models\Employee;
@@ -154,9 +155,11 @@ class EmployeePerformanceReportsTable
                     }),
             ])
             ->headerActions([
-                ExportAction::make()
-                    ->exporter(EmployeePerformanceReportExporter::class)
-                    ->label('Download Report'),
+                DataDownloadApproval::adminOnly(
+                    ExportAction::make()
+                        ->exporter(EmployeePerformanceReportExporter::class)
+                        ->label('Download Report'),
+                ),
             ]);
     }
 

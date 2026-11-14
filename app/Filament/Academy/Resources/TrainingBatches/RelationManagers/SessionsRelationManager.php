@@ -2,6 +2,7 @@
 
 namespace App\Filament\Academy\Resources\TrainingBatches\RelationManagers;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Models\Training\TrainingBatch;
 use App\Models\Training\TrainingModule;
 use Filament\Actions\CreateAction;
@@ -18,6 +19,8 @@ use Filament\Tables\Table;
 
 class SessionsRelationManager extends RelationManager
 {
+    use HasColumnHeaderFilters;
+
     protected static string $relationship = 'sessions';
 
     protected static ?string $title = 'Sessions';

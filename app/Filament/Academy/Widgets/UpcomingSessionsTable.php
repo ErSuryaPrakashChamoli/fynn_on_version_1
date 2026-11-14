@@ -2,6 +2,7 @@
 
 namespace App\Filament\Academy\Widgets;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Models\Training\TrainingSession;
 use App\Support\Portal\PortalContext;
 use Filament\Tables\Columns\TextColumn;
@@ -11,6 +12,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 class UpcomingSessionsTable extends TableWidget
 {
+    use HasColumnHeaderFilters;
+
     protected static ?int $sort = 3;
 
     protected int|string|array $columnSpan = 1;

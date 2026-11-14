@@ -72,6 +72,7 @@ class CibilAccessSettings extends Page
         return $schema
             ->components([
                 Section::make('Who can use the CIBIL module?')
+                    ->icon(Heroicon::OutlinedUserGroup)
                     ->description('Give access to whole roles, to individual users, or both. With access, a login sees the CIBIL profile on the leads and customer files it can already see, and can run score checks. Admins always have access and see every report. Taking access away also hides earlier reports.')
                     ->schema([
                         Select::make('roles')
@@ -90,6 +91,7 @@ class CibilAccessSettings extends Page
 
                 ...collect(CibilAccess::EXTRA_PERMISSION_LABELS)
                     ->map(fn (array $permission, string $name): Section => Section::make($permission['label'])
+                        ->icon(Heroicon::OutlinedKey)
                         ->description($permission['description'].' Only counts for logins that also have CIBIL access above.')
                         ->schema([
                             Select::make('grants.'.self::grantKey($name).'.roles')

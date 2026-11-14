@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Customers\Tables;
 
 use App\Filament\Actions\AssignCustomersToUserBulkAction;
+use App\Filament\Actions\DataDownloadApproval;
 use App\Filament\Exports\CustomerExporter;
 use App\Filament\Imports\CustomerImporter;
 use App\Filament\Resources\Customers\CustomerResource;
@@ -380,11 +381,13 @@ class CustomersTable
             ])
             ->headerActions([
 
-                ExportAction::make()
-                    ->exporter(CustomerExporter::class)
-                    ->label('Export Customers')
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->visible(fn () => auth()->user()->hasRole('Admin')),
+                DataDownloadApproval::protect(
+                    ExportAction::make()
+                        ->exporter(CustomerExporter::class)
+                        ->label('Export Customers')
+                        ->icon('heroicon-o-arrow-down-tray'),
+                    'customers',
+                ),
 
                 ImportAction::make()
                     ->label('Import Customers')
@@ -403,10 +406,12 @@ class CustomersTable
                 // ->visible(
                 //     fn() => auth()->user()->employee?->designation === Employee::DESIGNATION_ADMIN
                 // ),
-                ExportBulkAction::make()
-                    ->exporter(CustomerExporter::class)
-                    ->label('Export Selected')
-                    ->visible(fn () => auth()->user()->hasRole('Admin')),
+                DataDownloadApproval::protect(
+                    ExportBulkAction::make()
+                        ->exporter(CustomerExporter::class)
+                        ->label('Export Selected'),
+                    'customers',
+                ),
                 // ->visible(
                 //     fn() => auth()->user()->employee?->designation === Employee::DESIGNATION_ADMIN
                 // ),

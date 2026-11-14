@@ -36,7 +36,7 @@
         :description="'Viewing as '.$user?->name.' ('.$currentRole.')'"
     >
         @if ($switchError)
-            <div class="demo-view-as__error">{{ $switchError }}</div>
+            <div class="demo-view-as__error fynn-callout fynn-callout--danger">{{ $switchError }}</div>
         @endif
 
         <div x-data="{ search: '' }" class="demo-view-as__list">
@@ -74,7 +74,7 @@
                     x-data="{ haystacks: @js($haystacks->values()) }"
                     x-show="search === '' || haystacks.some((text) => text.includes(search.toLowerCase()))"
                 >
-                    <div class="px-1 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <div class="fynn-subheading mt-3 mb-1 px-1">
                         {{ $role }} ({{ $members->count() }})
                     </div>
 
@@ -94,7 +94,7 @@
                                 >
                                     {{ $member->name }}
                                     @if ($member->employee?->emp_id)
-                                        <span class="text-xs text-gray-400">· {{ $member->employee->emp_id }}</span>
+                                        <span class="fynn-chip ms-1.5 font-mono">{{ $member->employee->emp_id }}</span>
                                     @endif
                                 </x-filament::dropdown.list.item>
                             </div>
@@ -118,10 +118,5 @@
 
     .demo-view-as__error {
         margin-bottom: 0.75rem;
-        padding: 0.5rem 0.75rem;
-        border-radius: 0.5rem;
-        background: rgb(127 29 29);
-        color: rgb(254 226 226);
-        font-size: 0.75rem;
     }
 </style>

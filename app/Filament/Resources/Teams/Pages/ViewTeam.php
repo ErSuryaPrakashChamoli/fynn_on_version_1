@@ -2,10 +2,12 @@
 
 namespace App\Filament\Resources\Teams\Pages;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\Teams\TeamResource;
 use App\Models\Employee;
 use App\Services\AchievementCalculatorService;
 use App\Support\HierarchyHelper;
+use App\Support\SelectedMonth;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\Page;
 use Filament\Tables;
@@ -16,6 +18,7 @@ use Illuminate\Database\Eloquent\Collection;
 
 class ViewTeam extends Page implements HasTable
 {
+    use HasColumnHeaderFilters;
     use InteractsWithTable;
 
     public Collection $children;
@@ -43,17 +46,27 @@ class ViewTeam extends Page implements HasTable
         $performanceCache = [];
         $eligibleCallerCache = [];
 
+        $month = SelectedMonth::current();
+
+        // Everyone who reported straight to this boss on any day of the
+        // selected month, and each row's figures as their contribution to
+        // this team: someone who moved in or out mid-month shows only the
+        // days they were here, so the rows add up to the team's total.
+        $team = $this->record;
+
         return $table
-            // ->query(
-            //     HierarchyHelper::children($this->record)
-            // )
-            ->query(HierarchyHelper::children($this->record))
+            ->query(HierarchyHelper::childrenDuring(
+                $team,
+                $month->copy()->startOfMonth(),
+                $month->copy()->endOfMonth(),
+            ))
             ->columns([
 
                 Tables\Columns\TextColumn::make('emp_name')
                     ->label('Employee')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->description(fn (Employee $record): ?string => $calculator->reportingSpanNote($record, $team)),
 
                 Tables\Columns\TextColumn::make('emp_id')
                     ->label('Emp ID')
@@ -78,7 +91,7 @@ class ViewTeam extends Page implements HasTable
                     ->label('Target')
                     ->alignEnd()
                     ->sortable()
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
                         /*
                         |--------------------------------------------------------------------------
@@ -101,7 +114,7 @@ class ViewTeam extends Page implements HasTable
                                 return $calculator->getTarget($record);
                             }
 
-                            return $calculator->getHierarchyCallerTarget($record);
+                            return $calculator->getTarget($record, null, $team);
                         }
 
                         /*
@@ -113,7 +126,7 @@ class ViewTeam extends Page implements HasTable
                         |
                         */
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return $performanceCache[$record->id]['target'];
                     })
@@ -131,19 +144,22 @@ class ViewTeam extends Page implements HasTable
                     | nil". The wording lives on the service, next to the rule.
                     |
                     */
-                    ->tooltip(function (Employee $record) use ($calculator): ?string {
-
-                        if ($record->designation !== Employee::DESIGNATION_CALLER) {
-                            return null;
-                        }
+                    ->tooltip(function (Employee $record) use ($calculator, $team): ?string {
 
                         // The caller's own row shows their flat category
-                        // target, which the note would not describe.
+                        // target, which the notes would not describe.
                         if (auth()->user()?->employee?->id === $record->id) {
                             return null;
                         }
 
-                        return $calculator->hierarchyCallerTargetNote($record);
+                        $notes = array_filter([
+                            $record->designation === Employee::DESIGNATION_CALLER
+                                ? $calculator->hierarchyCallerTargetNote($record)
+                                : null,
+                            $calculator->reportingSpanNote($record, $team, withRule: true),
+                        ]);
+
+                        return $notes === [] ? null : implode(' ', $notes);
                     })
                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
 
@@ -152,9 +168,9 @@ class ViewTeam extends Page implements HasTable
                     ->alignEnd()
                     ->sortable()
                     ->color('success')
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return $performanceCache[$record->id]['actual'];
                     })
@@ -164,9 +180,9 @@ class ViewTeam extends Page implements HasTable
                     ->label('Cashback')
                     ->alignEnd()
                     ->toggleable()
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return $performanceCache[$record->id]['cashback'];
                     })
@@ -176,9 +192,9 @@ class ViewTeam extends Page implements HasTable
                     ->label('Subvention')
                     ->alignEnd()
                     ->toggleable()
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return $performanceCache[$record->id]['subvention'];
                     })
@@ -188,9 +204,9 @@ class ViewTeam extends Page implements HasTable
                     ->label('Docking')
                     ->alignEnd()
                     ->toggleable()
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return $performanceCache[$record->id]['docking'];
                     })
@@ -201,9 +217,9 @@ class ViewTeam extends Page implements HasTable
                     ->alignEnd()
                     ->weight('bold')
                     ->sortable()
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return $performanceCache[$record->id]['count_achievement'];
                     })
@@ -213,9 +229,9 @@ class ViewTeam extends Page implements HasTable
                     ->label('Achievement')
                     ->alignCenter()
                     ->badge()
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return round($performanceCache[$record->id]['percentage'], 2);
                     })
@@ -242,20 +258,20 @@ class ViewTeam extends Page implements HasTable
                     ->label('PPP')
                     ->alignEnd()
                     ->toggleable()
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache, &$eligibleCallerCache) {
+                    ->state(function (Employee $record) use ($calculator, &$eligibleCallerCache) {
 
                         if ($record->designation === Employee::DESIGNATION_CALLER) {
                             return null;
                         }
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
-
                         $eligibleCallerCache[$record->id] ??= $calculator->getEligibleCallerCount($record);
 
                         $eligibleCallers = $eligibleCallerCache[$record->id];
 
+                        // PPP is the row's own incentive figure: their whole
+                        // branch's month, not just the part counted here.
                         return $eligibleCallers > 0
-                            ? $performanceCache[$record->id]['count_achievement'] / $eligibleCallers
+                            ? $calculator->getCountAchievement($record) / $eligibleCallers
                             : 0;
                     })
                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : '-'),
@@ -267,9 +283,9 @@ class ViewTeam extends Page implements HasTable
                     ->badge()
                     ->color('success')
                     ->sortable()
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return $performanceCache[$record->id]['incentive'];
                     })

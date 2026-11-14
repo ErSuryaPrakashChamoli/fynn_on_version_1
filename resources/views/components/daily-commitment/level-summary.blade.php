@@ -9,7 +9,7 @@
 --}}
 @props(['levels' => []])
 
-<div class="overflow-x-auto">
+<div class="fynn-table-wrap overflow-x-auto">
     <table class="dc-table">
         <thead>
             <tr>
@@ -30,8 +30,8 @@
             @forelse ($levels as $level)
                 @php $s = $level['summary']; @endphp
                 <tr>
-                    <td class="text-xs font-bold uppercase {{ \App\Models\Employee::designationColorClass($level['designation']) }}">
-                        {{ $level['label'] }}
+                    <td>
+                        <span class="dc-level {{ \App\Models\Employee::designationColorClass($level['designation']) }}">{{ $level['label'] }}</span>
                     </td>
                     <td class="dc-num">
                         {{ $s['with_commitment'] }} / {{ $s['people'] }}
@@ -59,7 +59,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="11" class="text-sm text-gray-500">Nobody in scope for this period.</td>
+                    <td colspan="11" class="py-6 text-center text-sm text-gray-500">Nobody in scope for this period.</td>
                 </tr>
             @endforelse
 

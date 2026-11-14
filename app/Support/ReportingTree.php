@@ -3,6 +3,8 @@
 namespace App\Support;
 
 use App\Models\Employee;
+use Carbon\CarbonInterface;
+use Illuminate\Support\Collection;
 
 /**
  * The company's reporting tree, built from one read of the employees table.
@@ -22,6 +24,14 @@ use App\Models\Employee;
  * Loaded fresh each time and never cached: employees are created and
  * re-pointed within a single request (and a single test), and a stale tree
  * would quietly hand somebody the wrong team.
+ *
+ * load() is today's tree, read straight off the reporting columns.
+ * load($date) is the tree as it stood on that day, rebuilt from
+ * employee_reporting_history by ReportingTimeline: a reporting change only
+ * moves somebody from its effective date, so a month before the change is
+ * never restated with the new team. Anything period-based — targets,
+ * achievement, incentives, team listings for a month — must walk the tree
+ * of the day it is counting, never today's.
  */
 final class ReportingTree
 {
@@ -34,17 +44,51 @@ final class ReportingTree
         private readonly array $children,
     ) {}
 
-    public static function load(): self
+    /**
+     * The reporting tree today, or — with $asOf — as it stood on that day.
+     */
+    public static function load(?CarbonInterface $asOf = null): self
     {
-        $rows = Employee::query()
+        if ($asOf !== null) {
+            return ReportingTimeline::between($asOf, $asOf)->treeOn($asOf);
+        }
+
+        return self::fromRows(self::employeeRows(), null);
+    }
+
+    /**
+     * Every employee with the columns the tree is built from.
+     *
+     * @return Collection<int, object>
+     */
+    public static function employeeRows(): Collection
+    {
+        return Employee::query()
             ->toBase()
             ->orderBy('id')
-            ->get(['id', 'emp_name', 'designation', 'exit_status', ...array_keys(Employee::REPORTING_COLUMNS)]);
+            ->get(['id', 'emp_name', 'designation', 'exit_status', 'exit_date', ...array_keys(Employee::REPORTING_COLUMNS)]);
+    }
 
-        $designations = $rows
-            ->mapWithKeys(fn (object $row): array => [(int) $row->id => (int) $row->designation])
-            ->all();
+    /**
+     * Build the tree from employee rows whose reporting columns are the ones
+     * that held on $asOf (today's columns when $asOf is null).
+     *
+     * With a date, somebody counts as exited only once their exit date has
+     * passed — a Team Leader who left in November still led their team in
+     * October. Without one, exit_status alone decides, as it always has for
+     * today's tree.
+     *
+     * @param  iterable<int, object>  $rows
+     */
+    public static function fromRows(iterable $rows, ?CarbonInterface $asOf): self
+    {
+        $designations = [];
 
+        foreach ($rows as $row) {
+            $designations[(int) $row->id] = (int) $row->designation;
+        }
+
+        $asOfDate = $asOf?->toDateString();
         $nodes = [];
         $children = [];
 
@@ -54,8 +98,7 @@ final class ReportingTree
 
             $nodes[$id] = [
                 'designation' => $designations[$id],
-                // Compared the way MySQL's case-insensitive `!= 'yes'` always did.
-                'exited' => strtolower(trim((string) $row->exit_status)) === 'yes',
+                'exited' => self::exitedOn($row, $asOfDate),
                 'boss_id' => $bossId,
                 'name' => (string) $row->emp_name,
             ];
@@ -227,6 +270,25 @@ final class ReportingTree
         }
 
         return null;
+    }
+
+    /**
+     * Compared the way MySQL's case-insensitive `!= 'yes'` always did. An
+     * exit with no date recorded has no day to start from, so it counts on
+     * every day.
+     */
+    private static function exitedOn(object $row, ?string $asOfDate): bool
+    {
+        if (strtolower(trim((string) $row->exit_status)) !== 'yes') {
+            return false;
+        }
+
+        if ($asOfDate === null || blank($row->exit_date ?? null)) {
+            return true;
+        }
+
+        // The exit date is the last day on the rolls.
+        return substr((string) $row->exit_date, 0, 10) < $asOfDate;
     }
 
     /** An exited level above caller — the point where counting stops. */

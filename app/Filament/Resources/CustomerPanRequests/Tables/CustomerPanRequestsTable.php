@@ -3,7 +3,6 @@
 namespace App\Filament\Resources\CustomerPanRequests\Tables;
 
 use App\Enums\NotificationCategory;
-use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\CustomerPanRequest;
 use App\Support\EmployeeOptions;
 use App\Support\SelectedMonth;
@@ -41,6 +40,21 @@ class CustomerPanRequestsTable
                 TextColumn::make('customer.application_no')
                     ->label('Application No')
                     ->searchable()
+                    ->sortable(),
+
+                // Set when the PAN clashed with an open lead instead of a customer.
+                TextColumn::make('matchedLead.customer_name')
+                    ->label('Existing Lead')
+                    ->placeholder('-')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
+
+                TextColumn::make('request_for')
+                    ->label('Requested For')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state): string => $state === CustomerPanRequest::FOR_LEAD ? 'New Lead' : 'Customer File')
+                    ->color(fn (?string $state): string => $state === CustomerPanRequest::FOR_LEAD ? 'info' : 'gray')
                     ->sortable(),
 
                 TextColumn::make('requestedBy.emp_name')
@@ -91,6 +105,13 @@ class CustomerPanRequestsTable
                         'pending' => 'Pending',
                         'approved' => 'Approved',
                         'rejected' => 'Rejected',
+                    ]),
+
+                SelectFilter::make('request_for')
+                    ->label('Requested For')
+                    ->options([
+                        CustomerPanRequest::FOR_CUSTOMER => 'Customer File',
+                        CustomerPanRequest::FOR_LEAD => 'New Lead',
                     ]),
 
                 SelectFilter::make('requested_by')
@@ -173,7 +194,9 @@ class CustomerPanRequestsTable
 
                             Notification::make()
                                 ->title('Duplicate PAN Request Approved')
-                                ->body('Your request has been approved. Click Continue to create the application.')
+                                ->body($record->isForLead()
+                                    ? 'Your request has been approved. Click Continue to save the lead.'
+                                    : 'Your request has been approved. Click Continue to create the application.')
                                 ->success()
                                 ->actions([
 
@@ -209,7 +232,9 @@ class CustomerPanRequestsTable
                                     Action::make('continue')
                                         ->label('Continue')
                                         ->icon('heroicon-o-arrow-right')
-                                        ->color('success'),
+                                        ->color('success')
+                                        ->url($record->continueUrl())
+                                        ->markAsRead(),
                                 ])
                                 ->viewData(NotificationCategory::PanRequest->viewData())
                                 ->sendToDatabase(
@@ -265,14 +290,10 @@ class CustomerPanRequestsTable
                     // )
                     ->visible(
                         fn (CustomerPanRequest $record): bool => $record->status === CustomerPanRequest::STATUS_APPROVED
-                            && blank($record->application_id)
+                            && ! $record->isUsed()
                             && ! auth()->user()->hasRole('Admin')
                     )
-                    ->url(
-                        fn (CustomerPanRequest $record) => CustomerResource::getUrl('create', [
-                            'pan_request' => $record->id,
-                        ])
-                    ),
+                    ->url(fn (CustomerPanRequest $record): string => $record->continueUrl()),
 
             ])
             ->toolbarActions([

@@ -10,6 +10,7 @@ use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Throwable;
@@ -22,6 +23,7 @@ class AssignedLeadInfolist
             ->components([
 
                 Section::make('AI Extracted Data')
+                    ->icon(Heroicon::OutlinedSparkles)
                     ->description('This lead has not been approved into a customer profile yet. Contact details below come directly from the AI-extracted document.')
                     ->columnSpanFull()
                     ->visible(fn ($record) => filled($record->ai_customer_record_id))
@@ -56,6 +58,7 @@ class AssignedLeadInfolist
                     ]),
 
                 Section::make('Customer Details')
+                    ->icon(Heroicon::OutlinedUser)
                     ->columnSpanFull()
                     ->visible(fn ($record) => filled($record->customer_id))
                     ->schema([
@@ -95,6 +98,7 @@ class AssignedLeadInfolist
                     ]),
 
                 Section::make('Loan Details')
+                    ->icon(Heroicon::OutlinedCurrencyRupee)
                     ->columnSpanFull()
                     ->visible(fn ($record) => filled($record->customer_id))
                     ->schema([
@@ -120,6 +124,7 @@ class AssignedLeadInfolist
                     ]),
 
                 Section::make('Assignment')
+                    ->icon(Heroicon::OutlinedUserCircle)
                     ->columnSpanFull()
                     ->schema([
                         Grid::make(3)
@@ -160,6 +165,7 @@ class AssignedLeadInfolist
                     ]),
 
                 Section::make('Reassignment History')
+                    ->icon(Heroicon::OutlinedArrowsRightLeft)
                     ->columnSpanFull()
                     ->schema([
                         RepeatableEntry::make('transfers')
@@ -192,6 +198,7 @@ class AssignedLeadInfolist
                     ->visible(fn ($record) => $record->transfers()->exists()),
 
                 Section::make('Remarks')
+                    ->icon(Heroicon::OutlinedChatBubbleLeftEllipsis)
                     ->columnSpanFull()
                     ->schema([
                         RepeatableEntry::make('remarks')
@@ -215,6 +222,7 @@ class AssignedLeadInfolist
                     ->visible(fn ($record) => $record->remarks()->exists()),
 
                 Section::make('Follow Up History')
+                    ->icon(Heroicon::OutlinedClock)
                     ->columnSpanFull()
                     ->schema([
                         RepeatableEntry::make('customer.followUps')
@@ -226,6 +234,7 @@ class AssignedLeadInfolist
                     ->visible(fn ($record) => filled($record->customer_id) && $record->customer?->followUps()->exists()),
 
                 Section::make('Follow Up History')
+                    ->icon(Heroicon::OutlinedClock)
                     ->columnSpanFull()
                     ->schema([
                         RepeatableEntry::make('aiCustomerRecord.followUps')

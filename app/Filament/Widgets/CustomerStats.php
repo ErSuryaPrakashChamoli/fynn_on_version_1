@@ -77,15 +77,16 @@ class CustomerStats extends StatsOverviewWidget
 
         } else {
 
-            $employeeIds = HierarchyHelper::subordinateIds(
-                $employee
+            // Each case counted for the team its owner was in on the day it
+            // was created, so a reporting change never moves past cases.
+            $query = HierarchyHelper::scopeToBranchDuring(
+                Customer::query(),
+                $employee,
+                $monthStart,
+                $monthEnd,
+                'employee_id',
+                'created_at',
             );
-
-            $query = Customer::query()
-                ->whereIn(
-                    'employee_id',
-                    $employeeIds
-                );
 
             $scopeBadge = '👥 Your Portfolio';
         }

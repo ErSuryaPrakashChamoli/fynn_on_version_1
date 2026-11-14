@@ -14,6 +14,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class TrainingQuizForm
 {
@@ -21,6 +22,7 @@ class TrainingQuizForm
     {
         return $schema->components([
             Section::make('Attach to')
+                ->icon(Heroicon::OutlinedLink)
                 ->schema([
                     Grid::make(2)->schema([
                         Select::make('kind')
@@ -72,6 +74,7 @@ class TrainingQuizForm
                 ->columnSpanFull(),
 
             Section::make('Details')
+                ->icon(Heroicon::OutlinedClipboardDocumentCheck)
                 ->schema([
                     TextInput::make('title')
                         ->required()

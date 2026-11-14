@@ -15,6 +15,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class FollowUpForm
 {
@@ -34,6 +35,7 @@ class FollowUpForm
             ->schema([
 
                 Section::make('Customer Details')
+                    ->icon(Heroicon::OutlinedUser)
                     ->description(
                         $aiRecord
                             ? 'This lead has not been converted into a customer profile yet — details below come from the AI-extracted document.'
@@ -112,6 +114,7 @@ class FollowUpForm
                     ->columns(2),
 
                 Section::make('Follow Up')
+                    ->icon(Heroicon::OutlinedPhoneArrowUpRight)
                     ->description('This follow-up is recorded against today. Set the next follow-up date to say when the customer is due again — it replaces any date set previously, and every change stays visible in the follow-up log.')
                     ->schema([
 

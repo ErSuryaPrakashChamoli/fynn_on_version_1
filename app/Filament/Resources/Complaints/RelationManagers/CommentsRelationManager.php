@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Complaints\RelationManagers;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Models\Complaint;
 use App\Models\ComplaintComment;
 use App\Models\User;
@@ -21,6 +22,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class CommentsRelationManager extends RelationManager
 {
+    use HasColumnHeaderFilters;
+
     protected static string $relationship = 'comments';
 
     protected static ?string $title = 'Thread';

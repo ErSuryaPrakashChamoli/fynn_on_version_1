@@ -1,0 +1,521 @@
+/* =========================================================
+   COLUMN HEADER FILTERS — Excel-style funnel + popover on every listing
+   Markup: resources/views/filament/components/column-header-filter-cell.blade.php
+           resources/views/filament/components/column-header-filters.blade.php
+   Behaviour: resources/js/column-header-filter.js
+   Plain CSS registered as a FilamentAsset (AdminPanelProvider::boot()), so
+   it styles every panel — the Academy panel does not load the admin
+   theme.css. Uses the admin theme's --fynn-* tokens where they exist and
+   Filament's own colour variables as the fallback.
+   Run `php artisan filament:assets` after editing.
+   ========================================================= */
+
+.fynn-hf-header-cell-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    max-width: 100%;
+    vertical-align: middle;
+}
+
+.fi-align-center > .fynn-hf-header-cell-content,
+.fi-align-end > .fynn-hf-header-cell-content,
+.fi-align-right > .fynn-hf-header-cell-content {
+    justify-content: flex-end;
+}
+
+/* Sorting is offered only from the dropdown; the sorted column just
+   shows which way it runs. */
+.fynn-hf-sort-indicator {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+}
+
+.fi-ta-header-cell .fynn-hf-sort-indicator .fi-icon,
+.fi-ta-header-cell .fynn-hf-sort-indicator .fynn-hf-sort-indicator-icon {
+    width: 0.8125rem;
+    height: 0.8125rem;
+    color: inherit;
+}
+
+.fynn-hf-trigger {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1.375rem;
+    height: 1.375rem;
+    border-radius: 0.375rem;
+    color: var(--gray-400);
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+}
+
+.fynn-hf-trigger:hover,
+.fynn-hf-trigger:focus-visible {
+    background-color: var(--fynn-surface-3, var(--gray-100));
+    color: var(--gray-600);
+    outline: none;
+}
+
+.fynn-hf-trigger:focus-visible {
+    box-shadow: 0 0 0 2px var(--primary-500);
+}
+
+.fi-ta-header-cell .fynn-hf-trigger .fi-icon,
+.fi-ta-header-cell .fynn-hf-trigger .fynn-hf-trigger-icon {
+    width: 0.875rem;
+    height: 0.875rem;
+    color: inherit;
+}
+
+.fi-ta-header-cell .fynn-hf-trigger.fynn-hf-trigger-active {
+    background-color: var(--fynn-accent-soft, color-mix(in oklab, var(--primary-500) 12%, transparent));
+    color: var(--primary-600);
+}
+
+.fynn-hf-header-cell.fynn-hf-header-cell-filtered {
+    color: var(--fynn-accent-text, var(--primary-700));
+}
+
+.dark .fynn-hf-trigger {
+    color: var(--gray-500);
+}
+
+.dark .fynn-hf-trigger:hover,
+.dark .fynn-hf-trigger:focus-visible {
+    background-color: rgb(255 255 255 / 8%);
+    color: var(--gray-300);
+}
+
+.dark .fi-ta-header-cell .fynn-hf-trigger.fynn-hf-trigger-active {
+    color: var(--primary-400);
+}
+
+.dark .fynn-hf-header-cell.fynn-hf-header-cell-filtered {
+    color: var(--fynn-accent-text, var(--primary-300));
+}
+
+/* ---- Active column filter chips (under the table toolbar) ---- */
+
+.fynn-hf-indicators {
+    border-top: 1px solid var(--fynn-border-soft, var(--gray-200));
+}
+
+.fynn-hf-clear-all {
+    flex-shrink: 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--primary-600);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.fynn-hf-clear-all:hover {
+    text-decoration: underline;
+}
+
+.dark .fynn-hf-clear-all {
+    color: var(--primary-400);
+}
+
+.fynn-hf-host {
+    display: contents;
+}
+
+/* ---- The popover ---- */
+
+.fynn-hf-panel {
+    position: fixed;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--fynn-border, var(--gray-200));
+    border-radius: var(--fynn-radius-lg, 0.75rem);
+    background-color: var(--fynn-surface, #fff);
+    box-shadow: var(--fynn-shadow-lg, 0 10px 30px -10px rgb(0 0 0 / 30%));
+    color: var(--fynn-text, var(--gray-950));
+    font-size: 0.8125rem;
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: 400;
+}
+
+.dark .fynn-hf-panel {
+    border-color: var(--fynn-border, rgb(255 255 255 / 10%));
+    background-color: var(--fynn-surface, var(--gray-900));
+    color: var(--fynn-text, #fff);
+}
+
+.fynn-hf-panel[x-cloak] {
+    display: none;
+}
+
+.fynn-hf-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.625rem 0.75rem 0.5rem;
+    border-bottom: 1px solid var(--fynn-border-soft, var(--gray-100));
+}
+
+.fynn-hf-panel-title {
+    overflow: hidden;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fynn-text-3, var(--gray-500));
+}
+
+.fynn-hf-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 0.375rem;
+    font-size: 1.125rem;
+    line-height: 1;
+    color: var(--gray-400);
+    cursor: pointer;
+}
+
+.fynn-hf-close:hover {
+    background-color: var(--fynn-surface-3, var(--gray-100));
+    color: var(--gray-700);
+}
+
+.dark .fynn-hf-close:hover {
+    background-color: rgb(255 255 255 / 8%);
+    color: var(--gray-200);
+}
+
+.fynn-hf-menu {
+    padding: 0.25rem;
+    border-bottom: 1px solid var(--fynn-border-soft, var(--gray-100));
+}
+
+.fynn-hf-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.4375rem 0.5rem;
+    border-radius: 0.5rem;
+    text-align: start;
+    color: var(--fynn-text-2, var(--gray-700));
+    cursor: pointer;
+}
+
+.fynn-hf-menu-item svg {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    color: var(--gray-400);
+}
+
+.fynn-hf-menu-item:hover,
+.fynn-hf-menu-item:focus-visible {
+    background-color: var(--fynn-surface-2, var(--gray-50));
+    color: var(--fynn-text, var(--gray-950));
+    outline: none;
+}
+
+.fynn-hf-menu-item-current,
+.fynn-hf-menu-item-current svg {
+    color: var(--primary-600);
+    font-weight: 600;
+}
+
+.fynn-hf-menu-item-danger,
+.fynn-hf-menu-item-danger svg {
+    color: var(--danger-600);
+}
+
+.dark .fynn-hf-menu-item {
+    color: var(--fynn-text-2, var(--gray-300));
+}
+
+.dark .fynn-hf-menu-item:hover,
+.dark .fynn-hf-menu-item:focus-visible {
+    background-color: rgb(255 255 255 / 6%);
+    color: #fff;
+}
+
+.dark .fynn-hf-menu-item-current,
+.dark .fynn-hf-menu-item-current svg {
+    color: var(--primary-400);
+}
+
+.dark .fynn-hf-menu-item-danger,
+.dark .fynn-hf-menu-item-danger svg {
+    color: var(--danger-400);
+}
+
+.fynn-hf-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    padding: 0.625rem 0.75rem;
+}
+
+.fynn-hf-checklist,
+.fynn-hf-dates,
+.fynn-hf-text {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-height: 0;
+}
+
+.fynn-hf-status {
+    padding: 0.5rem 0.25rem;
+    color: var(--fynn-text-3, var(--gray-500));
+}
+
+.fynn-hf-hint {
+    font-size: 0.75rem;
+    line-height: 1.35;
+    color: var(--fynn-text-3, var(--gray-500));
+}
+
+.fynn-hf-search {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0 0.5rem;
+    border: 1px solid var(--fynn-border-strong, var(--gray-300));
+    border-radius: 0.5rem;
+    background-color: var(--fynn-surface, #fff);
+}
+
+.fynn-hf-search:focus-within {
+    border-color: var(--primary-500);
+    box-shadow: 0 0 0 1px var(--primary-500);
+}
+
+.fynn-hf-search svg {
+    width: 0.9375rem;
+    height: 0.9375rem;
+    flex-shrink: 0;
+    color: var(--gray-400);
+}
+
+.fynn-hf-search input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0.4375rem 0;
+    border: 0;
+    background: transparent;
+    font-size: 0.8125rem;
+    color: inherit;
+    outline: none;
+    box-shadow: none;
+}
+
+.fynn-hf-search input:focus {
+    box-shadow: none;
+}
+
+.dark .fynn-hf-search {
+    border-color: rgb(255 255 255 / 14%);
+    background-color: rgb(255 255 255 / 4%);
+}
+
+.fynn-hf-list {
+    flex: 1 1 auto;
+    min-height: 4rem;
+    max-height: 16rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0.25rem;
+    border: 1px solid var(--fynn-border-soft, var(--gray-200));
+    border-radius: 0.5rem;
+}
+
+.dark .fynn-hf-list {
+    border-color: rgb(255 255 255 / 8%);
+}
+
+.fynn-hf-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3125rem 0.375rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.fynn-hf-option:hover {
+    background-color: var(--fynn-surface-2, var(--gray-50));
+}
+
+.dark .fynn-hf-option:hover {
+    background-color: rgb(255 255 255 / 5%);
+}
+
+.fynn-hf-option span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fynn-hf-option input[type='checkbox'] {
+    width: 0.9375rem;
+    height: 0.9375rem;
+    flex-shrink: 0;
+    margin: 0;
+    border-radius: 0.25rem;
+    accent-color: var(--primary-600);
+    cursor: pointer;
+}
+
+.fynn-hf-option-all {
+    font-weight: 600;
+}
+
+.fynn-hf-option-blanks span {
+    font-style: italic;
+    color: var(--fynn-text-3, var(--gray-500));
+}
+
+.fynn-hf-date-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+}
+
+.fynn-hf-date-fields label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--fynn-text-3, var(--gray-500));
+}
+
+.fynn-hf-date-fields input {
+    width: 100%;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--fynn-border-strong, var(--gray-300));
+    border-radius: 0.5rem;
+    background-color: var(--fynn-surface, #fff);
+    font-size: 0.8125rem;
+    font-weight: 400;
+    color: var(--fynn-text, var(--gray-950));
+}
+
+.fynn-hf-date-fields input:focus {
+    border-color: var(--primary-500);
+    outline: none;
+    box-shadow: 0 0 0 1px var(--primary-500);
+}
+
+.dark .fynn-hf-date-fields input {
+    border-color: rgb(255 255 255 / 14%);
+    background-color: rgb(255 255 255 / 4%);
+    color: #fff;
+    color-scheme: dark;
+}
+
+.fynn-hf-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+}
+
+.fynn-hf-presets button {
+    padding: 0.1875rem 0.5rem;
+    border: 1px solid var(--fynn-border, var(--gray-200));
+    border-radius: 999px;
+    font-size: 0.75rem;
+    color: var(--fynn-text-2, var(--gray-700));
+    cursor: pointer;
+}
+
+.fynn-hf-presets button:hover {
+    border-color: var(--primary-500);
+    color: var(--primary-700);
+}
+
+.dark .fynn-hf-presets button {
+    border-color: rgb(255 255 255 / 12%);
+    color: var(--gray-300);
+}
+
+.dark .fynn-hf-presets button:hover {
+    border-color: var(--primary-400);
+    color: var(--primary-300);
+}
+
+.fynn-hf-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem 0.625rem;
+    border-top: 1px solid var(--fynn-border-soft, var(--gray-100));
+}
+
+.fynn-hf-btn {
+    min-width: 4.5rem;
+    padding: 0.375rem 0.875rem;
+    border: 1px solid var(--fynn-border-strong, var(--gray-300));
+    border-radius: 0.5rem;
+    background-color: var(--fynn-surface, #fff);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--fynn-text-2, var(--gray-700));
+    cursor: pointer;
+}
+
+.fynn-hf-btn:hover {
+    background-color: var(--fynn-surface-2, var(--gray-50));
+}
+
+.fynn-hf-btn-primary {
+    border-color: var(--primary-600);
+    background-color: var(--primary-600);
+    color: #fff;
+}
+
+.fynn-hf-btn-primary:hover {
+    border-color: var(--primary-500);
+    background-color: var(--primary-500);
+}
+
+.fynn-hf-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.fynn-hf-btn:focus-visible {
+    outline: 2px solid var(--primary-500);
+    outline-offset: 2px;
+}
+
+.dark .fynn-hf-btn {
+    border-color: rgb(255 255 255 / 14%);
+    background-color: rgb(255 255 255 / 5%);
+    color: var(--gray-200);
+}
+
+.dark .fynn-hf-btn-primary {
+    border-color: var(--primary-500);
+    background-color: var(--primary-500);
+    color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fynn-hf-trigger {
+        transition: none;
+    }
+}

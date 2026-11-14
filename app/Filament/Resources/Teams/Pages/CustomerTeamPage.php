@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Teams\Pages;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\Teams\TeamResource;
 use App\Models\Customer;
 use App\Models\Employee;
@@ -22,6 +23,7 @@ use Illuminate\Database\Eloquent\Collection;
 
 class CustomerTeamPage extends Page implements HasTable
 {
+    use HasColumnHeaderFilters;
     use InteractsWithTable;
 
     public Collection $children;

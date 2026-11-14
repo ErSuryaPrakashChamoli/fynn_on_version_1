@@ -2,12 +2,15 @@
 
 namespace App\Filament\Resources\Complaints\Pages;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\Complaints\ComplaintResource;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 
 class ListComplaints extends ListRecords
 {
+    use HasColumnHeaderFilters;
+
     protected static string $resource = ComplaintResource::class;
 
     protected function getHeaderActions(): array

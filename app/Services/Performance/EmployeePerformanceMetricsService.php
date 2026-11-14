@@ -10,6 +10,9 @@ use App\Services\AchievementCalculatorService;
 use App\Support\HierarchyHelper;
 use App\Support\Performance\PerformancePeriod;
 use Carbon\Carbon;
+use Closure;
+use Illuminate\Contracts\Database\Query\Builder as QueryBuilder;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
@@ -29,6 +32,11 @@ use Illuminate\Support\Collection;
  * to whoever performed that stage transition (customer_stage_histories
  * .user_id), not the case's current owner — so reassigning a case later
  * doesn't move credit for work already done.
+ *
+ * Team scope follows the reporting line of each day: a metric dated on a
+ * day somebody was in the team counts for it (HierarchyHelper::
+ * scopeToBranchDuring), so a reporting change never moves past work from
+ * the old team to the new one.
  */
 class EmployeePerformanceMetricsService
 {
@@ -38,31 +46,40 @@ class EmployeePerformanceMetricsService
 
     public function rawMetrics(Employee $employee, Carbon $start, Carbon $end): array
     {
-        $employeeIds = $employee->designation === Employee::DESIGNATION_ADMIN
+        $isCompany = $employee->designation === Employee::DESIGNATION_ADMIN;
+
+        $employeeIds = $isCompany
             ? Employee::query()->pluck('id')
-            : HierarchyHelper::subordinateIds($employee);
+            : HierarchyHelper::subordinateIdsDuring($employee, $start, $end);
 
-        $otpCount = $this->otpCount($employeeIds, $start, $end);
-        $eligibleOtpCount = $this->otpCount($employeeIds, $start, $end, onlyEligible: true);
+        /**
+         * Rows owned by the team and dated inside the period: for the
+         * company every employee, for anybody else each row checked against
+         * the team its owner was in on its date.
+         */
+        $scope = fn (Builder|QueryBuilder $query, string $employeeColumn, string $dateColumn): Builder|QueryBuilder => $isCompany
+            ? $query->whereIn($employeeColumn, $employeeIds)->whereBetween($dateColumn, [$start, $end])
+            : HierarchyHelper::scopeToBranchDuring($query, $employee, $start, $end, $employeeColumn, $dateColumn);
 
-        $loginCount = $this->stageCount($employeeIds, $this->stageStatus('login_count'), $start, $end);
-        $approvalCount = $this->stageCount($employeeIds, $this->stageStatus('approval_count'), $start, $end);
+        $otpCount = $this->otpCount($scope);
+        $eligibleOtpCount = $this->otpCount($scope, onlyEligible: true);
+
+        $loginCount = $this->stageCount($scope, $this->stageStatus('login_count'));
+        $approvalCount = $this->stageCount($scope, $this->stageStatus('approval_count'));
         [$disbursalCount, $disbursalCustomerIds] = $this->stageCountWithCustomerIds(
-            $employeeIds,
+            $scope,
             $this->stageStatus('disbursal_count'),
-            $start,
-            $end
         );
-        $droppedCount = $this->stageCount($employeeIds, $this->stageStatus('dropped_count'), $start, $end);
-        $notApprovedCount = $this->stageCount($employeeIds, $this->stageStatus('not_approved_count'), $start, $end);
+        $droppedCount = $this->stageCount($scope, $this->stageStatus('dropped_count'));
+        $notApprovedCount = $this->stageCount($scope, $this->stageStatus('not_approved_count'));
 
         $disbursalAmount = $this->disbursalAmount($disbursalCustomerIds);
 
-        [$presentDays, $screenTimeSeconds] = $this->attendance($employeeIds, $start, $end);
+        [$presentDays, $screenTimeSeconds] = $this->attendance($scope);
         $calendarWorkingDays = PerformancePeriod::workingDays($start, $end);
         $workingDaySlots = $calendarWorkingDays * max($employeeIds->count(), 1);
 
-        [$targetAmount, $actualAchievement, $countAchievement] = $this->achievement($employee, $employeeIds, $start, $end);
+        [$targetAmount, $actualAchievement, $countAchievement] = $this->achievement($employee, $scope, $start, $end);
 
         return [
             'otp_count' => $otpCount,
@@ -89,11 +106,12 @@ class EmployeePerformanceMetricsService
         return 'Moved to '.ucfirst(str_replace('_', ' ', $journeyStatus));
     }
 
-    private function otpCount(Collection $employeeIds, Carbon $start, Carbon $end, bool $onlyEligible = false): int
+    /**
+     * @param  Closure(Builder|QueryBuilder, string, string): (Builder|QueryBuilder)  $scope
+     */
+    private function otpCount(Closure $scope, bool $onlyEligible = false): int
     {
-        $query = Customer::query()
-            ->whereIn('employee_id', $employeeIds)
-            ->whereBetween('created_at', [$start, $end]);
+        $query = $scope(Customer::query(), 'customers.employee_id', 'customers.created_at');
 
         if ($onlyEligible) {
             $query->where('eligibility_status', 'eligible');
@@ -102,29 +120,38 @@ class EmployeePerformanceMetricsService
         return $query->count();
     }
 
-    private function stageCount(Collection $employeeIds, string $statusValue, Carbon $start, Carbon $end): int
+    /**
+     * @param  Closure(Builder|QueryBuilder, string, string): (Builder|QueryBuilder)  $scope
+     */
+    private function stageCount(Closure $scope, string $statusValue): int
     {
-        return CustomerStageHistory::query()
-            ->join('users', 'users.id', '=', 'customer_stage_histories.user_id')
-            ->whereIn('users.employee_id', $employeeIds)
-            ->where('customer_stage_histories.status_value', $statusValue)
-            ->whereBetween('customer_stage_histories.created_at', [$start, $end])
-            ->count();
+        return $this->stageHistories($scope, $statusValue)->count();
     }
 
     /**
+     * @param  Closure(Builder|QueryBuilder, string, string): (Builder|QueryBuilder)  $scope
      * @return array{0: int, 1: Collection<int, int>}
      */
-    private function stageCountWithCustomerIds(Collection $employeeIds, string $statusValue, Carbon $start, Carbon $end): array
+    private function stageCountWithCustomerIds(Closure $scope, string $statusValue): array
     {
-        $customerIds = CustomerStageHistory::query()
-            ->join('users', 'users.id', '=', 'customer_stage_histories.user_id')
-            ->whereIn('users.employee_id', $employeeIds)
-            ->where('customer_stage_histories.status_value', $statusValue)
-            ->whereBetween('customer_stage_histories.created_at', [$start, $end])
+        $customerIds = $this->stageHistories($scope, $statusValue)
             ->pluck('customer_stage_histories.customer_id');
 
         return [$customerIds->count(), $customerIds];
+    }
+
+    /**
+     * @param  Closure(Builder|QueryBuilder, string, string): (Builder|QueryBuilder)  $scope
+     */
+    private function stageHistories(Closure $scope, string $statusValue): Builder
+    {
+        return $scope(
+            CustomerStageHistory::query()
+                ->join('users', 'users.id', '=', 'customer_stage_histories.user_id')
+                ->where('customer_stage_histories.status_value', $statusValue),
+            'users.employee_id',
+            'customer_stage_histories.created_at',
+        );
     }
 
     private function disbursalAmount(Collection $customerIds): float
@@ -147,11 +174,9 @@ class EmployeePerformanceMetricsService
     /**
      * @return array{0: int, 1: int} [distinct present-days summed per member, total screen-time seconds]
      */
-    private function attendance(Collection $employeeIds, Carbon $start, Carbon $end): array
+    private function attendance(Closure $scope): array
     {
-        $sessions = UserLoginSession::query()
-            ->whereIn('employee_id', $employeeIds)
-            ->whereBetween('login_at', [$start, $end])
+        $sessions = $scope(UserLoginSession::query(), 'employee_id', 'login_at')
             ->get(['employee_id', 'login_at', 'screen_time_seconds']);
 
         $presentDays = $sessions
@@ -164,7 +189,7 @@ class EmployeePerformanceMetricsService
     /**
      * @return array{0: float, 1: float, 2: float} [target, actual (gross), count achievement (net)]
      */
-    private function achievement(Employee $employee, Collection $employeeIds, Carbon $start, Carbon $end): array
+    private function achievement(Employee $employee, Closure $scope, Carbon $start, Carbon $end): array
     {
         $isSingleCalendarMonth = $start->isSameDay($start->copy()->startOfMonth())
             && $end->isSameDay($start->copy()->endOfMonth());
@@ -188,9 +213,7 @@ class EmployeePerformanceMetricsService
         // target (joining/exit-date rules and the ₹30L top-up), so a given
         // period never produces a different target depending on how it's
         // framed.
-        $customers = Customer::query()
-            ->whereIn('employee_id', $employeeIds)
-            ->whereBetween('customers.created_at', [$start, $end]);
+        $customers = $scope(Customer::query(), 'customers.employee_id', 'customers.created_at');
 
         $totals = $this->achievementCalculator->computeAchievementTotals($customers);
 

@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Enums\FollowUpOutcome;
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Models\CustomerAssignment;
 use App\Models\Employee;
 use App\Models\FollowUp;
@@ -48,6 +49,7 @@ use Livewire\Attributes\Url;
  */
 abstract class FollowUpOutcomeListPage extends Page implements HasTable
 {
+    use HasColumnHeaderFilters;
     use HasTabs;
     use InteractsWithTable;
 
@@ -206,17 +208,20 @@ abstract class FollowUpOutcomeListPage extends Page implements HasTable
     }
 
     /**
-     * How many follow-ups one tab holds, after the table's own filters.
+     * How many follow-ups one tab holds, after the table's own filters and
+     * its column header filters.
      */
     public function outcomeCount(string $group): int
     {
         $ids = $this->idsFor($group);
 
-        if ($ids === [] || ! $this->getTable()->isFiltered()) {
+        if ($ids === [] || (! $this->getTable()->isFiltered() && $this->tableHeaderFilters === [])) {
             return count($ids);
         }
 
-        return $this->applyFiltersToTableQuery(FollowUp::query()->whereIn('follow_ups.id', $ids))->count();
+        return $this->applyTableHeaderFiltersToQuery(
+            $this->applyFiltersToTableQuery(FollowUp::query()->whereIn('follow_ups.id', $ids)),
+        )->count();
     }
 
     public function getDefaultActiveTab(): string|int|null

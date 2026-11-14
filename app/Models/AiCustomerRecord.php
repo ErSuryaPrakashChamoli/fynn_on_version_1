@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\AiRecordProspectFields;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -71,6 +72,42 @@ class AiCustomerRecord extends Model
     public function latestAssignment(): HasOne
     {
         return $this->hasOne(CustomerAssignment::class)->latestOfMany();
+    }
+
+    /**
+     * The hand-over that followed this record into its customer file.
+     * Converting a lead moves its customer_assignments row from
+     * ai_customer_record_id to customer_id (CreateCustomer::afterCreate),
+     * so latestAssignment() no longer finds it.
+     */
+    public function convertedAssignment(): HasOne
+    {
+        return $this->hasOne(CustomerAssignment::class, 'customer_id', 'customer_id')->latestOfMany();
+    }
+
+    /**
+     * Who holds this record now: its own assignment, or the one it carried
+     * into its customer file once converted.
+     */
+    public function currentAssignment(): ?CustomerAssignment
+    {
+        if ($this->latestAssignment) {
+            return $this->latestAssignment;
+        }
+
+        return $this->customer_id ? $this->convertedAssignment : null;
+    }
+
+    /**
+     * Records nobody holds yet: never assigned and not converted into a
+     * customer (a converted record's assignment lives under customer_id).
+     *
+     * @param  Builder<AiCustomerRecord>  $query
+     * @return Builder<AiCustomerRecord>
+     */
+    public function scopeUnassigned(Builder $query): Builder
+    {
+        return $query->whereNull('ai_customer_records.customer_id')->whereDoesntHave('assignments');
     }
 
     public function followUps(): HasMany

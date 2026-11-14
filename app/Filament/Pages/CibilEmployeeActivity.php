@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Enums\CibilReportStatus;
 use App\Enums\CibilRequestType;
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Models\CibilReport;
 use App\Models\User;
 use App\Services\Cibil\CibilReportService;
@@ -38,6 +39,7 @@ use UnitEnum;
  */
 class CibilEmployeeActivity extends Page implements HasTable
 {
+    use HasColumnHeaderFilters;
     use HasFiltersForm, InteractsWithTable {
         InteractsWithTable::normalizeTableFilterValuesFromQueryString insteadof HasFiltersForm;
     }

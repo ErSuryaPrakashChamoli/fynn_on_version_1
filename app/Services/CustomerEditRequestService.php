@@ -97,6 +97,13 @@ class CustomerEditRequestService
         DB::transaction(function () use ($request, $reviewer, $note): void {
             /** @var Customer $customer */
             $customer = Customer::query()->lockForUpdate()->findOrFail($request->customer_id);
+
+            // Another file or lead may have taken the PAN since it was asked for.
+            foreach ($request->items as $item) {
+                if ($item->field === 'pan_number' && filled($item->requested_value)) {
+                    $this->assertPanAvailable($customer, $item->requested_value, 'pan_number');
+                }
+            }
             $now = now();
             $changes = [];
 
@@ -225,10 +232,22 @@ class CustomerEditRequestService
                 $value = date('Y-m-d', (int) strtotime($value));
             }
 
+            if ($field === 'pan_number' && $value !== null) {
+                $value = PanDuplicateService::normalize($value);
+
+                if (! PanDuplicateService::isWellFormed($value)) {
+                    throw ValidationException::withMessages([$key => 'Enter a valid PAN like ABCDE1234F.']);
+                }
+            }
+
             $current = CustomerEditableFields::currentValue($customer, $field);
 
             if ($this->same($current, $value)) {
                 throw ValidationException::withMessages([$key => 'This is already the current value.']);
+            }
+
+            if ($field === 'pan_number' && $value !== null) {
+                $this->assertPanAvailable($customer, $value, $key);
             }
 
             $rows[] = ['field' => $field, 'current_value' => $current, 'requested_value' => $value];
@@ -239,6 +258,19 @@ class CustomerEditRequestService
         }
 
         return $rows;
+    }
+
+    /**
+     * A file's PAN may not be changed to one another customer file or open
+     * lead already carries (PanDuplicateService checks both).
+     */
+    private function assertPanAvailable(Customer $customer, string $pan, string $key): void
+    {
+        $match = app(PanDuplicateService::class)->firstMatch($pan, ignoreCustomerId: $customer->id);
+
+        if ($match) {
+            throw ValidationException::withMessages([$key => "This PAN is already used by {$match->description()}."]);
+        }
     }
 
     private function same(?string $current, ?string $requested): bool

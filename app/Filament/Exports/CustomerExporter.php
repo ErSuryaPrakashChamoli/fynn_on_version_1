@@ -2,13 +2,20 @@
 
 namespace App\Filament\Exports;
 
+use App\Filament\Actions\DataDownloadApproval;
 use App\Models\Customer;
 use Filament\Actions\Exports\ExportColumn;
 use Filament\Actions\Exports\Exporter;
 use Filament\Actions\Exports\Models\Export;
-use Illuminate\Support\Number;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Number;
 
+/**
+ * Every field of a customer file, plus the names behind its ids (owner and
+ * their reporting line, assigned Manager). Used by the My Customers list and
+ * the Data Download page; the export always needs the owner's authenticator
+ * code (DataDownloadApproval).
+ */
 class CustomerExporter extends Exporter
 {
     protected static ?string $model = Customer::class;
@@ -26,6 +33,7 @@ class CustomerExporter extends Exporter
             ExportColumn::make('residence_location'),
             ExportColumn::make('salary'),
             ExportColumn::make('eligible_loan_amount'),
+            ExportColumn::make('approved_loan_amount'),
             ExportColumn::make('current_location'),
             ExportColumn::make('company_category'),
             ExportColumn::make('bank_eligible_for'),
@@ -41,15 +49,36 @@ class CustomerExporter extends Exporter
             ExportColumn::make('eligibility_status'),
             ExportColumn::make('eligibility_reason'),
             ExportColumn::make('journey_status'),
+            ExportColumn::make('disbursal_status'),
+            ExportColumn::make('carry_forward_date'),
+            ExportColumn::make('disbursal_finalized')
+                ->formatStateUsing(fn (mixed $state): string => $state ? 'Yes' : 'No'),
+            ExportColumn::make('disbursal_date'),
+            ExportColumn::make('account_verified')
+                ->formatStateUsing(fn (mixed $state): string => $state ? 'Yes' : 'No'),
+            ExportColumn::make('account_verified_by'),
+            ExportColumn::make('account_verified_at'),
+            ExportColumn::make('account_remark'),
+            ExportColumn::make('incentive_calculated')
+                ->formatStateUsing(fn (mixed $state): string => $state ? 'Yes' : 'No'),
+            ExportColumn::make('disbursal_pdf'),
+            ExportColumn::make('documents_submitted')
+                ->formatStateUsing(fn (mixed $state): string => $state ? 'Yes' : 'No'),
+            ExportColumn::make('underwriting_status'),
+            ExportColumn::make('credit_approval_completed')
+                ->formatStateUsing(fn (mixed $state): string => $state ? 'Yes' : 'No'),
+            ExportColumn::make('approval_date'),
             ExportColumn::make('documentation_status'),
             ExportColumn::make('pending_document'),
             ExportColumn::make('journey_not_approved_reason'),
             ExportColumn::make('application_no'),
             ExportColumn::make('lan_no'),
             ExportColumn::make('sanctioned_bank'),
+            ExportColumn::make('other_sanctioned_bank'),
             ExportColumn::make('sanctioned_loan_amount'),
             ExportColumn::make('cashback'),
             ExportColumn::make('subvention'),
+            ExportColumn::make('docking'),
             ExportColumn::make('payout_rate'),
             ExportColumn::make('bank_condition'),
             ExportColumn::make('attachment_required'),
@@ -58,6 +87,8 @@ class CustomerExporter extends Exporter
             ExportColumn::make('updated_at'),
             ExportColumn::make('employee_id'),
             ExportColumn::make('assign_to'),
+            ExportColumn::make('direct')
+                ->formatStateUsing(fn (mixed $state): string => $state ? 'Yes' : 'No'),
 
             ExportColumn::make('employee.emp_id')
                 ->label('Caller EMP ID'),
@@ -81,15 +112,34 @@ class CustomerExporter extends Exporter
 
             ExportColumn::make('employee.clusterManager.emp_name')
                 ->label('Cluster Manager Name'),
+
+            ExportColumn::make('employee.businessHead.emp_id')
+                ->label('Business Head EMP ID'),
+
+            ExportColumn::make('employee.businessHead.emp_name')
+                ->label('Business Head Name'),
+
+            ExportColumn::make('assignedTo.emp_id')
+                ->label('Assigned To EMP ID'),
+
+            ExportColumn::make('assignedTo.emp_name')
+                ->label('Assigned To Name'),
+        ];
+    }
+
+    public static function getOptionsFormComponents(): array
+    {
+        return [
+            DataDownloadApproval::codeField(),
         ];
     }
 
     public static function getCompletedNotificationBody(Export $export): string
     {
-        $body = 'Your customer export has completed and ' . Number::format($export->successful_rows) . ' ' . str('row')->plural($export->successful_rows) . ' exported.';
+        $body = 'Your customer export has completed and '.Number::format($export->successful_rows).' '.str('row')->plural($export->successful_rows).' exported.';
 
         if ($failedRowsCount = $export->getFailedRowsCount()) {
-            $body .= ' ' . Number::format($failedRowsCount) . ' ' . str('row')->plural($failedRowsCount) . ' failed to export.';
+            $body .= ' '.Number::format($failedRowsCount).' '.str('row')->plural($failedRowsCount).' failed to export.';
         }
 
         return $body;
@@ -101,6 +151,8 @@ class CustomerExporter extends Exporter
             'employee.superviser',
             'employee.manager',
             'employee.clusterManager',
+            'employee.businessHead',
+            'assignedTo',
         ]);
     }
 }

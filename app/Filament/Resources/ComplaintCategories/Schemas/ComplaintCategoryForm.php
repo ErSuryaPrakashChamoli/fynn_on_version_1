@@ -12,6 +12,7 @@ use Filament\Forms\Components\ToggleButtons;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Spatie\Permission\Models\Role;
 
 class ComplaintCategoryForm
@@ -21,6 +22,7 @@ class ComplaintCategoryForm
         return $schema
             ->components([
                 Section::make('Category')
+                    ->icon(Heroicon::OutlinedTag)
                     ->schema([
                         TextInput::make('name')
                             ->required()
@@ -49,6 +51,7 @@ class ComplaintCategoryForm
                     ->columnSpanFull(),
 
                 Section::make('Where do these tickets go?')
+                    ->icon(Heroicon::OutlinedInboxArrowDown)
                     ->schema([
                         ToggleButtons::make('routing')
                             ->label('Route to')
@@ -77,6 +80,7 @@ class ComplaintCategoryForm
                     ->columnSpanFull(),
 
                 Section::make('Reasons')
+                    ->icon(Heroicon::OutlinedListBullet)
                     ->description('The "reason for complaint" dropdown shown once this category is picked.')
                     ->schema([
                         Repeater::make('reasons')

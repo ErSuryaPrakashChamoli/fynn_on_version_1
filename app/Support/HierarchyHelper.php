@@ -5,6 +5,8 @@ namespace App\Support;
 use App\Filament\Resources\Teams\TeamResource;
 use App\Models\Employee;
 use App\Models\User;
+use Carbon\CarbonInterface;
+use Illuminate\Contracts\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -16,6 +18,13 @@ use Illuminate\Support\Collection;
  * level (a Team Leader with no Manager, a caller with no Team Leader) is a
  * null column, so that branch hangs straight off the next boss up and is
  * counted and seen there.
+ *
+ * The plain walks answer "who is in the team TODAY" and are for record
+ * visibility and today's duties. Anything counted over a period — a month's
+ * target, achievement, incentive, a team listing for the selected month —
+ * goes through the *During() walks and scopeToBranchDuring(), which follow
+ * the tree as it stood on each day (ReportingTimeline), so a reporting
+ * change never restates the months before it.
  */
 class HierarchyHelper
 {
@@ -335,6 +344,132 @@ class HierarchyHelper
         $ancestorId = ReportingTree::load()->nearestAncestorId($employee->id, $designations, $activeOnly);
 
         return $ancestorId !== null ? Employee::find($ancestorId) : null;
+    }
+
+    /**
+     * $employee plus everyone their figures counted on at least one day of
+     * [$start, $end] — the period's version of subordinateIds(). A caller
+     * who moved teams mid-month is in both teams' lists for that month.
+     *
+     * @return Collection<int, int>
+     */
+    public static function subordinateIdsDuring(Employee $employee, CarbonInterface $start, CarbonInterface $end): Collection
+    {
+        return collect(ReportingTimeline::between($start, $end)->branchIds($employee->id));
+    }
+
+    /**
+     * Every caller $employee's figures counted on at least one day of
+     * [$start, $end] — the period's version of callerIds().
+     *
+     * @return Collection<int, int>
+     */
+    public static function callerIdsDuring(Employee $employee, CarbonInterface $start, CarbonInterface $end): Collection
+    {
+        return collect(array_keys(ReportingTimeline::between($start, $end)->branchSpans(
+            $employee->id,
+            includeBoss: true,
+            onlyDesignation: Employee::DESIGNATION_CALLER,
+        )));
+    }
+
+    /**
+     * Everyone reporting straight to $employee on at least one day of
+     * [$start, $end] — the period's version of children(). An exited Team
+     * Leader, Manager or Cluster Manager is left out for the days after
+     * they left; callers never are.
+     */
+    public static function childrenDuring(Employee $employee, CarbonInterface $start, CarbonInterface $end): Builder
+    {
+        return Employee::query()->whereIn(
+            'id',
+            ReportingTimeline::between($start, $end)->childIdsDuring($employee->id, skipExitedLevels: true)
+        );
+    }
+
+    /**
+     * The period's version of directReportees(): the Admin starts at the top
+     * of every branch as it stood on any day of the period, anybody else at
+     * the people who reported straight to them then.
+     */
+    public static function directReporteesDuring(User $user, CarbonInterface $start, CarbonInterface $end): Builder
+    {
+        if (! $user->hasRole('Admin')) {
+            $employee = $user->employee;
+
+            return $employee
+                ? self::childrenDuring($employee, $start, $end)
+                : Employee::query()->whereRaw('1 = 0');
+        }
+
+        $topIds = [];
+
+        foreach (ReportingTimeline::between($start, $end)->segments() as $segment) {
+            $tree = $segment['tree'];
+
+            foreach ($tree->employeeIds() as $id) {
+                if (in_array($tree->designation($id), [Employee::DESIGNATION_BUSINESS_HEAD, Employee::DESIGNATION_CLUSTER], true)
+                    && ! $tree->isExited($id)
+                    && ($tree->bossId($id) === null || $tree->isExited($tree->bossId($id)))) {
+                    $topIds[$id] = true;
+                }
+            }
+        }
+
+        return Employee::query()->whereIn('id', array_keys($topIds));
+    }
+
+    /**
+     * Narrow $query to the rows that count for $employee over [$start, $end]:
+     * rows owned by someone in their branch ($employeeColumn) and dated
+     * ($dateColumn) on a day that person was in the branch. A case a caller
+     * closed before moving teams stays with the old team; one closed after
+     * goes to the new one.
+     *
+     * The period's dates are applied here, so callers must not add their
+     * own whereBetween on $dateColumn. $within keeps only the days $employee
+     * sat inside $within's branch (their contribution to that boss);
+     * $callersOnly drops everyone but callers (a Team Leader's team figure
+     * without their own cases).
+     *
+     * @template TQuery of Builder|QueryBuilder
+     *
+     * @param  TQuery  $query
+     * @return TQuery
+     */
+    public static function scopeToBranchDuring(
+        Builder|QueryBuilder $query,
+        Employee $employee,
+        CarbonInterface $start,
+        CarbonInterface $end,
+        string $employeeColumn,
+        string $dateColumn,
+        ?Employee $within = null,
+        bool $callersOnly = false,
+    ): Builder|QueryBuilder {
+        $ranges = ReportingTimeline::between($start, $end)->branchRanges(
+            $employee->id,
+            skipExitedLevels: true,
+            includeBoss: true,
+            withinId: $within?->id,
+            onlyDesignation: $callersOnly ? Employee::DESIGNATION_CALLER : null,
+        );
+
+        if ($ranges === []) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where(function ($query) use ($ranges, $employeeColumn, $dateColumn): void {
+            foreach ($ranges as $range) {
+                $query->orWhere(function ($query) use ($range, $employeeColumn, $dateColumn): void {
+                    $query->whereIn($employeeColumn, $range['ids'])
+                        ->whereBetween($dateColumn, [
+                            $range['start']->startOfDay(),
+                            $range['end']->endOfDay(),
+                        ]);
+                });
+            }
+        });
     }
 
     /**

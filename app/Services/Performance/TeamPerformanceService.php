@@ -6,6 +6,7 @@ use App\Models\Employee;
 use App\Models\UserLoginSession;
 use App\Support\HierarchyHelper;
 use App\Support\Performance\PerformancePeriod;
+use App\Support\ReportingTimeline;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
@@ -14,18 +15,31 @@ use Illuminate\Support\Collection;
  * attrition/retention and per-member + aggregate attendance for a
  * team lead's subordinate tree (the lead themselves is excluded from
  * their own team's numbers).
+ *
+ * The team is the one of the period, day by day (ReportingTimeline): a
+ * member who moved in or out counts only for the days they were in it.
  */
 class TeamPerformanceService
 {
     public function attrition(?Employee $teamLead, Carbon $start, Carbon $end): array
     {
-        $memberIds = $teamLead
-            ? HierarchyHelper::subordinateIds($teamLead)->reject(fn ($id) => $id === $teamLead->id)->values()
+        // Everyone in the team on any day of the period; on the first day,
+        // only those in it then make up the opening headcount.
+        $spans = $teamLead
+            ? ReportingTimeline::between($start, $end)->branchSpans($teamLead->id, includeBoss: false)
+            : null;
+
+        $memberIds = $spans !== null
+            ? collect(array_keys($spans))
             : Employee::query()->where('designation', '!=', Employee::DESIGNATION_ADMIN)->pluck('id');
 
         $members = Employee::query()->whereIn('id', $memberIds)->get();
 
-        $headcountStart = $members->filter(function (Employee $employee) use ($start) {
+        $headcountStart = $members->filter(function (Employee $employee) use ($start, $spans) {
+            if ($spans !== null && ReportingTimeline::overlapDays($spans[$employee->id] ?? [], $start, $start) === 0) {
+                return false;
+            }
+
             $joined = $employee->doj ? Carbon::parse($employee->doj) : null;
             $exited = $employee->exit_status === 'yes' && $employee->exit_date
                 ? Carbon::parse($employee->exit_date)
@@ -66,15 +80,22 @@ class TeamPerformanceService
      */
     public function attendance(Employee $teamLead, Carbon $start, Carbon $end): array
     {
-        $memberIds = HierarchyHelper::subordinateIds($teamLead)
+        $memberIds = HierarchyHelper::subordinateIdsDuring($teamLead, $start, $end)
             ->reject(fn ($id) => $id === $teamLead->id)
             ->values();
 
         $members = Employee::query()->whereIn('id', $memberIds)->get()->keyBy('id');
 
-        $byEmployee = UserLoginSession::query()
+        // Only the days each member was in this team count here.
+        $byEmployee = HierarchyHelper::scopeToBranchDuring(
+            UserLoginSession::query(),
+            $teamLead,
+            $start,
+            $end,
+            'employee_id',
+            'login_at',
+        )
             ->whereIn('employee_id', $memberIds)
-            ->whereBetween('login_at', [$start, $end])
             ->get(['employee_id', 'login_at'])
             ->groupBy('employee_id');
 

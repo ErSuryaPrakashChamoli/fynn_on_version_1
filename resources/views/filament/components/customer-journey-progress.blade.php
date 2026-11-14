@@ -133,122 +133,131 @@ $badgeClasses = match ($displayStatus) {
 
 @endphp
 
-<div
-    class="sticky top-4 z-50 rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900">
+<div class="fynn-card fynn-card--flush sticky top-4 z-50">
 
     <!-- Header -->
-    <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-white/5">
-        <div>
-            <h2 class="text-lg font-bold text-gray-900 dark:text-white">
-                Customer Loan Journey
-            </h2>
-            <p class="text-sm text-gray-500 dark:text-gray-400">
-                Current Stage : {{ $statusLabel }}
-            </p>
+    <div class="flex items-center justify-between gap-4 border-b border-(--fynn-border-soft) bg-linear-to-b from-(--fynn-surface-2) to-(--fynn-surface) px-5 py-4 sm:px-6">
+        <div class="flex min-w-0 items-center gap-3">
+            <span class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-(--fynn-accent-soft) text-(--fynn-accent-text) ring-1 ring-inset ring-primary-500/20">
+                <x-filament::icon icon="heroicon-o-map" class="size-5" />
+            </span>
+            <div class="min-w-0">
+                <h2 class="text-base font-bold tracking-tight text-gray-950 sm:text-lg dark:text-white">
+                    Customer Loan Journey
+                </h2>
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                    Current Stage : {{ $statusLabel }}
+                </p>
+            </div>
         </div>
-        <span class="rounded-full px-4 py-1.5 text-sm font-semibold {{ $badgeClasses }}">
+        <span class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold {{ $badgeClasses }}">
+            <span class="size-1.5 rounded-full bg-current" aria-hidden="true"></span>
             {{ $statusLabel }}
         </span>
     </div>
 
-    <div class="p-8">
+    <div class="px-5 py-6 sm:px-8 sm:py-7">
         @if ($isRejected)
             <!-- Rejection State -->
-            <div class="rounded-lg bg-red-50 p-4 text-center dark:bg-red-500/10">
-                <h3 class="font-semibold text-red-800 dark:text-red-400">Journey Terminated</h3>
-                <p class="mt-1 text-sm text-red-600 dark:text-red-300">This application was not approved.</p>
-            </div>
-        @else
-            <!-- Progress Bar -->
-            <div class="relative mb-10">
-                <div class="h-2 rounded-full bg-gray-200 dark:bg-gray-700">
-                    <div class="h-2 rounded-full bg-primary-600 transition-all duration-700 ease-out dark:bg-primary-500"
-                        style="width: {{ $progress }}%;"></div>
+            <div class="fynn-callout fynn-callout--danger flex items-start gap-3">
+                <x-filament::icon icon="heroicon-o-no-symbol" class="mt-0.5 size-5 shrink-0 text-danger-600 dark:text-danger-400" />
+                <div>
+                    <h3 class="fynn-callout-title">Journey Terminated</h3>
+                    <p class="mt-1 text-sm">This application was not approved.</p>
                 </div>
             </div>
-
-            <!-- Steps -->
-            <div class="grid grid-cols-4 gap-4">
-                @foreach ($steps as $step)
-                    @php
-                        $active = $currentStep >= $step['number'];
-                        $current = $currentStep === $step['number'];
-                        $pending = $currentStep < $step['number'];
-                    @endphp
-
-                    <div class="text-center group">
-                        <div
-                            class="mx-auto flex h-12 w-12 items-center justify-center rounded-full border-[3px] font-bold transition-all duration-300
-                            {{ $active ? 'border-primary-600 bg-primary-600 text-white dark:border-primary-500 dark:bg-primary-500' : '' }}
-                            {{ $pending ? 'border-gray-200 bg-white text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500' : '' }}
-                            {{ $current ? 'ring-4 ring-primary-100 shadow-md scale-110 dark:ring-primary-500/20' : '' }}
-                            ">
-                            {{-- @if ($active && !$current)
-                                <svg class="h-6 w-6 text-white" viewBox="0 0 20 20" fill="currentColor"
-                                    aria-hidden="true">
-                                    <path fill-rule="evenodd"
-                                        d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
-                                        clip-rule="evenodd" />
-                                </svg>
-                            @else
-                                <span class="{{ $current ? 'text-primary-600 dark:text-white' : '' }}">
-                                    {{ $step['number'] }}
-                                </span>
-                            @endif --}}
-
-                            @if (
-                                ($active && !$current) ||
-                                    ($displayStatus === 'sanctioned' && $step['number'] === 4) ||
-                                    ($displayStatus === 'completed' && $step['number'] === 4))
-                                <svg class="h-6 w-6 text-white" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fill-rule="evenodd"
-                                        d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
-                                        clip-rule="evenodd" />
-                                </svg>
-                            @else
-                                <span>{{ $step['number'] }}</span>
-                            @endif
-                        </div>
-
-                        <div
-                            class="mt-4 text-sm font-semibold transition-colors duration-300
-                            {{ $current ? 'text-primary-600 dark:text-primary-400' : '' }}
-                            {{ $active && !$current ? 'text-gray-900 dark:text-gray-200' : '' }}
-                            {{ $pending ? 'text-gray-400 dark:text-gray-500' : '' }}
-                        ">
-                            {{ $step['label'] }}
-                        </div>
+        @else
+            <div class="relative">
+                <!-- Progress Bar: runs behind the step circles, from the first one's centre to the last one's -->
+                <div class="absolute inset-x-[12.5%] top-[1.375rem] -translate-y-1/2" aria-hidden="true">
+                    <div class="h-1.5 rounded-full bg-gray-200 dark:bg-gray-700">
+                        <div class="h-1.5 rounded-full bg-primary-600 transition-all duration-700 ease-out dark:bg-primary-500"
+                            style="width: {{ $progress }}%;"></div>
                     </div>
-                @endforeach
+                </div>
+
+                <!-- Steps -->
+                <div class="relative grid grid-cols-4 gap-4">
+                    @foreach ($steps as $step)
+                        @php
+                            $active = $currentStep >= $step['number'];
+                            $current = $currentStep === $step['number'];
+                            $pending = $currentStep < $step['number'];
+                        @endphp
+
+                        <div class="text-center group">
+                            <div
+                                class="mx-auto flex h-11 w-11 items-center justify-center rounded-full border-2 text-sm font-bold shadow-xs transition-all duration-300
+                                {{ $active ? 'border-primary-600 bg-primary-600 text-white dark:border-primary-500 dark:bg-primary-500' : '' }}
+                                {{ $pending ? 'border-gray-200 bg-white text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500' : '' }}
+                                {{ $current ? 'ring-4 ring-primary-100 shadow-md scale-110 dark:ring-primary-500/20' : '' }}
+                                ">
+                                {{-- @if ($active && !$current)
+                                    <svg class="h-6 w-6 text-white" viewBox="0 0 20 20" fill="currentColor"
+                                        aria-hidden="true">
+                                        <path fill-rule="evenodd"
+                                            d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
+                                            clip-rule="evenodd" />
+                                    </svg>
+                                @else
+                                    <span class="{{ $current ? 'text-primary-600 dark:text-white' : '' }}">
+                                        {{ $step['number'] }}
+                                    </span>
+                                @endif --}}
+
+                                @if (
+                                    ($active && !$current) ||
+                                        ($displayStatus === 'sanctioned' && $step['number'] === 4) ||
+                                        ($displayStatus === 'completed' && $step['number'] === 4))
+                                    <svg class="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd"
+                                            d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
+                                            clip-rule="evenodd" />
+                                    </svg>
+                                @else
+                                    <span>{{ $step['number'] }}</span>
+                                @endif
+                            </div>
+
+                            <div
+                                class="mt-3 text-xs font-semibold transition-colors duration-300 sm:text-sm
+                                {{ $current ? 'text-(--fynn-accent-text)' : '' }}
+                                {{ $active && !$current ? 'text-gray-900 dark:text-gray-200' : '' }}
+                                {{ $pending ? 'text-gray-400 dark:text-gray-500' : '' }}
+                            ">
+                                {{ $step['label'] }}
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
             </div>
         @endif
     </div>
 
     <!-- Bottom Stats Bar -->
-    <div
-        class="grid grid-cols-4 rounded-b-xl border-t border-gray-100 bg-gray-50/50 dark:border-white/5 dark:bg-white/5">
-        <div class="p-4 text-center">
-            <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Current</div>
-            <div class="font-bold text-gray-900 dark:text-white">{{ $statusLabel }}</div>
+    <div class="grid grid-cols-4 divide-x divide-(--fynn-border-soft) border-t border-(--fynn-border-soft) bg-(--fynn-surface-2)">
+        <div class="px-2 py-3 text-center">
+            <div class="fynn-kpi-label">Current</div>
+            <div class="mt-0.5 text-sm font-bold text-gray-950 dark:text-white">{{ $statusLabel }}</div>
         </div>
 
-        <div class="p-4 text-center">
-            <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Progress</div>
-            <div class="font-bold text-gray-900 dark:text-white">{{ $isRejected ? '0' : $progress }}%</div>
+        <div class="px-2 py-3 text-center">
+            <div class="fynn-kpi-label">Progress</div>
+            <div class="mt-0.5 text-sm font-bold tabular-nums text-gray-950 dark:text-white">{{ $isRejected ? '0' : $progress }}%</div>
         </div>
 
-        <div class="p-4 text-center border-l border-gray-100 dark:border-white/5">
-            <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Completed</div>
+        <div class="px-2 py-3 text-center">
+            <div class="fynn-kpi-label">Completed</div>
             {{-- <div class="font-bold text-gray-900 dark:text-white">{{ $isRejected ? '0' : $currentStep }}/4</div> --}}
-            <div class="font-bold text-gray-900 dark:text-white">
+            <div class="mt-0.5 text-sm font-bold tabular-nums text-gray-950 dark:text-white">
                 {{ $completedSteps }}/4
             </div>
         </div>
 
-        <div class="p-4 text-center border-l border-gray-100 dark:border-white/5">
-            <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Status</div>
+        <div class="px-2 py-3 text-center">
+            <div class="fynn-kpi-label">Status</div>
             <div
-                class="font-bold {{ $isRejected ? 'text-red-600 dark:text-red-400' : ($status === 'sanctioned' ? 'text-green-600 dark:text-green-400' : 'text-primary-600 dark:text-primary-400') }}">
+                class="mt-0.5 text-sm font-bold {{ $isRejected ? 'text-red-600 dark:text-red-400' : ($status === 'sanctioned' ? 'text-green-600 dark:text-green-400' : 'text-(--fynn-accent-text)') }}">
                 {{-- @if ($status === 'sanctioned')
                     Completed
                 @elseif($status === 'carry_forward')

@@ -1,18 +1,16 @@
 <x-filament-panels::page>
-    <div>
-        <label class="mb-1 block text-sm font-semibold text-gray-700 dark:text-gray-300">
-            Employee &amp; Period
-        </label>
-        <p class="mb-3 text-xs text-gray-500">
-            Pick an employee and a reporting cadence — every figure below recalculates for that window.
-        </p>
-
+    <x-filament::section
+        heading="Employee & Period"
+        description="Pick an employee and a reporting cadence — every figure below recalculates for that window."
+        icon="heroicon-o-adjustments-horizontal"
+    >
         {{ $this->form }}
-    </div>
+    </x-filament::section>
 
     @if (! $employee)
-        <div class="rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500 dark:border-gray-700">
-            Select an employee above to see their performance report.
+        <div class="fynn-empty">
+            <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-user-circle" /></span>
+            <span>Select an employee above to see their performance report.</span>
         </div>
     @else
         @php
@@ -23,123 +21,137 @@
         @endphp
 
         {{-- Profile header --}}
-        <div class="flex flex-wrap items-center gap-4 border-b border-gray-200 pb-5 dark:border-gray-700">
-            <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+        <div class="fynn-hero">
+            <span class="fynn-avatar fynn-avatar--lg">
                 {{ $employee->initials }}
             </span>
 
-            <div class="min-w-0">
-                <div class="flex flex-wrap items-baseline gap-x-2">
-                    <span class="text-xl font-bold text-gray-950 dark:text-white">{{ $employee->emp_name }}</span>
-                    <span class="text-xs font-bold uppercase tracking-wide {{ $roleColor }}">{{ $roleLabel }}</span>
+            <div class="fynn-hero-main">
+                <div class="fynn-hero-title">
+                    <span>{{ $employee->emp_name }}</span>
+                    <span class="dc-level {{ $roleColor }}">{{ $roleLabel }}</span>
                 </div>
-                <div class="text-sm text-gray-600 dark:text-gray-400">
-                    <span class="font-bold text-gray-800 dark:text-gray-200">ID: {{ $employee->emp_id }}</span>
-                    &middot; {{ $rangeStart->format('d M Y') }} – {{ $rangeEnd->format('d M Y') }}
+                <div class="fynn-hero-meta">
+                    <span class="fynn-chip">
+                        <x-filament::icon icon="heroicon-m-identification" />
+                        ID: {{ $employee->emp_id }}
+                    </span>
+                    <span class="fynn-chip">
+                        <x-filament::icon icon="heroicon-m-calendar-days" />
+                        {{ $rangeStart->format('d M Y') }} – {{ $rangeEnd->format('d M Y') }}
+                    </span>
                 </div>
             </div>
         </div>
 
         {{-- Funnel stat cards --}}
-        <div>
-            <h3 class="border-b border-gray-200 pb-2 pt-4 text-sm font-bold uppercase tracking-wide text-gray-700 dark:border-gray-700 dark:text-gray-300">
-                Funnel
-            </h3>
-
-            <div class="grid grid-cols-2 gap-4 py-4 sm:grid-cols-3 lg:grid-cols-5">
+        <x-filament::section heading="Funnel" icon="heroicon-o-funnel">
+            <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
                 @foreach ([
-                    ['label' => 'Total OTP', 'value' => number_format($m['otp_count']), 'icon' => '👥'],
-                    ['label' => 'Eligible OTP', 'value' => number_format($m['eligible_otp_count']), 'icon' => '🎯'],
-                    ['label' => 'Login', 'value' => number_format($m['login_count']), 'icon' => '📝'],
-                    ['label' => 'Approval', 'value' => number_format($m['approval_count']), 'icon' => '✅'],
-                    ['label' => 'Disbursal', 'value' => number_format($m['disbursal_count']), 'icon' => '🏦'],
-                    ['label' => 'Dropped', 'value' => number_format($m['dropped_count']), 'icon' => '❌'],
-                    ['label' => 'Not Approved', 'value' => number_format($m['not_approved_count']), 'icon' => '🚫'],
+                    ['label' => 'Total OTP', 'value' => number_format($m['otp_count']), 'icon' => 'heroicon-o-device-phone-mobile', 'accent' => '#eab308'],
+                    ['label' => 'Eligible OTP', 'value' => number_format($m['eligible_otp_count']), 'icon' => 'heroicon-o-check-badge', 'accent' => '#22c55e'],
+                    ['label' => 'Login', 'value' => number_format($m['login_count']), 'icon' => 'heroicon-o-document-arrow-up', 'accent' => '#3b82f6'],
+                    ['label' => 'Approval', 'value' => number_format($m['approval_count']), 'icon' => 'heroicon-o-hand-thumb-up', 'accent' => '#10b981'],
+                    ['label' => 'Disbursal', 'value' => number_format($m['disbursal_count']), 'icon' => 'heroicon-o-banknotes', 'accent' => '#0d9488'],
+                    ['label' => 'Dropped', 'value' => number_format($m['dropped_count']), 'icon' => 'heroicon-o-arrow-down-tray', 'accent' => '#64748b'],
+                    ['label' => 'Not Approved', 'value' => number_format($m['not_approved_count']), 'icon' => 'heroicon-o-x-circle', 'accent' => '#f43f5e'],
                 ] as $stat)
-                    <div class="performance-card border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-                        <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                            {{ $stat['icon'] }} {{ $stat['label'] }}
+                    <div class="fynn-kpi" style="--fynn-kpi-accent: {{ $stat['accent'] }}">
+                        <div class="fynn-kpi-head">
+                            <span class="fynn-kpi-icon"><x-filament::icon :icon="$stat['icon']" /></span>
+                            <div class="fynn-kpi-label">{{ $stat['label'] }}</div>
                         </div>
-                        <div class="mt-1 text-2xl font-extrabold text-gray-950 dark:text-white">
+                        <div class="fynn-kpi-value">
                             {{ $stat['value'] }}
                         </div>
                     </div>
                 @endforeach
             </div>
-        </div>
+        </x-filament::section>
 
         {{-- Money & attendance --}}
-        <div>
-            <h3 class="border-b border-gray-200 pb-2 pt-4 text-sm font-bold uppercase tracking-wide text-gray-700 dark:border-gray-700 dark:text-gray-300">
-                Achievement &amp; Attendance
-            </h3>
-
-            <div class="grid grid-cols-1 gap-4 py-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div class="performance-card border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">💰 Disbursal Amount</div>
-                    <div class="mt-1 text-2xl font-extrabold text-gray-950 dark:text-white">{{ indianCurrencyFormat($m['disbursal_amount']) }}</div>
+        <x-filament::section heading="Achievement & Attendance" icon="heroicon-o-trophy">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div class="fynn-kpi" style="--fynn-kpi-accent: #f59e0b">
+                    <div class="fynn-kpi-head">
+                        <span class="fynn-kpi-icon"><x-filament::icon icon="heroicon-o-currency-rupee" /></span>
+                        <div class="fynn-kpi-label">Disbursal Amount</div>
+                    </div>
+                    <div class="fynn-kpi-value">{{ indianCurrencyFormat($m['disbursal_amount']) }}</div>
                 </div>
 
-                <div class="performance-card border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950/40">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">🏆 Actual Achievement</div>
-                    <div class="mt-1 text-2xl font-extrabold text-gray-950 dark:text-white">{{ indianCurrencyFormat($m['actual_achievement']) }}</div>
+                <div class="fynn-kpi" style="--fynn-kpi-accent: #10b981">
+                    <div class="fynn-kpi-head">
+                        <span class="fynn-kpi-icon"><x-filament::icon icon="heroicon-o-trophy" /></span>
+                        <div class="fynn-kpi-label">Actual Achievement</div>
+                    </div>
+                    <div class="fynn-kpi-value">{{ indianCurrencyFormat($m['actual_achievement']) }}</div>
                 </div>
 
-                <div class="performance-card border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/40">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400">🎯 Target</div>
-                    <div class="mt-1 text-2xl font-extrabold text-gray-950 dark:text-white">{{ indianCurrencyFormat($m['target_amount']) }}</div>
+                <div class="fynn-kpi" style="--fynn-kpi-accent: #3b82f6">
+                    <div class="fynn-kpi-head">
+                        <span class="fynn-kpi-icon"><x-filament::icon icon="heroicon-o-flag" /></span>
+                        <div class="fynn-kpi-label">Target</div>
+                    </div>
+                    <div class="fynn-kpi-value">{{ indianCurrencyFormat($m['target_amount']) }}</div>
                 </div>
 
-                <div class="performance-card border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">🗓️ Present Days</div>
-                    <div class="mt-1 text-2xl font-extrabold text-gray-950 dark:text-white">{{ $m['present_days'] }} / {{ $m['working_days'] }}</div>
-                    <div class="mt-1 text-xs text-gray-500">{{ $m['screen_time_hours'] }} hrs screen time</div>
+                <div class="fynn-kpi" style="--fynn-kpi-accent: #8b5cf6">
+                    <div class="fynn-kpi-head">
+                        <span class="fynn-kpi-icon"><x-filament::icon icon="heroicon-o-calendar-days" /></span>
+                        <div class="fynn-kpi-label">Present Days</div>
+                    </div>
+                    <div class="fynn-kpi-value">{{ $m['present_days'] }} / {{ $m['working_days'] }}</div>
+                    <div class="fynn-kpi-hint">{{ $m['screen_time_hours'] }} hrs screen time</div>
                 </div>
             </div>
-        </div>
+        </x-filament::section>
 
         {{-- Ratios --}}
-        <div>
-            <h3 class="border-b border-gray-200 pb-2 pt-4 text-sm font-bold uppercase tracking-wide text-gray-700 dark:border-gray-700 dark:text-gray-300">
-                Ratios <span class="font-normal normal-case text-gray-400">— configurable in Performance &rarr; Ratio Builder</span>
-            </h3>
+        <x-filament::section icon="heroicon-o-scale">
+            <x-slot name="heading">
+                Ratios <span class="font-normal text-gray-500 dark:text-gray-400">— configurable in Performance &rarr; Ratio Builder</span>
+            </x-slot>
 
             @if (empty($this->ratios))
-                <p class="pt-3 text-sm text-gray-500">No active ratios have been defined yet.</p>
+                <div class="fynn-empty fynn-empty--compact">
+                    <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-scale" /></span>
+                    <span>No active ratios have been defined yet.</span>
+                </div>
             @else
-                <div class="flex flex-wrap gap-3 py-4">
+                <div class="fynn-kpi-grid">
                     @foreach ($this->ratios as $row)
-                        <div class="performance-card flex min-w-[10rem] flex-col border border-violet-200 bg-violet-50 px-4 py-3 dark:border-violet-900 dark:bg-violet-950/40">
-                            <span class="text-xs font-semibold text-violet-700 dark:text-violet-400">{{ $row['ratio']->name }}</span>
-                            <span class="text-xl font-extrabold text-gray-950 dark:text-white">{{ $row['value'] }}</span>
+                        <div class="fynn-kpi" style="--fynn-kpi-accent: #8b5cf6">
+                            <div class="fynn-kpi-label">{{ $row['ratio']->name }}</div>
+                            <div class="fynn-kpi-value">{{ $row['value'] }}</div>
                         </div>
                     @endforeach
                 </div>
             @endif
-        </div>
+        </x-filament::section>
 
         {{-- Trend --}}
         @php $trend = $this->trend; @endphp
         @if (! empty($trend))
             @php $maxDisbursal = max(1, collect($trend)->max('disbursal_amount')); @endphp
-            <div>
-                <h3 class="border-b border-gray-200 pb-2 pt-4 text-sm font-bold uppercase tracking-wide text-gray-700 dark:border-gray-700 dark:text-gray-300">
-                    Disbursal Trend <span class="font-normal normal-case text-gray-400">— last 6 {{ strtolower(\App\Support\Performance\PerformancePeriod::options()[$this->periodType]) }} periods</span>
-                </h3>
+            <x-filament::section icon="heroicon-o-chart-bar">
+                <x-slot name="heading">
+                    Disbursal Trend <span class="font-normal text-gray-500 dark:text-gray-400">— last 6 {{ strtolower(\App\Support\Performance\PerformancePeriod::options()[$this->periodType]) }} periods</span>
+                </x-slot>
 
-                <div class="flex items-end gap-3 overflow-x-auto py-6">
+                <div class="flex items-end gap-3 overflow-x-auto pb-1 pt-2">
                     @foreach ($trend as $point)
                         @php $heightPct = max(4, (int) round(($point['disbursal_amount'] / $maxDisbursal) * 100)); @endphp
-                        <div class="flex w-16 shrink-0 flex-col items-center gap-1">
-                            <span class="text-[10px] font-semibold text-gray-600 dark:text-gray-300">{{ indianCurrencyFormat($point['disbursal_amount']) }}</span>
-                            <div class="flex h-32 w-full items-end rounded bg-gray-100 dark:bg-gray-800">
-                                <div class="w-full rounded bg-amber-500" style="height: {{ $heightPct }}%"></div>
+                        <div class="flex w-16 shrink-0 flex-col items-center gap-1.5">
+                            <span class="text-[10px] font-semibold tabular-nums text-gray-600 dark:text-gray-300">{{ indianCurrencyFormat($point['disbursal_amount']) }}</span>
+                            <div class="flex h-32 w-full items-end rounded-md bg-gray-100 dark:bg-white/5">
+                                <div class="w-full rounded-md bg-amber-500 shadow-sm" style="height: {{ $heightPct }}%"></div>
                             </div>
-                            <span class="text-[10px] text-gray-500">{{ $point['label'] }}</span>
+                            <span class="text-[10px] font-medium text-gray-500 dark:text-gray-400">{{ $point['label'] }}</span>
                         </div>
                     @endforeach
                 </div>
-            </div>
+            </x-filament::section>
         @endif
     @endif
 </x-filament-panels::page>

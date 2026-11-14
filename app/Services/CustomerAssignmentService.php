@@ -37,6 +37,15 @@ class CustomerAssignmentService
 
         return DB::transaction(function () use ($targetIds, $employeeId, $column, $assignedBy): array {
             $alreadyAssignedIds = CustomerAssignment::query()->whereIn($column, $targetIds)->pluck($column);
+
+            if ($column === 'ai_customer_record_id') {
+                // A converted record's assignment moved to customer_id, so
+                // only the record's own customer_id still says it is taken.
+                $alreadyAssignedIds = $alreadyAssignedIds->merge(
+                    AiCustomerRecord::query()->whereIn('id', $targetIds)->whereNotNull('customer_id')->pluck('id'),
+                );
+            }
+
             $toAssign = $targetIds->diff($alreadyAssignedIds)->values();
 
             if ($toAssign->isEmpty()) {

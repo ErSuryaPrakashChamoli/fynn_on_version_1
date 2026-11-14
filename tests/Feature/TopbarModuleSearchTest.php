@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Pages\Dashboard;
 use App\Filament\Resources\Designations\DesignationResource;
 use App\Models\Employee;
 use App\Models\User;
@@ -56,11 +57,10 @@ class TopbarModuleSearchTest extends TestCase
         $designations = $entries->firstWhere('label', 'Designations');
 
         $this->assertNotNull($designations);
-        $this->assertSame('Employee Setup', $designations['module']);
+        $this->assertSame('People & Organisation', $designations['module']);
         $this->assertSame(DesignationResource::getUrl(), $designations['url']);
         $this->assertStringContainsString('<svg', (string) $designations['icon']);
 
-        $this->assertSame('Dashboard', $entries->first()['module']);
         $this->assertContains('Customers', $entries->pluck('module'));
         $this->assertGreaterThan(20, $entries->count());
     }
@@ -71,9 +71,34 @@ class TopbarModuleSearchTest extends TestCase
 
         $entries = collect(ModuleSearchIndex::entries());
 
-        $this->assertNotContains('Employee Setup', $entries->pluck('module'));
+        $this->assertNotContains('Credit & Accounts', $entries->pluck('module'));
         $this->assertNotContains('Designations', $entries->pluck('label'));
-        $this->assertContains('Dashboard', $entries->pluck('label'));
+        $this->assertNotEmpty($entries);
+    }
+
+    public function test_the_standalone_dashboard_is_left_out_but_module_dashboards_stay(): void
+    {
+        $this->login('Admin');
+
+        $entries = collect(ModuleSearchIndex::entries());
+
+        $this->assertNotContains('Dashboard', $entries->pluck('module'));
+        $this->assertNotContains(Dashboard::getUrl(), $entries->pluck('url'));
+        $this->assertTrue($entries->every(fn (array $entry): bool => filled($entry['module'])));
+
+        $this->assertNotNull($entries->first(fn (array $entry): bool => $entry['module'] === 'Daily Commitment' && $entry['label'] === 'Dashboard'));
+    }
+
+    public function test_the_pop_up_renders_tinted_module_cards(): void
+    {
+        $this->login('Admin');
+
+        $this->followingRedirects()
+            ->get('/admin')
+            ->assertOk()
+            ->assertSee('fynn-module-search-group-count', false)
+            ->assertSee('fynn-module-search-item-go', false)
+            ->assertDontSee('fynn-module-search-item-hint', false);
     }
 
     public function test_a_guest_gets_no_entries(): void

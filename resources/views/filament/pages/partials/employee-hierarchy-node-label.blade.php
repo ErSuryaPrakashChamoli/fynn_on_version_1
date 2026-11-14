@@ -6,22 +6,25 @@
 @endphp
 
 <div class="{{ $inline ? 'eh-node-inline' : 'eh-node' }}">
-    <span class="text-base font-bold text-gray-900 dark:text-white{{ $isHighlighted ? ' border-b-2 border-amber-500 pb-0.5' : '' }}">
+    <span class="text-base font-bold text-gray-950 dark:text-white{{ $isHighlighted ? ' border-b-2 border-amber-500 pb-0.5' : '' }}">
         {{ $person->emp_name }}
     </span>
-    <span class="text-xs font-bold uppercase tracking-wide {{ $roleColor }}">
+    <span class="dc-level {{ $roleColor }}">
         {{ $roleLabel }}
     </span>
-    <span class="text-xs font-semibold text-gray-600 dark:text-gray-300">
+    <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">
         ID: {{ $person->emp_id }}
     </span>
-    <span class="text-sm font-extrabold text-gray-900 dark:text-white">
+    <span class="text-sm font-bold tabular-nums text-gray-900 dark:text-white">
         Target: {{ \App\Filament\Pages\EmployeeHierarchy::targetLabel($person) }}
     </span>
     @if ($person->exit_status === 'yes')
-        <span class="text-xs font-bold uppercase tracking-wide text-rose-600 dark:text-rose-400">Exited</span>
+        <x-filament::badge color="danger" size="sm">Exited</x-filament::badge>
     @endif
     @if ($isHighlighted)
-        <span class="text-xs font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400">Searched</span>
+        <span class="fynn-chip fynn-chip--accent">
+            <x-filament::icon icon="heroicon-m-magnifying-glass" />
+            Searched
+        </span>
     @endif
 </div>

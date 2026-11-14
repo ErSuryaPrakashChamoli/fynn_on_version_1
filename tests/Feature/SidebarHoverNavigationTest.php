@@ -68,7 +68,7 @@ class SidebarHoverNavigationTest extends TestCase
         $response->assertOk();
         $response->assertSee('fynn-sidebar-group-rail-icon', false);
         $response->assertSee('title="Leads"', false);
-        $response->assertSee('title="Setting"', false);
+        $response->assertSee('title="Settings"', false);
         // Items keep their own icons; the stock dropdown-per-group fallback
         // (which strips them) must not have kicked in.
         $response->assertDontSee('fi-sidebar-group-dropdown-trigger-btn', false);

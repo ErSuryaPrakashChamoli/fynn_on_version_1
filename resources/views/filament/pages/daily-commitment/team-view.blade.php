@@ -16,11 +16,14 @@
         {{ $this->form }}
 
         @if ($focus && $focus->id !== auth()->user()?->employee?->id)
-            <div class="mt-3 flex items-center gap-2 text-sm">
-                <span class="text-gray-500">Viewing</span>
-                <strong>{{ $focus->emp_name }}</strong>
-                <span class="text-xs text-gray-500">({{ $designations[$focus->designation] ?? '—' }})</span>
-                <x-filament::button size="xs" color="gray" icon="heroicon-o-arrow-uturn-left" wire:click="resetFocus">
+            <div class="fynn-toolbar mt-3 text-sm">
+                <span class="fynn-toolbar-label">Viewing</span>
+                <span class="flex min-w-0 items-center gap-2">
+                    <span class="fynn-avatar fynn-avatar--sm">{{ $focus->initials }}</span>
+                    <strong class="text-gray-950 dark:text-white">{{ $focus->emp_name }}</strong>
+                    <span class="text-xs {{ \App\Models\Employee::designationColorClass($focus->designation) }}">({{ $designations[$focus->designation] ?? '—' }})</span>
+                </span>
+                <x-filament::button size="xs" color="gray" icon="heroicon-o-arrow-uturn-left" wire:click="resetFocus" class="ms-auto">
                     Back to my team
                 </x-filament::button>
             </div>
@@ -40,16 +43,22 @@
             @endphp
 
             @if (! $stage)
-                <p class="text-sm text-gray-500">No commitment given for this date.</p>
+                <div class="fynn-empty fynn-empty--compact">
+                    <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-hand-raised" /></span>
+                    <span>No commitment given for this date.</span>
+                </div>
             @else
                 <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                    <x-daily-commitment.kpi label="Commitment" :amount="$ownRow['target']" :count="$ownCount" :hint="$stage->label()" :accent="$stage->hex()" />
-                    <x-daily-commitment.kpi label="Achievement" :amount="$ownRow['achieved']" :count="$ownCount" accent="#22c55e" />
-                    <x-daily-commitment.kpi label="Pending" :amount="$ownRow['pending']" :count="$ownCount" accent="#f97316" />
-                    <x-daily-commitment.kpi label="Achievement %" :value="$ownRow['percentage'] . '%'" accent="#3b82f6" />
-                    <div class="dc-card">
-                        <div class="dc-card-label">Result</div>
-                        <div class="mt-2"><x-daily-commitment.result-chip :result="$ownRow['result']" /></div>
+                    <x-daily-commitment.kpi label="Commitment" :amount="$ownRow['target']" :count="$ownCount" :hint="$stage->label()" :accent="$stage->hex()" icon="heroicon-o-hand-raised" />
+                    <x-daily-commitment.kpi label="Achievement" :amount="$ownRow['achieved']" :count="$ownCount" accent="#22c55e" icon="heroicon-o-banknotes" />
+                    <x-daily-commitment.kpi label="Pending" :amount="$ownRow['pending']" :count="$ownCount" accent="#f97316" icon="heroicon-o-clock" />
+                    <x-daily-commitment.kpi label="Achievement %" :value="$ownRow['percentage'] . '%'" accent="#3b82f6" icon="heroicon-o-chart-pie" />
+                    <div class="dc-card" style="--dc-accent: #8b5cf6">
+                        <div class="fynn-kpi-head">
+                            <span class="fynn-kpi-icon"><x-filament::icon icon="heroicon-o-check-badge" /></span>
+                            <div class="dc-card-label">Result</div>
+                        </div>
+                        <div class="mt-2.5"><x-daily-commitment.result-chip :result="$ownRow['result']" /></div>
                         <div class="dc-card-hint">
                             Pipeline {{ indianAmount($ownRow['pipeline']['total_amount']) }} (separate)
                         </div>
@@ -71,12 +80,18 @@
             </div>
         @endunless
 
-        <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">Click a name to drill into their own team.</p>
+        <p class="fynn-note mt-0 mb-3">
+            <x-filament::icon icon="heroicon-m-information-circle" />
+            <span>Click a name to drill into their own team.</span>
+        </p>
 
         @if ($reporteeRows->isEmpty())
-            <p class="text-sm text-gray-500">No direct reportees.</p>
+            <div class="fynn-empty fynn-empty--compact">
+                <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-user-group" /></span>
+                <span>No direct reportees.</span>
+            </div>
         @else
-            <div class="overflow-x-auto">
+            <div class="fynn-table-wrap overflow-x-auto">
                 <table class="dc-table">
                     <thead>
                         <tr>
@@ -124,8 +139,8 @@
                                     @endif
                                     <div class="text-xs text-gray-500">{{ $row['employee']->emp_id }}</div>
                                 </td>
-                                <td class="text-xs {{ \App\Models\Employee::designationColorClass($row['employee']->designation) }} font-bold uppercase">
-                                    {{ $designations[$row['employee']->designation] ?? '—' }}
+                                <td>
+                                    <span class="dc-level {{ \App\Models\Employee::designationColorClass($row['employee']->designation) }}">{{ $designations[$row['employee']->designation] ?? '—' }}</span>
                                 </td>
                                 <td><x-daily-commitment.presence-chip :present="$row['present']" /></td>
                                 <td><x-daily-commitment.stage-chip :stage="$stage" /></td>
@@ -179,25 +194,29 @@
             <x-daily-commitment.level-summary :levels="$callerLevels" />
         </div>
 
-        <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-            <x-daily-commitment.kpi label="Callers" :value="$callerSummary['people']" accent="#3b82f6" />
-            <x-daily-commitment.kpi label="Present" :value="$callerSummary['present']" accent="#22c55e" />
-            <x-daily-commitment.kpi label="Absent" :value="$callerSummary['absent']" accent="#6b7280" />
-            <x-daily-commitment.kpi label="Expected OTP" :value="number_format($callerSummary['expected_otp'])" accent="#eab308" />
-            <x-daily-commitment.kpi label="Actual OTP" :value="number_format($callerSummary['actual_otp'])" accent="#0d9488" />
-            <x-daily-commitment.kpi label="OTP %" :value="$callerSummary['otp_percentage'] . '%'" accent="#a855f7" />
+        <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
+            <x-daily-commitment.kpi label="Callers" :value="$callerSummary['people']" accent="#3b82f6" icon="heroicon-o-phone" />
+            <x-daily-commitment.kpi label="Present" :value="$callerSummary['present']" accent="#22c55e" icon="heroicon-o-user-group" />
+            <x-daily-commitment.kpi label="Absent" :value="$callerSummary['absent']" accent="#6b7280" icon="heroicon-o-user-minus" />
+            <x-daily-commitment.kpi label="Expected OTP" :value="number_format($callerSummary['expected_otp'])" accent="#eab308" icon="heroicon-o-flag" />
+            <x-daily-commitment.kpi label="Actual OTP" :value="number_format($callerSummary['actual_otp'])" accent="#0d9488" icon="heroicon-o-device-phone-mobile" />
+            <x-daily-commitment.kpi label="OTP %" :value="$callerSummary['otp_percentage'] . '%'" accent="#a855f7" icon="heroicon-o-chart-bar" />
             <x-daily-commitment.kpi
                 label="Pipeline"
                 :amount="$callerSummary['pipeline_amount']"
                 hint="{{ $callerSummary['pipeline_count'] }} open cases"
                 accent="#0d9488"
+                icon="heroicon-o-queue-list"
             />
         </div>
 
         @if ($callerRows->isEmpty())
-            <p class="text-sm text-gray-500">No callers in this view.</p>
+            <div class="fynn-empty fynn-empty--compact">
+                <span class="fynn-empty-icon"><x-filament::icon icon="heroicon-o-phone" /></span>
+                <span>No callers in this view.</span>
+            </div>
         @else
-            <div class="overflow-x-auto">
+            <div class="fynn-table-wrap overflow-x-auto">
                 <table class="dc-table">
                     <thead>
                         <tr>

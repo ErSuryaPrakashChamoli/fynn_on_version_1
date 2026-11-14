@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Models\Poll;
 use App\Models\PollRecipient;
 use App\Models\User;
@@ -35,6 +36,7 @@ use UnitEnum;
  */
 class MyVotes extends Page implements HasTable
 {
+    use HasColumnHeaderFilters;
     use InteractsWithTable;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedHandThumbUp;

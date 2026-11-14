@@ -265,6 +265,7 @@ class MyDailyCommitment extends Page
                         // stays folded away so 18:30 is not a form-filling
                         // exercise.
                         Section::make('More detail')
+                            ->icon(Heroicon::OutlinedEllipsisHorizontalCircle)
                             ->collapsed()
                             ->columns(2)
                             ->columnSpanFull()

@@ -17,6 +17,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\HtmlString;
 
 class ComplaintForm
@@ -30,6 +31,7 @@ class ComplaintForm
         return $schema
             ->components([
                 Section::make('Who is it for?')
+                    ->icon(Heroicon::OutlinedUserCircle)
                     ->description('A supervisor can raise a ticket for somebody in their own team.')
                     ->schema([
                         ToggleButtons::make('raised_for')
@@ -64,6 +66,7 @@ class ComplaintForm
                     ->visible(fn (string $operation): bool => $operation === 'create' && self::canRaiseForOthers()),
 
                 Section::make('What is it about?')
+                    ->icon(Heroicon::OutlinedTag)
                     ->description('Pick the category and the reason; the ticket goes to the team that handles it, or to a supervisor you choose.')
                     ->schema([
                         Select::make('category_id')
@@ -114,6 +117,7 @@ class ComplaintForm
                     ->columnSpanFull(),
 
                 Section::make('Details')
+                    ->icon(Heroicon::OutlinedDocumentText)
                     ->schema([
                         Textarea::make('description')
                             ->label('Describe the problem')

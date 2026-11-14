@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Actions\DataDownloadApproval;
 use App\Filament\Exports\EmployeeHierarchyExporter;
 use App\Models\Employee;
 use App\Services\AchievementCalculatorService;
@@ -40,13 +41,15 @@ class EmployeeHierarchy extends Page
     protected function getHeaderActions(): array
     {
         return [
-            ExportAction::make()
-                ->label('Export Employees')
-                ->exporter(EmployeeHierarchyExporter::class)
-                ->modifyQueryUsing(fn (Builder $query) => $query->whereIn(
-                    'id',
-                    HierarchyHelper::ownHierarchyIds(auth()->user())
-                )),
+            DataDownloadApproval::adminOnly(
+                ExportAction::make()
+                    ->label('Export Employees')
+                    ->exporter(EmployeeHierarchyExporter::class)
+                    ->modifyQueryUsing(fn (Builder $query) => $query->whereIn(
+                        'id',
+                        HierarchyHelper::ownHierarchyIds(auth()->user())
+                    )),
+            ),
         ];
     }
 

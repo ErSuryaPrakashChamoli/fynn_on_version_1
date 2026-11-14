@@ -15,6 +15,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
@@ -35,6 +36,7 @@ class UserForm
             ->components([
 
                 Section::make('User Account')
+                    ->icon(Heroicon::OutlinedKey)
                     ->schema([
 
                         Select::make('employee_id')

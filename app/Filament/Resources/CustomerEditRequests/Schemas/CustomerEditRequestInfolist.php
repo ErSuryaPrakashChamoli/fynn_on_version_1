@@ -11,6 +11,7 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 
 class CustomerEditRequestInfolist
 {
@@ -19,6 +20,7 @@ class CustomerEditRequestInfolist
         return $schema
             ->components([
                 Section::make('Request')
+                    ->icon(Heroicon::OutlinedClipboardDocumentList)
                     ->columnSpanFull()
                     ->schema([
                         Grid::make(4)->schema([
@@ -46,6 +48,7 @@ class CustomerEditRequestInfolist
                     ]),
 
                 Section::make('Changes')
+                    ->icon(Heroicon::OutlinedPencilSquare)
                     ->columnSpanFull()
                     ->schema([
                         RepeatableEntry::make('items')
@@ -76,6 +79,7 @@ class CustomerEditRequestInfolist
                     ]),
 
                 Section::make('Review')
+                    ->icon(Heroicon::OutlinedCheckBadge)
                     ->columnSpanFull()
                     ->visible(fn (CustomerEditRequest $record): bool => ! $record->isPending())
                     ->schema([

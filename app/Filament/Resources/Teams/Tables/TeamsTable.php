@@ -25,12 +25,22 @@ class TeamsTable
         $performanceCache = [];
         $eligibleCallerCache = [];
 
+        // A non-Admin's list is their own team for the selected month, so
+        // each row shows its contribution to that team — only the days the
+        // person was in it (see AchievementCalculatorService::getPerformance()).
+        // The Admin's rows are the tops of the branches, shown whole.
+        $viewer = auth()->user();
+        $team = $viewer && ! $viewer->hasRole('Admin') ? $viewer->employee : null;
+
         return $table
             ->columns([
 
                 TextColumn::make('emp_name')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->description(fn (Employee $record): ?string => $team
+                        ? $calculator->reportingSpanNote($record, $team)
+                        : null),
 
                 TextColumn::make('emp_id')
                     ->label('Emp ID')
@@ -71,22 +81,22 @@ class TeamsTable
 
                 TextColumn::make('target_category')
                     ->label('Category')
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return TargetCategory::labelFor($performanceCache[$record->id]['target_category']);
                     }),
 
                 // TextColumn::make('target_category')
                 //     ->label('Category')
-                //     ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                //     ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
                 //         if ($record->designation !== Employee::DESIGNATION_CALLER) {
                 //             return null;
                 //         }
 
-                //         $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                //         $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                 //         return $performanceCache[$record->id]['target_category'];
                 //     }),
@@ -94,7 +104,7 @@ class TeamsTable
                 TextColumn::make('target')
                     ->label('Target')
                     ->alignEnd()
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
                         /*
                         |--------------------------------------------------------------------------
@@ -114,10 +124,12 @@ class TeamsTable
                                 return $calculator->getTarget($record);
                             }
 
-                            return $calculator->getHierarchyCallerTarget($record);
+                            return $team
+                                ? $calculator->getTarget($record, null, $team)
+                                : $calculator->getHierarchyCallerTarget($record);
                         }
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return $performanceCache[$record->id]['target'];
                     })
@@ -135,19 +147,22 @@ class TeamsTable
                     | nil". The wording lives on the service, next to the rule.
                     |
                     */
-                    ->tooltip(function (Employee $record) use ($calculator): ?string {
-
-                        if ($record->designation !== Employee::DESIGNATION_CALLER) {
-                            return null;
-                        }
+                    ->tooltip(function (Employee $record) use ($calculator, $team): ?string {
 
                         // The caller's own row shows their flat category
-                        // target, which the note would not describe.
+                        // target, which the notes would not describe.
                         if (auth()->user()?->employee?->id === $record->id) {
                             return null;
                         }
 
-                        return $calculator->hierarchyCallerTargetNote($record);
+                        $notes = array_filter([
+                            $record->designation === Employee::DESIGNATION_CALLER
+                                ? $calculator->hierarchyCallerTargetNote($record)
+                                : null,
+                            $team ? $calculator->reportingSpanNote($record, $team, withRule: true) : null,
+                        ]);
+
+                        return $notes === [] ? null : implode(' ', $notes);
                     })
                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null),
 
@@ -155,9 +170,9 @@ class TeamsTable
                     ->label('Actual')
                     ->alignEnd()
                     ->color('success')
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return $performanceCache[$record->id]['actual'];
                     })
@@ -167,9 +182,9 @@ class TeamsTable
                     ->label('Count Achievement')
                     ->alignEnd()
                     ->weight('bold')
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return $performanceCache[$record->id]['count_achievement'];
                     })
@@ -193,20 +208,20 @@ class TeamsTable
                 TextColumn::make('ppp')
                     ->label('PPP')
                     ->alignEnd()
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache, &$eligibleCallerCache) {
+                    ->state(function (Employee $record) use ($calculator, &$eligibleCallerCache) {
 
                         if ($record->designation === Employee::DESIGNATION_CALLER) {
                             return null;
                         }
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
-
                         $eligibleCallerCache[$record->id] ??= $calculator->getEligibleCallerCount($record);
 
                         $eligibleCallers = $eligibleCallerCache[$record->id];
 
+                        // PPP is the row's own incentive figure: their whole
+                        // branch's month, not just the part counted here.
                         return $eligibleCallers > 0
-                            ? $performanceCache[$record->id]['count_achievement'] / $eligibleCallers
+                            ? $calculator->getCountAchievement($record) / $eligibleCallers
                             : 0;
                     })
                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null),
@@ -216,9 +231,9 @@ class TeamsTable
                     ->badge()
                     ->color('success')
                     ->alignEnd()
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return $performanceCache[$record->id]['incentive'];
                     })
@@ -227,9 +242,9 @@ class TeamsTable
                 TextColumn::make('cashback')
                     ->label('Cashback')
                     ->alignEnd()
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return $performanceCache[$record->id]['cashback'];
                     })
@@ -238,9 +253,9 @@ class TeamsTable
                 TextColumn::make('subvention')
                     ->label('Subvention')
                     ->alignEnd()
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return $performanceCache[$record->id]['subvention'];
                     })
@@ -249,9 +264,9 @@ class TeamsTable
                 TextColumn::make('docking')
                     ->label('Docking')
                     ->alignEnd()
-                    ->state(function (Employee $record) use ($calculator, &$performanceCache) {
+                    ->state(function (Employee $record) use ($calculator, $team, &$performanceCache) {
 
-                        $performanceCache[$record->id] ??= $calculator->getPerformance($record);
+                        $performanceCache[$record->id] ??= $calculator->getPerformance($record, null, $team);
 
                         return $performanceCache[$record->id]['docking'];
                     })

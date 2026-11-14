@@ -3,6 +3,8 @@
 namespace App\Filament\Resources\AiCustomerRecords\Tables;
 
 use App\Filament\Actions\AssignCustomersToUserBulkAction;
+use App\Filament\Actions\DataDownloadApproval;
+use App\Filament\Exports\AiCustomerRecordExporter;
 use App\Filament\Imports\AiCustomerRecordImporter;
 // use Filament\Actions\BulkActionGroup;
 // use Filament\Actions\DeleteBulkAction;
@@ -11,26 +13,36 @@ use App\Models\AiDocumentSchema;
 use App\Models\CustomerAssignment;
 use App\Models\Employee;
 use App\Services\CustomerAssignmentService;
+use App\Support\AiRecordSerialRanges;
 use App\Support\EmployeeOptions;
 use App\Support\SelectedMonth;
+use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ExportAction;
 use Filament\Actions\ImportAction;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
+use Filament\Schemas\Components\View;
+use Filament\Support\Enums\Width;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 class AiCustomerRecordsTable
@@ -151,6 +163,13 @@ class AiCustomerRecordsTable
             ])
             ->headerActions([
                 self::assignBySerialNumberAction(),
+                DataDownloadApproval::protect(
+                    ExportAction::make()
+                        ->exporter(AiCustomerRecordExporter::class)
+                        ->label('Export Customer Data')
+                        ->icon('heroicon-o-arrow-down-tray'),
+                    'customer data',
+                ),
                 ImportAction::make()
                     ->label('Import Customer Data')
                     ->icon('heroicon-o-arrow-up-tray')
@@ -266,9 +285,10 @@ class AiCustomerRecordsTable
     }
 
     /**
-     * Hands every unassigned record whose # (serial number) falls in the
-     * typed range to one employee, so a slice of a fresh upload can be
-     * given out without ticking rows one page at a time.
+     * Hands out slices of Customer Data by # (serial number): each row is a
+     * From/To range and the user who gets every unassigned record in it, so
+     * a fresh upload can be split between several users in one go. The
+     * still-unassigned runs are listed on top to pick from.
      */
     private static function assignBySerialNumberAction(): Action
     {
@@ -278,53 +298,118 @@ class AiCustomerRecordsTable
             ->color('primary')
             ->visible(fn () => auth()->user()?->hasRole('Admin') ?? false)
             ->modalHeading('Assign records by serial number')
-            ->modalDescription('Every record whose # is inside the range and is not yet assigned goes to the selected user.')
+            ->modalDescription('Add a row per range. Every record whose # is inside a row\'s range and is not yet assigned goes to that row\'s user.')
+            ->modalWidth(Width::FiveExtraLarge)
             ->modalSubmitActionLabel('Assign')
-            ->schema([
-                TextInput::make('from_id')
-                    ->label('From S. No.')
-                    ->numeric()
-                    ->minValue(1)
-                    ->required()
-                    ->live(onBlur: true),
-                TextInput::make('to_id')
-                    ->label('To S. No.')
-                    ->numeric()
-                    ->minValue(1)
-                    ->required()
-                    ->gte('from_id')
-                    ->live(onBlur: true)
-                    ->helperText(fn (Get $get): string => self::rangeSummary($get('from_id'), $get('to_id'))),
-                Select::make('employee_id')
-                    ->label('Assign To')
-                    ->options(fn (): array => EmployeeOptions::forDesignation(Employee::DESIGNATION_CALLER)
-                        + EmployeeOptions::forDesignation(Employee::DESIGNATION_TEAM_LEADER))
-                    ->required(),
-            ])
+            ->schema(function (): array {
+                $unassignedRanges = AiRecordSerialRanges::unassigned();
+                $employeeOptions = EmployeeOptions::forDesignation(Employee::DESIGNATION_CALLER)
+                    + EmployeeOptions::forDesignation(Employee::DESIGNATION_TEAM_LEADER);
+
+                return [
+                    View::make('filament.components.unassigned-serial-ranges')
+                        ->viewData(['ranges' => $unassignedRanges]),
+                    Repeater::make('ranges')
+                        ->hiddenLabel()
+                        ->schema([
+                            Select::make('unassigned_range')
+                                ->label('Pick an unassigned range (optional)')
+                                ->placeholder(fn (Get $get, Component $component): string => self::rangesAboveRow($get, $component) === []
+                                    ? 'Fill From / To from the list above'
+                                    : 'Fill From / To from what the ranges above left free')
+                                ->options(fn (Get $get, Component $component): array => AiRecordSerialRanges::without(
+                                    $unassignedRanges,
+                                    self::rangesAboveRow($get, $component),
+                                )->mapWithKeys(fn (array $range): array => [
+                                    "{$range['from']}-{$range['to']}" => AiRecordSerialRanges::label($range)
+                                        ." · {$range['count']} ".str('record')->plural($range['count'])
+                                        ." · {$range['configuration']}",
+                                ])->all())
+                                ->live()
+                                ->afterStateUpdated(function (Set $set, ?string $state): void {
+                                    if (blank($state)) {
+                                        return;
+                                    }
+
+                                    [$fromId, $toId] = explode('-', $state);
+                                    $set('from_id', (int) $fromId);
+                                    $set('to_id', (int) $toId);
+                                    // Only a shortcut: cleared so it never shows a range the
+                                    // From / To boxes no longer match.
+                                    $set('unassigned_range', null);
+                                })
+                                ->dehydrated(false)
+                                ->columnSpanFull(),
+                            TextInput::make('from_id')
+                                ->label('From S. No.')
+                                ->numeric()
+                                ->minValue(1)
+                                ->required()
+                                ->live(onBlur: true)
+                                ->rule(fn (Get $get, Component $component): Closure => function (string $attribute, mixed $value, Closure $fail) use ($get, $component): void {
+                                    if ($clash = self::overlapWithRangesAbove($get, $component)) {
+                                        $fail("S. No. {$clash['label']} is already in Range {$clash['row']}. Each record can go to one user only.");
+                                    }
+                                }),
+                            TextInput::make('to_id')
+                                ->label('To S. No.')
+                                ->numeric()
+                                ->minValue(1)
+                                ->required()
+                                ->gte('from_id')
+                                ->live(onBlur: true),
+                            Select::make('employee_id')
+                                ->label('Assign To')
+                                ->options($employeeOptions)
+                                ->required(),
+                            Text::make(fn (Get $get, Component $component): string => self::rangeSummary($get, $component))
+                                ->color(fn (Get $get, Component $component): string => self::overlapWithRangesAbove($get, $component) ? 'danger' : 'gray')
+                                ->columnSpanFull(),
+                        ])
+                        ->columns(3)
+                        ->defaultItems(1)
+                        ->minItems(1)
+                        ->required()
+                        ->addActionLabel('Add another range')
+                        ->reorderable(false)
+                        ->itemLabel(fn (?int $index): string => 'Range '.(($index ?? 0) + 1)),
+                ];
+            })
             ->action(function (array $data): void {
-                $targetIds = self::recordIdsInRange((int) $data['from_id'], (int) $data['to_id']);
+                $assignedBy = auth()->user()?->employee?->id;
+                $employeeNames = Employee::query()
+                    ->whereIn('id', collect($data['ranges'])->pluck('employee_id'))
+                    ->get(['id', 'emp_name', 'emp_id'])
+                    ->mapWithKeys(fn (Employee $employee): array => [$employee->id => EmployeeOptions::label($employee)]);
 
-                if ($targetIds->isEmpty()) {
+                $lines = DB::transaction(fn (): array => collect($data['ranges'])
+                    ->map(function (array $range) use ($assignedBy, $employeeNames): array {
+                        $fromId = (int) $range['from_id'];
+                        $toId = (int) $range['to_id'];
+                        $result = app(CustomerAssignmentService::class)->assign(
+                            self::recordIdsInRange($fromId, $toId),
+                            (int) $range['employee_id'],
+                            CustomerAssignmentService::TARGET_AI_RECORD,
+                            $assignedBy,
+                        );
+
+                        return [
+                            'assigned' => $result['assigned'],
+                            'text' => AiRecordSerialRanges::label(['from' => $fromId, 'to' => $toId])
+                                .' → '.($employeeNames[(int) $range['employee_id']] ?? 'user').': '
+                                .$result['assigned'].' assigned'
+                                .($result['skipped'] ? ", {$result['skipped']} already assigned" : ''),
+                        ];
+                    })
+                    ->all());
+
+                $totalAssigned = array_sum(array_column($lines, 'assigned'));
+                $body = implode('<br>', array_map(fn (array $line): string => e($line['text']), $lines));
+
+                if ($totalAssigned === 0) {
                     Notification::make()
                         ->title('Nothing assigned')
-                        ->body('No records exist in that serial number range.')
-                        ->warning()
-                        ->send();
-
-                    return;
-                }
-
-                $result = app(CustomerAssignmentService::class)->assign(
-                    $targetIds,
-                    (int) $data['employee_id'],
-                    CustomerAssignmentService::TARGET_AI_RECORD,
-                    auth()->user()?->employee?->id,
-                );
-
-                if ($result['assigned'] === 0) {
-                    Notification::make()
-                        ->title('Nothing assigned')
-                        ->body('Every record in that range is already assigned to a user.')
+                        ->body('No unassigned records in '.(count($lines) === 1 ? 'that range' : 'those ranges').'.<br>'.$body)
                         ->warning()
                         ->send();
 
@@ -333,13 +418,72 @@ class AiCustomerRecordsTable
 
                 Notification::make()
                     ->title('Assigned')
-                    ->body(
-                        $result['assigned'].' record(s) assigned.'
-                        .($result['skipped'] ? " {$result['skipped']} were already assigned and skipped." : '')
-                    )
+                    ->body("{$totalAssigned} record(s) assigned.<br>{$body}")
                     ->success()
                     ->send();
             });
+    }
+
+    /**
+     * From / To typed in the rows above the one $component sits in, keyed
+     * by row number (1-based), so a row only offers what is still free.
+     *
+     * @return array<int, array{from: int, to: int}>
+     */
+    private static function rangesAboveRow(Get $get, Component $component): array
+    {
+        $rows = $get('../../ranges');
+        $ownKey = (string) str((string) $component->getContainer()->getStatePath())->afterLast('.');
+        $above = [];
+        $rowNumber = 0;
+
+        foreach (is_array($rows) ? $rows : [] as $key => $row) {
+            $rowNumber++;
+
+            if ((string) $key === $ownKey) {
+                break;
+            }
+
+            if (is_array($row) && ($range = self::typedRange($row['from_id'] ?? null, $row['to_id'] ?? null))) {
+                $above[$rowNumber] = $range;
+            }
+        }
+
+        return $above;
+    }
+
+    /**
+     * The first row above whose range shares a S. No. with this row's.
+     *
+     * @return array{row: int, label: string}|null
+     */
+    private static function overlapWithRangesAbove(Get $get, Component $component): ?array
+    {
+        $own = self::typedRange($get('from_id'), $get('to_id'));
+
+        if ($own === null) {
+            return null;
+        }
+
+        foreach (self::rangesAboveRow($get, $component) as $rowNumber => $range) {
+            if ($range['from'] <= $own['to'] && $own['from'] <= $range['to']) {
+                return ['row' => $rowNumber, 'label' => AiRecordSerialRanges::label($range)];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{from: int, to: int}|null
+     */
+    private static function typedRange(mixed $fromId, mixed $toId): ?array
+    {
+        if (! is_numeric($fromId) || ! is_numeric($toId) || (int) $fromId < 1 || (int) $toId < 1) {
+            return null;
+        }
+
+        return ['from' => min((int) $fromId, (int) $toId), 'to' => max((int) $fromId, (int) $toId)];
     }
 
     /**
@@ -353,22 +497,29 @@ class AiCustomerRecordsTable
             ->pluck('id');
     }
 
-    private static function rangeSummary(mixed $fromId, mixed $toId): string
+    private static function rangeSummary(Get $get, Component $component): string
     {
-        if (! is_numeric($fromId) || ! is_numeric($toId) || (int) $fromId < 1 || (int) $toId < 1) {
+        $range = self::typedRange($get('from_id'), $get('to_id'));
+
+        if ($range === null) {
             return 'Enter both serial numbers to see how many records will be assigned.';
         }
 
-        $ids = self::recordIdsInRange((int) $fromId, (int) $toId);
+        if ($clash = self::overlapWithRangesAbove($get, $component)) {
+            return "Overlaps Range {$clash['row']} ({$clash['label']}). Change From / To so each record goes to one user only.";
+        }
 
-        if ($ids->isEmpty()) {
+        $bounds = [$range['from'], $range['to']];
+        $inRange = AiCustomerRecord::query()->whereBetween('id', $bounds)->count();
+
+        if ($inRange === 0) {
             return 'No records in this range.';
         }
 
-        $alreadyAssigned = CustomerAssignment::query()->whereIn('ai_customer_record_id', $ids)->count();
-        $toAssign = $ids->count() - $alreadyAssigned;
+        $toAssign = AiCustomerRecord::query()->whereBetween('id', $bounds)->unassigned()->count();
+        $alreadyAssigned = $inRange - $toAssign;
 
-        return "{$ids->count()} record(s) in range: {$toAssign} will be assigned, {$alreadyAssigned} already assigned.";
+        return "{$inRange} record(s) in range: {$toAssign} will be assigned, {$alreadyAssigned} already assigned.";
     }
 
     private static function assignmentExistsSql(): string
