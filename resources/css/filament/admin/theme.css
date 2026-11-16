@@ -4735,6 +4735,67 @@ ul.eh-vtree ul.eh-vtree > li::before {
         color: var(--fynn-text-3);
     }
 
+    /* Grouped rows: one <tbody> per group, its first row
+       (tr.fynn-table-group) names the group and carries its subtotal. */
+    .fynn-table > tbody > tr.fynn-table-group > th,
+    .fynn-table > tbody > tr.fynn-table-group > td {
+        padding: 0.625rem 0.875rem;
+        color: var(--fynn-text);
+        background-color: color-mix(in oklab, var(--primary-500) 7%, var(--fynn-surface-2));
+        border-top: 1px solid var(--fynn-border);
+        border-bottom: 1px solid var(--fynn-border);
+    }
+
+    .fynn-table > tbody > tr.fynn-table-group > th {
+        text-align: start;
+        font-weight: 600;
+    }
+
+    .fynn-table > thead + tbody > tr.fynn-table-group > th,
+    .fynn-table > thead + tbody > tr.fynn-table-group > td {
+        border-top: 0;
+    }
+
+    /* ---- Days bar: "18 of 31 days" over a thin track ----
+       Green fill = days worked, grey track = days not worked. No tick
+       marks: a line crossing the bar read as clutter (user, 2026-11-16). */
+
+    .fynn-days {
+        display: grid;
+        gap: 0.3125rem;
+        min-width: 7.5rem;
+    }
+
+    .fynn-days-label {
+        font-size: 0.75rem;
+        white-space: nowrap;
+        color: var(--fynn-text-3);
+    }
+
+    .fynn-days-label > strong {
+        font-weight: 700;
+        color: var(--fynn-text);
+    }
+
+    .fynn-days-track {
+        position: relative;
+        height: 0.3125rem;
+        overflow: hidden;
+        border-radius: 9999px;
+        background-color: var(--gray-200);
+    }
+
+    .dark .fynn-days-track {
+        background-color: var(--gray-700);
+    }
+
+    .fynn-days-fill {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background-color: var(--success-500);
+    }
+
     /* ---- Callout ---- */
 
     .fynn-callout {

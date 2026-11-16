@@ -53,13 +53,34 @@ class AchievementCalculatorService
      */
     private const UNDERSTAFFED_TEAM_CALLERS = 3;
 
-    private const UNDERSTAFFED_TEAM_TOP_UP = 3000000.0;
+    public const UNDERSTAFFED_TEAM_TOP_UP = 3000000.0;
 
     /**
      * Fallback when employees.category is blank or names a category with
      * no target amount (e.g. 'team_leader').
      */
     private const DEFAULT_CATEGORY_TARGET = 2500000.0;
+
+    /**
+     * The incentive schemes, as returned by incentiveSchemeFor().
+     */
+    public const INCENTIVE_SCHEME_SLAB = 'slab';
+
+    public const INCENTIVE_SCHEME_TEAM_LEADER = 'team_leader';
+
+    public const INCENTIVE_SCHEME_MANAGER = 'manager';
+
+    /**
+     * Designations paid on the Manager PPP scheme. A Cluster Manager is paid
+     * exactly like a Manager (user decision 2026-11-16) — never the flat
+     * caller slab, which a branch's achievement always tops out.
+     *
+     * @var list<int>
+     */
+    public const MANAGER_SCHEME_DESIGNATIONS = [
+        Employee::DESIGNATION_MANAGER,
+        Employee::DESIGNATION_CLUSTER,
+    ];
 
     /**
      * customers.sanctioned_bank is a free-text column, not an FK — the UI
@@ -598,7 +619,8 @@ class AchievementCalculatorService
     }
 
     /**
-     * Single authoritative Manager incentive engine.
+     * Single authoritative Manager incentive engine — also the Cluster
+     * Manager's (see MANAGER_SCHEME_DESIGNATIONS), over their whole branch.
      *
      * A Manager's incentive is governed ENTIRELY by the PPP multiplier
      * system (team achievement spread evenly across eligible callers,
@@ -913,11 +935,9 @@ class AchievementCalculatorService
             'docking_other' => $totals['docking_other'],
             'count_achievement' => $countAchievement,
             'percentage' => $percentage,
-            'incentive' => match ($employee ? $this->designationFor($employee, $referenceMonth) : null) {
-                Employee::DESIGNATION_MANAGER => $this->getManagerIncentiveBreakdown($employee, $referenceMonth)['incentive'],
-                Employee::DESIGNATION_TEAM_LEADER => $this->getTeamLeaderIncentiveBreakdown($employee, $referenceMonth)['incentive'],
-                default => $this->getIncentive($countAchievement),
-            },
+            'incentive' => $employee
+                ? $this->getIncentiveFor($employee, $referenceMonth, $countAchievement)
+                : $this->getIncentive($countAchievement),
         ];
     }
 
@@ -933,6 +953,38 @@ class AchievementCalculatorService
         $referenceMonth ??= SelectedMonth::current();
 
         return ReportingTimeline::designationOn($employee, $referenceMonth->copy()->endOfMonth());
+    }
+
+    /**
+     * Which incentive scheme pays $employee's month (one of the
+     * INCENTIVE_SCHEME_* constants): the Team Leader revenue share, the
+     * Manager PPP multiplier (Managers and Cluster Managers), or the flat
+     * caller slab for everyone else. The one place a designation is mapped
+     * to a scheme — every incentive figure and explanation goes through it.
+     */
+    public function incentiveSchemeFor(Employee $employee, ?Carbon $referenceMonth = null): string
+    {
+        $designation = $this->designationFor($employee, $referenceMonth);
+
+        return match (true) {
+            $designation === Employee::DESIGNATION_TEAM_LEADER => self::INCENTIVE_SCHEME_TEAM_LEADER,
+            in_array($designation, self::MANAGER_SCHEME_DESIGNATIONS, true) => self::INCENTIVE_SCHEME_MANAGER,
+            default => self::INCENTIVE_SCHEME_SLAB,
+        };
+    }
+
+    /**
+     * $employee's incentive for $referenceMonth under their scheme. The
+     * flat caller slab is read off $countAchievement; the Team Leader and
+     * Manager schemes work their own team figures out.
+     */
+    public function getIncentiveFor(Employee $employee, Carbon $referenceMonth, float $countAchievement): float
+    {
+        return (float) match ($this->incentiveSchemeFor($employee, $referenceMonth)) {
+            self::INCENTIVE_SCHEME_TEAM_LEADER => $this->getTeamLeaderIncentiveBreakdown($employee, $referenceMonth)['incentive'],
+            self::INCENTIVE_SCHEME_MANAGER => $this->getManagerIncentiveBreakdown($employee, $referenceMonth)['incentive'],
+            default => $this->getIncentive($countAchievement),
+        };
     }
 
     public function getIncentive(float $countAchievement): float

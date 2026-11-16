@@ -32,14 +32,11 @@ class ManagerPPPStats extends StatsOverviewWidget
 
         /*
         |--------------------------------------------------------------------------
-        | Manager Only
+        | Manager PPP scheme only (Managers and Cluster Managers)
         |--------------------------------------------------------------------------
         */
 
-        if (
-            ! $employee ||
-            $employee->designation !== Employee::DESIGNATION_MANAGER
-        ) {
+        if (! self::isPaidOnManagerScheme($employee)) {
             return [];
         }
 
@@ -172,9 +169,12 @@ class ManagerPPPStats extends StatsOverviewWidget
 
     public static function canView(): bool
     {
-        $employee = Filament::auth()->user()?->employee;
+        return self::isPaidOnManagerScheme(Filament::auth()->user()?->employee);
+    }
 
-        return $employee
-            && $employee->designation === Employee::DESIGNATION_MANAGER;
+    private static function isPaidOnManagerScheme(?Employee $employee): bool
+    {
+        return $employee !== null
+            && in_array($employee->designation, AchievementCalculatorService::MANAGER_SCHEME_DESIGNATIONS, true);
     }
 }

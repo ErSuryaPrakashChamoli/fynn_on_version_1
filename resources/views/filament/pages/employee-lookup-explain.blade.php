@@ -6,10 +6,14 @@
     EmployeeFigureBreakdownService, which reads AchievementCalculatorService —
     the same engine as the card clicked.
 
-    People who were not on the rolls on any day of the period are hidden
-    until "Include inactive" is switched on (instantly, in the browser); the
-    page's own choice is the starting point. Someone who moved into or out
-    of the team during the period carries a "Moved" badge and the dates.
+    A team or company target opens on its counted callers only, with a
+    table of active / inactive / counted / all callers at the top and a
+    "Counted / Including not counted" switch (instantly, in the browser);
+    callers with no day on the rolls in the period are not listed at all.
+    The other figures keep the "Active only / Include inactive" switch:
+    people not on the rolls on any day of the period are hidden until it is
+    on, starting from the page's own choice. New joiners, leavers and
+    movers carry a badge with the date.
 --}}
 @php
     $money = fn ($value): string => indianCurrencyFormat((float) $value);
@@ -22,9 +26,12 @@
     $multiMonth = ! $period->isSingleMonth();
     $hideUnlessInactive = fn (array $row): string => ($row['active'] ?? true) ? '' : 'x-show="showInactive" x-cloak';
 
-    // Every list of people in this pop-up, for the Active / Include inactive switch.
+    // A team or company target lists its callers with the Counted / Including not counted switch.
+    $hasCallerList = $view === 'target' && in_array($target['kind'] ?? null, ['team', 'company'], true) && ($target['callers'] ?? []) !== [];
+    $hideUnlessCounted = fn (array $row): string => $row['share'] > 0 ? '' : 'x-show="showNotCounted" x-cloak';
+
+    // Every other list of people in this pop-up, for the Active / Include inactive switch.
     $people = match ($view) {
-        'target' => [...($target['callers'] ?? []), ...($target['team_leaders'] ?? [])],
         'achievement' => [...($cases['members'] ?? []), ...($cases['rows'] ?? [])],
         'incentive' => $incentive['callers'] ?? [],
         default => [],
@@ -32,7 +39,109 @@
     $inactiveCount = collect($people)->where('active', false)->count();
 @endphp
 
-<div class="space-y-6" x-data="{ showInactive: @js($includeInactive) }">
+<div class="space-y-6" x-data="{ showInactive: @js($includeInactive), showNotCounted: false }">
+    {{-- ============================================== CALLER ANALYSIS + COUNTED SWITCH --}}
+    @if ($hasCallerList)
+        @php
+            $callerGroups = collect($target['caller_groups']);
+            $callerTotals = [
+                'on_rolls' => $callerGroups->sum('on_rolls'),
+                'left' => $callerGroups->sum('left'),
+                'counted' => $callerGroups->sum('counted'),
+                'all' => count($target['callers']),
+            ];
+            $asOf = $period->end->copy()->min(today());
+        @endphp
+
+        <div>
+            <h4 class="fynn-subheading">Callers in {{ $period->label }}</h4>
+            <div class="fynn-table-wrap overflow-x-auto">
+                <table class="fynn-table">
+                    <thead>
+                        <tr>
+                            <th>{{ $target['grouped_by_team'] ? 'Team' : '' }}</th>
+                            <th class="text-end">Active</th>
+                            <th class="text-end">Inactive</th>
+                            <th class="text-end">Counted</th>
+                            <th class="text-end">Including not counted</th>
+                        </tr>
+                    </thead>
+                    @if ($target['grouped_by_team'])
+                        <tbody>
+                            @foreach ($callerGroups as $group)
+                                <tr>
+                                    <td>
+                                        @if ($group['team_leader'] !== null)
+                                            <span class="font-medium">{{ $group['team_leader']['name'] }}</span>
+                                            <span class="text-xs text-gray-500 dark:text-gray-400">{{ $group['team_leader']['emp_id'] }}</span>
+                                        @else
+                                            <span class="font-medium">No Team Leader</span>
+                                        @endif
+                                    </td>
+                                    <td class="{{ $tdNumber }}">{{ $group['on_rolls'] }}</td>
+                                    <td @class([$tdNumber, 'text-danger-600 dark:text-danger-400' => $group['left'] > 0])>{{ $group['left'] }}</td>
+                                    <td class="{{ $tdNumber }} font-semibold">{{ $group['counted'] }}</td>
+                                    <td class="{{ $tdNumber }}">{{ count($group['callers']) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td>All teams</td>
+                                <td class="{{ $tdNumber }}">{{ $callerTotals['on_rolls'] }}</td>
+                                <td class="{{ $tdNumber }}">{{ $callerTotals['left'] }}</td>
+                                <td class="{{ $tdNumber }}">{{ $callerTotals['counted'] }}</td>
+                                <td class="{{ $tdNumber }}">{{ $callerTotals['all'] }}</td>
+                            </tr>
+                        </tfoot>
+                    @else
+                        <tbody>
+                            <tr>
+                                <td class="font-medium">All callers</td>
+                                <td class="{{ $tdNumber }}">{{ $callerTotals['on_rolls'] }}</td>
+                                <td @class([$tdNumber, 'text-danger-600 dark:text-danger-400' => $callerTotals['left'] > 0])>{{ $callerTotals['left'] }}</td>
+                                <td class="{{ $tdNumber }} font-semibold">{{ $callerTotals['counted'] }}</td>
+                                <td class="{{ $tdNumber }}">{{ $callerTotals['all'] }}</td>
+                            </tr>
+                        </tbody>
+                    @endif
+                </table>
+            </div>
+            <p class="fynn-note">
+                <span class="font-semibold">Active:</span> still on the rolls on {{ $asOf->format('d M Y') }}.
+                <span class="font-semibold">Inactive:</span> left during {{ $period->label }}.
+                <span class="font-semibold">Counted:</span> their target counts here.
+                <span class="font-semibold">Including not counted:</span> every caller on the rolls on at least one day of {{ $period->label }}, counted or not.
+            </p>
+        </div>
+
+        <div class="fynn-toolbar">
+            <span class="fynn-toolbar-label">Callers</span>
+            <div class="fynn-segmented" role="group" aria-label="Callers shown">
+                <button
+                    type="button"
+                    x-on:click="showNotCounted = false"
+                    x-bind:class="showNotCounted ? '' : 'is-active is-accent'"
+                    x-bind:aria-pressed="(! showNotCounted).toString()"
+                    class="fynn-segmented-btn"
+                >Counted ({{ $callerTotals['counted'] }})</button>
+                <button
+                    type="button"
+                    x-on:click="showNotCounted = true"
+                    x-bind:class="showNotCounted ? 'is-active' : ''"
+                    x-bind:aria-pressed="showNotCounted.toString()"
+                    class="fynn-segmented-btn"
+                >Including not counted ({{ $callerTotals['all'] }})</button>
+            </div>
+            <span class="text-xs text-gray-500 dark:text-gray-400">
+                <span x-show="! showNotCounted">
+                    {{ $callerTotals['all'] - $callerTotals['counted'] }} not-counted {{ \Illuminate\Support\Str::plural('caller', $callerTotals['all'] - $callerTotals['counted']) }} hidden — the totals always include everything.
+                </span>
+                <span x-show="showNotCounted" x-cloak>Showing every caller on the rolls in {{ $period->label }}, counted or not.</span>
+            </span>
+        </div>
+    @endif
+
     {{-- ========================================================== EMPLOYEES SWITCH --}}
     @if ($people !== [])
         <div class="fynn-toolbar">
@@ -110,7 +219,7 @@
                 <li>Each caller brings their target category amount for a full month on the rolls.</li>
                 <li>A caller who joined or left during a month brings the flat partial-month target if they were on the rolls 10 days or more that month, and nothing below 10 days.</li>
                 @if ($target['kind'] === 'team')
-                    <li>A caller who moved into or out of the team during the month is treated like a joiner or leaver of this team: the flat partial-month target if they reported into it 10 days or more, and nothing below 10 days. They are marked <span class="font-semibold">Moved</span>. A caller in the team for the whole month brings their full target.</li>
+                    <li>A caller who moved into or out of the team during the month is treated like a joiner or leaver of this team: the flat partial-month target if they reported into it 10 days or more, and nothing below 10 days. They are marked <span class="font-semibold">Moved in</span> or <span class="font-semibold">Moved out</span> with the date. A caller in the team for the whole month brings their full target.</li>
                     <li>Every Team Leader in the team with fewer than 3 callers adds ₹30,00,000 that month, if they were in the team for 10 days or more while on the rolls. A caller counts towards those 3 only with 10 or more days reporting to them while on the rolls (from their joining date to their exit date), so a caller who left during the month still counts if they had 10 days.</li>
                 @endif
             </ul>
@@ -119,33 +228,133 @@
                 @include('filament.pages.employee-lookup-explain-months', ['rows' => $target['months'], 'columns' => ['callers' => "Callers' targets", 'top_up' => 'Top-ups', 'total' => 'Target']])
             @endif
 
+            @php
+                $callerRows = collect($target['callers']);
+                $movedInCount = $callerRows->filter(fn (array $caller): bool => collect($caller['movements'] ?? [])->contains('direction', 'in'))->count();
+                $movedOutCount = $callerRows->filter(fn (array $caller): bool => collect($caller['movements'] ?? [])->contains('direction', 'out'))->count();
+                $newJoinerCount = $callerRows->whereNotNull('joined_during_period')->count();
+                $leftCount = $callerRows->whereNotNull('left_during_period')->count();
+                $periodDays = max((int) ($target['period_days'] ?? 1), 1);
+            @endphp
+
             <div>
-                <h4 class="fynn-subheading">Callers</h4>
+                <div class="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                    <h4 class="fynn-subheading mb-0">Callers</h4>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        @if ($target['grouped_by_team'])
+                            <span class="fynn-chip">{{ count($target['caller_groups']) }} {{ \Illuminate\Support\Str::plural('team', count($target['caller_groups'])) }}</span>
+                        @endif
+                        @if ($newJoinerCount > 0)
+                            <span class="fynn-chip">{{ $newJoinerCount }} new {{ \Illuminate\Support\Str::plural('joiner', $newJoinerCount) }}</span>
+                        @endif
+                        @if ($leftCount > 0)
+                            <span class="fynn-chip">{{ $leftCount }} left</span>
+                        @endif
+                        @if ($movedInCount > 0)
+                            <span class="fynn-chip">{{ $movedInCount }} moved in</span>
+                        @endif
+                        @if ($movedOutCount > 0)
+                            <span class="fynn-chip">{{ $movedOutCount }} moved out</span>
+                        @endif
+                    </div>
+                </div>
+
                 <div class="fynn-table-wrap overflow-x-auto">
                     <table class="fynn-table">
                         <thead>
                             <tr>
                                 <th class="{{ $thClass }}">Caller</th>
+                                <th class="{{ $thClass }}">DOJ / Exit</th>
                                 <th class="{{ $thClass }}">Category</th>
+                                <th class="{{ $thClass }}">{{ $target['kind'] === 'company' ? 'On the rolls' : 'In this team' }}</th>
                                 <th class="{{ $thClass }} text-end">Counted here</th>
                                 <th class="{{ $thClass }}">Why</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            @forelse ($target['callers'] as $caller)
-                                <tr {!! $hideUnlessInactive($caller) !!}>
-                                    <td class="{{ $tdClass }}">@include('filament.pages.employee-lookup-explain-person', ['person' => $caller])</td>
-                                    <td class="{{ $tdClass }}">{{ $caller['category'] ?? '—' }}</td>
-                                    <td class="{{ $tdNumber }} font-semibold">{{ $money($caller['share']) }}</td>
-                                    <td class="text-xs text-gray-600 dark:text-gray-400">{{ $caller['note'] ?? '—' }}</td>
-                                </tr>
-                            @empty
-                                <tr><td colspan="4" class="py-6 text-center text-sm text-gray-500">No callers counted in this period.</td></tr>
-                            @endforelse
-                        </tbody>
+
+                        @forelse ($target['caller_groups'] as $group)
+                            <tbody @if ($group['counted'] === 0) x-show="showNotCounted" x-cloak @endif>
+                                @if ($target['grouped_by_team'])
+                                    <tr class="fynn-table-group">
+                                        <th colspan="4" scope="rowgroup">
+                                            <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                                                @if ($group['team_leader'] !== null)
+                                                    <span class="fynn-avatar fynn-avatar--sm" aria-hidden="true">{{ $group['team_leader']['initials'] }}</span>
+                                                    <div class="min-w-0">
+                                                        <div class="font-semibold">{{ $group['team_leader']['name'] }}</div>
+                                                        <div class="text-xs font-normal text-gray-500 dark:text-gray-400">Team Leader · {{ $group['team_leader']['emp_id'] ?: '—' }}</div>
+                                                    </div>
+                                                @else
+                                                    <span class="fynn-avatar fynn-avatar--sm fynn-avatar--muted" aria-hidden="true">—</span>
+                                                    <div class="min-w-0">
+                                                        <div class="font-semibold">No Team Leader</div>
+                                                        <div class="text-xs font-normal text-gray-500 dark:text-gray-400">Reporting straight to a Manager or above</div>
+                                                    </div>
+                                                @endif
+                                                <div class="flex flex-wrap items-center gap-1.5">
+                                                    <span class="fynn-chip">{{ count($group['callers']) }} {{ \Illuminate\Support\Str::plural('caller', count($group['callers'])) }}</span>
+                                                    <span class="fynn-chip">{{ $group['counted'] }} counted</span>
+                                                    @if ($group['top_up'] > 0)
+                                                        <span class="fynn-chip fynn-chip--accent">+ {{ $money($group['top_up']) }} top-up</span>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                        </th>
+                                        <td class="{{ $tdNumber }} font-bold">{{ $money($group['total']) }}</td>
+                                        <td class="text-xs font-normal text-gray-500 dark:text-gray-400">Callers' targets in this team{{ $group['top_up'] > 0 ? ', before the top-up' : '' }}</td>
+                                    </tr>
+                                @endif
+
+                                @foreach ($group['callers'] as $caller)
+                                    @php
+                                        $isCounted = $caller['share'] > 0;
+                                        $daysHere = (int) ($caller['days_here'] ?? 0);
+                                    @endphp
+                                    <tr {!! $hideUnlessCounted($caller) !!}>
+                                        <td class="min-w-56 {{ $target['grouped_by_team'] ? 'ps-6' : '' }}">
+                                            @include('filament.pages.employee-lookup-explain-person', ['person' => $caller])
+                                        </td>
+                                        <td class="whitespace-nowrap">
+                                            <div>
+                                                <span class="text-xs text-gray-500 dark:text-gray-400">DOJ</span>
+                                                {{ $caller['joined_on']?->format('d M Y') ?? '—' }}
+                                            </div>
+                                            @if ($caller['left_on'] !== null)
+                                                <div class="text-danger-600 dark:text-danger-400">
+                                                    <span class="text-xs">Exit</span>
+                                                    {{ $caller['left_on']->format('d M Y') }}
+                                                </div>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            @if (filled($caller['category']))
+                                                <span class="fynn-chip">{{ $caller['category'] }}</span>
+                                            @else
+                                                <span class="text-gray-400">—</span>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            <div class="fynn-days">
+                                                <div class="fynn-days-label"><strong>{{ $daysHere }}</strong> of {{ $periodDays }} days</div>
+                                                <div class="fynn-days-track">
+                                                    <span class="fynn-days-fill" style="width: {{ min(round($daysHere / $periodDays * 100, 2), 100) }}%"></span>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td @class([$tdNumber, 'whitespace-nowrap font-semibold', 'text-gray-400 dark:text-gray-500' => ! $isCounted])>{{ $money($caller['share']) }}</td>
+                                        <td class="min-w-72 text-xs leading-relaxed text-gray-600 dark:text-gray-400">{{ $caller['note'] ?? '—' }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        @empty
+                            <tbody>
+                                <tr><td colspan="6" class="py-6 text-center text-sm text-gray-500">No callers counted in this period.</td></tr>
+                            </tbody>
+                        @endforelse
+
                         <tfoot>
                             <tr>
-                                <td colspan="2" class="{{ $tdClass }} font-semibold">Callers' targets</td>
+                                <td colspan="4" class="{{ $tdClass }} font-semibold">Callers' targets</td>
                                 <td class="{{ $tdNumber }} font-bold">{{ $money($target['callers_total']) }}</td>
                                 <td></td>
                             </tr>
@@ -171,7 +380,7 @@
                             </thead>
                             <tbody>
                                 @foreach ($target['team_leaders'] as $teamLeader)
-                                    <tr {!! $hideUnlessInactive($teamLeader) !!} @class([$highlight => $teamLeader['months_understaffed'] > 0])>
+                                    <tr @class([$highlight => $teamLeader['months_understaffed'] > 0])>
                                         <td class="{{ $tdClass }}">@include('filament.pages.employee-lookup-explain-person', ['person' => $teamLeader])</td>
                                         @if (! $multiMonth)
                                             <td class="{{ $tdNumber }}">{{ $teamLeader['callers'] }}</td>
@@ -416,7 +625,7 @@
                             Each month is a Team Leader revenue share, once the team reaches its gate.
                             @break
                         @case ('manager')
-                            Each month is the Manager's net achievement &times; the PPP multiplier.
+                            Each month is the Manager PPP scheme (Managers and Cluster Managers): net achievement &times; the PPP multiplier.
                             @break
                         @default
                             Each month is the slab reached by that month's net achievement.
@@ -566,7 +775,7 @@
         @elseif ($incentive['kind'] === 'manager')
             <div class="fynn-callout">
                 <div class="text-sm text-gray-600 dark:text-gray-400">
-                    A Manager's incentive follows PPP (productivity per person): the team's net achievement shared across the callers with a target, matched to a multiplier band.
+                    A Manager's or Cluster Manager's incentive follows PPP (productivity per person): the team's net achievement shared across the callers with a target, matched to a multiplier band.
                 </div>
                 <div class="fynn-formula space-y-1">
                     <div>

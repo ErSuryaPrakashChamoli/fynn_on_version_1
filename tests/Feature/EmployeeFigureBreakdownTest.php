@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\AchievementCalculatorService;
 use App\Services\Performance\EmployeeFigureBreakdownService;
 use App\Services\Performance\EmployeePerformanceMetricsService;
+use App\Services\ReportingLineService;
 use App\Support\EmployeeLookupPeriod;
 use App\Support\SelectedMonth;
 use Carbon\Carbon;
@@ -134,6 +135,64 @@ class EmployeeFigureBreakdownTest extends TestCase
 
         $understaffed = collect($target['team_leaders'])->where('months_understaffed', '>', 0)->pluck('name')->all();
         $this->assertSame(['Small Leader'], $understaffed);
+    }
+
+    public function test_a_managers_callers_are_split_by_the_team_leader_they_sat_under(): void
+    {
+        $smallTeamLeader = $this->employee('Small Leader', Employee::DESIGNATION_TEAM_LEADER, ['manager_id' => $this->manager->id]);
+        $this->employee('Dev', Employee::DESIGNATION_CALLER, ['superviser_id' => $smallTeamLeader->id, 'manager_id' => $this->manager->id]);
+        $this->employee('Esha', Employee::DESIGNATION_CALLER, ['superviser_id' => null, 'manager_id' => $this->manager->id]);
+
+        $target = $this->breakdowns()->target($this->manager, $this->period());
+        $groups = collect($target['caller_groups']);
+
+        $this->assertTrue($target['grouped_by_team']);
+        $this->assertSame(['Small Leader', 'Tarun Leader', null], $groups->map(fn (array $group): ?string => $group['team_leader']['name'] ?? null)->all(), 'Teams by name, callers with no Team Leader last.');
+        $this->assertSame([['Dev'], ['Asha', 'Bina', 'Chetan'], ['Esha']], $groups->map(fn (array $group): array => array_column($group['callers'], 'name'))->all());
+
+        $this->assertEqualsWithDelta($target['callers_total'], $groups->sum('total'), 0.01, 'The teams add up to the callers\' targets.');
+        $this->assertSame(count($target['callers']), $groups->sum(fn (array $group): int => count($group['callers'])), 'Every caller sits in exactly one team.');
+        $this->assertEqualsWithDelta(3000000.0, $groups[0]['top_up'], 0.01, 'The understaffed team carries its top-up.');
+        $this->assertSame(0.0, $groups[1]['top_up']);
+    }
+
+    public function test_a_caller_moved_between_team_leaders_goes_with_the_one_they_had_longest(): void
+    {
+        $smallTeamLeader = $this->employee('Small Leader', Employee::DESIGNATION_TEAM_LEADER, ['manager_id' => $this->manager->id]);
+
+        // Under Tarun 1 – 4 Nov, under Small Leader from 5 Nov.
+        app(ReportingLineService::class)->reportTo($this->callers[0], $smallTeamLeader->id, $this->month->copy()->addDays(4), ReportingLineService::CHANGE_TRANSFER);
+
+        $target = $this->breakdowns()->target($this->manager, $this->period());
+        $groups = collect($target['caller_groups'])->mapWithKeys(fn (array $group): array => [$group['team_leader']['name'] => array_column($group['callers'], 'name')]);
+
+        $this->assertSame(['Asha'], $groups['Small Leader']);
+        $this->assertSame(['Bina', 'Chetan'], $groups['Tarun Leader']);
+
+        $asha = collect($target['callers'])->firstWhere('name', 'Asha');
+        $this->assertFalse($asha['moved'], 'A move inside the Manager\'s team is no move in or out of it.');
+    }
+
+    public function test_a_team_leaders_own_callers_are_not_split(): void
+    {
+        $target = $this->breakdowns()->target($this->teamLeader, $this->period());
+
+        $this->assertFalse($target['grouped_by_team']);
+        $this->assertCount(1, $target['caller_groups']);
+        $this->assertNull($target['caller_groups'][0]['team_leader']);
+        $this->assertSame(['Asha', 'Bina', 'Chetan'], array_column($target['caller_groups'][0]['callers'], 'name'));
+    }
+
+    public function test_the_managers_target_pop_up_lists_callers_under_their_team_leader(): void
+    {
+        $this->loginAsAdmin();
+        $this->employee('Esha', Employee::DESIGNATION_CALLER, ['superviser_id' => null, 'manager_id' => $this->manager->id]);
+
+        Livewire::withQueryParams(['employee' => $this->manager->id, 'section' => EmployeeLookupSection::Achievement->value])
+            ->test(EmployeeLookup::class)
+            ->mountAction('explain', ['figure' => 'target'])
+            ->assertMountedActionModalSeeHtml('fynn-table-group')
+            ->assertMountedActionModalSee(['Tarun Leader', 'Team Leader · '.$this->teamLeader->emp_id, 'No Team Leader', 'DOJ / Exit', '01 Jan 2025', '2 teams']);
     }
 
     public function test_every_disbursed_case_is_listed_and_the_rows_add_up_to_the_totals(): void

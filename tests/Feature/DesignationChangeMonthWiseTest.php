@@ -210,8 +210,8 @@ class DesignationChangeMonthWiseTest extends TestCase
         $this->assertSame(3 * self::CALLER_TARGET, $summary['target']);
         $this->assertSame(9000000.0, $summary['count_achievement']);
         $this->assertSame(120.0, $summary['percentage']);
-        // The Manager PPP scheme (₹90L over 3 eligible callers = ₹30L PPP → 0.06%),
-        // not the slab a Cluster Manager's month would pay.
+        // October is paid as a Manager, over the Manager's own team, on the
+        // PPP scheme (₹90L over 3 eligible callers = ₹30L PPP → 0.06%).
         $this->assertEqualsWithDelta(5400.0, $summary['incentive'], 0.01);
         $this->assertSame(Employee::DESIGNATION_MANAGER, $this->calculator->designationFor($this->manager, $this->october()));
         $this->assertEqualsWithDelta(5400.0, $this->calculator->getPerformance($this->manager, $this->october())['incentive'], 0.01);

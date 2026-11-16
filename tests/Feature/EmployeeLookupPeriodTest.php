@@ -145,14 +145,18 @@ class EmployeeLookupPeriodTest extends TestCase
         $this->assertEqualsWithDelta($expected, $summary['target'], 0.01);
     }
 
-    public function test_a_caller_who_left_before_the_period_is_flagged_inactive_and_adds_nothing(): void
+    public function test_a_caller_who_left_before_the_period_is_not_listed_and_adds_nothing(): void
     {
         $target = $this->breakdowns()->target($this->teamLeader, EmployeeLookupPeriod::forMonth(Carbon::create(2026, 10, 1)));
         $callers = collect($target['callers'])->keyBy('name');
 
         $this->assertTrue($callers['Asha Active']['active']);
-        $this->assertFalse($callers['Eshan Exited']['active']);
-        $this->assertSame(0.0, $callers['Eshan Exited']['share']);
+        $this->assertArrayNotHasKey('Eshan Exited', $callers->all(), 'Left on 20 Aug: not one of October\'s callers.');
+        $this->assertEqualsWithDelta($target['callers_total'], $callers->sum('share'), 0.01, 'Leaving them out changes no total.');
+
+        $august = collect($this->breakdowns()->target($this->teamLeader, EmployeeLookupPeriod::forMonth(Carbon::create(2026, 8, 1)))['callers'])->keyBy('name');
+        $this->assertTrue($august['Eshan Exited']['active'], 'Still listed in the month they left.');
+        $this->assertSame('2026-08-20', $august['Eshan Exited']['left_during_period']->toDateString());
     }
 
     public function test_a_caller_moved_into_the_team_mid_month_is_marked_moved_with_the_dates(): void
@@ -173,6 +177,146 @@ class EmployeeLookupPeriodTest extends TestCase
         $this->assertTrue($incoming['moved']);
         $this->assertStringContainsString('26 Oct', (string) $incoming['note']);
         $this->assertTrue($outgoing['moved'], 'And is flagged on the team they left.');
+    }
+
+    public function test_a_moved_caller_carries_the_day_they_moved_in_or_out_and_their_joining_date(): void
+    {
+        app(ReportingLineService::class)->reportTo(
+            $this->activeCaller,
+            $this->otherTeamLeader->id,
+            '2026-10-26',
+            ReportingLineService::CHANGE_TRANSFER,
+        );
+
+        $october = EmployeeLookupPeriod::forMonth(Carbon::create(2026, 10, 1));
+
+        $incoming = collect($this->breakdowns()->target($this->otherTeamLeader, $october)['callers'])->firstWhere('name', 'Asha Active');
+        $outgoing = collect($this->breakdowns()->target($this->teamLeader, $october)['callers'])->firstWhere('name', 'Asha Active');
+
+        $this->assertSame(['in'], array_column($incoming['movements'], 'direction'));
+        $this->assertSame('2026-10-26', $incoming['movements'][0]['on']->toDateString());
+        $this->assertSame(6, $incoming['days_here'], '26 – 31 Oct in the new team.');
+
+        $this->assertSame(['out'], array_column($outgoing['movements'], 'direction'));
+        $this->assertSame('2026-10-25', $outgoing['movements'][0]['on']->toDateString(), 'Moved out on their last day in the team.');
+        $this->assertSame(25, $outgoing['days_here']);
+
+        $this->assertSame('2026-01-01', $incoming['joined_on']->toDateString());
+        $this->assertNull($incoming['left_on']);
+
+        $this->employee('Lata Leaver', Employee::DESIGNATION_CALLER, ['superviser_id' => $this->teamLeader->id, 'exit_status' => 'yes', 'exit_date' => '2026-10-07']);
+        $this->employee('Neel Joiner', Employee::DESIGNATION_CALLER, ['superviser_id' => $this->teamLeader->id, 'doj' => '2026-10-12', 'reporting_date' => '2026-10-12']);
+        $callers = collect($this->breakdowns()->target($this->teamLeader, $october)['callers'])->keyBy('name');
+
+        $this->assertSame('2026-10-07', $callers['Lata Leaver']['left_on']->toDateString());
+        $this->assertSame('2026-10-07', $callers['Lata Leaver']['left_during_period']->toDateString());
+        $this->assertNull($callers['Lata Leaver']['joined_during_period']);
+        $this->assertSame([], $callers['Lata Leaver']['movements'], 'Leaving is not a move out of the team.');
+        $this->assertSame(7, $callers['Lata Leaver']['days_here']);
+
+        $this->assertSame('2026-10-12', $callers['Neel Joiner']['joined_on']->toDateString());
+        $this->assertSame('2026-10-12', $callers['Neel Joiner']['joined_during_period']->toDateString());
+        $this->assertNull($callers['Neel Joiner']['left_during_period']);
+        $this->assertSame([], $callers['Neel Joiner']['movements'], 'Joining is not a move into the team.');
+    }
+
+    public function test_a_caller_in_the_team_all_period_has_no_movements_and_every_day_here(): void
+    {
+        $caller = collect($this->breakdowns()->target($this->teamLeader, EmployeeLookupPeriod::forMonth(Carbon::create(2026, 10, 1)))['callers'])
+            ->firstWhere('name', 'Asha Active');
+
+        $this->assertFalse($caller['moved']);
+        $this->assertSame([], $caller['movements']);
+        $this->assertSame(31, $caller['days_here']);
+    }
+
+    public function test_the_target_pop_up_shows_joining_dates_and_moves_in_and_out(): void
+    {
+        $this->loginAsAdmin();
+
+        app(ReportingLineService::class)->reportTo(
+            $this->activeCaller,
+            $this->otherTeamLeader->id,
+            '2026-10-26',
+            ReportingLineService::CHANGE_TRANSFER,
+        );
+
+        $october = ['section' => EmployeeLookupSection::Achievement->value, 'period' => 'month', 'month' => '2026-10'];
+
+        Livewire::withQueryParams(['employee' => $this->otherTeamLeader->id, ...$october])
+            ->test(EmployeeLookup::class)
+            ->mountAction('explain', ['figure' => 'target'])
+            ->assertMountedActionModalSee(['DOJ / Exit', '01 Jan 2026', 'Moved in · 26 Oct', '6 of 31 days']);
+
+        Livewire::withQueryParams(['employee' => $this->teamLeader->id, ...$october])
+            ->test(EmployeeLookup::class)
+            ->mountAction('explain', ['figure' => 'target'])
+            ->assertMountedActionModalSee('Moved out · 25 Oct')
+            ->assertMountedActionModalDontSee(['Moved in ·', 'Eshan Exited']);
+    }
+
+    public function test_the_target_pop_up_marks_new_joiners_and_leavers_with_their_dates(): void
+    {
+        $this->loginAsAdmin();
+
+        $this->employee('Lata Leaver', Employee::DESIGNATION_CALLER, ['superviser_id' => $this->teamLeader->id, 'exit_status' => 'yes', 'exit_date' => '2026-10-07']);
+        $this->employee('Neel Joiner', Employee::DESIGNATION_CALLER, ['superviser_id' => $this->teamLeader->id, 'doj' => '2026-10-12', 'reporting_date' => '2026-10-12']);
+
+        Livewire::withQueryParams(['employee' => $this->teamLeader->id, 'section' => EmployeeLookupSection::Achievement->value, 'period' => 'month', 'month' => '2026-10'])
+            ->test(EmployeeLookup::class)
+            ->mountAction('explain', ['figure' => 'target'])
+            ->assertMountedActionModalSee(['New joiner · 12 Oct', 'Left · 07 Oct', 'DOJ / Exit', '12 Oct 2026', '07 Oct 2026']);
+    }
+
+    public function test_the_target_pop_up_counts_active_inactive_and_counted_callers_and_switches_between_them(): void
+    {
+        $this->loginAsAdmin();
+
+        // Left 07 Oct: under the 10-day minimum, so not counted, and inactive.
+        $this->employee('Lata Leaver', Employee::DESIGNATION_CALLER, ['superviser_id' => $this->teamLeader->id, 'exit_status' => 'yes', 'exit_date' => '2026-10-07']);
+
+        $october = EmployeeLookupPeriod::forMonth(Carbon::create(2026, 10, 1));
+        $group = $this->breakdowns()->target($this->teamLeader, $october)['caller_groups'][0];
+
+        $this->assertSame(['Asha Active', 'Lata Leaver'], array_column($group['callers'], 'name'), 'Eshan left in August: not one of October\'s callers.');
+        $this->assertSame(1, $group['on_rolls'], 'Active: still on the rolls at the end of October.');
+        $this->assertSame(1, $group['left'], 'Inactive: left during October.');
+        $this->assertSame(1, $group['counted']);
+
+        Livewire::withQueryParams(['employee' => $this->teamLeader->id, 'section' => EmployeeLookupSection::Achievement->value, 'period' => 'month', 'month' => '2026-10'])
+            ->test(EmployeeLookup::class)
+            ->mountAction('explain', ['figure' => 'target'])
+            ->assertMountedActionModalSee(['Callers in October 2026', 'Including not counted', 'Counted (1)', 'Including not counted (2)', '1 not-counted caller hidden'])
+            ->assertMountedActionModalSeeHtml('x-show="showNotCounted"')
+            ->assertMountedActionModalDontSee(['Active only', 'Include inactive']);
+    }
+
+    /**
+     * The days bar fills only the days worked (6 of 31 → 19.35%) and draws
+     * no 10-day tick across it.
+     */
+    public function test_the_days_bar_fills_the_days_worked_with_no_tick_across_it(): void
+    {
+        $this->loginAsAdmin();
+
+        app(ReportingLineService::class)->reportTo(
+            $this->activeCaller,
+            $this->otherTeamLeader->id,
+            '2026-10-26',
+            ReportingLineService::CHANGE_TRANSFER,
+        );
+
+        Livewire::withQueryParams([
+            'employee' => $this->otherTeamLeader->id,
+            'section' => EmployeeLookupSection::Achievement->value,
+            'period' => 'month',
+            'month' => '2026-10',
+        ])
+            ->test(EmployeeLookup::class)
+            ->mountAction('explain', ['figure' => 'target'])
+            ->assertMountedActionModalSee('6 of 31 days')
+            ->assertMountedActionModalSeeHtml('<span class="fynn-days-fill" style="width: 19.35%"></span>')
+            ->assertMountedActionModalDontSeeHtml(['fynn-days-mark', '10-day minimum', 'is-off']);
     }
 
     public function test_lists_hide_inactive_owners_until_asked_to_include_them(): void
@@ -237,7 +381,7 @@ class EmployeeLookupPeriodTest extends TestCase
 
         Livewire::withQueryParams(['employee' => $this->teamLeader->id, 'section' => 'achievement', 'period' => 'month', 'month' => '2026-10'])
             ->test(EmployeeLookup::class)
-            ->mountAction('explain', ['figure' => 'target'])
+            ->mountAction('explain', ['figure' => 'net'])
             ->assertMountedActionModalSee('Include inactive (1)')
             ->assertMountedActionModalSee('Not active in period')
             ->assertMountedActionModalSeeHtml('x-show="showInactive"');

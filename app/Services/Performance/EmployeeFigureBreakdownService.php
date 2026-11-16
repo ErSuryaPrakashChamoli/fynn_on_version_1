@@ -8,11 +8,13 @@ use App\Models\TargetCategory;
 use App\Services\AchievementCalculatorService;
 use App\Support\EmployeeLookupPeriod;
 use App\Support\ReportingTimeline;
+use App\Support\ReportingTree;
 use App\Support\TargetCategoryTimeline;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Throwable;
 
 /**
  * The figures on the Employee Lookup page, and "how was this figure
@@ -168,10 +170,12 @@ class EmployeeFigureBreakdownService
         $spans = $isCompany ? [] : $this->teamSpans($employee, $period, Employee::DESIGNATION_CALLER);
         $singleMonth = $period->isSingleMonth();
 
-        $callers = Employee::query()
+        $callerModels = Employee::query()
             ->whereIn('id', array_keys($shares))
             ->orderBy('emp_name')
-            ->get()
+            ->get();
+
+        $callers = $callerModels
             ->map(function (Employee $caller) use ($employee, $period, $shares, $monthsCounted, $spans, $singleMonth, $isCompany): array {
                 $person = $this->person($caller, $period, $isCompany ? null : ($spans[$caller->id] ?? []));
 
@@ -192,6 +196,9 @@ class EmployeeFigureBreakdownService
                     'note' => $note ?: ($person['active'] ? 'On the rolls and in this team for the whole period.' : null),
                 ];
             })
+            // Only the period's own callers: someone with no day on the rolls in it can never bring a target.
+            ->filter(fn (array $caller): bool => $caller['active'] || $caller['share'] > 0)
+            ->values()
             ->all();
 
         $teamLeaderSpans = $isCompany ? [] : $this->teamSpans($employee, $period, Employee::DESIGNATION_TEAM_LEADER);
@@ -212,6 +219,8 @@ class EmployeeFigureBreakdownService
 
         $total = array_sum(array_column($result['months'], 'total'));
         $callersTotal = array_sum(array_column($result['months'], 'callers'));
+        $groupedByTeam = ! $isCompany
+            && Employee::designationRank($employee->designation) > Employee::designationRank(Employee::DESIGNATION_TEAM_LEADER);
 
         return [
             ...$result,
@@ -221,7 +230,152 @@ class EmployeeFigureBreakdownService
             'callers_total' => $callersTotal,
             'top_up' => max($total - $callersTotal, 0.0),
             'team_leaders' => $teamLeaders,
+            'period_days' => ReportingTimeline::dayCount($period->start, $period->end),
+            'grouped_by_team' => $groupedByTeam,
+            'caller_groups' => match (true) {
+                $callers === [] => [],
+                $groupedByTeam => $this->callerGroups($callers, $this->mainTeamLeaderIds($employee, $period, $callerModels), $teamLeaders, $period),
+                default => [['team_leader' => null, ...$this->groupFigures($callers)]],
+            },
         ];
+    }
+
+    /**
+     * The callers split by the Team Leader they sat under, each team with
+     * the part of the callers' targets it brings and its understaffed-team
+     * top-up; callers with no Team Leader in between come last.
+     *
+     * @param  list<array<string, mixed>>  $callers
+     * @param  array<int, ?int>  $mainTeamLeaderIds  caller id => Team Leader id
+     * @param  list<array<string, mixed>>  $teamLeaders
+     * @return list<array{team_leader: ?array<string, mixed>, callers: list<array<string, mixed>>, total: float, counted: int, on_rolls: int, left: int, top_up: float}>
+     */
+    private function callerGroups(array $callers, array $mainTeamLeaderIds, array $teamLeaders, EmployeeLookupPeriod $period): array
+    {
+        $teamLeaderRows = collect($teamLeaders)->keyBy('id');
+
+        $missingIds = array_diff(array_filter($mainTeamLeaderIds), $teamLeaderRows->keys()->all());
+
+        Employee::query()
+            ->whereIn('id', $missingIds)
+            ->get()
+            ->each(function (Employee $teamLeader) use ($teamLeaderRows, $period): void {
+                $teamLeaderRows->put($teamLeader->id, [...$this->person($teamLeader, $period, null), 'months_understaffed' => 0]);
+            });
+
+        return collect($callers)
+            ->groupBy(fn (array $caller): int => $mainTeamLeaderIds[$caller['id']] ?? 0)
+            ->map(function ($groupCallers, int $teamLeaderId) use ($teamLeaderRows): array {
+                $teamLeader = $teamLeaderRows->get($teamLeaderId);
+
+                return [
+                    'team_leader' => $teamLeader,
+                    ...$this->groupFigures($groupCallers->values()->all()),
+                    'top_up' => ($teamLeader['months_understaffed'] ?? 0) * AchievementCalculatorService::UNDERSTAFFED_TEAM_TOP_UP,
+                ];
+            })
+            ->sortBy(fn (array $group): string => $group['team_leader'] === null ? "\u{FFFF}" : mb_strtolower($group['team_leader']['name']))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * A group's callers with its head counts: still on the rolls at the
+     * end of the period (active), left during it (inactive), and whose
+     * target counts here.
+     *
+     * @param  list<array<string, mixed>>  $callers
+     * @return array{callers: list<array<string, mixed>>, total: float, counted: int, on_rolls: int, left: int, top_up: float}
+     */
+    private function groupFigures(array $callers): array
+    {
+        $onRolls = count(array_filter($callers, fn (array $caller): bool => $caller['active'] && $caller['left_during_period'] === null));
+
+        return [
+            'callers' => $callers,
+            'total' => (float) array_sum(array_column($callers, 'share')),
+            'counted' => count(array_filter($callers, fn (array $caller): bool => $caller['share'] > 0)),
+            'on_rolls' => $onRolls,
+            'left' => count($callers) - $onRolls,
+            'top_up' => 0.0,
+        ];
+    }
+
+    /**
+     * The Team Leader each caller spent the most days of the period under
+     * while in $boss's team and on the rolls (the later one on a tie), or
+     * null when they reported straight to a Manager or above. A caller with
+     * no day on the rolls in the team goes with the last Team Leader they
+     * were under.
+     *
+     * @param  iterable<Employee>  $callers
+     * @return array<int, ?int> caller id => Team Leader id
+     */
+    private function mainTeamLeaderIds(Employee $boss, EmployeeLookupPeriod $period, iterable $callers): array
+    {
+        $windows = [];
+
+        foreach ($callers as $caller) {
+            $windows[$caller->id] = $period->activeWindow($caller);
+        }
+
+        $days = [];
+        $lastTeamLeaderIds = [];
+
+        foreach (ReportingTimeline::between($period->start, $period->end)->segments() as $segment) {
+            $tree = $segment['tree'];
+            $branch = array_flip($tree->descendantIds($boss->id, skipExitedLevels: true));
+
+            foreach ($windows as $callerId => $window) {
+                if (! isset($branch[$callerId])) {
+                    continue;
+                }
+
+                $teamLeaderId = $this->teamLeaderBetween($tree, $callerId, $boss->id) ?? 0;
+                $lastTeamLeaderIds[$callerId] = $teamLeaderId;
+
+                $segmentDays = $window === null ? 0 : ReportingTimeline::overlapDays([[$segment['start'], $segment['end']]], $window['start'], $window['end']);
+
+                if ($segmentDays > 0) {
+                    $days[$callerId][$teamLeaderId] = ($days[$callerId][$teamLeaderId] ?? 0) + $segmentDays;
+                }
+            }
+        }
+
+        $mainTeamLeaderIds = [];
+
+        foreach ($windows as $callerId => $window) {
+            $mainId = $lastTeamLeaderIds[$callerId] ?? 0;
+            $mostDays = 0;
+
+            foreach ($days[$callerId] ?? [] as $teamLeaderId => $dayCount) {
+                if ($dayCount >= $mostDays) {
+                    [$mainId, $mostDays] = [$teamLeaderId, $dayCount];
+                }
+            }
+
+            $mainTeamLeaderIds[$callerId] = $mainId === 0 ? null : $mainId;
+        }
+
+        return $mainTeamLeaderIds;
+    }
+
+    /**
+     * The first Team Leader above the caller on the way up to $bossId.
+     */
+    private function teamLeaderBetween(ReportingTree $tree, int $callerId, int $bossId): ?int
+    {
+        foreach ($tree->ancestorIds($callerId) as $ancestorId) {
+            if ($tree->designation($ancestorId) === Employee::DESIGNATION_TEAM_LEADER) {
+                return $ancestorId;
+            }
+
+            if ($ancestorId === $bossId) {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -283,7 +437,7 @@ class EmployeeFigureBreakdownService
 
             return [
                 'kind' => 'months',
-                'scheme' => $this->schemeFor($employee, $period->end->copy()),
+                'scheme' => $this->calculator->incentiveSchemeFor($employee, $period->end->copy()),
                 'months' => $months,
                 'incentive' => array_sum(array_column($months, 'incentive')),
             ];
@@ -296,9 +450,9 @@ class EmployeeFigureBreakdownService
         }
 
         // The scheme of the designation held that month, not today's.
-        $designation = $this->calculator->designationFor($employee, $month);
+        $scheme = $this->calculator->incentiveSchemeFor($employee, $month);
 
-        if ($designation === Employee::DESIGNATION_TEAM_LEADER) {
+        if ($scheme === AchievementCalculatorService::INCENTIVE_SCHEME_TEAM_LEADER) {
             $breakdown = $this->calculator->getTeamLeaderIncentiveBreakdown($employee, $month);
 
             return [
@@ -309,7 +463,7 @@ class EmployeeFigureBreakdownService
             ];
         }
 
-        if ($designation === Employee::DESIGNATION_MANAGER) {
+        if ($scheme === AchievementCalculatorService::INCENTIVE_SCHEME_MANAGER) {
             return [
                 'kind' => 'manager',
                 ...$this->calculator->getManagerIncentiveBreakdown($employee, $month),
@@ -397,25 +551,7 @@ class EmployeeFigureBreakdownService
             return ['net' => $net, 'incentive' => 0.0];
         }
 
-        $incentive = match ($this->calculator->designationFor($employee, $start)) {
-            Employee::DESIGNATION_TEAM_LEADER => $this->calculator->getTeamLeaderIncentiveBreakdown($employee, $start)['incentive'],
-            Employee::DESIGNATION_MANAGER => $this->calculator->getManagerIncentiveBreakdown($employee, $start)['incentive'],
-            default => $this->calculator->getIncentive($net),
-        };
-
-        return ['net' => $net, 'incentive' => (float) $incentive];
-    }
-
-    /**
-     * The incentive scheme of the designation held in $month.
-     */
-    private function schemeFor(Employee $employee, Carbon $month): string
-    {
-        return match ($this->calculator->designationFor($employee, $month)) {
-            Employee::DESIGNATION_TEAM_LEADER => 'team_leader',
-            Employee::DESIGNATION_MANAGER => 'manager',
-            default => 'slab',
-        };
+        return ['net' => $net, 'incentive' => $this->calculator->getIncentiveFor($employee, $start, $net)];
     }
 
     private function monthHasDisbursals(Carbon $month): bool
@@ -561,27 +697,38 @@ class EmployeeFigureBreakdownService
     }
 
     /**
-     * Who someone is, whether they were on the rolls during the period, and
-     * — given the stretches they spent in the team — whether they were in
-     * it for only part of that time (moved in or out).
+     * Who someone is, when they joined (and left), whether they were on the
+     * rolls during the period, and — given the stretches they spent in the
+     * team — whether they were in it for only part of that time, with the
+     * day of each move in and out and how many days of the period they
+     * spent in it while on the rolls.
      *
      * @param  list<array{0: CarbonInterface, 1: CarbonInterface}>|null  $spans  null when team membership does not apply
-     * @return array{id: int, name: string, emp_id: ?string, designation: string, active: bool, exited: bool, moved: bool, note: ?string}
+     * @return array{id: int, name: string, initials: string, emp_id: ?string, designation: string, joined_on: ?CarbonImmutable, left_on: ?CarbonImmutable, joined_during_period: ?CarbonImmutable, left_during_period: ?CarbonImmutable, active: bool, exited: bool, moved: bool, movements: list<array{direction: 'in'|'out', on: CarbonImmutable}>, days_here: int, note: ?string}
      */
     private function person(Employee $employee, EmployeeLookupPeriod $period, ?array $spans): array
     {
         $window = $period->activeWindow($employee);
+        $exited = EmployeeLookupPeriod::isExited($employee);
         $moved = false;
+        $movements = [];
+        $daysHere = 0;
         $notes = [];
+
+        if ($window !== null) {
+            $daysHere = $spans === null
+                ? ReportingTimeline::dayCount($window['start'], $window['end'])
+                : ReportingTimeline::overlapDays($spans, $window['start'], $window['end']);
+        }
 
         if ($window === null) {
             $notes[] = 'Not on the rolls in this period.';
         } elseif ($spans !== null && $spans !== []) {
             $activeDays = ReportingTimeline::dayCount($window['start'], $window['end']);
-            $teamDays = ReportingTimeline::overlapDays($spans, $window['start'], $window['end']);
 
-            if ($teamDays < $activeDays) {
+            if ($daysHere < $activeDays) {
                 $moved = true;
+                $movements = self::movements($spans, $window['start'], $window['end']);
                 $notes[] = 'In this team '.implode(', ', array_map(
                     fn (array $span): string => $span[0]->format('d M Y').' – '.$span[1]->format('d M Y'),
                     $spans,
@@ -589,24 +736,86 @@ class EmployeeFigureBreakdownService
             }
         }
 
-        if ($window !== null && $window['start']->gt($period->start)) {
-            $notes[] = 'Joined '.$window['start']->format('d M Y').'.';
+        $joinedDuringPeriod = $window !== null && $window['start']->gt($period->start)
+            ? CarbonImmutable::parse($window['start']->toDateString())
+            : null;
+        $leftDuringPeriod = $window !== null && $window['end']->lt($period->end->copy()->startOfDay())
+            ? CarbonImmutable::parse($window['end']->toDateString())
+            : null;
+
+        if ($joinedDuringPeriod !== null) {
+            $notes[] = 'Joined '.$joinedDuringPeriod->format('d M Y').'.';
         }
 
-        if ($window !== null && $window['end']->lt($period->end->copy()->startOfDay())) {
-            $notes[] = 'Left '.$window['end']->format('d M Y').'.';
+        if ($leftDuringPeriod !== null) {
+            $notes[] = 'Left '.$leftDuringPeriod->format('d M Y').'.';
         }
 
         return [
             'id' => $employee->id,
             'name' => (string) $employee->emp_name,
+            'initials' => $employee->initials,
             'emp_id' => $employee->emp_id,
             'designation' => Employee::designationOptions()[$employee->designation] ?? '—',
+            'joined_on' => self::dateOrNull($employee->doj) ?? self::dateOrNull($employee->reporting_date),
+            'left_on' => $exited ? self::dateOrNull($employee->exit_date) : null,
+            'joined_during_period' => $joinedDuringPeriod,
+            'left_during_period' => $leftDuringPeriod,
             'active' => $window !== null,
-            'exited' => EmployeeLookupPeriod::isExited($employee),
+            'exited' => $exited,
             'moved' => $moved,
+            'movements' => $movements,
+            'days_here' => $daysHere,
             'note' => $notes === [] ? null : implode(' ', $notes),
         ];
+    }
+
+    /**
+     * Each move into or out of the team while on the rolls, in date order:
+     * a stretch starting after the first day on the rolls is a move in (on
+     * its first day), one ending before the last day a move out (on its
+     * last day in the team).
+     *
+     * @param  list<array{0: CarbonInterface, 1: CarbonInterface}>  $spans
+     * @return list<array{direction: 'in'|'out', on: CarbonImmutable}>
+     */
+    private static function movements(array $spans, CarbonInterface $from, CarbonInterface $to): array
+    {
+        $fromDay = $from->toDateString();
+        $toDay = $to->toDateString();
+        $movements = [];
+
+        foreach ($spans as [$spanStart, $spanEnd]) {
+            $start = max($spanStart->toDateString(), $fromDay);
+            $end = min($spanEnd->toDateString(), $toDay);
+
+            if ($start > $end) {
+                continue;
+            }
+
+            if ($start > $fromDay) {
+                $movements[] = ['direction' => 'in', 'on' => CarbonImmutable::parse($start)];
+            }
+
+            if ($end < $toDay) {
+                $movements[] = ['direction' => 'out', 'on' => CarbonImmutable::parse($end)];
+            }
+        }
+
+        return $movements;
+    }
+
+    private static function dateOrNull(mixed $value): ?CarbonImmutable
+    {
+        if (blank($value)) {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($value)->startOfDay();
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     /**
