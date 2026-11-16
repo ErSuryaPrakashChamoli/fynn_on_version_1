@@ -21,15 +21,24 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * What is still attached to an employee, and handing it over to somebody
- * else. Nothing may be attached when an employee leaves
- * (EmployeeInactivationService) or moves to a new boss
- * (EmployeeTransferService) — they go with nothing attached.
+ * else.
  *
  * Attached means live work: people reporting straight to them, customers
  * they own that are still moving through the journey, assigned leads and
  * leads still open, and Team Continuity delegations still pending or
  * running. Each is handed over through the service that already owns that
  * move, so the usual history rows are written.
+ *
+ * Two scopes (user decision 2026-11-16):
+ * - SCOPE_LEAVE: leaving (EmployeeInactivationService) or changing position
+ *   (EmployeePositionChangeService) — everything is handed over first.
+ * - SCOPE_MOVE: moving to a new boss (EmployeeTransferService). Their team
+ *   never moves with them, so direct reports are handed over first. A caller
+ *   takes all of their own work along. A Team Leader or anybody above takes
+ *   along only the customers, leads and assigned leads THEY created
+ *   (customers.employee_id, leads.created_by, customer_assignments.
+ *   assigned_by); whatever somebody else created and gave them is handed
+ *   over. Delegations run on until they end.
  *
  * Finished work — disbursed or dropped customers, converted or closed
  * leads — stays with them on purpose: achievement and lead reports credit
@@ -49,6 +58,16 @@ class EmployeeDependencyService
     public const LEADS = 'leads';
 
     public const DELEGATIONS = 'delegations';
+
+    /**
+     * Leaving or changing position: everything is handed over.
+     */
+    public const SCOPE_LEAVE = 'leave';
+
+    /**
+     * Moving to a new boss: the team, and work somebody else created.
+     */
+    public const SCOPE_MOVE = 'move';
 
     /**
      * How one of each dependency reads in a sentence.
@@ -77,26 +96,48 @@ class EmployeeDependencyService
      * @param  list<int>  $exceptReportIds
      * @return array<string, int>
      */
-    public function dependencyCounts(Employee $employee, array $exceptReportIds = []): array
+    public function dependencyCounts(Employee $employee, array $exceptReportIds = [], string $scope = self::SCOPE_LEAVE): array
     {
         return array_filter([
             self::DIRECT_REPORTS => $this->directReports($employee, $exceptReportIds)->count(),
-            self::CUSTOMERS => $this->openCustomers($employee)->count(),
-            self::ASSIGNED_LEADS => $this->openAssignedLeads($employee)->count(),
-            self::LEADS => $this->openLeads($employee)->count(),
-            self::DELEGATIONS => $this->liveDelegations($employee)->count(),
+            self::CUSTOMERS => $this->openCustomers($employee, $scope)->count(),
+            self::ASSIGNED_LEADS => $this->openAssignedLeads($employee, $scope)->count(),
+            self::LEADS => $this->openLeads($employee, $scope)->count(),
+            self::DELEGATIONS => $scope === self::SCOPE_MOVE ? 0 : $this->liveDelegations($employee)->count(),
         ]);
     }
 
     /**
-     * "2 direct reports and 3 open customers".
+     * What still keeps $employee from moving to a new boss (SCOPE_MOVE).
+     *
+     * @param  list<int>  $exceptReportIds
+     * @return array<string, int>
+     */
+    public function moveDependencyCounts(Employee $employee, array $exceptReportIds = []): array
+    {
+        return $this->dependencyCounts($employee, $exceptReportIds, self::SCOPE_MOVE);
+    }
+
+    /**
+     * Whether a move takes all of $employee's own work along (a caller),
+     * rather than only what they created themselves.
+     */
+    public function takesAllWorkAlong(Employee $employee): bool
+    {
+        return (int) $employee->designation === Employee::DESIGNATION_CALLER;
+    }
+
+    /**
+     * "2 direct reports and 3 open customers" — on a move, work is
+     * qualified as "not created by them".
      *
      * @param  array<string, int>  $counts
      */
-    public function describe(array $counts): string
+    public function describe(array $counts, string $scope = self::SCOPE_LEAVE): string
     {
         return collect($counts)
-            ->map(fn (int $count, string $kind): string => $count.' '.Str::plural(self::NOUNS[$kind], $count))
+            ->map(fn (int $count, string $kind): string => $count.' '.Str::plural(self::NOUNS[$kind], $count)
+                .($scope === self::SCOPE_MOVE && $kind !== self::DIRECT_REPORTS ? ' not created by them' : ''))
             ->values()
             ->join(', ', ' and ');
     }
@@ -106,13 +147,13 @@ class EmployeeDependencyService
      *
      * @throws ValidationException naming what is still attached
      */
-    public function assertNothingAttached(Employee $employee, string $field, array $exceptReportIds = []): void
+    public function assertNothingAttached(Employee $employee, string $field, array $exceptReportIds = [], string $scope = self::SCOPE_LEAVE): void
     {
-        $dependencies = $this->dependencyCounts($employee, $exceptReportIds);
+        $dependencies = $this->dependencyCounts($employee, $exceptReportIds, $scope);
 
         if ($dependencies !== []) {
             throw ValidationException::withMessages([
-                $field => "{$employee->emp_name} still has {$this->describe($dependencies)}. Hand them over to somebody else first.",
+                $field => "{$employee->emp_name} still has {$this->describe($dependencies, $scope)}. Hand them over to somebody else first.",
             ]);
         }
     }
@@ -137,46 +178,64 @@ class EmployeeDependencyService
 
     /**
      * Customers $employee owns (customers.assign_to) that are still moving
-     * through the journey.
+     * through the journey. On a move, only those somebody else created
+     * (customers.employee_id is the creator).
      *
      * @return Builder<Customer>
      */
-    public function openCustomers(Employee $employee): Builder
+    public function openCustomers(Employee $employee, string $scope = self::SCOPE_LEAVE): Builder
     {
-        return JourneySlaService::activeCustomersQuery()->where('assign_to', $employee->id);
+        return $this->leftBehindOnMove(
+            JourneySlaService::activeCustomersQuery()->where('assign_to', $employee->id),
+            $employee,
+            $scope,
+            'customers.employee_id',
+        );
     }
 
     /**
      * Assigned leads $employee holds that are neither converted nor closed.
+     * On a move, only those somebody else assigned to them.
      *
      * @return Builder<CustomerAssignment>
      */
-    public function openAssignedLeads(Employee $employee): Builder
+    public function openAssignedLeads(Employee $employee, string $scope = self::SCOPE_LEAVE): Builder
     {
         // NOT IN a positive match, rather than "latest status != closed",
         // so a lead nobody has followed up yet (no status at all) counts.
-        return CustomerAssignment::query()
-            ->where('customer_assignments.employee_id', $employee->id)
-            ->whereNull('customer_assignments.converted_at')
-            ->whereNotIn('customer_assignments.id', CustomerAssignment::query()
-                ->select('customer_assignments.id')
-                ->whereLatestFollowUpStatus(CustomerAssignment::CLOSED_FOLLOW_UP_STATUSES));
+        return $this->leftBehindOnMove(
+            CustomerAssignment::query()
+                ->where('customer_assignments.employee_id', $employee->id)
+                ->whereNull('customer_assignments.converted_at')
+                ->whereNotIn('customer_assignments.id', CustomerAssignment::query()
+                    ->select('customer_assignments.id')
+                    ->whereLatestFollowUpStatus(CustomerAssignment::CLOSED_FOLLOW_UP_STATUSES)),
+            $employee,
+            $scope,
+            'customer_assignments.assigned_by',
+        );
     }
 
     /**
-     * Leads $employee holds that are neither converted nor closed.
+     * Leads $employee holds that are neither converted nor closed. On a
+     * move, only those somebody else created (leads.created_by).
      *
      * @return Builder<Lead>
      */
-    public function openLeads(Employee $employee): Builder
+    public function openLeads(Employee $employee, string $scope = self::SCOPE_LEAVE): Builder
     {
-        return Lead::query()
-            ->where('employee_id', $employee->id)
-            ->where('is_converted', false)
-            ->where(function (Builder $query): void {
-                $query->whereNull('status')
-                    ->orWhereNotIn('status', CustomerAssignment::CLOSED_FOLLOW_UP_STATUSES);
-            });
+        return $this->leftBehindOnMove(
+            Lead::query()
+                ->where('leads.employee_id', $employee->id)
+                ->where('leads.is_converted', false)
+                ->where(function (Builder $query): void {
+                    $query->whereNull('leads.status')
+                        ->orWhereNotIn('leads.status', CustomerAssignment::CLOSED_FOLLOW_UP_STATUSES);
+                }),
+            $employee,
+            $scope,
+            'leads.created_by',
+        );
     }
 
     /**
@@ -267,12 +326,12 @@ class EmployeeDependencyService
         });
     }
 
-    public function moveOpenCustomers(Employee $employee, int $newOwnerId, User $performedBy): int
+    public function moveOpenCustomers(Employee $employee, int $newOwnerId, User $performedBy, string $scope = self::SCOPE_LEAVE): int
     {
         $this->assertOffered($newOwnerId, $this->newCustomerOwnerOptions($employee), 'customers_target');
 
-        return DB::transaction(function () use ($employee, $newOwnerId, $performedBy): int {
-            $customers = $this->openCustomers($employee)->get();
+        return DB::transaction(function () use ($employee, $newOwnerId, $performedBy, $scope): int {
+            $customers = $this->openCustomers($employee, $scope)->get();
 
             foreach ($customers as $customer) {
                 $this->customerReassignments->reassign(
@@ -287,24 +346,24 @@ class EmployeeDependencyService
         });
     }
 
-    public function moveOpenAssignedLeads(Employee $employee, int $newOwnerId, ?User $performedBy): int
+    public function moveOpenAssignedLeads(Employee $employee, int $newOwnerId, ?User $performedBy, string $scope = self::SCOPE_LEAVE): int
     {
         $this->assertOffered($newOwnerId, $this->newLeadOwnerOptions($employee), 'assigned_leads_target');
 
         return $this->customerAssignments->reassign(
-            $this->openAssignedLeads($employee)->get(),
+            $this->openAssignedLeads($employee, $scope)->get(),
             $newOwnerId,
             $performedBy?->employee?->id,
             "Handed over from {$employee->emp_name}.",
         )['reassigned'];
     }
 
-    public function moveOpenLeads(Employee $employee, int $newOwnerId): int
+    public function moveOpenLeads(Employee $employee, int $newOwnerId, string $scope = self::SCOPE_LEAVE): int
     {
         $this->assertOffered($newOwnerId, $this->newLeadOwnerOptions($employee), 'leads_target');
 
-        return DB::transaction(function () use ($employee, $newOwnerId): int {
-            $leads = $this->openLeads($employee)->get();
+        return DB::transaction(function () use ($employee, $newOwnerId, $scope): int {
+            $leads = $this->openLeads($employee, $scope)->get();
 
             $leads->each(fn (Lead $lead) => $lead->update(['employee_id' => $newOwnerId]));
 
@@ -322,6 +381,31 @@ class EmployeeDependencyService
             }
 
             return $delegations->count();
+        });
+    }
+
+    /**
+     * On a move, narrows $query to the work that stays behind: nothing for a
+     * caller (they take it all), otherwise whatever $creatorColumn says
+     * somebody else created.
+     *
+     * @template TModel of \Illuminate\Database\Eloquent\Model
+     *
+     * @param  Builder<TModel>  $query
+     * @return Builder<TModel>
+     */
+    private function leftBehindOnMove(Builder $query, Employee $employee, string $scope, string $creatorColumn): Builder
+    {
+        if ($scope !== self::SCOPE_MOVE) {
+            return $query;
+        }
+
+        if ($this->takesAllWorkAlong($employee)) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where(function (Builder $query) use ($creatorColumn, $employee): void {
+            $query->whereNull($creatorColumn)->orWhere($creatorColumn, '!=', $employee->id);
         });
     }
 

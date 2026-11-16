@@ -22,7 +22,7 @@ class EmployeeUpdateImporter extends EmployeeImporter
                     self::MOVE_WITH_TEAM => 'Move the employee with their team',
                 ])
                 ->descriptions([
-                    self::MOVE_ALONE => 'Their row is refused while a team, open customers or leads are still assigned to them. Hand those over first.',
+                    self::MOVE_ALONE => 'They take their own work with them (above a caller: only what they created). Their row is refused while a team, or work somebody else created, is still with them — hand those over first.',
                     self::MOVE_WITH_TEAM => 'Everyone under them moves too, and they keep their customers and leads.',
                 ])
                 ->default(self::MOVE_ALONE)

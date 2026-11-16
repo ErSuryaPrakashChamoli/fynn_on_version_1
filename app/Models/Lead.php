@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -10,6 +11,7 @@ use Illuminate\Support\Facades\Auth;
 /**
  * @property int $id
  * @property int|null $employee_id
+ * @property int|null $created_by
  * @property string $customer_name
  * @property string $mobile_no
  * @property string|null $pan_number
@@ -27,6 +29,7 @@ use Illuminate\Support\Facades\Auth;
  * @property Carbon|null $updated_at
  * @property-read Customer|null $convertedCustomer
  * @property-read Employee|null $employee
+ * @property-read Employee|null $createdBy
  *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Lead newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Lead newQuery()
@@ -57,6 +60,7 @@ class Lead extends Model
 
     protected $fillable = [
         'employee_id',
+        'created_by',
         'customer_name',
         'mobile_no',
         'pan_number',
@@ -86,6 +90,14 @@ class Lead extends Model
     public function employee()
     {
         return $this->belongsTo(Employee::class, 'employee_id');
+    }
+
+    /**
+     * @return BelongsTo<Employee, $this>
+     */
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'created_by');
     }
 
     public function convertedCustomer()
@@ -119,11 +131,20 @@ class Lead extends Model
         'bank_id',
     ];
 
+    /**
+     * created_by records who created the lead — the signed-in employee, or
+     * nobody when an Admin without an employee record keys it in for
+     * somebody else. A hand-over changes employee_id, never created_by.
+     */
     protected static function booted()
     {
         static::creating(function ($lead) {
             if (Auth::check() && blank($lead->employee_id)) {
                 $lead->employee_id = Auth::user()->employee?->id;
+            }
+
+            if (! array_key_exists('created_by', $lead->getAttributes())) {
+                $lead->created_by = Auth::check() ? Auth::user()->employee?->id : $lead->employee_id;
             }
         });
 

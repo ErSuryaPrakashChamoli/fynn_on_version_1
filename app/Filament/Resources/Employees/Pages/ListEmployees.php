@@ -7,6 +7,7 @@ use App\Filament\Actions\ReopenAction;
 use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\Employees\EmployeeResource;
 use App\Models\Employee;
+use App\Services\EmployeeDependencyService;
 use App\Services\EmployeeTransferService;
 use App\Services\HierarchyReassignmentService;
 use App\Services\ReportingLineService;
@@ -44,7 +45,7 @@ class ListEmployees extends ListRecords
                 ->color('warning')
                 ->visible(fn (): bool => auth()->user()?->hasRole('Admin') === true)
                 ->modalHeading('Transfer / Reassign Employees')
-                ->modalDescription('Use Full Cluster to move a Cluster Manager\'s direct reports, with their teams, to another Cluster Manager. Use Flexible Reassignment to move any employee alone to anyone more senior — levels in between may be skipped, and each row can have a different destination. Anything still attached to them (team, open customers, leads, delegations) is handed over first, right here.')
+                ->modalDescription('Use Full Cluster to move a Cluster Manager\'s direct reports, with their teams, to another Cluster Manager. Use Flexible Reassignment to move any employee to anyone more senior — levels in between may be skipped, and each row can have a different destination. A caller takes all their open work along; a Team Leader or anybody above takes only the customers and leads they created. Anyone reporting to them, and work somebody else created and gave them, stays behind and is handed over first, right here.')
                 ->modalSubmitActionLabel('Confirm Transfer')
                 ->modalWidth('5xl')
                 // Back from the hand-over step with the rows as they were.
@@ -137,7 +138,7 @@ class ListEmployees extends ListRecords
                                         ->count() > 1;
                                 })
                                 ->afterStateUpdated(fn (Set $set): mixed => $set('target_id', null))
-                                ->helperText('They move alone: anything still attached to them is handed over first.'),
+                                ->helperText('Their own work goes with them (above a caller: only what they created). Their team is handed over to a new boss first.'),
 
                             Select::make('target_id')
                                 ->label('Move To')
@@ -235,13 +236,16 @@ class ListEmployees extends ListRecords
 
     /**
      * The Flexible Reassignment's hand-over step, mounted in its place when
-     * somebody being moved still has something attached. Once that person
-     * is clear it moves on to the next one, and finally back to the
-     * transfer form with the same rows, ready to confirm.
+     * somebody being moved still has a team or work somebody else created
+     * (EmployeeDependencyService::SCOPE_MOVE). Once that person is clear it
+     * moves on to the next one, and finally back to the transfer form with
+     * the same rows, ready to confirm.
      */
     public function clearTransferDependenciesAction(): Action
     {
         $transfers = app(EmployeeTransferService::class);
+
+        $scope = EmployeeDependencyService::SCOPE_MOVE;
 
         $employee = fn (array $arguments): Employee => once(fn (): Employee => Employee::query()->findOrFail((int) ($arguments['employee'] ?? 0)));
 
@@ -251,19 +255,20 @@ class ListEmployees extends ListRecords
             ->modalWidth(Width::ThreeExtraLarge)
             ->modalIcon(Heroicon::OutlinedExclamationTriangle)
             ->modalIconColor('warning')
-            ->modalHeading(fn (array $arguments): string => EmployeeDependencyStep::heading($employee($arguments)))
+            ->modalHeading(fn (array $arguments): string => EmployeeDependencyStep::heading($employee($arguments), $scope))
             ->modalDescription(fn (array $arguments): string => EmployeeDependencyStep::description(
                 $employee($arguments),
-                'The transfer comes back for you to confirm once nothing is left.',
+                'Customers and leads they created go with them. The transfer comes back for you to confirm once nothing else is left.',
                 $alsoMoving($arguments),
+                $scope,
             ))
             ->fillForm(fn (array $arguments): array => [
                 'handover_date' => $arguments['batch']['effective_date'] ?? today()->toDateString(),
             ])
-            ->schema(fn (array $arguments): array => EmployeeDependencyStep::schema($employee($arguments), $alsoMoving($arguments)))
+            ->schema(fn (array $arguments): array => EmployeeDependencyStep::schema($employee($arguments), $alsoMoving($arguments), $scope))
             ->modalSubmitActionLabel('Hand over & continue')
-            ->action(function (array $arguments, array $data, Action $action) use ($transfers, $employee, $alsoMoving): void {
-                $remaining = EmployeeDependencyStep::clear($employee($arguments), $data, $action, $alsoMoving($arguments));
+            ->action(function (array $arguments, array $data, Action $action) use ($transfers, $employee, $alsoMoving, $scope): void {
+                $remaining = EmployeeDependencyStep::clear($employee($arguments), $data, $action, $alsoMoving($arguments), $scope);
 
                 if ($remaining !== []) {
                     ReopenAction::for($action, $arguments);

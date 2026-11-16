@@ -11,9 +11,16 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * Moves employees to a new boss one by one — from the "Transfer Employee"
- * action and the Flexible Reassignment — only once nothing is attached to
- * them (EmployeeDependencyService). They move alone: their team, open
- * customers, leads and delegations are handed over first.
+ * action and the Flexible Reassignment.
+ *
+ * They take their own work with them, seen by the new boss from the
+ * effective date: a caller all of it, so a caller moves straight away; a
+ * Team Leader or anybody above only the customers, leads and assigned leads
+ * they created — what somebody else created and gave them is handed over
+ * first. Delegations run on. Their team does not move with them — anyone
+ * reporting to them is handed over to a new boss first and keeps their own
+ * work (EmployeeDependencyService::SCOPE_MOVE). Past months stay with the
+ * old team (ReportingTimeline reads the dated history rows).
  *
  * A Full Cluster Transfer is the deliberate exception: it moves whole teams
  * together (HierarchyReassignmentService::transfer()), so nothing is left
@@ -28,9 +35,10 @@ class EmployeeTransferService
     ) {}
 
     /**
-     * Move $employee alone to $newBossId from $effectiveDate.
+     * Move $employee, with their own work, to $newBossId from $effectiveDate.
      *
-     * @throws ValidationException while anything is still attached, the date
+     * @throws ValidationException while anybody still reports to them or
+     *                             holds work somebody else created, the date
      *                             is in the future, or the boss is not allowed
      */
     public function transfer(Employee $employee, int $newBossId, CarbonInterface $effectiveDate, ?string $remarks, ?User $performedBy): void
@@ -43,7 +51,7 @@ class EmployeeTransferService
             /** @var Employee $employee */
             $employee = Employee::query()->whereKey($employee->id)->lockForUpdate()->firstOrFail();
 
-            $this->dependencies->assertNothingAttached($employee, 'reports_to');
+            $this->dependencies->assertNothingAttached($employee, 'reports_to', scope: EmployeeDependencyService::SCOPE_MOVE);
 
             // reporting_date is deliberately left untouched (see
             // ReportingLineService): a transfer must not make them look like
@@ -61,7 +69,7 @@ class EmployeeTransferService
 
     /**
      * A Flexible Reassignment, refused while anybody in it still has
-     * something attached. Rows run lowest level first, so a caller moved
+     * something to hand over (SCOPE_MOVE). Rows run lowest level first, so a caller moved
      * away from their Team Leader in the same batch has gone before the
      * Team Leader moves.
      *
@@ -77,7 +85,7 @@ class EmployeeTransferService
                 $name = Employee::query()->whereKey($employeeId)->value('emp_name');
 
                 throw ValidationException::withMessages([
-                    'assignments' => "{$name} still has {$this->dependencies->describe($blockers[$employeeId])}. Hand them over to somebody else first.",
+                    'assignments' => "{$name} still has {$this->dependencies->describe($blockers[$employeeId], EmployeeDependencyService::SCOPE_MOVE)}. Hand them over to somebody else first.",
                 ]);
             }
 
@@ -96,8 +104,9 @@ class EmployeeTransferService
     }
 
     /**
-     * Everybody in a Flexible Reassignment who still has something attached
-     * that is not moving with the batch, in the order they were entered.
+     * Everybody in a Flexible Reassignment who still has something to hand
+     * over (SCOPE_MOVE) — direct reports moving with the batch excepted —
+     * in the order they were entered.
      *
      * @param  array<int|string, array{employee_id?: int|string|null, target_id?: int|string|null}>  $assignments
      * @return array<int, array<string, int>> employee id => what is still attached
@@ -107,7 +116,7 @@ class EmployeeTransferService
         $blockers = [];
 
         foreach (Employee::query()->whereIn('id', $this->movingIds($assignments))->get()->keyBy('id') as $employeeId => $employee) {
-            $counts = $this->dependencies->dependencyCounts($employee, $this->alsoMovingIds($assignments, $employeeId));
+            $counts = $this->dependencies->moveDependencyCounts($employee, $this->alsoMovingIds($assignments, $employeeId));
 
             if ($counts !== []) {
                 $blockers[$employeeId] = $counts;

@@ -4,6 +4,7 @@ namespace App\Filament\Actions;
 
 use App\Filament\Resources\Employees\EmployeeResource;
 use App\Models\Employee;
+use App\Services\EmployeeDependencyService;
 use App\Services\EmployeeTransferService;
 use App\Services\ReportingLineService;
 use App\Support\HierarchyHelper;
@@ -23,20 +24,25 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 
 /**
- * "Transfer Employee" on the Employee page: moves the employee alone to a
- * new boss (EmployeeTransferService).
+ * "Transfer Employee" on the Employee page: moves the employee to a new
+ * boss (EmployeeTransferService) with their own work; past months stay with
+ * the old team.
  *
- * Two steps in one pop-up. While anything is still attached to them —
- * their team, open customers, leads, delegations — it is the
- * EmployeeDependencyStep: listed, and handed over or cancelled right
- * there. Once nothing is left the same pop-up asks for the new boss and the
- * effective date, and the transfer happens on the spot.
+ * A caller takes all their work along and goes straight to the new boss
+ * and effective date. A Team Leader or anybody above takes along only the
+ * customers and leads they created: first the EmployeeDependencyStep
+ * (EmployeeDependencyService::SCOPE_MOVE) hands over their team — which
+ * keeps its own work — and whatever somebody else created and gave them.
+ * Then the same pop-up asks for the new boss and the transfer happens on
+ * the spot.
  */
 class TransferEmployeeAction
 {
     public static function make(): Action
     {
-        $attached = fn (Employee $record): bool => EmployeeDependencyStep::dependencies($record) !== [];
+        $scope = EmployeeDependencyService::SCOPE_MOVE;
+
+        $attached = fn (Employee $record): bool => EmployeeDependencyStep::dependencies($record, scope: $scope) !== [];
 
         return Action::make('transferEmployee')
             ->label('Transfer Employee')
@@ -49,11 +55,15 @@ class TransferEmployeeAction
             ->modalIcon(fn (Employee $record): ?Heroicon => $attached($record) ? Heroicon::OutlinedExclamationTriangle : null)
             ->modalIconColor('warning')
             ->modalHeading(fn (Employee $record): string => $attached($record)
-                ? EmployeeDependencyStep::heading($record)
+                ? EmployeeDependencyStep::heading($record, $scope)
                 : "Transfer {$record->emp_name}")
-            ->modalDescription(fn (Employee $record): ?string => $attached($record)
-                ? EmployeeDependencyStep::description($record, 'The new boss is asked for once nothing is left.')
-                : null)
+            ->modalDescription(fn (Employee $record): string => $attached($record)
+                ? EmployeeDependencyStep::description(
+                    $record,
+                    "Customers and leads they created go with them. {$record->emp_name}'s new boss is asked for once nothing else is left.",
+                    scope: $scope,
+                )
+                : self::takesAlongSummary($record))
             ->fillForm(fn (Employee $record, array $arguments): array => [
                 'current_reporting' => ($bossId = HierarchyHelper::directBossId($record))
                     ? app(ReportingLineService::class)->lineSummary($bossId)
@@ -62,12 +72,12 @@ class TransferEmployeeAction
                 'effective_date' => $arguments['effective_date'] ?? today()->toDateString(),
             ])
             ->schema(fn (Employee $record): array => $attached($record)
-                ? EmployeeDependencyStep::schema($record)
+                ? EmployeeDependencyStep::schema($record, scope: $scope)
                 : self::transferSchema($record))
             ->modalSubmitActionLabel(fn (Employee $record): string => $attached($record) ? 'Hand over & continue' : 'Transfer')
-            ->action(function (Employee $record, array $data, Action $action, $livewire) use ($attached): void {
+            ->action(function (Employee $record, array $data, Action $action, $livewire) use ($attached, $scope): void {
                 if ($attached($record)) {
-                    EmployeeDependencyStep::clear($record, $data, $action);
+                    EmployeeDependencyStep::clear($record, $data, $action, scope: $scope);
 
                     ReopenAction::for($action, ['effective_date' => Carbon::parse($data['handover_date'] ?? today())->toDateString()]);
 
@@ -95,6 +105,17 @@ class TransferEmployeeAction
                     ->success()
                     ->send();
             });
+    }
+
+    /**
+     * What goes with them, shown above the new boss.
+     */
+    private static function takesAlongSummary(Employee $employee): string
+    {
+        return (app(EmployeeDependencyService::class)->takesAllWorkAlong($employee)
+            ? 'Their open customers, leads and delegations go with them.'
+            : 'The customers and leads they created, and their delegations, go with them.')
+            .' Earlier months stay with their old team.';
     }
 
     /**

@@ -48,6 +48,9 @@ class LeadExporter extends Exporter
             ExportColumn::make('employee_id')->label('Owner Employee ID'),
             ExportColumn::make('employee.emp_id')->label('Owner EMP ID'),
             ExportColumn::make('employee.emp_name')->label('Owner Name'),
+            ExportColumn::make('created_by')->label('Created By Employee ID'),
+            ExportColumn::make('createdBy.emp_id')->label('Created By EMP ID'),
+            ExportColumn::make('createdBy.emp_name')->label('Created By Name'),
             ExportColumn::make('employee.superviser.emp_id')->label('Team Leader EMP ID'),
             ExportColumn::make('employee.superviser.emp_name')->label('Team Leader Name'),
             ExportColumn::make('employee.manager.emp_id')->label('Manager EMP ID'),
@@ -73,6 +76,7 @@ class LeadExporter extends Exporter
         return $query->with([
             'bank',
             'convertedCustomer',
+            'createdBy',
             'employee.superviser',
             'employee.manager',
             'employee.clusterManager',

@@ -33,8 +33,13 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * The "clear what is still attached" step shared by every pop-up that takes
- * an employee away from their work — Mark Inactive, Transfer Employee and
- * the Flexible Reassignment.
+ * an employee away from their work — Mark Inactive, Change Position /
+ * Target, Transfer Employee and the Flexible Reassignment.
+ *
+ * $scope picks what counts: Dependencies::SCOPE_LEAVE (everything) when
+ * they leave or change position, Dependencies::SCOPE_MOVE when they move to
+ * a new boss — their team, and work somebody else created for anybody above
+ * a caller.
  *
  * It lists each kind still attached (EmployeeDependencyService), with a
  * link per item to fix it one by one, and a field per kind to hand them all
@@ -55,22 +60,24 @@ final class EmployeeDependencyStep
      * @param  list<int>  $exceptReportIds  Direct reports moving elsewhere in the same batch.
      * @return array<string, int>
      */
-    public static function dependencies(Employee $employee, array $exceptReportIds = []): array
+    public static function dependencies(Employee $employee, array $exceptReportIds = [], string $scope = Dependencies::SCOPE_LEAVE): array
     {
-        return once(fn (): array => self::service()->dependencyCounts($employee, $exceptReportIds));
+        return once(fn (): array => self::service()->dependencyCounts($employee, $exceptReportIds, $scope));
     }
 
-    public static function heading(Employee $employee): string
+    public static function heading(Employee $employee, string $scope = Dependencies::SCOPE_LEAVE): string
     {
-        return "{$employee->emp_name} still has work attached";
+        return $scope === Dependencies::SCOPE_MOVE
+            ? "{$employee->emp_name} has a team or work that stays behind"
+            : "{$employee->emp_name} still has work attached";
     }
 
     /**
      * @param  list<int>  $exceptReportIds
      */
-    public static function description(Employee $employee, string $nextStep, array $exceptReportIds = []): string
+    public static function description(Employee $employee, string $nextStep, array $exceptReportIds = [], string $scope = Dependencies::SCOPE_LEAVE): string
     {
-        return 'Still attached: '.self::service()->describe(self::dependencies($employee, $exceptReportIds))
+        return 'Still attached: '.self::service()->describe(self::dependencies($employee, $exceptReportIds, $scope), $scope)
             .". Hand them over or cancel them below. {$nextStep}";
     }
 
@@ -80,10 +87,11 @@ final class EmployeeDependencyStep
      * @param  list<int>  $exceptReportIds
      * @return list<Component>
      */
-    public static function schema(Employee $employee, array $exceptReportIds = []): array
+    public static function schema(Employee $employee, array $exceptReportIds = [], string $scope = Dependencies::SCOPE_LEAVE): array
     {
         $service = self::service();
-        $dependencies = self::dependencies($employee, $exceptReportIds);
+        $dependencies = self::dependencies($employee, $exceptReportIds, $scope);
+        $moving = $scope === Dependencies::SCOPE_MOVE;
         $sections = [];
 
         if (isset($dependencies[Dependencies::DIRECT_REPORTS])) {
@@ -113,14 +121,15 @@ final class EmployeeDependencyStep
             $sections[] = self::section(
                 Dependencies::CUSTOMERS,
                 $dependencies,
-                $service->openCustomers($employee)->orderBy('customer_name')->limit(self::LISTED_ITEMS)->get()
+                $service->openCustomers($employee, $scope)->orderBy('customer_name')->limit(self::LISTED_ITEMS)->get()
                     ->map(fn (Customer $customer): array => [
                         'label' => "{$customer->customer_name} (#{$customer->id})",
                         'url' => CustomerResource::getUrl('view', ['record' => $customer]),
                     ])
                     ->all(),
                 [self::handOverSelect('customers_target', 'Hand them to', $service->newCustomerOwnerOptions($employee), 'no other Manager or Team Leader on the rolls')],
-                'Disbursed and dropped customers stay with them, so past achievement is unchanged.',
+                ($moving ? 'Only customers somebody else created — the ones they created go with them. ' : '')
+                    .'Disbursed and dropped customers stay with them, so past achievement is unchanged.',
             );
         }
 
@@ -128,14 +137,15 @@ final class EmployeeDependencyStep
             $sections[] = self::section(
                 Dependencies::ASSIGNED_LEADS,
                 $dependencies,
-                $service->openAssignedLeads($employee)->with('customer:id,customer_name')->limit(self::LISTED_ITEMS)->get()
+                $service->openAssignedLeads($employee, $scope)->with('customer:id,customer_name')->limit(self::LISTED_ITEMS)->get()
                     ->map(fn (CustomerAssignment $assignment): array => [
                         'label' => ($assignment->customer?->customer_name ?? 'AI customer record')." (lead #{$assignment->id})",
                         'url' => AssignedLeadResource::getUrl('view', ['record' => $assignment]),
                     ])
                     ->all(),
                 [self::handOverSelect('assigned_leads_target', 'Hand them to', $service->newLeadOwnerOptions($employee), 'no other Caller or Team Leader on the rolls')],
-                'Converted and closed leads stay with them, so lead reports are unchanged.',
+                ($moving ? 'Only leads somebody else assigned to them — the ones they assigned themselves go with them. ' : '')
+                    .'Converted and closed leads stay with them, so lead reports are unchanged.',
             );
         }
 
@@ -143,13 +153,14 @@ final class EmployeeDependencyStep
             $sections[] = self::section(
                 Dependencies::LEADS,
                 $dependencies,
-                $service->openLeads($employee)->orderBy('customer_name')->limit(self::LISTED_ITEMS)->get()
+                $service->openLeads($employee, $scope)->orderBy('customer_name')->limit(self::LISTED_ITEMS)->get()
                     ->map(fn (Lead $lead): array => [
                         'label' => "{$lead->customer_name} (#{$lead->id})",
                         'url' => LeadResource::getUrl('edit', ['record' => $lead]),
                     ])
                     ->all(),
                 [self::handOverSelect('leads_target', 'Hand them to', $service->newLeadOwnerOptions($employee), 'no other Caller or Team Leader on the rolls')],
+                $moving ? 'Only leads somebody else created — the ones they created go with them.' : null,
             );
         }
 
@@ -183,7 +194,7 @@ final class EmployeeDependencyStep
      * @param  list<int>  $exceptReportIds
      * @return array<string, int> what is still attached afterwards
      */
-    public static function clear(Employee $employee, array $data, Action $action, array $exceptReportIds = []): array
+    public static function clear(Employee $employee, array $data, Action $action, array $exceptReportIds = [], string $scope = Dependencies::SCOPE_LEAVE): array
     {
         $service = self::service();
         $user = Auth::user();
@@ -191,21 +202,21 @@ final class EmployeeDependencyStep
         $cleared = [];
 
         try {
-            DB::transaction(function () use ($service, $employee, $data, $user, $handoverDate, $exceptReportIds, &$cleared): void {
+            DB::transaction(function () use ($service, $employee, $data, $user, $handoverDate, $exceptReportIds, $scope, &$cleared): void {
                 if (filled($data['direct_reports_target'] ?? null)) {
                     $cleared[Dependencies::DIRECT_REPORTS] = $service->moveDirectReports($employee, (int) $data['direct_reports_target'], $handoverDate, $user, $exceptReportIds);
                 }
 
                 if (filled($data['customers_target'] ?? null)) {
-                    $cleared[Dependencies::CUSTOMERS] = $service->moveOpenCustomers($employee, (int) $data['customers_target'], $user);
+                    $cleared[Dependencies::CUSTOMERS] = $service->moveOpenCustomers($employee, (int) $data['customers_target'], $user, $scope);
                 }
 
                 if (filled($data['assigned_leads_target'] ?? null)) {
-                    $cleared[Dependencies::ASSIGNED_LEADS] = $service->moveOpenAssignedLeads($employee, (int) $data['assigned_leads_target'], $user);
+                    $cleared[Dependencies::ASSIGNED_LEADS] = $service->moveOpenAssignedLeads($employee, (int) $data['assigned_leads_target'], $user, $scope);
                 }
 
                 if (filled($data['leads_target'] ?? null)) {
-                    $cleared[Dependencies::LEADS] = $service->moveOpenLeads($employee, (int) $data['leads_target']);
+                    $cleared[Dependencies::LEADS] = $service->moveOpenLeads($employee, (int) $data['leads_target'], $scope);
                 }
 
                 if ($data['cancel_delegations'] ?? false) {
@@ -230,13 +241,13 @@ final class EmployeeDependencyStep
 
         Once::flush();
 
-        $remaining = self::dependencies($employee, $exceptReportIds);
+        $remaining = self::dependencies($employee, $exceptReportIds, $scope);
 
         Notification::make()
-            ->title('Handed over '.$service->describe($cleared))
+            ->title('Handed over '.$service->describe($cleared, $scope))
             ->body($remaining === []
                 ? 'Nothing is attached to them any more.'
-                : 'Still attached: '.$service->describe($remaining).'.')
+                : 'Still attached: '.$service->describe($remaining, $scope).'.')
             ->success()
             ->send();
 

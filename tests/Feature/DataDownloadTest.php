@@ -10,6 +10,7 @@ use App\Filament\Exports\LeadExporter;
 use App\Filament\Pages\DataDownload;
 use App\Filament\Pages\EmployeeHierarchy;
 use App\Filament\Pages\MyProfile;
+use App\Filament\Resources\AssignedLeads\Pages\ListAssignedLeads;
 use App\Filament\Resources\Customers\Pages\ListCustomers;
 use App\Filament\Resources\EmployeePerformanceReports\Pages\ListEmployeePerformanceReports;
 use App\Filament\Resources\LeadAssignmentReports\Pages\ListLeadAssignmentReports;
@@ -427,6 +428,10 @@ class DataDownloadTest extends TestCase
                 ->assertActionHidden(TestAction::make('export')->table())
                 ->assertActionHidden(TestAction::make('export')->table()->bulk());
 
+            Livewire::test(ListAssignedLeads::class)
+                ->assertOk()
+                ->assertActionHidden(TestAction::make('export')->table());
+
             $this->get(DataDownload::getUrl())->assertForbidden();
         }
 
@@ -442,7 +447,7 @@ class DataDownloadTest extends TestCase
     {
         $this->actingAs($this->admin);
 
-        foreach ([ListLeads::class, ListCustomers::class, ListLeadAssignmentReports::class] as $list) {
+        foreach ([ListLeads::class, ListCustomers::class, ListLeadAssignmentReports::class, ListAssignedLeads::class] as $list) {
             Livewire::test($list)
                 ->assertActionVisible(TestAction::make('export')->table())
                 ->assertActionDisabled(TestAction::make('export')->table());

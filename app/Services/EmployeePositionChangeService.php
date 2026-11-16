@@ -18,7 +18,8 @@ use Illuminate\Validation\ValidationException;
  * Promotes, demotes or changes the target category of an employee on the
  * rolls — from the "Change Position / Target" action — only once nothing is
  * attached to them (EmployeeDependencyService): their team, open customers,
- * leads and delegations are handed over first, like a transfer.
+ * leads and delegations are handed over first (a plain transfer hands over
+ * less — EmployeeDependencyService::SCOPE_MOVE).
  *
  * Both changes are dated: a designation change through
  * ReportingLineService::recordDesignationChange() and a category change

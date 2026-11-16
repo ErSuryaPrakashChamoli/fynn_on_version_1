@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\AssignedLeads\Tables;
 
+use App\Filament\Actions\DataDownloadApproval;
 use App\Filament\Actions\DropFollowUpActions;
+use App\Filament\Exports\AssignedLeadExporter;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\Customer;
 use App\Models\CustomerAssignment;
@@ -17,6 +19,7 @@ use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\EditAction;
+use Filament\Actions\ExportAction;
 use Filament\Actions\ViewAction;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
@@ -109,13 +112,7 @@ class AssignedLeadsTable
                     ->label('Journey')
                     ->badge()
                     ->sortable()
-                    ->formatStateUsing(fn (?string $state): string => match ($state) {
-                        'sanctioned' => 'Disbursed',
-                        'sfl' => 'SFL',
-                        'underwriting' => 'Underwriting',
-                        'approved' => 'Approved',
-                        default => $state ? ucfirst(str_replace('_', ' ', $state)) : '-',
-                    })
+                    ->formatStateUsing(fn (?string $state): string => self::journeyLabel($state))
                     ->color(fn (?string $state): string => match ($state) {
                         'sfl' => 'gray',
                         'underwriting' => 'warning',
@@ -266,6 +263,18 @@ class AssignedLeadsTable
 
                 ViewAction::make(),
             ])
+            ->headerActions([
+                // Admin only, with the owner's authenticator code. Exports
+                // what the listing shows: Assigned On range / topbar month,
+                // filters, header filters and search.
+                DataDownloadApproval::protect(
+                    ExportAction::make()
+                        ->exporter(AssignedLeadExporter::class)
+                        ->label('Export Assigned Leads')
+                        ->icon('heroicon-o-arrow-down-tray'),
+                    'assigned leads',
+                ),
+            ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     self::reassignBulkAction(),
@@ -279,6 +288,20 @@ class AssignedLeadsTable
                     LeadAssignmentFilters::assignedRange(data_get($livewire, 'tableFilters')),
                 )
             );
+    }
+
+    /**
+     * The Journey badge text, shared with AssignedLeadExporter.
+     */
+    public static function journeyLabel(?string $journeyStatus): string
+    {
+        return match ($journeyStatus) {
+            'sanctioned' => 'Disbursed',
+            'sfl' => 'SFL',
+            'underwriting' => 'Underwriting',
+            'approved' => 'Approved',
+            default => $journeyStatus ? ucfirst(str_replace('_', ' ', $journeyStatus)) : '-',
+        };
     }
 
     /**

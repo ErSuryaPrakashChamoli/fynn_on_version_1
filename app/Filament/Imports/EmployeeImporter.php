@@ -40,9 +40,10 @@ class EmployeeImporter extends Importer
 
     /**
      * The `move` option — how somebody given a new boss (same position)
-     * moves: alone, refused while anything is still attached to them, as
-     * "Transfer Employee" does; or with everyone under them, keeping their
-     * customers and leads, as a Full Cluster Transfer does.
+     * moves: alone with their own work, refused while their team or work
+     * somebody else created is still with them, as "Transfer Employee" does
+     * (EmployeeDependencyService::SCOPE_MOVE); or with everyone under them,
+     * as a Full Cluster Transfer does.
      */
     public const MOVE_ALONE = 'alone';
 
@@ -400,8 +401,8 @@ class EmployeeImporter extends Importer
     }
 
     /**
-     * Moving alone waits until their team, open customers, leads and
-     * delegations have been handed over.
+     * Moving alone waits until their team, and work somebody else created,
+     * have been handed over; what they created goes with them.
      */
     private function refuseMovingWithWorkAttached(): void
     {
@@ -410,11 +411,11 @@ class EmployeeImporter extends Importer
         }
 
         $dependencies = app(EmployeeDependencyService::class);
-        $attached = $dependencies->dependencyCounts($this->record);
+        $attached = $dependencies->moveDependencyCounts($this->record);
 
         if ($attached !== []) {
             throw new RowImportFailedException(
-                "{$this->record->emp_id}: {$this->record->emp_name} still has {$dependencies->describe($attached)}. "
+                "{$this->record->emp_id}: {$this->record->emp_name} still has {$dependencies->describe($attached, EmployeeDependencyService::SCOPE_MOVE)}. "
                 .'Hand them over first, or upload again choosing "Move the employee with their team".',
             );
         }

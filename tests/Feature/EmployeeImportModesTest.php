@@ -5,8 +5,10 @@ namespace Tests\Feature;
 use App\Filament\Imports\EmployeeImporter;
 use App\Filament\Imports\EmployeeUpdateImporter;
 use App\Filament\Resources\Employees\Pages\ListEmployees;
+use App\Models\Customer;
 use App\Models\Employee;
 use App\Models\EmployeeReportingHistory;
+use App\Models\Lead;
 use App\Models\User;
 use App\Services\EmployeeInactivationService;
 use App\Services\ReportingLineService;
@@ -304,6 +306,56 @@ class EmployeeImportModesTest extends TestCase
             ->where('change_type', ReportingLineService::CHANGE_TRANSFER)
             ->where('remarks', 'Moved by employee import.')
             ->exists());
+    }
+
+    public function test_moving_alone_takes_their_own_open_work_along(): void
+    {
+        $otherTeamLeader = $this->employee('TL02', Employee::DESIGNATION_TEAM_LEADER, $this->otherManager);
+        $customer = Customer::factory()->create([
+            'assign_to' => $this->caller->id,
+            'employee_id' => $this->caller->id,
+            'journey_status' => 'sfl',
+            'disbursal_finalized' => false,
+            'disbursal_status' => null,
+        ]);
+        $lead = Lead::query()->create([
+            'employee_id' => $this->caller->id,
+            'customer_name' => 'Open lead',
+            'mobile_no' => '9876512345',
+            'follow_up_type' => 'Call',
+            'status' => 'Call Back',
+            'remarks' => 'Followed up.',
+        ]);
+
+        $failures = $this->import([
+            $this->updateRow($this->caller, ['reports_to' => $otherTeamLeader->emp_id]),
+        ], EmployeeImporter::MODE_UPDATE, EmployeeImporter::MOVE_ALONE);
+
+        $this->assertSame([], $failures);
+        $this->assertSame($otherTeamLeader->id, $this->caller->fresh()->superviser_id);
+        $this->assertSame($this->caller->id, (int) $customer->fresh()->assign_to);
+        $this->assertSame($this->caller->id, (int) $lead->fresh()->employee_id);
+    }
+
+    public function test_moving_alone_is_refused_while_a_team_leader_holds_a_lead_somebody_else_created(): void
+    {
+        $otherTeamLeader = $this->employee('TL02', Employee::DESIGNATION_TEAM_LEADER, $this->manager);
+        Lead::query()->create([
+            'employee_id' => $otherTeamLeader->id,
+            'created_by' => $this->caller->id,
+            'customer_name' => 'Handed-over lead',
+            'mobile_no' => '9876512346',
+            'follow_up_type' => 'Call',
+            'status' => 'Call Back',
+            'remarks' => 'Followed up.',
+        ]);
+
+        $failures = $this->import([
+            $this->updateRow($otherTeamLeader, ['reports_to' => $this->otherManager->emp_id]),
+        ], EmployeeImporter::MODE_UPDATE, EmployeeImporter::MOVE_ALONE);
+
+        $this->assertStringContainsString('TL02: '.$otherTeamLeader->emp_name.' still has 1 open lead not created by them', $failures[0]);
+        $this->assertSame($this->manager->id, $otherTeamLeader->fresh()->manager_id);
     }
 
     public function test_moving_with_their_team_takes_everyone_under_them_along(): void

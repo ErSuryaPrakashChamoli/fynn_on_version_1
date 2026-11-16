@@ -269,7 +269,9 @@ class EmployeeResource extends Resource
      * Why the form cannot move $employee to $bossId, or null when it can.
      *
      * A straight move (same position, different boss) is a transfer: like
-     * the "Transfer Employee" action it needs nothing attached to them. The
+     * the "Transfer Employee" action it needs their team, and work somebody
+     * else created, handed over first (EmployeeDependencyService::
+     * SCOPE_MOVE); what they created goes with them. The
      * Position field is locked for anyone on the rolls ("Change Position /
      * Target" promotes and demotes), so a new position here is only ever a
      * correction on an exited employee.
@@ -284,12 +286,12 @@ class EmployeeResource extends Resource
             return null;
         }
 
-        $dependencies = app(EmployeeDependencyService::class)->dependencyCounts($employee);
+        $dependencies = app(EmployeeDependencyService::class)->moveDependencyCounts($employee);
 
         return $dependencies === []
             ? null
-            : "{$employee->emp_name} still has ".app(EmployeeDependencyService::class)->describe($dependencies)
-                .'. Use “Transfer Employee” at the top of this page — it hands them over and moves '.$employee->emp_name.' on the spot.';
+            : "{$employee->emp_name} still has ".app(EmployeeDependencyService::class)->describe($dependencies, EmployeeDependencyService::SCOPE_MOVE)
+                .'. Use “Transfer Employee” at the top of this page — it hands those over and moves '.$employee->emp_name.' with their own work on the spot.';
     }
 
     /**
