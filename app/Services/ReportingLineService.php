@@ -29,13 +29,19 @@ use Illuminate\Validation\ValidationException;
  * The effective date matters: every month-based figure (targets,
  * achievement, incentives, team listings) follows the reporting line of
  * each day, rebuilt from the history rows written here (ReportingTimeline),
- * so a change only moves somebody from its effective date onward.
+ * so a change only moves somebody from its effective date onward. A
+ * promotion or demotion is dated the same way (recordDesignationChange()):
+ * the months before it keep the designation held then, and with it the
+ * team that reported to them through that designation's column.
  */
 class ReportingLineService
 {
     public const CHANGE_REPORTING = 'reporting_change';
 
     public const CHANGE_TRANSFER = 'transfer';
+
+    /** A promotion or demotion: carries old/new_designation, never moves anybody. */
+    public const CHANGE_DESIGNATION = 'designation';
 
     /**
      * Whether an employee at $designation has to report to somebody.
@@ -274,6 +280,55 @@ class ReportingLineService
         });
     }
 
+    /**
+     * Date a promotion or demotion that has already been saved on the
+     * employee, so months before $effectiveDate are still rebuilt with
+     * $previousDesignation (ReportingTimeline). Call it alongside the
+     * reportTo() calls that re-slot their team, with the same date.
+     */
+    public function recordDesignationChange(
+        Employee $employee,
+        int $previousDesignation,
+        CarbonInterface|string|null $effectiveDate = null,
+        ?string $remarks = null,
+        ?int $updatedBy = null,
+    ): void {
+        $designation = (int) $employee->designation;
+
+        if ($designation === $previousDesignation) {
+            return;
+        }
+
+        $effectiveDate = Carbon::parse($effectiveDate ?? today())->toDateString();
+
+        EmployeeReportingHistory::query()
+            ->where('employee_id', $employee->id)
+            ->where('change_type', self::CHANGE_DESIGNATION)
+            ->whereNull('effective_to')
+            ->update([
+                'effective_to' => $effectiveDate,
+                'updated_at' => now(),
+            ]);
+
+        $columns = [];
+
+        foreach (array_keys(Employee::REPORTING_COLUMNS) as $column) {
+            $columns['old_'.$column] = $employee->{$column};
+            $columns['new_'.$column] = $employee->{$column};
+        }
+
+        EmployeeReportingHistory::query()->create([
+            'employee_id' => $employee->id,
+            ...$columns,
+            'old_designation' => $previousDesignation,
+            'new_designation' => $designation,
+            'effective_date' => $effectiveDate,
+            'change_type' => self::CHANGE_DESIGNATION,
+            'updated_by' => $updatedBy,
+            'remarks' => $remarks,
+        ]);
+    }
+
     private function canHaveBoss(?int $designation): bool
     {
         return Employee::designationRank($designation) > 0
@@ -303,9 +358,10 @@ class ReportingLineService
 
         $employee->forceFill($columns)->save();
 
+        // A move ends the previous reporting line, never a designation.
         EmployeeReportingHistory::query()
             ->where('employee_id', $employee->id)
-            ->where('change_type', '!=', 'exit')
+            ->whereNotIn('change_type', ['exit', self::CHANGE_DESIGNATION])
             ->whereNull('effective_to')
             ->update([
                 'effective_to' => $effectiveDate,

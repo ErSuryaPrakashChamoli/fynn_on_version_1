@@ -96,7 +96,19 @@ class EditEmployee extends EditRecord
             auth()->id(),
         );
 
-        if ((int) ($this->oldReporting['designation'] ?? $employee->designation) !== (int) $employee->designation) {
+        $previousDesignation = (int) ($this->oldReporting['designation'] ?? $employee->designation);
+
+        if ($previousDesignation !== (int) $employee->designation) {
+            // Dated like the re-slot below, so earlier months keep the old
+            // designation and the team that reported through it.
+            $reportingLines->recordDesignationChange(
+                $employee,
+                $previousDesignation,
+                $effectiveDate,
+                'Designation changed from Employee Edit.',
+                auth()->id(),
+            );
+
             foreach (Employee::query()->whereIn('id', $this->directReportIds)->get() as $report) {
                 $reportingLines->reportTo(
                     $report,

@@ -17,6 +17,8 @@ use Illuminate\Support\Carbon;
  * @property int|null $new_manager_id
  * @property int|null $new_cluster_id
  * @property int|null $new_business_head_id
+ * @property int|null $old_designation set on 'designation' rows only
+ * @property int|null $new_designation set on 'designation' rows only
  * @property Carbon $effective_date
  * @property string|null $effective_to
  * @property string $change_type
@@ -60,6 +62,8 @@ class EmployeeReportingHistory extends Model
         'new_manager_id',
         'new_cluster_id',
         'new_business_head_id',
+        'old_designation',
+        'new_designation',
         'effective_date',
         'effective_to',
         'change_type',
@@ -120,5 +124,7 @@ class EmployeeReportingHistory extends Model
     protected $casts = [
         'effective_date' => 'date',
         'effective_to' => 'date',
+        'old_designation' => 'integer',
+        'new_designation' => 'integer',
     ];
 }

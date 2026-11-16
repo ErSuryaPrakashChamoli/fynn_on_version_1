@@ -78,12 +78,22 @@
                             $eventDate = $history->effective_date?->format('d M Y');
                             $endDate = $history->effective_to?->format('d M Y');
 
-                            $eventLabel = match ($history->change_type) {
-                                'joining' => 'Joining',
-                                'transfer' => 'Transfer',
-                                'promotion' => 'Promotion',
-                                'exit' => 'Exit',
-                                default => 'Reporting Change',
+                            $isDesignationChange = $history->change_type === \App\Services\ReportingLineService::CHANGE_DESIGNATION;
+                            $designationLabels = \App\Models\Employee::designationOptions();
+
+                            $eventLabel = match (true) {
+                                $isDesignationChange => match (true) {
+                                    \App\Models\Employee::designationRank($history->new_designation) > \App\Models\Employee::designationRank($history->old_designation) => 'Promotion',
+                                    \App\Models\Employee::designationRank($history->new_designation) < \App\Models\Employee::designationRank($history->old_designation) => 'Demotion',
+                                    default => 'Designation Change',
+                                },
+                                default => match ($history->change_type) {
+                                    'joining' => 'Joining',
+                                    'transfer' => 'Transfer',
+                                    'promotion' => 'Promotion',
+                                    'exit' => 'Exit',
+                                    default => 'Reporting Change',
+                                },
                             };
 
                             $teamLeader = $history->newSupervisor?->emp_name;
@@ -118,6 +128,17 @@
                                 {{ $history->updatedBy?->name ?? 'System' }}
                             </td>
                         </tr>
+
+                        @if ($isDesignationChange)
+                            <tr class="is-muted bg-gray-50/60 dark:bg-gray-900/40">
+                                <td colspan="8" class="text-xs">
+                                    Designation:
+                                    {{ $designationLabels[$history->old_designation] ?? '-' }}
+                                    →
+                                    {{ $designationLabels[$history->new_designation] ?? '-' }}
+                                </td>
+                            </tr>
+                        @endif
 
                         @if ($history->change_type === 'transfer')
                             <tr class="is-muted bg-gray-50/60 dark:bg-gray-900/40">

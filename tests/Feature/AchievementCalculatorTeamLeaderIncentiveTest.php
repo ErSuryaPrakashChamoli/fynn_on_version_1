@@ -212,7 +212,9 @@ class AchievementCalculatorTeamLeaderIncentiveTest extends TestCase
 
         $breakdown = (new AchievementCalculatorService)->getTeamLeaderIncentiveBreakdown($teamLeader);
 
-        $this->assertSame(2, $breakdown['caller_count']);
+        // The joiner's 7 days are under the ten the headcount needs since
+        // 2026-11-16, so only the existing caller counts.
+        $this->assertSame(1, $breakdown['caller_count']);
         $this->assertSame(1, $breakdown['eligible_callers']);
         $this->assertSame(0.0, $breakdown['incentive']);
 

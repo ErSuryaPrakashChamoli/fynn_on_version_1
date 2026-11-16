@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Employee;
 use App\Models\EmployeeReportingHistory;
+use App\Services\ReportingLineService;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
@@ -34,6 +35,14 @@ use Illuminate\Support\Collection;
  * columns, so a column edited without a history row is still honoured from
  * the last recorded change onward. Built fresh on every call, like
  * ReportingTree.
+ *
+ * Designations are rebuilt the same way from 'designation' rows: before a
+ * promotion the employee holds their old designation, from its effective
+ * date the new one, and the latest line is always today's designation. A
+ * boss is only linked through the column of the designation they held that
+ * day (ReportingTree), so without this a Manager promoted in November would
+ * lose their whole October team — the team still points at them through
+ * manager_id on those days — and October would read 0 for them.
  */
 final class ReportingTimeline
 {
@@ -64,9 +73,10 @@ final class ReportingTimeline
 
         $rows = ReportingTree::employeeRows();
         $lines = self::linesFromHistory();
+        $designationLines = self::designationLinesFromHistory();
 
         $segments = [];
-        $cuts = self::cutDates($rows, $lines, $start, $end);
+        $cuts = self::cutDates($rows, [...array_values($lines), ...array_values($designationLines)], $start, $end);
 
         foreach ($cuts as $index => $segmentStart) {
             $segmentEnd = isset($cuts[$index + 1])
@@ -76,7 +86,7 @@ final class ReportingTimeline
             $segments[] = [
                 'start' => CarbonImmutable::parse($segmentStart),
                 'end' => $segmentEnd,
-                'tree' => self::treeFor($rows, $lines, $segmentStart),
+                'tree' => self::treeFor($rows, $lines, $designationLines, $segmentStart),
             ];
         }
 
@@ -240,8 +250,11 @@ final class ReportingTimeline
     /**
      * Callers who count in $bossId's headcount for the period: in the
      * branch (or, with $directOnly, reporting straight to them) for at
-     * least MIN_HEADCOUNT_DAYS days. A caller moved mid-month can count in
-     * both teams.
+     * least MIN_HEADCOUNT_DAYS days while on the rolls — days before their
+     * reporting date or after their exit date never count (user decision
+     * 2026-11-16: the ten days follow joining, leaving and movement; a
+     * caller who left still counts if they had ten days that month). A
+     * caller moved mid-month can count in both teams.
      *
      * @return list<int>
      */
@@ -251,21 +264,66 @@ final class ReportingTimeline
             return [$bossId];
         }
 
-        $days = $directOnly
-            ? $this->directReportDays($bossId)
-            : $this->branchDays($bossId, includeBoss: false, onlyDesignation: Employee::DESIGNATION_CALLER);
+        $spans = $directOnly
+            ? $this->directReportSpans($bossId)
+            : $this->branchSpans($bossId, includeBoss: false, onlyDesignation: Employee::DESIGNATION_CALLER);
+
+        $spans = array_filter(
+            $spans,
+            fn (int $id): bool => $this->designation($id) === Employee::DESIGNATION_CALLER,
+            ARRAY_FILTER_USE_KEY,
+        );
 
         return array_keys(array_filter(
-            $days,
-            fn (int $dayCount, int $id): bool => $dayCount >= self::MIN_HEADCOUNT_DAYS
-                && $this->designation($id) === Employee::DESIGNATION_CALLER,
-            ARRAY_FILTER_USE_BOTH,
+            $this->daysOnTheRolls($spans),
+            fn (int $dayCount): bool => $dayCount >= self::MIN_HEADCOUNT_DAYS,
         ));
+    }
+
+    /**
+     * Days of each person's $spans that fall inside the period while they
+     * were on the rolls — reporting date to exit date (OnRollsWindow).
+     *
+     * @param  array<int, list<array{0: CarbonInterface, 1: CarbonInterface}>>  $spans  employee id => spans
+     * @return array<int, int> employee id => days, in the order of $spans
+     */
+    public function daysOnTheRolls(array $spans): array
+    {
+        if ($spans === []) {
+            return [];
+        }
+
+        $employees = Employee::query()
+            ->whereIn('id', array_keys($spans))
+            ->get(['id', 'reporting_date', 'exit_status', 'exit_date'])
+            ->keyBy('id');
+
+        $days = [];
+
+        foreach ($spans as $id => $employeeSpans) {
+            $window = $employees->has($id) ? OnRollsWindow::forMonth($employees[$id], $this->start, $this->end) : null;
+
+            $days[$id] = $window === null ? 0 : self::overlapDays($employeeSpans, $window['start'], $window['end']);
+        }
+
+        return $days;
     }
 
     public function designation(int $employeeId): ?int
     {
         return $this->segments[0]['tree']->designation($employeeId);
+    }
+
+    /**
+     * The designation $employee held on $day: from their 'designation'
+     * history rows, today's designation once the latest one applies. Reads
+     * only that employee's rows, so it is cheap enough per figure.
+     */
+    public static function designationOn(Employee $employee, CarbonInterface $day): ?int
+    {
+        $line = self::lineOn(self::designationLinesFromHistory($employee->id)[$employee->id] ?? null, $day->toDateString());
+
+        return $line['designation'] ?? ($employee->designation === null ? null : (int) $employee->designation);
     }
 
     /**
@@ -296,6 +354,32 @@ final class ReportingTimeline
         }
 
         return $days;
+    }
+
+    /**
+     * The stretches of the period each person reported straight to $bossId.
+     *
+     * @return array<int, list<array{0: CarbonImmutable, 1: CarbonImmutable}>> employee id => spans
+     */
+    private function directReportSpans(int $bossId): array
+    {
+        $spans = [];
+
+        foreach ($this->segments as $segment) {
+            foreach ($segment['tree']->childIds($bossId) as $childId) {
+                $last = isset($spans[$childId]) ? array_key_last($spans[$childId]) : null;
+
+                if ($last !== null && $spans[$childId][$last][1]->addDay()->isSameDay($segment['start'])) {
+                    $spans[$childId][$last][1] = $segment['end'];
+
+                    continue;
+                }
+
+                $spans[$childId][] = [$segment['start'], $segment['end']];
+            }
+        }
+
+        return $spans;
     }
 
     /**
@@ -354,7 +438,7 @@ final class ReportingTimeline
     {
         $changes = EmployeeReportingHistory::query()
             ->toBase()
-            ->where('change_type', '!=', 'exit')
+            ->whereNotIn('change_type', ['exit', ReportingLineService::CHANGE_DESIGNATION])
             ->orderBy('employee_id')
             ->orderBy('effective_date')
             ->orderBy('id')
@@ -389,6 +473,47 @@ final class ReportingTimeline
     }
 
     /**
+     * Each employee's designations from their 'designation' rows, oldest
+     * first: the first row's old designation from the start of time, then
+     * each row's new one from its effective date.
+     *
+     * @return array<int, list<array{from: ?string, designation: ?int}>>
+     */
+    private static function designationLinesFromHistory(?int $employeeId = null): array
+    {
+        $changes = EmployeeReportingHistory::query()
+            ->toBase()
+            ->where('change_type', ReportingLineService::CHANGE_DESIGNATION)
+            ->when($employeeId !== null, fn ($query) => $query->where('employee_id', $employeeId))
+            ->orderBy('employee_id')
+            ->orderBy('effective_date')
+            ->orderBy('id')
+            ->get(['employee_id', 'effective_date', 'old_designation', 'new_designation']);
+
+        $lines = [];
+
+        foreach ($changes->groupBy('employee_id') as $id => $employeeChanges) {
+            $list = [['from' => null, 'designation' => self::designationOf($employeeChanges->first()->old_designation)]];
+
+            foreach ($employeeChanges as $change) {
+                $list[] = [
+                    'from' => substr((string) $change->effective_date, 0, 10),
+                    'designation' => self::designationOf($change->new_designation),
+                ];
+            }
+
+            $lines[(int) $id] = $list;
+        }
+
+        return $lines;
+    }
+
+    private static function designationOf(mixed $value): ?int
+    {
+        return $value === null ? null : (int) $value;
+    }
+
+    /**
      * @return array<string, ?int>
      */
     private static function columnsOf(object $change, string $prefix): array
@@ -405,11 +530,11 @@ final class ReportingTimeline
 
     /**
      * The day each segment starts on: the period's first day, every
-     * reporting change inside it, and the day after a level above caller
-     * left (from then on their level stops counting).
+     * reporting or designation change inside it, and the day after a level
+     * above caller left (from then on their level stops counting).
      *
      * @param  Collection<int, object>  $rows
-     * @param  array<int, list<array{from: ?string, columns: array<string, ?int>}>>  $lines
+     * @param  list<list<array{from: ?string}>>  $lines  every employee's reporting and designation lines
      * @return list<string>
      */
     private static function cutDates(Collection $rows, array $lines, CarbonImmutable $start, CarbonImmutable $end): array
@@ -449,20 +574,26 @@ final class ReportingTimeline
     /**
      * @param  Collection<int, object>  $rows
      * @param  array<int, list<array{from: ?string, columns: array<string, ?int>}>>  $lines
+     * @param  array<int, list<array{from: ?string, designation: ?int}>>  $designationLines
      */
-    private static function treeFor(Collection $rows, array $lines, string $day): ReportingTree
+    private static function treeFor(Collection $rows, array $lines, array $designationLines, string $day): ReportingTree
     {
-        $rowsOnDay = $rows->map(function (object $row) use ($lines, $day): object {
-            $columns = self::columnsOn($lines[(int) $row->id] ?? null, $day);
+        $rowsOnDay = $rows->map(function (object $row) use ($lines, $designationLines, $day): object {
+            $columns = self::lineOn($lines[(int) $row->id] ?? null, $day)['columns'] ?? null;
+            $designation = self::lineOn($designationLines[(int) $row->id] ?? null, $day)['designation'] ?? null;
 
-            if ($columns === null) {
+            if ($columns === null && $designation === null) {
                 return $row;
             }
 
             $copy = clone $row;
 
-            foreach ($columns as $column => $value) {
+            foreach ($columns ?? [] as $column => $value) {
                 $copy->{$column} = $value;
+            }
+
+            if ($designation !== null) {
+                $copy->designation = $designation;
             }
 
             return $copy;
@@ -472,14 +603,15 @@ final class ReportingTimeline
     }
 
     /**
-     * The columns from an employee's history that held on $day, or null
-     * when today's reporting columns apply (no history, or $day falls in
-     * the latest line).
+     * The line of an employee's history that held on $day, or null when
+     * today's values apply (no history, or $day falls in the latest line).
      *
-     * @param  list<array{from: ?string, columns: array<string, ?int>}>|null  $list
-     * @return array<string, ?int>|null
+     * @template TLine of array{from: ?string}
+     *
+     * @param  list<TLine>|null  $list
+     * @return TLine|null
      */
-    private static function columnsOn(?array $list, string $day): ?array
+    private static function lineOn(?array $list, string $day): ?array
     {
         if ($list === null || $list === []) {
             return null;
@@ -489,7 +621,7 @@ final class ReportingTimeline
 
         for ($index = $lastIndex; $index >= 0; $index--) {
             if ($list[$index]['from'] === null || $list[$index]['from'] <= $day) {
-                return $index === $lastIndex ? null : $list[$index]['columns'];
+                return $index === $lastIndex ? null : $list[$index];
             }
         }
 

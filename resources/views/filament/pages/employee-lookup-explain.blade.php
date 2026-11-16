@@ -106,8 +106,8 @@
                 <li>Each caller brings their target category amount for a full month on the rolls.</li>
                 <li>A caller who joined or left during a month brings the flat partial-month target if they were on the rolls 10 days or more that month, and nothing below 10 days.</li>
                 @if ($target['kind'] === 'team')
-                    <li>A caller who moved into or out of the team counts here only for the days they reported into it (pro-rata), and is marked <span class="font-semibold">Moved</span>.</li>
-                    <li>Every Team Leader in the team with fewer than 3 callers (each reporting to them for at least 10 days) adds ₹30,00,000 that month, pro-rata to the days that Team Leader sat in the team.</li>
+                    <li>A caller who moved into or out of the team during the month is treated like a joiner or leaver of this team: the flat partial-month target if they reported into it 10 days or more, and nothing below 10 days. They are marked <span class="font-semibold">Moved</span>. A caller in the team for the whole month brings their full target.</li>
+                    <li>Every Team Leader in the team with fewer than 3 callers adds ₹30,00,000 that month, if they were in the team for 10 days or more while on the rolls. A caller counts towards those 3 only with 10 or more days reporting to them while on the rolls (from their joining date to their exit date), so a caller who left during the month still counts if they had 10 days.</li>
                 @endif
             </ul>
 

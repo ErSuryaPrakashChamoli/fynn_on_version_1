@@ -74,6 +74,9 @@ class EmployeeImporter extends Importer
      */
     protected array $directReportIds = [];
 
+    /** The designation an updated employee held before this row changed it. */
+    protected ?int $previousDesignation = null;
+
     /** The inactive_date of an employee this row takes off the rolls. */
     protected ?string $inactivateOn = null;
 
@@ -270,6 +273,7 @@ class EmployeeImporter extends Importer
         $this->reportingLineChanged = false;
         $this->straightMove = false;
         $this->directReportIds = [];
+        $this->previousDesignation = null;
         $this->inactivateOn = null;
         $reportingLines = app(ReportingLineService::class);
         $hadLeft = $this->recordExisted && static::hasLeft($this->record);
@@ -308,6 +312,10 @@ class EmployeeImporter extends Importer
             $this->directReportIds = $this->record->isDirty('designation')
                 ? ReportingTree::load()->childIds($this->record->id)
                 : [];
+
+            $this->previousDesignation = $this->record->isDirty('designation')
+                ? (int) $this->record->getOriginal('designation')
+                : null;
 
             // Same position, new boss: a transfer, as on the Edit page
             // (EmployeeResource::moveProblem). A promotion or demotion
@@ -356,7 +364,18 @@ class EmployeeImporter extends Importer
                 $this->import->user_id,
             );
 
-            // A promotion or demotion re-slots their team, as on the Edit page.
+            // A promotion or demotion is dated and re-slots their team, as
+            // on the Edit page.
+            if ($this->previousDesignation !== null) {
+                app(ReportingLineService::class)->recordDesignationChange(
+                    $this->record,
+                    $this->previousDesignation,
+                    today(),
+                    'Designation changed by employee import.',
+                    $this->import->user_id,
+                );
+            }
+
             foreach (Employee::query()->whereIn('id', $this->directReportIds)->get() as $report) {
                 app(ReportingLineService::class)->reportTo(
                     $report,

@@ -6,6 +6,7 @@ use App\Models\Customer;
 use App\Models\Employee;
 use App\Models\TargetCategory;
 use App\Support\HierarchyHelper;
+use App\Support\OnRollsWindow;
 use App\Support\ReportingTimeline;
 use App\Support\SelectedMonth;
 use Carbon\Carbon;
@@ -401,22 +402,28 @@ class AchievementCalculatorService
     }
 
     /**
-     * Each caller's share of their month target that counts for $boss.
+     * Each caller's month target as it counts for $boss.
      *
-     * A caller's month target (category, partial-month or nil — see
-     * hierarchyCallerTargetForMonth()) is spread over the days they are on
-     * the rolls that month, and $boss carries the days the caller reported
-     * into their branch. Moved on the 26th of a 31-day month: the old boss
-     * carries 25/31, the new one 6/31, together exactly one target.
+     * A caller in $boss's branch for every day they were on the rolls that
+     * month carries their own month target (category, partial-month or nil
+     * — see hierarchyCallerTargetForMonth()), counted 1st to month-end.
      *
-     * @return array<int, float> caller id => share
+     * A caller who moved into or out of the branch inside that window is
+     * treated like a joiner or leaver of the team (user decision
+     * 2026-11-16): PARTIAL_MONTH_TARGET if they spent at least
+     * MIN_TARGET_DAYS calendar days in the branch, otherwise nothing. Each
+     * team judges its own days, so a caller moved on the 16th counts the
+     * partial target in both teams, and one moved on the 26th only in the
+     * old one.
+     *
+     * @return array<int, float> caller id => target counted for $boss
      */
     public function callerTargetShares(Employee $boss, ReportingTimeline $timeline, ?Employee $within = null): array
     {
         $spans = $timeline->branchSpans(
             $boss->id,
             skipExitedLevels: true,
-            includeBoss: $boss->designation === Employee::DESIGNATION_CALLER,
+            includeBoss: true,
             withinId: $within?->id,
             onlyDesignation: Employee::DESIGNATION_CALLER,
         );
@@ -441,46 +448,60 @@ class AchievementCalculatorService
 
             $daysInBranch = ReportingTimeline::overlapDays($spans[$caller->id], $window['start'], $window['end']);
 
-            $shares[$caller->id] = $daysInBranch >= $window['days']
-                ? $target
-                : $target * $daysInBranch / $window['days'];
+            if ($daysInBranch >= $window['days']) {
+                $shares[$caller->id] = $target;
+
+                continue;
+            }
+
+            $shares[$caller->id] = $daysInBranch >= self::MIN_TARGET_DAYS
+                ? self::PARTIAL_MONTH_TARGET
+                : 0.0;
         }
 
         return $shares;
     }
 
     /**
-     * The ₹30L top-up for every Team Leader in $boss's branch — $boss too,
-     * if they are one — whose headcount that month is under
-     * UNDERSTAFFED_TEAM_CALLERS. The headcount is the callers reporting
-     * straight to them for at least ReportingTimeline::MIN_HEADCOUNT_DAYS;
-     * the top-up is carried pro-rata to the days the Team Leader sat in the
-     * branch, like a caller's target.
+     * The ₹30L top-up for every Team Leader whose top-up counts in $boss's
+     * branch that month — see understaffedTeamLeaderIds().
      */
     private function understaffedTeamTopUps(Employee $boss, ReportingTimeline $timeline, ?Employee $within = null): float
     {
-        $teamLeaderDays = $timeline->branchDays(
+        return count($this->understaffedTeamLeaderIds($boss, $timeline, $within)) * self::UNDERSTAFFED_TEAM_TOP_UP;
+    }
+
+    /**
+     * Team Leaders in $boss's branch — $boss too, if they are one — who add
+     * the full UNDERSTAFFED_TEAM_TOP_UP to it that month: their headcount
+     * (ReportingTimeline::headcountCallerIds(), callers reporting straight
+     * to them for ten days on the rolls) is under UNDERSTAFFED_TEAM_CALLERS,
+     * and they themselves spent at least MIN_TARGET_DAYS days in the branch
+     * while on the rolls.
+     *
+     * The same ten-day rule as a caller's target (user decision 2026-11-16,
+     * replacing pro-rata by days): a Team Leader moved in on the 25th, or
+     * who joined then, adds nothing; one there for ten days or more adds
+     * the whole top-up, in each team that qualifies.
+     *
+     * @return list<int>
+     */
+    public function understaffedTeamLeaderIds(Employee $boss, ReportingTimeline $timeline, ?Employee $within = null): array
+    {
+        $teamLeaderDays = $timeline->daysOnTheRolls($timeline->branchSpans(
             $boss->id,
             skipExitedLevels: true,
             includeBoss: true,
             withinId: $within?->id,
             onlyDesignation: Employee::DESIGNATION_TEAM_LEADER,
-        );
+        ));
 
-        $monthDays = $timeline->days();
-        $topUp = 0.0;
-
-        foreach ($teamLeaderDays as $teamLeaderId => $days) {
-            if (count($timeline->headcountCallerIds($teamLeaderId, directOnly: true)) >= self::UNDERSTAFFED_TEAM_CALLERS) {
-                continue;
-            }
-
-            $topUp += $days >= $monthDays
-                ? self::UNDERSTAFFED_TEAM_TOP_UP
-                : self::UNDERSTAFFED_TEAM_TOP_UP * $days / $monthDays;
-        }
-
-        return $topUp;
+        return array_keys(array_filter(
+            $teamLeaderDays,
+            fn (int $days, int $teamLeaderId): bool => $days >= self::MIN_TARGET_DAYS
+                && count($timeline->headcountCallerIds($teamLeaderId, directOnly: true)) < self::UNDERSTAFFED_TEAM_CALLERS,
+            ARRAY_FILTER_USE_BOTH,
+        ));
     }
 
     /**
@@ -891,12 +912,26 @@ class AchievementCalculatorService
             'docking_other' => $totals['docking_other'],
             'count_achievement' => $countAchievement,
             'percentage' => $percentage,
-            'incentive' => match ($employee?->designation) {
+            'incentive' => match ($employee ? $this->designationFor($employee, $referenceMonth) : null) {
                 Employee::DESIGNATION_MANAGER => $this->getManagerIncentiveBreakdown($employee, $referenceMonth)['incentive'],
                 Employee::DESIGNATION_TEAM_LEADER => $this->getTeamLeaderIncentiveBreakdown($employee, $referenceMonth)['incentive'],
                 default => $this->getIncentive($countAchievement),
             },
         ];
+    }
+
+    /**
+     * The designation whose incentive scheme pays $employee's month: the
+     * one held on its last day (ReportingTimeline::designationOn), so a
+     * Manager promoted in November is still paid October as a Manager.
+     * Today's designation for the current month, or with no designation
+     * change recorded.
+     */
+    public function designationFor(Employee $employee, ?Carbon $referenceMonth = null): ?int
+    {
+        $referenceMonth ??= SelectedMonth::current();
+
+        return ReportingTimeline::designationOn($employee, $referenceMonth->copy()->endOfMonth());
     }
 
     public function getIncentive(float $countAchievement): float
@@ -1045,100 +1080,14 @@ class AchievementCalculatorService
     }
 
     /**
-     * The slice of [$monthStart, $monthEnd] a caller is on the rolls for.
-     *
-     * Returns null when they are not on the rolls at all that month (left
-     * before it began, or — for a month that has already fully elapsed —
-     * had not joined yet).
-     *
-     * The end of the window is where the business rule lives, and it
-     * changed on 2026-09-10. It used to be capped at TODAY, which meant a
-     * mid-month joiner contributed a 0 target to their Team Leader's
-     * rollup until ten days had physically passed: a caller who reported
-     * on the 7th showed nothing on the 10th, and the Team Leader had no
-     * way to tell an unset target from a genuinely nil one. The window now
-     * runs to month-end for anyone still on the rolls — i.e. the target is
-     * assigned on the basis that they will stay for the rest of the month.
-     *
-     * That projection is self-correcting rather than optimistic: the
-     * moment an exit date is recorded, the window ends there instead, and
-     * a caller who leaves before completing MIN_TARGET_DAYS drops back to
-     * a 0 target on the next evaluation. Nothing is cached, so no
-     * recalculation job is needed.
-     *
-     * Counting is by CALENDAR days, deliberately: it is what the rule has
-     * always used, and moving to working days here would silently restate
-     * the targets of months that are already closed.
+     * The slice of [$monthStart, $monthEnd] a caller is on the rolls for —
+     * see OnRollsWindow, which also feeds the headcount.
      *
      * @return array{start: Carbon, end: Carbon, days: int, is_partial: bool, is_projected: bool}|null
      */
     private function activeWindowForMonth(Employee $employee, Carbon $monthStart, Carbon $monthEnd): ?array
     {
-        $monthStart = $monthStart->copy()->startOfDay();
-        $monthEnd = $monthEnd->copy()->startOfDay();
-        $today = Carbon::today();
-
-        $exitDate = $this->recordedExitDate($employee);
-
-        // Left before this month ever started.
-        if ($exitDate !== null && $exitDate->lt($monthStart)) {
-            return null;
-        }
-
-        $reportingDate = filled($employee->reporting_date)
-            ? Carbon::parse($employee->reporting_date)->startOfDay()
-            : null;
-
-        /*
-         * Reporting date after the month ends. Only meaningful for a month
-         * that has already fully elapsed; for the current month it cannot
-         * be told apart from a future-dated data-entry slip, so behaviour
-         * there is left as it was — fall through to the category target.
-         */
-        if ($reportingDate !== null && $reportingDate->gt($monthEnd) && $monthEnd->lt($today)) {
-            return null;
-        }
-
-        $joinedThisMonth = $reportingDate !== null
-            && $reportingDate->betweenIncluded($monthStart, $monthEnd);
-
-        $leftThisMonth = $exitDate !== null
-            && $exitDate->betweenIncluded($monthStart, $monthEnd);
-
-        $start = $joinedThisMonth ? $reportingDate->copy() : $monthStart->copy();
-        $end = $leftThisMonth ? $exitDate->copy() : $monthEnd->copy();
-
-        // Exit recorded before the reporting date — a data anomaly, not a
-        // working window.
-        if ($end->lt($start)) {
-            return null;
-        }
-
-        return [
-            'start' => $start,
-            'end' => $end,
-            'days' => (int) $start->diffInDays($end) + 1,
-            'is_partial' => $joinedThisMonth || $leftThisMonth,
-            // True while the window's end is still in the future — the
-            // figure rests on the caller staying to month-end.
-            'is_projected' => ! $leftThisMonth && $end->gt($today),
-        ];
-    }
-
-    /**
-     * The exit date to honour, or null if the employee is on the rolls.
-     *
-     * An 'yes' exit status with no date recorded is treated as still
-     * active — there is no day to end the window on, and guessing one
-     * would silently zero a target.
-     */
-    private function recordedExitDate(Employee $employee): ?Carbon
-    {
-        if (strtolower((string) $employee->exit_status) !== 'yes' || empty($employee->exit_date)) {
-            return null;
-        }
-
-        return Carbon::parse($employee->exit_date)->startOfDay();
+        return OnRollsWindow::forMonth($employee, $monthStart, $monthEnd);
     }
 
     private function categoryTarget(Employee $employee): float
@@ -1175,7 +1124,13 @@ class AchievementCalculatorService
         $note = "In this team {$stretches} ({$days} of {$timeline->days()} days).";
 
         if ($withRule) {
-            $note .= ' Only cases disbursed on those days count here, and the target counts pro-rata to them.';
+            $note .= ' Only cases disbursed on those days count here.';
+
+            if ($member->designation === Employee::DESIGNATION_CALLER) {
+                $note .= $days >= self::MIN_TARGET_DAYS
+                    ? ' With '.self::MIN_TARGET_DAYS.' or more days here, the part-month target of '.indianAmount(self::PARTIAL_MONTH_TARGET).' counts.'
+                    : ' Under '.self::MIN_TARGET_DAYS.' days here, so no target counts.';
+            }
         }
 
         return $note;

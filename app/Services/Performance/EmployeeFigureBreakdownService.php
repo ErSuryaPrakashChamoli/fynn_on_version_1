@@ -42,13 +42,6 @@ class EmployeeFigureBreakdownService
      */
     public const MAX_CASE_ROWS = 250;
 
-    /**
-     * A Team Leader with fewer callers than this carries the understaffed-
-     * team top-up (AchievementCalculatorService::UNDERSTAFFED_TEAM_CALLERS).
-     * Only used to mark rows; the top-up amount itself is the service's.
-     */
-    private const UNDERSTAFFED_TEAM_CALLERS = 3;
-
     public function __construct(
         private readonly AchievementCalculatorService $calculator,
     ) {}
@@ -138,11 +131,12 @@ class EmployeeFigureBreakdownService
                 $monthShares = $this->calculator->callerTargetShares($employee, $timeline);
 
                 $teamLeaderDays = $timeline->branchDays($employee->id, skipExitedLevels: true, includeBoss: true, onlyDesignation: Employee::DESIGNATION_TEAM_LEADER);
+                $toppedUp = $this->calculator->understaffedTeamLeaderIds($employee, $timeline);
 
-                foreach ($teamLeaderDays as $teamLeaderId => $days) {
+                foreach (array_keys($teamLeaderDays) as $teamLeaderId) {
                     $teamLeaderMonths[$teamLeaderId]['months'] = ($teamLeaderMonths[$teamLeaderId]['months'] ?? 0) + 1;
 
-                    if ($days > 0 && count($timeline->headcountCallerIds($teamLeaderId, directOnly: true)) < self::UNDERSTAFFED_TEAM_CALLERS) {
+                    if (in_array($teamLeaderId, $toppedUp, true)) {
                         $teamLeaderMonths[$teamLeaderId]['understaffed'] = ($teamLeaderMonths[$teamLeaderId]['understaffed'] ?? 0) + 1;
                     }
                 }
@@ -281,7 +275,7 @@ class EmployeeFigureBreakdownService
 
             return [
                 'kind' => 'months',
-                'scheme' => $this->schemeFor($employee),
+                'scheme' => $this->schemeFor($employee, $period->end->copy()),
                 'months' => $months,
                 'incentive' => array_sum(array_column($months, 'incentive')),
             ];
@@ -293,7 +287,10 @@ class EmployeeFigureBreakdownService
             return ['kind' => 'no_data', 'incentive' => 0.0];
         }
 
-        if ($employee->designation === Employee::DESIGNATION_TEAM_LEADER) {
+        // The scheme of the designation held that month, not today's.
+        $designation = $this->calculator->designationFor($employee, $month);
+
+        if ($designation === Employee::DESIGNATION_TEAM_LEADER) {
             $breakdown = $this->calculator->getTeamLeaderIncentiveBreakdown($employee, $month);
 
             return [
@@ -304,7 +301,7 @@ class EmployeeFigureBreakdownService
             ];
         }
 
-        if ($employee->designation === Employee::DESIGNATION_MANAGER) {
+        if ($designation === Employee::DESIGNATION_MANAGER) {
             return [
                 'kind' => 'manager',
                 ...$this->calculator->getManagerIncentiveBreakdown($employee, $month),
@@ -392,7 +389,7 @@ class EmployeeFigureBreakdownService
             return ['net' => $net, 'incentive' => 0.0];
         }
 
-        $incentive = match ($employee->designation) {
+        $incentive = match ($this->calculator->designationFor($employee, $start)) {
             Employee::DESIGNATION_TEAM_LEADER => $this->calculator->getTeamLeaderIncentiveBreakdown($employee, $start)['incentive'],
             Employee::DESIGNATION_MANAGER => $this->calculator->getManagerIncentiveBreakdown($employee, $start)['incentive'],
             default => $this->calculator->getIncentive($net),
@@ -401,9 +398,12 @@ class EmployeeFigureBreakdownService
         return ['net' => $net, 'incentive' => (float) $incentive];
     }
 
-    private function schemeFor(Employee $employee): string
+    /**
+     * The incentive scheme of the designation held in $month.
+     */
+    private function schemeFor(Employee $employee, Carbon $month): string
     {
-        return match ($employee->designation) {
+        return match ($this->calculator->designationFor($employee, $month)) {
             Employee::DESIGNATION_TEAM_LEADER => 'team_leader',
             Employee::DESIGNATION_MANAGER => 'manager',
             default => 'slab',
