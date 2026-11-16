@@ -21,6 +21,10 @@ use Tests\TestCase;
  * (ignoring reporting_date/exit_date), and the Team View listing applied
  * its own hand-rolled reimplementation of the exit-date rule instead of
  * delegating to the canonical engine.
+ *
+ * doj is always pinned: the factory picks a random date up to the real
+ * today, and Teams lists only people who joined by the end of the month
+ * shown (Employee::scopeActiveDuring), so a random one made rows vanish.
  */
 class TeamsTargetCallerConsistencyTest extends TestCase
 {
@@ -62,6 +66,7 @@ class TeamsTargetCallerConsistencyTest extends TestCase
             'designation' => Employee::DESIGNATION_CALLER,
             'superviser_id' => $teamLeader->id,
             'category' => '2500000',
+            'doj' => Carbon::create(2026, 8, 25),
             'reporting_date' => Carbon::create(2026, 8, 25),
         ]);
 
@@ -92,6 +97,7 @@ class TeamsTargetCallerConsistencyTest extends TestCase
             'designation' => Employee::DESIGNATION_CALLER,
             'superviser_id' => $teamLeader->id,
             'category' => '2500000',
+            'doj' => Carbon::create(2026, 8, 25),
             'reporting_date' => Carbon::create(2026, 8, 25),
         ]);
 
@@ -128,6 +134,7 @@ class TeamsTargetCallerConsistencyTest extends TestCase
             'designation' => Employee::DESIGNATION_CALLER,
             'superviser_id' => $teamLeader->id,
             'category' => '2500000',
+            'doj' => Carbon::create(2025, 1, 1),
             'reporting_date' => null,
             'exit_status' => 'yes',
             'exit_date' => Carbon::create(2026, 8, 15),
@@ -138,6 +145,7 @@ class TeamsTargetCallerConsistencyTest extends TestCase
             'designation' => Employee::DESIGNATION_CALLER,
             'superviser_id' => $teamLeader->id,
             'category' => '2500000',
+            'doj' => Carbon::create(2025, 1, 1),
             'reporting_date' => null,
             'exit_status' => 'yes',
             'exit_date' => Carbon::create(2026, 6, 15),
@@ -175,6 +183,7 @@ class TeamsTargetCallerConsistencyTest extends TestCase
             'designation' => Employee::DESIGNATION_CALLER,
             'superviser_id' => $teamLeader->id,
             'category' => '2500000',
+            'doj' => Carbon::create(2026, 9, 7),
             'reporting_date' => Carbon::create(2026, 9, 7),
             'exit_status' => 'no',
         ]);
@@ -209,6 +218,7 @@ class TeamsTargetCallerConsistencyTest extends TestCase
             'designation' => Employee::DESIGNATION_CALLER,
             'superviser_id' => $teamLeader->id,
             'category' => '2500000',
+            'doj' => Carbon::create(2025, 5, 1),
             'reporting_date' => Carbon::create(2025, 5, 1),
             'exit_status' => 'no',
         ]);
