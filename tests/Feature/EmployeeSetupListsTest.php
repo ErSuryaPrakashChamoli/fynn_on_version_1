@@ -314,7 +314,7 @@ class EmployeeSetupListsTest extends TestCase
         $this->assertSame(3200000, $goldCaller->target_amount);
 
         $categoryTarget = new ReflectionMethod(AchievementCalculatorService::class, 'categoryTarget');
-        $this->assertSame(3200000.0, $categoryTarget->invoke(app(AchievementCalculatorService::class), $goldCaller));
+        $this->assertSame(3200000.0, $categoryTarget->invoke(app(AchievementCalculatorService::class), $goldCaller, now()->startOfMonth(), now()->endOfMonth()));
     }
 
     public function test_the_employee_form_offers_the_managed_lists(): void

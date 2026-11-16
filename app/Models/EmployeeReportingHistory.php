@@ -19,6 +19,8 @@ use Illuminate\Support\Carbon;
  * @property int|null $new_business_head_id
  * @property int|null $old_designation set on 'designation' rows only
  * @property int|null $new_designation set on 'designation' rows only
+ * @property string|null $old_category set on 'target_category' rows only (employees.category code)
+ * @property string|null $new_category set on 'target_category' rows only (employees.category code)
  * @property Carbon $effective_date
  * @property string|null $effective_to
  * @property string $change_type
@@ -64,6 +66,8 @@ class EmployeeReportingHistory extends Model
         'new_business_head_id',
         'old_designation',
         'new_designation',
+        'old_category',
+        'new_category',
         'effective_date',
         'effective_to',
         'change_type',

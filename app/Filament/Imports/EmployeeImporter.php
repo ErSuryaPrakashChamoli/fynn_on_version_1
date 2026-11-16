@@ -364,8 +364,9 @@ class EmployeeImporter extends Importer
                 $this->import->user_id,
             );
 
-            // A promotion or demotion is dated and re-slots their team, as
-            // on the Edit page.
+            // A promotion or demotion is dated and re-slots their team. The
+            // import is the bulk exception: on screen, "Change Position /
+            // Target" needs the team handed over first.
             if ($this->previousDesignation !== null) {
                 app(ReportingLineService::class)->recordDesignationChange(
                     $this->record,

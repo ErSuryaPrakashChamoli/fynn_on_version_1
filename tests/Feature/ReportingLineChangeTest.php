@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Imports\EmployeeImporter;
+use App\Filament\Imports\EmployeeUpdateImporter;
 use App\Filament\Resources\Employees\Pages\CreateEmployee;
 use App\Filament\Resources\Employees\Pages\EditEmployee;
 use App\Filament\Resources\Employees\Pages\ViewEmployee;
@@ -235,15 +236,39 @@ class ReportingLineChangeTest extends TestCase
         $this->assertTrue(HierarchyHelper::subordinateIds($this->cluster)->contains($this->caller->id));
     }
 
-    public function test_promoting_a_team_leader_moves_their_callers_into_the_manager_column(): void
+    /**
+     * The import still promotes with the team (the Edit page's Position
+     * field is locked; "Change Position / Target" hands the team over
+     * first — see EmployeePositionChangeTest).
+     */
+    public function test_an_import_promoting_a_team_leader_moves_their_callers_into_the_manager_column(): void
     {
-        Livewire::test(EditEmployee::class, ['record' => $this->teamLeader->getRouteKey()])
-            ->fillForm([
-                'designation' => Employee::DESIGNATION_MANAGER,
-                'reports_to' => $this->cluster->id,
-            ])
-            ->call('save')
-            ->assertHasNoFormErrors();
+        $import = Import::query()->forceCreate([
+            'file_name' => 'employees.csv',
+            'file_path' => 'employees.csv',
+            'importer' => EmployeeUpdateImporter::class,
+            'total_rows' => 1,
+            'user_id' => auth()->id(),
+        ]);
+
+        $row = [
+            'emp_id' => $this->teamLeader->emp_id,
+            'emp_name' => '',
+            'email' => '',
+            'designation' => (string) Employee::DESIGNATION_MANAGER,
+            'doj' => '',
+            'reporting_date' => '',
+            'reports_to' => $this->cluster->emp_id,
+            'cost_center' => '',
+            'unit_name' => '',
+            'status' => '',
+            'inactive_date' => '',
+        ];
+        $columns = array_keys($row);
+
+        (new EmployeeUpdateImporter($import, array_combine($columns, $columns), ['move' => EmployeeImporter::MOVE_ALONE]))($row);
+
+        $this->assertSame(Employee::DESIGNATION_MANAGER, $this->teamLeader->refresh()->designation);
 
         $this->caller->refresh();
 

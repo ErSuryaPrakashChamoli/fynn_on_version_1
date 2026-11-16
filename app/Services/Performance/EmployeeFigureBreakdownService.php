@@ -8,6 +8,7 @@ use App\Models\TargetCategory;
 use App\Services\AchievementCalculatorService;
 use App\Support\EmployeeLookupPeriod;
 use App\Support\ReportingTimeline;
+use App\Support\TargetCategoryTimeline;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -68,7 +69,7 @@ class EmployeeFigureBreakdownService
         return [
             ...$totals,
             'target' => $target,
-            'target_category' => $employee->category,
+            'target_category' => TargetCategoryTimeline::categoryOn($employee, self::categoryDay($period)),
             'percentage' => $this->calculator->percentageFromAmounts($net, $target),
             'deductions' => $totals['cashback'] + $totals['subvention'] + $totals['docking'],
             'remaining' => max($target - $net, 0),
@@ -87,11 +88,14 @@ class EmployeeFigureBreakdownService
      */
     public function target(Employee $employee, EmployeeLookupPeriod $period): array
     {
+        $category = TargetCategoryTimeline::categoryOn($employee, self::categoryDay($period));
+
         $result = [
             'kind' => 'none',
             'total' => 0.0,
-            'category' => TargetCategory::labelFor($employee->category),
-            'category_amount' => TargetCategory::targetAmountFor($employee->category),
+            'category' => TargetCategory::labelFor($category),
+            'category_amount' => TargetCategory::targetAmountFor($category),
+            'category_notes' => [],
             'months' => [],
             'callers' => [],
             'callers_total' => 0.0,
@@ -102,6 +106,10 @@ class EmployeeFigureBreakdownService
         if ($employee->designation === Employee::DESIGNATION_CALLER) {
             foreach ($period->months() as $month) {
                 $result['months'][] = ['month' => $month, 'callers' => 0.0, 'top_up' => 0.0, 'total' => $this->calculator->getTarget($employee, $month)];
+
+                if (($note = $this->calculator->categoryChangeNote($employee, $month)) !== null) {
+                    $result['category_notes'][] = $month->format('M Y').': '.$note;
+                }
             }
 
             return [...$result, 'kind' => 'caller', 'total' => array_sum(array_column($result['months'], 'total'))];
@@ -179,7 +187,7 @@ class EmployeeFigureBreakdownService
 
                 return [
                     ...$person,
-                    'category' => TargetCategory::labelFor($caller->category),
+                    'category' => TargetCategory::labelFor(TargetCategoryTimeline::categoryOn($caller, self::categoryDay($period))),
                     'share' => $shares[$caller->id] ?? 0.0,
                     'note' => $note ?: ($person['active'] ? 'On the rolls and in this team for the whole period.' : null),
                 ];
@@ -599,5 +607,14 @@ class EmployeeFigureBreakdownService
             'moved' => $moved,
             'note' => $notes === [] ? null : implode(' ', $notes),
         ];
+    }
+
+    /**
+     * The day whose target category a period is labelled with: its last
+     * day, or today while the period is still running.
+     */
+    public static function categoryDay(EmployeeLookupPeriod $period): Carbon
+    {
+        return $period->end->copy()->min(today());
     }
 }

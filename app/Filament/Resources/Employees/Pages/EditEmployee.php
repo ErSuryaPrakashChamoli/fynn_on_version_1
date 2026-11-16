@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Employees\Pages;
 
+use App\Filament\Actions\ChangeEmployeePositionAction;
 use App\Filament\Actions\InactivateEmployeeAction;
 use App\Filament\Actions\TransferEmployeeAction;
 use App\Filament\Resources\Employees\EmployeeResource;
@@ -47,10 +48,12 @@ class EditEmployee extends EditRecord
     protected function mutateFormDataBeforeSave(array $data): array
     {
         // An employee on the rolls leaves only through "Mark Inactive",
-        // which first clears whatever still depends on them; the form
-        // can only bring an exited employee back or correct their date.
+        // and is promoted, demoted or given a new target category only
+        // through "Change Position / Target" — both clear whatever still
+        // depends on them first and date the change. The form can only
+        // bring an exited employee back or correct their records.
         if (! EmployeeResource::hasLeft($this->record)) {
-            unset($data['exit_status'], $data['exit_date']);
+            unset($data['exit_status'], $data['exit_date'], $data['designation'], $data['category']);
         } elseif (($data['exit_status'] ?? 'no') === 'no') {
             $data['exit_date'] = null;
         }
@@ -152,6 +155,7 @@ class EditEmployee extends EditRecord
             ViewAction::make(),
             InactivateEmployeeAction::make(),
             TransferEmployeeAction::make(),
+            ChangeEmployeePositionAction::make(),
             DeleteAction::make(),
         ];
     }

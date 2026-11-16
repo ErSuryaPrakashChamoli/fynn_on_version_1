@@ -1315,9 +1315,22 @@
     min-height: 100dvh;
 }
 
+/* Desktop: exactly one viewport, never a page scroll. The banner is pinned
+   at 100dvh, so a right panel taller than the viewport used to stretch the
+   row and leave the body background showing as a blank strip under the
+   banner. The panel's vertical spacing scales with the viewport height
+   (see the clamp()s below) so it fits; on a viewport too short even for
+   that, only the panel scrolls (.fynn-auth-panel overflow-y). */
 @media (min-width: 1024px) {
+    html:has(.fynn-auth),
+    body:has(.fynn-auth) {
+        overflow: hidden;
+    }
+
     .fynn-auth {
         flex-direction: row;
+        height: 100dvh;
+        overflow: hidden;
     }
 }
 
@@ -1465,13 +1478,23 @@
     flex: 1 1 50%;
     align-items: center;
     justify-content: center;
-    padding: 8vh 3rem;
+    padding: clamp(1rem, 3vh, 3rem) 3rem;
     background-color: rgb(255 255 255);
 }
 
+@media (min-width: 1024px) {
+    .fynn-auth-panel {
+        overflow-y: auto;
+    }
+}
+
+/* margin-block:auto centres vertically like align-items:center, but keeps
+   the top reachable if the panel ever has to scroll on a very short
+   viewport (plain centring would push it above the scroll origin). */
 .fynn-auth-panel-inner {
     width: 100%;
     max-width: 33rem;
+    margin-block: auto;
 }
 
 /* The company (Fynnedge Advisory) logo -- placed via .fynn-auth-logo-position
@@ -1489,8 +1512,9 @@
 /* The classic (top, centered) placement -- rendered in-flow, right above
    the tagline, instead of floating via .fynn-auth-logo-position. */
 .fynn-auth-panel-logo-inline {
+    height: clamp(4rem, 12vh, 8.5rem);
     margin-inline: auto;
-    margin-bottom: 2rem;
+    margin-bottom: clamp(0.75rem, 2.5vh, 2rem);
 }
 
 .fynn-auth-logo-position {
@@ -1538,7 +1562,7 @@
     display: block;
     width: 65%;
     height: 1.25rem;
-    margin: 0.75rem auto 2.25rem;
+    margin: 0.75rem auto clamp(1rem, 3.5vh, 2.25rem);
     fill: var(--primary-600);
 }
 
@@ -1551,7 +1575,7 @@
 
 .fynn-auth-panel-subheading {
     margin-top: 0.5rem;
-    margin-bottom: 3rem;
+    margin-bottom: clamp(1.25rem, 4.5vh, 3rem);
     font-size: 1.2rem;
     color: rgb(100 116 139);
 }
@@ -1611,7 +1635,7 @@
 }
 
 .fynn-auth-panel-footer {
-    margin-top: 3rem;
+    margin-top: clamp(1rem, 4vh, 3rem);
     text-align: center;
     font-size: 0.875rem;
     color: rgb(148 163 184);

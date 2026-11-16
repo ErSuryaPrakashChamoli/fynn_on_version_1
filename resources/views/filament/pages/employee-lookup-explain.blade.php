@@ -82,6 +82,10 @@
                 @else
                     <li>The amount comes from Employee Setup &rarr; Target Categories ({{ $target['category'] }} = {{ $money($target['category_amount']) }} a month).</li>
                 @endif
+                @foreach ($target['category_notes'] ?? [] as $categoryNote)
+                    <li>{{ $categoryNote }}</li>
+                @endforeach
+                <li>A target category change only applies from its effective date: earlier months keep the category held then.</li>
                 <li>Joining and exit dates never reduce a caller's own target. They only change how much of it counts in their Team Leader's and Manager's team target.</li>
             </ul>
         @elseif (in_array($target['kind'], ['team', 'company'], true))

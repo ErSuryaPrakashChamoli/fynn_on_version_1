@@ -88,11 +88,19 @@ class EmployeeResource extends Resource
                         ->required()
                         ->native(false),
 
+                    // For someone on the rolls a promotion or demotion goes
+                    // through "Change Position / Target", which hands over
+                    // their work first and dates the change.
                     Select::make('designation')
                         ->label('Position')
                         ->options(fn (?Employee $record): array => Position::optionsIncluding($record?->designation))
                         ->required()
                         ->searchable()
+                        ->disabled(fn (?Employee $record): bool => self::isOnTheRolls($record))
+                        ->dehydrated(fn (?Employee $record): bool => ! self::isOnTheRolls($record))
+                        ->helperText(fn (?Employee $record): ?string => self::isOnTheRolls($record)
+                            ? 'Use “Change Position / Target” at the top of this page — it hands over their work first and dates the promotion or demotion.'
+                            : null)
                         ->live()
                         ->afterStateUpdated(function (Set $set, Get $get, $state): void {
                             // Drop a boss who is not senior to the new level.
@@ -122,10 +130,17 @@ class EmployeeResource extends Resource
                         // Other Bank Support sit outside the hierarchy
                         // (designationRank 0) and never read this value —
                         // Other Bank Support targets live in their own module.
-                        ->required(fn (Get $get): bool => Employee::designationRank(self::designationOf($get('designation'))) > 0)
-                        ->helperText(fn (Get $get): ?string => Employee::designationRank(self::designationOf($get('designation'))) > 0
-                            ? null
-                            : 'Not used for this position — it carries no LMS target.')
+                        ->required(fn (Get $get, ?Employee $record): bool => ! self::isOnTheRolls($record)
+                            && Employee::designationRank(self::designationOf($get('designation'))) > 0)
+                        // A new target is dated through "Change Position /
+                        // Target", so earlier months keep the old one.
+                        ->disabled(fn (?Employee $record): bool => self::isOnTheRolls($record))
+                        ->dehydrated(fn (?Employee $record): bool => ! self::isOnTheRolls($record))
+                        ->helperText(fn (Get $get, ?Employee $record): ?string => match (true) {
+                            self::isOnTheRolls($record) => 'Use “Change Position / Target” at the top of this page — the new target applies from its effective date and earlier months keep the old one.',
+                            Employee::designationRank(self::designationOf($get('designation'))) > 0 => null,
+                            default => 'Not used for this position — it carries no LMS target.',
+                        })
                         ->native(false),
 
                     // The one reporting choice. Every reporting column
@@ -233,6 +248,16 @@ class EmployeeResource extends Resource
     }
 
     /**
+     * Whether $record is an existing employee still on the rolls — whose
+     * position and target category change only through "Change Position /
+     * Target".
+     */
+    public static function isOnTheRolls(?Employee $record): bool
+    {
+        return $record !== null && $record->exists && ! self::hasLeft($record);
+    }
+
+    /**
      * Whether the employee is off the rolls (employees.exit_status).
      */
     public static function hasLeft(Employee $employee): bool
@@ -244,8 +269,10 @@ class EmployeeResource extends Resource
      * Why the form cannot move $employee to $bossId, or null when it can.
      *
      * A straight move (same position, different boss) is a transfer: like
-     * the "Transfer Employee" action it needs nothing attached to them. A
-     * promotion or demotion re-slots their team instead, so it is allowed.
+     * the "Transfer Employee" action it needs nothing attached to them. The
+     * Position field is locked for anyone on the rolls ("Change Position /
+     * Target" promotes and demotes), so a new position here is only ever a
+     * correction on an exited employee.
      */
     private static function moveProblem(Employee $employee, ?int $designation, ?int $bossId): ?string
     {

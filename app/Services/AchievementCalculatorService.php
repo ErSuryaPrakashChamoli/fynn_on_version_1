@@ -9,6 +9,7 @@ use App\Support\HierarchyHelper;
 use App\Support\OnRollsWindow;
 use App\Support\ReportingTimeline;
 use App\Support\SelectedMonth;
+use App\Support\TargetCategoryTimeline;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -346,7 +347,7 @@ class AchievementCalculatorService
 
         if ($employee->designation === Employee::DESIGNATION_CALLER) {
             if ($within === null) {
-                return $this->getCallerTarget($employee);
+                return $this->getCallerTarget($employee, $end);
             }
 
             $total = 0.0;
@@ -988,7 +989,7 @@ class AchievementCalculatorService
         return null;
     }
 
-    private function getCallerTarget(Employee $employee): float
+    private function getCallerTarget(Employee $employee, Carbon $periodEnd): float
     {
 
         /*
@@ -996,14 +997,16 @@ class AchievementCalculatorService
     | CALLER OWN TARGET
     |--------------------------------------------------------------------------
     |
-    | Caller target is ALWAYS based on assigned category.
+    | Caller target is ALWAYS based on assigned category — the one held in
+    | the month the period ends in, split by days when it changed inside
+    | that month (see categoryTarget()).
     |
     | DOJ, reporting_date, joining date and exit date do NOT affect
     | the caller's own target.
     |
     */
 
-        return $this->categoryTarget($employee);
+        return $this->categoryTarget($employee, $periodEnd->copy()->startOfMonth(), $periodEnd->copy()->endOfMonth());
     }
 
     public function getHierarchyCallerTarget(Employee $employee, ?Carbon $referenceMonth = null): float
@@ -1071,7 +1074,7 @@ class AchievementCalculatorService
         }
 
         if (! $window['is_partial']) {
-            return $this->categoryTarget($employee);
+            return $this->categoryTarget($employee, $monthStart, $monthEnd);
         }
 
         return $window['days'] >= self::MIN_TARGET_DAYS
@@ -1090,9 +1093,35 @@ class AchievementCalculatorService
         return OnRollsWindow::forMonth($employee, $monthStart, $monthEnd);
     }
 
-    private function categoryTarget(Employee $employee): float
+    /**
+     * The category target for the calendar month [$monthStart, $monthEnd],
+     * from the category held on each day of it (TargetCategoryTimeline):
+     * a change inside the month splits it by days (user decision
+     * 2026-11-16) — the old amount for the days before the effective date,
+     * the new one from it — and every other month keeps the one category
+     * it was held in, so a change never restates a past month.
+     */
+    private function categoryTarget(Employee $employee, Carbon $monthStart, Carbon $monthEnd): float
     {
-        return TargetCategory::targetAmountFor($employee->category)
+        $spans = TargetCategoryTimeline::spans($employee, $monthStart, $monthEnd);
+
+        if (count($spans) <= 1) {
+            return $this->categoryAmount($spans[0]['category'] ?? $employee->category);
+        }
+
+        $daysInMonth = (int) $monthStart->daysInMonth;
+        $target = 0.0;
+
+        foreach ($spans as $span) {
+            $target += $this->categoryAmount($span['category']) * $span['days'] / $daysInMonth;
+        }
+
+        return round($target, 2);
+    }
+
+    private function categoryAmount(?string $category): float
+    {
+        return TargetCategory::targetAmountFor($category)
             ?? self::DEFAULT_CATEGORY_TARGET;
     }
 
@@ -1159,7 +1188,7 @@ class AchievementCalculatorService
         }
 
         if (! $window['is_partial']) {
-            return null;
+            return $this->categoryChangeNote($employee, $referenceMonth);
         }
 
         $days = $window['days'];
@@ -1178,5 +1207,32 @@ class AchievementCalculatorService
 
         return "{$days} days on the rolls this month ({$span}) — at or above the "
             .self::MIN_TARGET_DAYS.'-day minimum.';
+    }
+
+    /**
+     * How a full month's target was split when the target category changed
+     * inside it, or null when it did not.
+     */
+    public function categoryChangeNote(Employee $employee, ?Carbon $referenceMonth = null): ?string
+    {
+        $referenceMonth ??= SelectedMonth::current();
+
+        $spans = TargetCategoryTimeline::spans(
+            $employee,
+            $referenceMonth->copy()->startOfMonth(),
+            $referenceMonth->copy()->endOfMonth(),
+        );
+
+        if (count($spans) <= 1) {
+            return null;
+        }
+
+        return 'Target category changed this month, so the target is split by days: '
+            .collect($spans)
+                ->map(fn (array $span): string => (TargetCategory::labelFor($span['category']) ?? 'no category')
+                    .' ('.indianCurrencyFormat($this->categoryAmount($span['category'])).') for '
+                    .$span['days'].' day(s) from '.$span['start']->format('d M'))
+                ->join(', ', ' and ')
+            .'.';
     }
 }

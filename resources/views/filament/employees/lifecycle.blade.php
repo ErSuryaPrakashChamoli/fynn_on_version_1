@@ -79,9 +79,11 @@
                             $endDate = $history->effective_to?->format('d M Y');
 
                             $isDesignationChange = $history->change_type === \App\Services\ReportingLineService::CHANGE_DESIGNATION;
+                            $isCategoryChange = $history->change_type === \App\Services\ReportingLineService::CHANGE_TARGET_CATEGORY;
                             $designationLabels = \App\Models\Employee::designationOptions();
 
                             $eventLabel = match (true) {
+                                $isCategoryChange => 'Target Change',
                                 $isDesignationChange => match (true) {
                                     \App\Models\Employee::designationRank($history->new_designation) > \App\Models\Employee::designationRank($history->old_designation) => 'Promotion',
                                     \App\Models\Employee::designationRank($history->new_designation) < \App\Models\Employee::designationRank($history->old_designation) => 'Demotion',
@@ -136,6 +138,17 @@
                                     {{ $designationLabels[$history->old_designation] ?? '-' }}
                                     →
                                     {{ $designationLabels[$history->new_designation] ?? '-' }}
+                                </td>
+                            </tr>
+                        @endif
+
+                        @if ($isCategoryChange)
+                            <tr class="is-muted bg-gray-50/60 dark:bg-gray-900/40">
+                                <td colspan="8" class="text-xs">
+                                    Target category:
+                                    {{ \App\Models\TargetCategory::labelFor($history->old_category) ?? '-' }}
+                                    →
+                                    {{ \App\Models\TargetCategory::labelFor($history->new_category) ?? '-' }}
                                 </td>
                             </tr>
                         @endif

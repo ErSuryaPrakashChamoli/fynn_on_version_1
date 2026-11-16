@@ -25,6 +25,7 @@ use App\Support\HierarchyHelper;
 use App\Support\ItModuleAccess;
 use App\Support\ReportingTree;
 use App\Support\SelectedMonth;
+use App\Support\TargetCategoryTimeline;
 use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -470,9 +471,25 @@ class EmployeeLookup extends Page implements HasTable
             'target' => [...$data, 'target' => $breakdowns->target($employee, $period)],
             'achievement' => [...$data, 'cases' => $breakdowns->achievement($employee, $period)],
             'incentive' => [...$data, 'incentive' => $breakdowns->incentive($employee, $period)],
-            'category' => [...$data, 'categoryLabel' => TargetCategory::labelFor($employee->category), 'categoryAmount' => TargetCategory::targetAmountFor($employee->category)],
+            'category' => [...$data, ...$this->categoryHeld($employee, $period)],
             default => $data,
         };
+    }
+
+    /**
+     * The target category $employee held at the end of $period (today while
+     * it is still running), for the "Target category" explanation.
+     *
+     * @return array{categoryLabel: ?string, categoryAmount: ?float}
+     */
+    private function categoryHeld(Employee $employee, EmployeeLookupPeriod $period): array
+    {
+        $category = TargetCategoryTimeline::categoryOn($employee, EmployeeFigureBreakdownService::categoryDay($period));
+
+        return [
+            'categoryLabel' => TargetCategory::labelFor($category),
+            'categoryAmount' => TargetCategory::targetAmountFor($category),
+        ];
     }
 
     public function periodLabel(): string

@@ -438,7 +438,7 @@ final class ReportingTimeline
     {
         $changes = EmployeeReportingHistory::query()
             ->toBase()
-            ->whereNotIn('change_type', ['exit', ReportingLineService::CHANGE_DESIGNATION])
+            ->whereNotIn('change_type', ReportingLineService::NON_REPORTING_CHANGES)
             ->orderBy('employee_id')
             ->orderBy('effective_date')
             ->orderBy('id')

@@ -95,17 +95,56 @@ class DesignationChangeMonthWiseTest extends TestCase
         ]);
     }
 
+    /**
+     * A promotion that takes the team along — through the employee import,
+     * the one path that still does since the Edit page's Position field
+     * was locked (2026-11-16: "Change Position / Target" needs the team
+     * handed over first). Promotions saved on the Edit page before then
+     * look exactly like this in the history.
+     */
     private function promote(Employee $employee, int $designation, Employee $reportsTo): void
     {
-        Livewire::test(EditEmployee::class, ['record' => $employee->getRouteKey()])
-            ->fillForm([
-                'designation' => $designation,
-                'reports_to' => $reportsTo->id,
-            ])
-            ->call('save')
-            ->assertHasNoFormErrors();
+        $this->importRow([
+            'emp_id' => $employee->emp_id,
+            'designation' => Employee::designationOptions()[$designation],
+            'reports_to' => $reportsTo->emp_id,
+        ]);
 
         $employee->refresh();
+
+        $this->assertSame($designation, $employee->designation);
+    }
+
+    /**
+     * @param  array<string, string>  $values
+     */
+    private function importRow(array $values): void
+    {
+        $import = Import::query()->forceCreate([
+            'file_name' => 'employees.csv',
+            'file_path' => 'employees.csv',
+            'importer' => EmployeeUpdateImporter::class,
+            'total_rows' => 1,
+            'user_id' => auth()->id(),
+        ]);
+
+        $row = [
+            'emp_id' => '',
+            'emp_name' => '',
+            'email' => '',
+            'designation' => '',
+            'doj' => '',
+            'reporting_date' => '',
+            'reports_to' => '',
+            'cost_center' => '',
+            'unit_name' => '',
+            'status' => '',
+            'inactive_date' => '',
+            ...$values,
+        ];
+        $columns = array_keys($row);
+
+        (new EmployeeUpdateImporter($import, array_combine($columns, $columns), ['move' => EmployeeImporter::MOVE_ALONE]))($row);
     }
 
     private function disburse(Employee $owner, string $date, float $amount): void
@@ -205,7 +244,7 @@ class DesignationChangeMonthWiseTest extends TestCase
     |--------------------------------------------------------------------------
     */
 
-    public function test_the_edit_page_dates_the_designation_change(): void
+    public function test_a_promotion_dates_the_designation_change(): void
     {
         $this->promote($this->manager, Employee::DESIGNATION_CLUSTER, $this->businessHead);
 
@@ -247,30 +286,11 @@ class DesignationChangeMonthWiseTest extends TestCase
 
     public function test_an_import_row_that_promotes_dates_the_designation_change(): void
     {
-        $import = Import::query()->forceCreate([
-            'file_name' => 'employees.csv',
-            'file_path' => 'employees.csv',
-            'importer' => EmployeeUpdateImporter::class,
-            'total_rows' => 1,
-            'user_id' => auth()->id(),
-        ]);
-
-        $row = [
+        $this->importRow([
             'emp_id' => $this->teamLeader->emp_id,
-            'emp_name' => '',
-            'email' => '',
             'designation' => 'Manager',
-            'doj' => '',
-            'reporting_date' => '',
             'reports_to' => $this->cluster->emp_id,
-            'cost_center' => '',
-            'unit_name' => '',
-            'status' => '',
-            'inactive_date' => '',
-        ];
-        $columns = array_keys($row);
-
-        (new EmployeeUpdateImporter($import, array_combine($columns, $columns), ['move' => EmployeeImporter::MOVE_ALONE]))($row);
+        ]);
 
         $designationRow = EmployeeReportingHistory::query()
             ->where('employee_id', $this->teamLeader->id)

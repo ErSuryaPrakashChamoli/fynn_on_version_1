@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Employee;
 use App\Models\EmployeeReportingHistory;
 use App\Support\ReportingTree;
+use App\Support\TargetCategoryTimeline;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -42,6 +43,17 @@ class ReportingLineService
 
     /** A promotion or demotion: carries old/new_designation, never moves anybody. */
     public const CHANGE_DESIGNATION = 'designation';
+
+    /** A target category change: carries old/new_category, never moves anybody. */
+    public const CHANGE_TARGET_CATEGORY = 'target_category';
+
+    /**
+     * Rows that date something other than the reporting line, so a move
+     * neither ends nor rebuilds from them.
+     *
+     * @var list<string>
+     */
+    public const NON_REPORTING_CHANGES = ['exit', self::CHANGE_DESIGNATION, self::CHANGE_TARGET_CATEGORY];
 
     /**
      * Whether an employee at $designation has to report to somebody.
@@ -329,6 +341,58 @@ class ReportingLineService
         ]);
     }
 
+    /**
+     * Date a target category change that has already been saved on the
+     * employee, so months before $effectiveDate keep $previousCategory's
+     * target (TargetCategoryTimeline) and the month it falls in is split by
+     * days.
+     */
+    public function recordCategoryChange(
+        Employee $employee,
+        ?string $previousCategory,
+        CarbonInterface|string|null $effectiveDate = null,
+        ?string $remarks = null,
+        ?int $updatedBy = null,
+    ): void {
+        $category = filled($employee->category) ? (string) $employee->category : null;
+        $previousCategory = filled($previousCategory) ? $previousCategory : null;
+
+        if ($category === $previousCategory) {
+            return;
+        }
+
+        $effectiveDate = Carbon::parse($effectiveDate ?? today())->toDateString();
+
+        EmployeeReportingHistory::query()
+            ->where('employee_id', $employee->id)
+            ->where('change_type', self::CHANGE_TARGET_CATEGORY)
+            ->whereNull('effective_to')
+            ->update([
+                'effective_to' => $effectiveDate,
+                'updated_at' => now(),
+            ]);
+
+        $columns = [];
+
+        foreach (array_keys(Employee::REPORTING_COLUMNS) as $column) {
+            $columns['old_'.$column] = $employee->{$column};
+            $columns['new_'.$column] = $employee->{$column};
+        }
+
+        EmployeeReportingHistory::query()->create([
+            'employee_id' => $employee->id,
+            ...$columns,
+            'old_category' => $previousCategory,
+            'new_category' => $category,
+            'effective_date' => $effectiveDate,
+            'change_type' => self::CHANGE_TARGET_CATEGORY,
+            'updated_by' => $updatedBy,
+            'remarks' => $remarks,
+        ]);
+
+        TargetCategoryTimeline::forget();
+    }
+
     private function canHaveBoss(?int $designation): bool
     {
         return Employee::designationRank($designation) > 0
@@ -358,10 +422,11 @@ class ReportingLineService
 
         $employee->forceFill($columns)->save();
 
-        // A move ends the previous reporting line, never a designation.
+        // A move ends the previous reporting line, never a designation or
+        // a target category.
         EmployeeReportingHistory::query()
             ->where('employee_id', $employee->id)
-            ->whereNotIn('change_type', ['exit', self::CHANGE_DESIGNATION])
+            ->whereNotIn('change_type', self::NON_REPORTING_CHANGES)
             ->whereNull('effective_to')
             ->update([
                 'effective_to' => $effectiveDate,
