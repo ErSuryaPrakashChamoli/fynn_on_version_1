@@ -253,7 +253,9 @@ class OctoberRestructureCorrectionTest extends TestCase
     public function test_a_database_without_these_employees_is_left_alone(): void
     {
         DB::table('employee_reporting_history')->delete();
-        DB::table('employees')->update(['emp_id' => DB::raw("'X' || id")]);
+        foreach (DB::table('employees')->pluck('id') as $employeeId) {
+            DB::table('employees')->where('id', $employeeId)->update(['emp_id' => 'X'.$employeeId]);
+        }
 
         $this->person('someoneElse', 'FA9999', 'Someone Else', Employee::DESIGNATION_CALLER);
         $before = DB::table('employee_reporting_history')->get()->toArray();
