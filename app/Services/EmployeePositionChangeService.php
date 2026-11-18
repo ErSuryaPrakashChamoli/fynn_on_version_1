@@ -8,6 +8,7 @@ use App\Models\EmployeeReportingHistory;
 use App\Models\Position;
 use App\Models\TargetCategory;
 use App\Models\User;
+use App\Support\ReportingTree;
 use App\Support\TargetCategoryTimeline;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -16,10 +17,17 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * Promotes, demotes or changes the target category of an employee on the
- * rolls — from the "Change Position / Target" action — only once nothing is
- * attached to them (EmployeeDependencyService): their team, open customers,
- * leads and delegations are handed over first (a plain transfer hands over
- * less — EmployeeDependencyService::SCOPE_MOVE).
+ * rolls — from the "Change Position / Target" action.
+ *
+ * Nothing they hold is handed over (user decision 2026-11-18): while they
+ * stay on the rolls every customer, lead and assigned lead stays theirs,
+ * and delegations run on. Their team is asked about only when the position
+ * changes (user decision 2026-11-18): it may stay with them while the new
+ * position is still senior to all of it (a promoted Team Leader keeps their
+ * callers), or be given the new boss chosen in the same pop-up
+ * ($teamBossId), in the same transaction — required when the new position
+ * would no longer be senior to somebody in it. Either way the team keeps
+ * its own work. A target category change alone touches nobody else.
  *
  * Both changes are dated: a designation change through
  * ReportingLineService::recordDesignationChange() and a category change
@@ -37,11 +45,14 @@ class EmployeePositionChangeService
     /**
      * Give $employee $designation (reporting to $bossId) and $category from
      * $effectiveDate. $position, the designation title, is updated alongside
-     * when given.
+     * when given. When the position changes, anyone reporting to them
+     * moves to $teamBossId from the same date, or stays with them when
+     * $teamBossId is null and the new position is still senior to them all.
      *
-     * @throws ValidationException while anything is still attached, nothing
-     *                             would change, a value is not offered, the
-     *                             boss is not allowed, or the date is out of range
+     * @throws ValidationException when nothing would change, a value is not
+     *                             offered, the boss (theirs or the team's) is
+     *                             not allowed, their team has nobody to go to,
+     *                             or the date is out of range
      */
     public function change(
         Employee $employee,
@@ -52,12 +63,13 @@ class EmployeePositionChangeService
         ?string $remarks,
         ?User $performedBy,
         ?string $position = null,
+        ?int $teamBossId = null,
     ): void {
         $category = filled($category) ? $category : null;
         $position = filled($position) ? $position : null;
         $effectiveDay = CarbonImmutable::parse($effectiveDate->toDateString());
 
-        DB::transaction(function () use ($employee, $designation, $bossId, $category, $position, $effectiveDay, $remarks, $performedBy): void {
+        DB::transaction(function () use ($employee, $designation, $bossId, $category, $position, $effectiveDay, $remarks, $performedBy, $teamBossId): void {
             /** @var Employee $employee */
             $employee = Employee::query()->whereKey($employee->id)->lockForUpdate()->firstOrFail();
 
@@ -69,8 +81,6 @@ class EmployeePositionChangeService
             $this->assertChangeAllowed($employee, $designation, $category, $position, $designationChanges, $categoryChanges);
             $this->assertEffectiveDateAllowed($employee, $effectiveDay, $designationChanges, $categoryChanges);
 
-            $this->dependencies->assertNothingAttached($employee, 'dependencies');
-
             $bossId = $this->reportsToBoss($designation) ? $bossId : null;
 
             if ($designationChanges && ($problem = $this->reportingLines->bossProblem($designation, $bossId, $employee->id)) !== null) {
@@ -79,6 +89,12 @@ class EmployeePositionChangeService
 
             $remarks = filled($remarks) ? trim($remarks) : $this->describe($previousDesignation, $designation, $previousCategory, $category);
 
+            // Read before the position changes: the tree finds a boss only
+            // through the column matching their position.
+            $stayingTeamIds = $designationChanges
+                ? $this->moveTeam($employee, $designation, $teamBossId, $effectiveDay, $performedBy)
+                : [];
+
             $employee->forceFill([
                 'designation' => $designation,
                 'category' => $category,
@@ -86,6 +102,19 @@ class EmployeePositionChangeService
             ])->save();
 
             if ($designationChanges) {
+                // A team that stays is put back under them at the new
+                // position first, so their own move below carries it along.
+                foreach (Employee::query()->whereIn('id', $stayingTeamIds)->get() as $report) {
+                    $this->reportingLines->reportTo(
+                        $report,
+                        $employee->id,
+                        $effectiveDay,
+                        ReportingLineService::CHANGE_REPORTING,
+                        "Follows {$employee->emp_name}'s designation change.",
+                        $performedBy?->id,
+                    );
+                }
+
                 // reporting_date is deliberately left untouched (see
                 // ReportingLineService); the effective date dates the rows.
                 $this->reportingLines->reportTo(
@@ -106,6 +135,47 @@ class EmployeePositionChangeService
         });
 
         app(MonthlyTargetGate::class)->forget();
+    }
+
+    /**
+     * How many people report straight to $employee — given a new boss when
+     * their position changes.
+     */
+    public function teamSize(Employee $employee): int
+    {
+        return $this->dependencies->directReports($employee)->count();
+    }
+
+    /**
+     * Whether everybody reporting to $employee may stay with them at
+     * $designation — it is still senior to every one of them.
+     */
+    public function teamCanStay(Employee $employee, ?int $designation): bool
+    {
+        return Employee::designationRank($designation) > $this->teamSeniorRank($employee);
+    }
+
+    /**
+     * The rank of the most senior person reporting to $employee (0 with
+     * nobody), so a form can tell cheaply whether the team may stay.
+     */
+    public function teamSeniorRank(Employee $employee): int
+    {
+        return (int) $this->dependencies->directReports($employee)
+            ->pluck('designation')
+            ->map(fn ($reportDesignation): int => Employee::designationRank((int) $reportDesignation))
+            ->max();
+    }
+
+    /**
+     * Who $employee's team may report to once their position changes:
+     * anybody on the rolls more senior than all of them, but $employee.
+     *
+     * @return array<string, array<int, string>>
+     */
+    public function teamBossOptions(Employee $employee): array
+    {
+        return $this->dependencies->newBossOptions($employee);
     }
 
     /**
@@ -226,6 +296,45 @@ class EmployeePositionChangeService
         if ($earliest !== null && $effectiveDay->lt($earliest)) {
             $this->fail('effective_date', 'The effective date cannot be before '.$earliest->format('d M Y').' — their joining date or last recorded change.');
         }
+    }
+
+    /**
+     * Give everybody reporting to $employee the new boss $teamBossId from
+     * $effectiveDay, before $employee's own position changes — or, with no
+     * $teamBossId, keep them with $employee when $designation is still
+     * senior to them all. Their work stays with them either way.
+     *
+     * @return list<int> who stays and must be put back under $employee once
+     *                   the new position is saved (exited reports the new
+     *                   position is still senior to included)
+     */
+    private function moveTeam(Employee $employee, int $designation, ?int $teamBossId, CarbonImmutable $effectiveDay, ?User $performedBy): array
+    {
+        $teamSize = $this->teamSize($employee);
+
+        if ($teamSize === 0) {
+            return [];
+        }
+
+        if ($teamBossId === null || $teamBossId === $employee->id) {
+            if ($this->teamCanStay($employee, $designation)) {
+                $tree = ReportingTree::load();
+                $newRank = Employee::designationRank($designation);
+
+                return array_values(array_filter(
+                    $tree->childIds($employee->id),
+                    fn (int $reportId): bool => Employee::designationRank($tree->designation($reportId)) < $newRank,
+                ));
+            }
+
+            $label = Employee::designationOptions()[$designation] ?? 'their new position';
+
+            $this->fail('team_boss', "{$employee->emp_name} still has {$this->dependencies->describe([EmployeeDependencyService::DIRECT_REPORTS => $teamSize])} who would no longer have a more senior boss as a {$label}. Choose who they report to from the effective date.");
+        }
+
+        $this->dependencies->moveDirectReports($employee, $teamBossId, $effectiveDay, $performedBy);
+
+        return [];
     }
 
     private function fail(string $field, string $message): never

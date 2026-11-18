@@ -25,6 +25,7 @@ use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -32,54 +33,38 @@ use Illuminate\Validation\ValidationException;
  * or a new target category (EmployeePositionChangeService) — the only way
  * either changes for an employee on the rolls.
  *
- * Two steps in one pop-up, like Transfer Employee. While anything is still
- * attached to them — their team, open customers, leads, delegations — it is
- * the EmployeeDependencyStep: listed, and handed over or cancelled right
- * there. Once nothing is left the same pop-up asks for the new position,
- * boss, target category and effective date, and the change happens on the
- * spot, dated so earlier months keep what was held then.
+ * One step: nothing they hold is handed over — their customers, leads and
+ * delegations stay theirs while they are on the rolls. When the position
+ * changes and somebody reports to them, the same form asks who the team
+ * reports to from the effective date: left empty the team stays with them,
+ * which is offered only while the new position is still senior to all of
+ * it (otherwise a new boss is required). The change happens on the spot, dated
+ * so earlier months keep what was held then.
  */
 class ChangeEmployeePositionAction
 {
     public static function make(): Action
     {
-        $attached = fn (Employee $record): bool => EmployeeDependencyStep::dependencies($record) !== [];
-
         return Action::make('changePosition')
             ->label('Change Position / Target')
             ->icon(Heroicon::OutlinedArrowsUpDown)
             ->color('info')
             ->visible(fn (Employee $record): bool => ! EmployeeResource::hasLeft($record))
-            ->modalWidth(fn (Employee $record): Width => $attached($record) ? Width::ThreeExtraLarge : Width::TwoExtraLarge)
-            ->modalIcon(fn (Employee $record): Heroicon => $attached($record) ? Heroicon::OutlinedExclamationTriangle : Heroicon::OutlinedArrowsUpDown)
-            ->modalIconColor(fn (Employee $record): string => $attached($record) ? 'warning' : 'info')
-            ->modalHeading(fn (Employee $record): string => $attached($record)
-                ? EmployeeDependencyStep::heading($record)
-                : "Change {$record->emp_name}'s position or target")
-            ->modalDescription(fn (Employee $record): string => $attached($record)
-                ? EmployeeDependencyStep::description($record, 'The new position and target are asked for once nothing is left.')
-                : self::currentSummary($record))
-            ->fillForm(fn (Employee $record, array $arguments): array => [
-                'handover_date' => today()->toDateString(),
+            ->modalWidth(Width::TwoExtraLarge)
+            ->modalIcon(Heroicon::OutlinedArrowsUpDown)
+            ->modalIconColor('info')
+            ->modalHeading(fn (Employee $record): string => "Change {$record->emp_name}'s position or target")
+            ->modalDescription(fn (Employee $record): string => self::currentSummary($record))
+            ->fillForm(fn (Employee $record): array => [
                 'designation' => $record->designation,
                 'reports_to' => HierarchyHelper::directBossId($record),
                 'position' => $record->position,
                 'category' => $record->category,
-                'effective_date' => $arguments['effective_date'] ?? today()->toDateString(),
+                'effective_date' => today()->toDateString(),
             ])
-            ->schema(fn (Employee $record): array => $attached($record)
-                ? EmployeeDependencyStep::schema($record)
-                : self::changeSchema($record))
-            ->modalSubmitActionLabel(fn (Employee $record): string => $attached($record) ? 'Hand over & continue' : 'Save change')
-            ->action(function (Employee $record, array $data, Action $action, $livewire) use ($attached): void {
-                if ($attached($record)) {
-                    EmployeeDependencyStep::clear($record, $data, $action);
-
-                    ReopenAction::for($action, ['effective_date' => Carbon::parse($data['handover_date'] ?? today())->toDateString()]);
-
-                    return;
-                }
-
+            ->schema(fn (Employee $record): array => self::changeSchema($record))
+            ->modalSubmitActionLabel('Save change')
+            ->action(function (Employee $record, array $data, Action $action, $livewire): void {
                 $service = app(EmployeePositionChangeService::class);
                 $previousDesignation = (int) $record->designation;
                 $previousCategory = filled($record->category) ? (string) $record->category : null;
@@ -96,6 +81,7 @@ class ChangeEmployeePositionAction
                         $data['remarks'] ?? null,
                         Auth::user(),
                         filled($data['position'] ?? null) ? (string) $data['position'] : null,
+                        filled($data['team_boss'] ?? null) ? (int) $data['team_boss'] : null,
                     );
                 } catch (ValidationException $exception) {
                     EmployeeDependencyStep::refuse($exception, $action);
@@ -127,7 +113,7 @@ class ChangeEmployeePositionAction
         return 'Now: '.(Employee::designationOptions()[$employee->designation] ?? '—')
             .', target category '.(TargetCategory::labelFor($employee->category) ?? 'none')
             .', reporting to '.($bossId ? app(ReportingLineService::class)->lineSummary($bossId) : 'nobody')
-            .'. Nothing is attached to them. Earlier months keep what they held before the effective date.';
+            .'. Their customers and leads stay with them. Earlier months keep what they held before the effective date.';
     }
 
     /**
@@ -143,6 +129,9 @@ class ChangeEmployeePositionAction
         $newDesignation = fn (Get $get): ?int => filled($get('designation')) ? (int) $get('designation') : null;
         $designationChanges = fn (Get $get): bool => $newDesignation($get) !== null && $newDesignation($get) !== $currentDesignation;
         $categoryChanges = fn (Get $get): bool => (filled($get('category')) ? (string) $get('category') : null) !== $currentCategory;
+        $teamSize = $service->teamSize($employee);
+        $teamSeniorRank = $service->teamSeniorRank($employee);
+        $teamCanStay = fn (Get $get): bool => Employee::designationRank($newDesignation($get)) > $teamSeniorRank;
 
         return [
             Select::make('designation')
@@ -179,6 +168,21 @@ class ChangeEmployeePositionAction
                     ? 'Reporting line: '.$reportingLines->lineSummary((int) $get('reports_to'))
                     : 'Anyone more senior may be chosen; the levels in between can be skipped.')
                 ->live()
+                ->native(false),
+
+            Select::make('team_boss')
+                ->label('Their team reports to')
+                ->options(fn (): array => $service->teamBossOptions($employee))
+                ->visible(fn (Get $get): bool => $teamSize > 0 && $designationChanges($get))
+                ->required(fn (Get $get): bool => $teamSize > 0 && $designationChanges($get) && ! $teamCanStay($get))
+                ->placeholder(fn (Get $get): string => $teamCanStay($get)
+                    ? "Stays with {$employee->emp_name}"
+                    : 'Choose a new boss')
+                ->helperText(fn (Get $get): string => ($teamCanStay($get)
+                    ? "Leave empty to keep their {$teamSize} ".Str::plural('direct report', $teamSize).' with them under the new position, or choose a new boss.'
+                    : "Their {$teamSize} ".Str::plural('direct report', $teamSize).' would no longer have a more senior boss — choose who they report to.')
+                    .' Either way it applies from the effective date and the team keeps its own customers and leads.')
+                ->searchable()
                 ->native(false),
 
             Select::make('position')

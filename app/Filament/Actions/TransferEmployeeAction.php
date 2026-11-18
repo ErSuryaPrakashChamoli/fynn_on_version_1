@@ -25,16 +25,14 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * "Transfer Employee" on the Employee page: moves the employee to a new
- * boss (EmployeeTransferService) with their own work; past months stay with
- * the old team.
+ * boss (EmployeeTransferService) with all their own work — customers,
+ * leads, assigned leads and delegations; past months stay with the old team.
  *
- * A caller takes all their work along and goes straight to the new boss
- * and effective date. A Team Leader or anybody above takes along only the
- * customers and leads they created: first the EmployeeDependencyStep
- * (EmployeeDependencyService::SCOPE_MOVE) hands over their team — which
- * keeps its own work — and whatever somebody else created and gave them.
- * Then the same pop-up asks for the new boss and the transfer happens on
- * the spot.
+ * Somebody nobody reports to goes straight to the new boss and effective
+ * date. Anybody with a team first gets the EmployeeDependencyStep
+ * (EmployeeDependencyService::SCOPE_MOVE): their team is given a new boss
+ * and keeps its own work. Then the same pop-up asks for the new boss and
+ * the transfer happens on the spot.
  */
 class TransferEmployeeAction
 {
@@ -60,10 +58,10 @@ class TransferEmployeeAction
             ->modalDescription(fn (Employee $record): string => $attached($record)
                 ? EmployeeDependencyStep::description(
                     $record,
-                    "Customers and leads they created go with them. {$record->emp_name}'s new boss is asked for once nothing else is left.",
+                    "Their customers and leads go with them. {$record->emp_name}'s new boss is asked for once nobody is left reporting to them.",
                     scope: $scope,
                 )
-                : self::takesAlongSummary($record))
+                : self::takesAlongSummary())
             ->fillForm(fn (Employee $record, array $arguments): array => [
                 'current_reporting' => ($bossId = HierarchyHelper::directBossId($record))
                     ? app(ReportingLineService::class)->lineSummary($bossId)
@@ -110,12 +108,9 @@ class TransferEmployeeAction
     /**
      * What goes with them, shown above the new boss.
      */
-    private static function takesAlongSummary(Employee $employee): string
+    private static function takesAlongSummary(): string
     {
-        return (app(EmployeeDependencyService::class)->takesAllWorkAlong($employee)
-            ? 'Their open customers, leads and delegations go with them.'
-            : 'The customers and leads they created, and their delegations, go with them.')
-            .' Earlier months stay with their old team.';
+        return 'Their open customers, leads and delegations go with them. Earlier months stay with their old team.';
     }
 
     /**

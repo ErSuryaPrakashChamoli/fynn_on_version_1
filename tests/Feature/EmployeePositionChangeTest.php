@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\Employees\Pages\EditEmployee;
 use App\Models\Customer;
+use App\Models\CustomerReassignment;
 use App\Models\Designation;
 use App\Models\Employee;
 use App\Models\EmployeeReportingHistory;
@@ -26,10 +27,12 @@ use Tests\TestCase;
 
 /**
  * A promotion, a demotion or a new target category — "Change Position /
- * Target" — needs nothing attached to the employee, like a transfer or an
- * exit: their team, open customers, leads and delegations are handed over
- * first in the same pop-up, then the change happens on the spot, dated so
- * the months before it keep what was held then.
+ * Target" — hands nothing over: while they stay on the rolls their open
+ * customers, leads and delegations stay theirs. When the position changes
+ * their team stays with them while the new position is still senior to all
+ * of it, or gets the new boss chosen in the same form (required when it
+ * would not be). The change happens on the spot, dated so the months before it keep
+ * what was held then.
  *
  * Cluster Manager K ── Managers M, M2. M ── Team Leaders T, T2.
  * T ── Caller C. T2 ── Caller C2. Everyone on Silver (₹25L) since 2025.
@@ -115,44 +118,27 @@ class EmployeePositionChangeTest extends TestCase
         $this->assertSame(self::TODAY, $row->effective_date->toDateString());
     }
 
-    public function test_a_team_leader_hands_over_their_team_and_work_then_is_promoted(): void
+    public function test_a_team_leader_is_promoted_keeping_their_work_while_their_team_gets_a_new_boss(): void
     {
         $customer = $this->customer($this->teamLeader);
         $lead = $this->lead($this->teamLeader);
-        $handoverDate = Carbon::parse(self::TODAY)->subDay()->toDateString();
+        $effectiveDate = Carbon::parse(self::TODAY)->subDay()->toDateString();
 
-        $page = Livewire::test(EditEmployee::class, ['record' => $this->teamLeader->id])
+        Livewire::test(EditEmployee::class, ['record' => $this->teamLeader->id])
             ->mountAction('changePosition')
             ->assertMountedActionModalSee([
-                "{$this->teamLeader->emp_name} still has work attached",
-                '1 direct report, 1 open customer and 1 open lead',
-                $this->caller->emp_name,
-                'Hand over & continue',
+                "Change {$this->teamLeader->emp_name}'s position or target",
+                'Their customers and leads stay with them.',
+                'Save change',
             ])
-            ->assertMountedActionModalDontSee('Save change')
-            ->setActionData([
-                'direct_reports_target' => $this->otherTeamLeader->id,
-                'handover_date' => $handoverDate,
-                'customers_target' => $this->otherTeamLeader->id,
-                'leads_target' => $this->otherTeamLeader->id,
-            ])
-            ->callMountedAction()
-            ->assertHasNoActionErrors();
-
-        $this->assertSame($this->otherTeamLeader->id, HierarchyHelper::directBossId($this->caller->fresh()));
-        $this->assertSame($this->otherTeamLeader->id, (int) $customer->fresh()->assign_to);
-        $this->assertSame($this->otherTeamLeader->id, (int) $lead->fresh()->employee_id);
-        $this->assertSame(Employee::DESIGNATION_TEAM_LEADER, $this->teamLeader->fresh()->designation, 'Handing over must not promote them by itself.');
-
-        // The same pop-up is back on the change itself, dated like the hand-over.
-        $this->assertSame('changePosition', $page->instance()->mountedActions[0]['name'] ?? null);
-
-        $page->assertMountedActionModalSee(["Change {$this->teamLeader->emp_name}'s position or target", 'Save change'])
-            ->assertActionDataSet(['effective_date' => $handoverDate])
+            ->assertMountedActionModalDontSee(['still has work attached', 'Hand over & continue', 'Their team reports to'])
             ->setActionData([
                 'designation' => Employee::DESIGNATION_MANAGER,
                 'reports_to' => $this->cluster->id,
+                'effective_date' => $effectiveDate,
             ])
+            ->assertMountedActionModalSee(['Their team reports to', 'Leave empty to keep their 1 direct report with them'])
+            ->setActionData(['team_boss' => $this->otherTeamLeader->id])
             ->callMountedAction()
             ->assertHasNoActionErrors()
             ->assertNotified();
@@ -161,13 +147,79 @@ class EmployeePositionChangeTest extends TestCase
 
         $this->assertSame(Employee::DESIGNATION_MANAGER, $this->teamLeader->designation);
         $this->assertSame($this->cluster->id, HierarchyHelper::directBossId($this->teamLeader));
-        $this->assertSame($this->otherTeamLeader->id, HierarchyHelper::directBossId($this->caller->fresh()), 'The team stays where it was handed over.');
-        $this->assertSame($handoverDate, EmployeeReportingHistory::query()
+        $this->assertSame($this->otherTeamLeader->id, HierarchyHelper::directBossId($this->caller->fresh()), 'The team moves to the boss chosen for it.');
+        $this->assertSame($effectiveDate, EmployeeReportingHistory::query()
+            ->where('employee_id', $this->caller->id)
+            ->where('change_type', ReportingLineService::CHANGE_TRANSFER)
+            ->sole()
+            ->effective_date
+            ->toDateString(), 'The team moves from the same effective date.');
+        $this->assertSame($effectiveDate, EmployeeReportingHistory::query()
             ->where('employee_id', $this->teamLeader->id)
             ->where('change_type', ReportingLineService::CHANGE_DESIGNATION)
             ->sole()
             ->effective_date
             ->toDateString());
+
+        // Nothing they hold is handed over.
+        $this->assertSame($this->teamLeader->id, (int) $customer->fresh()->assign_to);
+        $this->assertSame($this->teamLeader->id, (int) $lead->fresh()->employee_id);
+        $this->assertSame(0, CustomerReassignment::query()->count());
+    }
+
+    public function test_a_promoted_team_leader_keeps_their_team_when_no_new_boss_is_chosen(): void
+    {
+        $callerLead = $this->lead($this->caller);
+        $effectiveDate = Carbon::parse(self::TODAY)->subDay()->toDateString();
+
+        Livewire::test(EditEmployee::class, ['record' => $this->teamLeader->id])
+            ->mountAction('changePosition')
+            ->setActionData([
+                'designation' => Employee::DESIGNATION_MANAGER,
+                'reports_to' => $this->cluster->id,
+                'effective_date' => $effectiveDate,
+            ])
+            ->assertMountedActionModalSee(["Stays with {$this->teamLeader->emp_name}"])
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertNotified();
+
+        $caller = $this->caller->fresh();
+
+        $this->assertSame(Employee::DESIGNATION_MANAGER, $this->teamLeader->fresh()->designation);
+        $this->assertSame($this->teamLeader->id, HierarchyHelper::directBossId($caller), 'The team stays with them.');
+        $this->assertSame($this->teamLeader->id, (int) $caller->manager_id, 'The caller now sits straight under their Manager.');
+        $this->assertNull($caller->superviser_id);
+        $this->assertSame($this->caller->id, (int) $callerLead->fresh()->employee_id);
+        $this->assertSame($effectiveDate, EmployeeReportingHistory::query()
+            ->where('employee_id', $this->caller->id)
+            ->whereNull('effective_to')
+            ->where('change_type', '!=', ReportingLineService::CHANGE_DESIGNATION)
+            ->latest('id')
+            ->firstOrFail()
+            ->effective_date
+            ->toDateString(), 'Their new line is dated like the promotion.');
+        $this->assertSame(1, EmployeeReportingHistory::query()
+            ->where('employee_id', $this->caller->id)
+            ->whereDate('effective_date', $effectiveDate)
+            ->count(), 'Staying with them writes one row, not a detour through the old Manager.');
+    }
+
+    public function test_a_demotion_needs_a_new_boss_for_a_team_it_would_no_longer_be_senior_to(): void
+    {
+        Livewire::test(EditEmployee::class, ['record' => $this->teamLeader->id])
+            ->mountAction('changePosition')
+            ->setActionData([
+                'designation' => Employee::DESIGNATION_CALLER,
+                'reports_to' => $this->otherTeamLeader->id,
+                'effective_date' => self::TODAY,
+            ])
+            ->assertMountedActionModalSee(['Choose a new boss', 'would no longer have a more senior boss'])
+            ->callMountedAction()
+            ->assertHasActionErrors(['team_boss' => 'required']);
+
+        $this->assertSame(Employee::DESIGNATION_TEAM_LEADER, $this->teamLeader->fresh()->designation);
+        $this->assertSame($this->teamLeader->id, HierarchyHelper::directBossId($this->caller->fresh()));
     }
 
     public function test_a_manager_with_nothing_attached_is_demoted_on_the_spot(): void
@@ -192,17 +244,45 @@ class EmployeePositionChangeTest extends TestCase
         );
     }
 
-    public function test_the_service_refuses_a_promotion_while_anything_is_attached(): void
+    public function test_the_service_refuses_a_demotion_that_would_strand_their_team(): void
     {
-        try {
-            $this->service()->change($this->teamLeader, Employee::DESIGNATION_MANAGER, $this->cluster->id, self::SILVER, Carbon::parse(self::TODAY), null, $this->admin);
-            $this->fail('A Team Leader with a caller was promoted.');
-        } catch (ValidationException $exception) {
-            $this->assertStringContainsString('still has 1 direct report', $exception->errors()['dependencies'][0]);
+        foreach ([null, $this->teamLeader->id] as $teamBossId) {
+            try {
+                $this->service()->change($this->teamLeader, Employee::DESIGNATION_CALLER, $this->otherTeamLeader->id, self::SILVER, Carbon::parse(self::TODAY), null, $this->admin, teamBossId: $teamBossId);
+                $this->fail('A Team Leader was demoted to Caller with a caller still reporting to them.');
+            } catch (ValidationException $exception) {
+                $this->assertStringContainsString('still has 1 direct report who would no longer have a more senior boss', $exception->errors()['team_boss'][0]);
+            }
         }
 
         $this->assertSame(Employee::DESIGNATION_TEAM_LEADER, $this->teamLeader->fresh()->designation);
+        $this->assertSame($this->teamLeader->id, HierarchyHelper::directBossId($this->caller->fresh()));
         $this->assertFalse(EmployeeReportingHistory::query()->where('change_type', ReportingLineService::CHANGE_DESIGNATION)->exists());
+    }
+
+    public function test_a_demoted_manager_keeps_their_open_work_and_delegations(): void
+    {
+        $standIn = $this->employee(Employee::DESIGNATION_MANAGER, $this->cluster);
+        $customer = $this->customer($this->manager);
+        $lead = $this->lead($this->manager);
+
+        $this->service()->change(
+            $this->manager,
+            Employee::DESIGNATION_TEAM_LEADER,
+            $this->otherManager->id,
+            self::SILVER,
+            Carbon::parse(self::TODAY),
+            null,
+            $this->admin,
+            teamBossId: $standIn->id,
+        );
+
+        $this->assertSame(Employee::DESIGNATION_TEAM_LEADER, $this->manager->fresh()->designation);
+        $this->assertSame($standIn->id, HierarchyHelper::directBossId($this->teamLeader->fresh()));
+        $this->assertSame($standIn->id, HierarchyHelper::directBossId($this->otherTeamLeader->fresh()));
+        $this->assertSame($this->teamLeader->id, HierarchyHelper::directBossId($this->caller->fresh()), 'The callers stay with their Team Leader.');
+        $this->assertSame($this->manager->id, (int) $customer->fresh()->assign_to);
+        $this->assertSame($this->manager->id, (int) $lead->fresh()->employee_id);
     }
 
     /*
@@ -264,39 +344,41 @@ class EmployeePositionChangeTest extends TestCase
         $this->assertStringContainsString('split by days', $november['category_notes'][0]);
     }
 
-    public function test_a_target_change_also_needs_everything_handed_over_first(): void
+    public function test_a_caller_with_open_work_changes_target_straight_away_and_keeps_it(): void
     {
+        $customer = $this->customer($this->caller);
         $lead = $this->lead($this->caller);
 
-        $page = Livewire::test(EditEmployee::class, ['record' => $this->caller->id])
+        Livewire::test(EditEmployee::class, ['record' => $this->caller->id])
             ->mountAction('changePosition')
-            ->assertMountedActionModalSee(["{$this->caller->emp_name} still has work attached", '1 open lead'])
-            ->setActionData(['leads_target' => $this->otherCaller->id])
+            ->assertMountedActionModalSee(["Change {$this->caller->emp_name}'s position or target", 'Save change'])
+            ->assertMountedActionModalDontSee(['still has work attached', 'Hand over & continue'])
+            ->setActionData(['category' => self::GOLD, 'effective_date' => self::TODAY])
             ->callMountedAction()
-            ->assertHasNoActionErrors();
-
-        $this->assertSame($this->otherCaller->id, (int) $lead->fresh()->employee_id);
-        $this->assertSame(self::SILVER, $this->caller->fresh()->category);
-        $this->assertSame('changePosition', $page->instance()->mountedActions[0]['name'] ?? null);
-
-        $page->setActionData(['category' => self::GOLD])
-            ->callMountedAction()
-            ->assertHasNoActionErrors();
+            ->assertHasNoActionErrors()
+            ->assertNotified();
 
         $this->assertSame(self::GOLD, $this->caller->fresh()->category);
+        $this->assertSame($this->caller->id, (int) $customer->fresh()->assign_to);
+        $this->assertSame($this->caller->id, (int) $lead->fresh()->employee_id);
     }
 
-    public function test_the_service_refuses_a_target_change_while_anything_is_attached(): void
+    public function test_a_target_change_alone_leaves_their_team_where_it_is(): void
     {
-        $this->lead($this->caller);
+        $this->service()->change($this->teamLeader, Employee::DESIGNATION_TEAM_LEADER, null, self::GOLD, Carbon::parse(self::TODAY), null, $this->admin);
 
-        $this->expectException(ValidationException::class);
+        $this->assertSame(self::GOLD, $this->teamLeader->fresh()->category);
+        $this->assertSame($this->teamLeader->id, HierarchyHelper::directBossId($this->caller->fresh()));
+    }
 
-        try {
-            $this->service()->change($this->caller, Employee::DESIGNATION_CALLER, null, self::GOLD, Carbon::parse(self::TODAY), null, $this->admin);
-        } finally {
-            $this->assertSame(self::SILVER, $this->caller->fresh()->category);
-        }
+    public function test_a_caller_with_open_work_is_promoted_and_takes_it_along(): void
+    {
+        $lead = $this->lead($this->otherCaller);
+
+        $this->service()->change($this->otherCaller, Employee::DESIGNATION_TEAM_LEADER, $this->manager->id, self::SILVER, Carbon::parse(self::TODAY), null, $this->admin);
+
+        $this->assertSame(Employee::DESIGNATION_TEAM_LEADER, $this->otherCaller->fresh()->designation);
+        $this->assertSame($this->otherCaller->id, (int) $lead->fresh()->employee_id);
     }
 
     /*

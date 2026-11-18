@@ -40,8 +40,8 @@ class EmployeeImporter extends Importer
 
     /**
      * The `move` option — how somebody given a new boss (same position)
-     * moves: alone with their own work, refused while their team or work
-     * somebody else created is still with them, as "Transfer Employee" does
+     * moves: alone with all their own work, refused while anybody still
+     * reports to them, as "Transfer Employee" does
      * (EmployeeDependencyService::SCOPE_MOVE); or with everyone under them,
      * as a Full Cluster Transfer does.
      */
@@ -365,9 +365,8 @@ class EmployeeImporter extends Importer
                 $this->import->user_id,
             );
 
-            // A promotion or demotion is dated and re-slots their team. The
-            // import is the bulk exception: on screen, "Change Position /
-            // Target" needs the team handed over first.
+            // A promotion or demotion is dated and re-slots their team, as
+            // "Change Position / Target" does when the team stays with them.
             if ($this->previousDesignation !== null) {
                 app(ReportingLineService::class)->recordDesignationChange(
                     $this->record,
@@ -401,8 +400,8 @@ class EmployeeImporter extends Importer
     }
 
     /**
-     * Moving alone waits until their team, and work somebody else created,
-     * have been handed over; what they created goes with them.
+     * Moving alone waits until their team has been handed over; all their
+     * own work goes with them.
      */
     private function refuseMovingWithWorkAttached(): void
     {
@@ -415,7 +414,7 @@ class EmployeeImporter extends Importer
 
         if ($attached !== []) {
             throw new RowImportFailedException(
-                "{$this->record->emp_id}: {$this->record->emp_name} still has {$dependencies->describe($attached, EmployeeDependencyService::SCOPE_MOVE)}. "
+                "{$this->record->emp_id}: {$this->record->emp_name} still has {$dependencies->describe($attached)}. "
                 .'Hand them over first, or upload again choosing "Move the employee with their team".',
             );
         }

@@ -21,9 +21,14 @@ use Throwable;
  */
 class CustomerReassignmentService
 {
-    public function reassign(Customer $customer, int $newOwnerEmployeeId, int $performedByUserId, string $reason): CustomerReassignment
+    /**
+     * Give $customer to $newOwnerEmployeeId. The new owner must be an active
+     * Manager or Team Leader, unless $anyPosition — an exit hand-over
+     * (EmployeeDependencyService) may give them to anybody on the rolls.
+     */
+    public function reassign(Customer $customer, int $newOwnerEmployeeId, int $performedByUserId, string $reason, bool $anyPosition = false): CustomerReassignment
     {
-        return DB::transaction(function () use ($customer, $newOwnerEmployeeId, $performedByUserId, $reason): CustomerReassignment {
+        return DB::transaction(function () use ($customer, $newOwnerEmployeeId, $performedByUserId, $reason, $anyPosition): CustomerReassignment {
             /** @var Customer $customer */
             $customer = Customer::query()->whereKey($customer->id)->lockForUpdate()->firstOrFail();
 
@@ -36,13 +41,15 @@ class CustomerReassignmentService
             /** @var Employee|null $newOwner */
             $newOwner = Employee::query()
                 ->whereKey($newOwnerEmployeeId)
-                ->whereIn('designation', [Employee::DESIGNATION_MANAGER, Employee::DESIGNATION_TEAM_LEADER])
+                ->when(! $anyPosition, fn ($query) => $query->whereIn('designation', [Employee::DESIGNATION_MANAGER, Employee::DESIGNATION_TEAM_LEADER]))
                 ->where('exit_status', '!=', 'yes')
                 ->lockForUpdate()
                 ->first();
 
             if (! $newOwner) {
-                $this->validationError('new_owner_id', 'The selected new owner does not exist or is not an active Manager/Team Leader.');
+                $this->validationError('new_owner_id', $anyPosition
+                    ? 'The selected new owner does not exist or is no longer on the rolls.'
+                    : 'The selected new owner does not exist or is not an active Manager/Team Leader.');
             }
 
             if ((int) $customer->assign_to === $newOwner->id) {

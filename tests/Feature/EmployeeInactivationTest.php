@@ -17,6 +17,7 @@ use App\Models\EmployeeInactivityRequest;
 use App\Models\EmployeeReportingHistory;
 use App\Models\Lead;
 use App\Models\User;
+use App\Services\EmployeeDependencyService;
 use App\Services\EmployeeInactivationService;
 use App\Support\HierarchyHelper;
 use Filament\Actions\Testing\TestAction;
@@ -150,6 +151,56 @@ class EmployeeInactivationTest extends TestCase
 
         $this->assertSame('yes', $this->leavingTeamLeader->fresh()->exit_status);
         $this->assertSame(today()->subDays(2)->toDateString(), Carbon::parse($this->leavingTeamLeader->fresh()->exit_date)->toDateString());
+    }
+
+    public function test_a_leaving_employees_work_can_go_to_anybody_on_the_rolls_whatever_their_position(): void
+    {
+        $leavingCaller = $this->employee(Employee::DESIGNATION_CALLER, ['superviser_id' => $this->otherTeamLeader->id, 'manager_id' => $this->manager->id]);
+        $cluster = $this->employee(Employee::DESIGNATION_CLUSTER);
+        $bankSupport = $this->employee(Employee::DESIGNATION_OTHER_BANK_SUPPORT);
+        $alreadyLeft = $this->employee(Employee::DESIGNATION_TEAM_LEADER, ['exit_status' => 'yes', 'exit_date' => today()->subMonth()->toDateString()]);
+        $openCustomer = $this->customer($leavingCaller);
+        $openAssignedLead = $this->assignedLead($leavingCaller);
+        $openLead = $this->lead($leavingCaller, 'Call Back');
+
+        $offered = collect(app(EmployeeDependencyService::class)->newOwnerOptions($leavingCaller))
+            ->flatMap(fn (array $group): array => array_keys($group))
+            ->all();
+
+        foreach ([$cluster, $this->manager, $this->otherTeamLeader, $this->caller, $bankSupport] as $onTheRolls) {
+            $this->assertContains($onTheRolls->id, $offered, "{$onTheRolls->emp_name} is on the rolls and must be offered.");
+        }
+
+        $this->assertNotContains($leavingCaller->id, $offered);
+        $this->assertNotContains($alreadyLeft->id, $offered);
+
+        Livewire::test(EditEmployee::class, ['record' => $leavingCaller->id])
+            ->mountAction('inactivate')
+            ->setActionData([
+                'customers_target' => $this->caller->id,
+                'assigned_leads_target' => $this->manager->id,
+                'leads_target' => $cluster->id,
+            ])
+            ->callMountedAction()
+            ->assertHasNoActionErrors();
+
+        $this->assertSame($this->caller->id, (int) $openCustomer->fresh()->assign_to, 'A fellow caller may take the customers.');
+        $this->assertSame($this->manager->id, (int) $openAssignedLead->fresh()->employee_id);
+        $this->assertSame($cluster->id, (int) $openLead->fresh()->employee_id);
+    }
+
+    public function test_a_hand_over_to_somebody_off_the_rolls_is_refused(): void
+    {
+        $alreadyLeft = $this->employee(Employee::DESIGNATION_TEAM_LEADER, ['exit_status' => 'yes', 'exit_date' => today()->subMonth()->toDateString()]);
+        $openLead = $this->lead($this->leavingTeamLeader, 'Call Back');
+
+        $this->expectException(ValidationException::class);
+
+        try {
+            app(EmployeeDependencyService::class)->moveOpenLeads($this->leavingTeamLeader, $alreadyLeft->id);
+        } finally {
+            $this->assertSame($this->leavingTeamLeader->id, (int) $openLead->fresh()->employee_id);
+        }
     }
 
     public function test_what_is_left_after_a_partial_move_is_listed_again(): void

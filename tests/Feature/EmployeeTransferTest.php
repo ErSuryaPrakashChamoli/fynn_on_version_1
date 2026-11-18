@@ -30,13 +30,11 @@ use Tests\TestCase;
 
 /**
  * An employee moved to a new boss — "Transfer Employee", the Flexible
- * Reassignment, or the Edit form's Reports To — takes their own work along.
- * A caller takes all of it and moves straight away. A Team Leader or anybody
- * above takes only the customers, leads and assigned leads they created;
- * what somebody else created and gave them is handed over first, on the
- * spot. Their team never moves with them: anyone reporting to them is handed
- * over to a new boss and keeps their own work. Past months stay with the old
- * team, and delegations run on.
+ * Reassignment, or the Edit form's Reports To — takes all their own work
+ * along, whoever created or gave it to them: nothing is handed over while
+ * they stay on the rolls. Their team never moves with them: anyone reporting
+ * to them is given a new boss first and keeps their own work. Past months
+ * stay with the old team, and delegations run on.
  */
 class EmployeeTransferTest extends TestCase
 {
@@ -147,13 +145,14 @@ class EmployeeTransferTest extends TestCase
         $this->assertSame($this->caller->id, (int) $october->fresh()->employee_id, 'Past cases stay the caller\'s own.');
     }
 
-    public function test_a_team_leader_takes_only_what_they_created_and_hands_over_their_team_and_the_rest(): void
+    public function test_a_team_leader_takes_all_their_work_along_and_hands_over_only_their_team(): void
     {
         $ownCustomer = $this->customer($this->movingTeamLeader);
         $ownLead = $this->lead($this->movingTeamLeader);
         $delegation = $this->delegation($this->movingTeamLeader, $this->otherTeamLeader);
         $customerFromCaller = $this->customerHandedTo($this->movingTeamLeader, $this->caller);
         $leadFromCaller = $this->leadHandedTo($this->movingTeamLeader, $this->caller);
+        $leadFromTheAdmin = $this->assignedLead($this->movingTeamLeader, assignedBy: null);
         $callerCustomer = $this->customer($this->caller);
         $callerLead = $this->lead($this->caller);
         $handoverDate = today()->subDay()->toDateString();
@@ -161,19 +160,24 @@ class EmployeeTransferTest extends TestCase
         $page = Livewire::test(EditEmployee::class, ['record' => $this->movingTeamLeader->id])
             ->mountAction('transferEmployee')
             ->assertMountedActionModalSee([
-                "{$this->movingTeamLeader->emp_name} has a team or work that stays behind",
-                'Still attached: 1 direct report, 1 open customer not created by them and 1 open lead not created by them.',
+                "{$this->movingTeamLeader->emp_name} has a team that stays behind",
+                'Still attached: 1 direct report.',
                 $this->caller->emp_name,
-                $customerFromCaller->customer_name,
-                $leadFromCaller->customer_name,
                 'Hand over & continue',
             ])
-            ->assertMountedActionModalDontSee([$ownCustomer->customer_name, $ownLead->customer_name, 'live delegation', 'New Boss'])
+            ->assertMountedActionModalDontSee([
+                $ownCustomer->customer_name,
+                $customerFromCaller->customer_name,
+                $leadFromCaller->customer_name,
+                'open customer',
+                'open lead',
+                'open assigned lead',
+                'live delegation',
+                'New Boss',
+            ])
             ->setActionData([
                 'direct_reports_target' => $this->otherTeamLeader->id,
                 'handover_date' => $handoverDate,
-                'customers_target' => $this->otherTeamLeader->id,
-                'leads_target' => $this->otherTeamLeader->id,
             ])
             ->callMountedAction()
             ->assertHasNoActionErrors();
@@ -187,7 +191,7 @@ class EmployeeTransferTest extends TestCase
         $page->assertMountedActionModalSee([
             "Transfer {$this->movingTeamLeader->emp_name}",
             'New Boss',
-            'The customers and leads they created, and their delegations, go with them.',
+            'Their open customers, leads and delegations go with them.',
         ])
             ->assertActionDataSet(['effective_date' => $handoverDate])
             ->setActionData(['reports_to' => $this->otherManager->id])
@@ -199,55 +203,40 @@ class EmployeeTransferTest extends TestCase
         $this->assertSame($this->otherTeamLeader->id, HierarchyHelper::directBossId($this->caller->fresh()), 'The team stays where it was handed over.');
         $this->assertSame($this->manager->id, (int) $this->caller->fresh()->manager_id);
 
-        // What they created went with them.
+        // Everything they held went with them, whoever created or gave it.
         $this->assertSame($this->movingTeamLeader->id, (int) $ownCustomer->fresh()->assign_to);
         $this->assertSame($this->movingTeamLeader->id, (int) $ownLead->fresh()->employee_id);
+        $this->assertSame($this->movingTeamLeader->id, (int) $customerFromCaller->fresh()->assign_to);
+        $this->assertSame($this->movingTeamLeader->id, (int) $leadFromCaller->fresh()->employee_id);
+        $this->assertSame($this->movingTeamLeader->id, (int) $leadFromTheAdmin->fresh()->employee_id);
         $this->assertSame(CustomerJourneyDelegation::STATUS_ACTIVE, $delegation->fresh()->status);
+        $this->assertSame(0, CustomerReassignment::query()->count(), 'Nothing is handed over while they stay on the rolls.');
 
-        // What the caller created stayed behind: handed over, or never theirs.
-        $this->assertSame($this->otherTeamLeader->id, (int) $customerFromCaller->fresh()->assign_to);
-        $this->assertSame($this->caller->id, (int) $customerFromCaller->fresh()->employee_id);
-        $this->assertSame($this->otherTeamLeader->id, (int) $leadFromCaller->fresh()->employee_id);
-        $this->assertSame($this->caller->id, (int) $leadFromCaller->fresh()->created_by, 'A hand-over never changes who created the lead.');
+        // Their old team keeps its own work.
         $this->assertSame($this->caller->id, (int) $callerCustomer->fresh()->assign_to);
         $this->assertSame($this->caller->id, (int) $callerLead->fresh()->employee_id);
     }
 
-    public function test_assigned_leads_go_with_a_team_leader_only_when_they_assigned_them_to_themselves(): void
+    public function test_work_somebody_else_gave_a_team_leader_never_holds_up_a_move(): void
     {
         $dependencies = app(EmployeeDependencyService::class);
         $selfAssigned = $this->assignedLead($this->otherTeamLeader, assignedBy: $this->otherTeamLeader);
+        $fromSomebodyElse = $this->assignedLead($this->otherTeamLeader, assignedBy: $this->manager);
+        $fromTheAdmin = $this->assignedLead($this->otherTeamLeader, assignedBy: null);
+        $leadFromCaller = $this->leadHandedTo($this->otherTeamLeader, $this->caller);
+        $customerFromCaller = $this->customerHandedTo($this->otherTeamLeader, $this->caller);
 
         $this->assertSame([], $dependencies->moveDependencyCounts($this->otherTeamLeader));
 
-        $fromSomebodyElse = $this->assignedLead($this->otherTeamLeader, assignedBy: $this->manager);
-        $fromTheAdmin = $this->assignedLead($this->otherTeamLeader, assignedBy: null);
-
-        $this->assertSame(
-            [EmployeeDependencyService::ASSIGNED_LEADS => 2],
-            $dependencies->moveDependencyCounts($this->otherTeamLeader),
-        );
-
-        $dependencies->moveOpenAssignedLeads($this->otherTeamLeader, $this->movingTeamLeader->id, $this->admin, EmployeeDependencyService::SCOPE_MOVE);
         app(EmployeeTransferService::class)->transfer($this->otherTeamLeader, $this->otherManager->id, today(), null, $this->admin);
 
-        $this->assertSame($this->otherTeamLeader->id, (int) $selfAssigned->fresh()->employee_id);
-        $this->assertSame($this->movingTeamLeader->id, (int) $fromSomebodyElse->fresh()->employee_id);
-        $this->assertSame($this->movingTeamLeader->id, (int) $fromTheAdmin->fresh()->employee_id);
-    }
+        $this->assertSame($this->otherManager->id, HierarchyHelper::directBossId($this->otherTeamLeader->fresh()));
 
-    public function test_the_transfer_service_refuses_a_team_leader_still_holding_work_somebody_else_created(): void
-    {
-        $this->leadHandedTo($this->otherTeamLeader, $this->caller);
-
-        try {
-            app(EmployeeTransferService::class)->transfer($this->otherTeamLeader, $this->otherManager->id, today(), null, $this->admin);
-            $this->fail('A Team Leader holding a caller\'s lead was moved.');
-        } catch (ValidationException $exception) {
-            $this->assertStringContainsString('still has 1 open lead not created by them', $exception->errors()['reports_to'][0]);
+        foreach ([$selfAssigned, $fromSomebodyElse, $fromTheAdmin, $leadFromCaller] as $held) {
+            $this->assertSame($this->otherTeamLeader->id, (int) $held->fresh()->employee_id);
         }
 
-        $this->assertSame($this->manager->id, HierarchyHelper::directBossId($this->otherTeamLeader->fresh()));
+        $this->assertSame($this->otherTeamLeader->id, (int) $customerFromCaller->fresh()->assign_to);
     }
 
     public function test_a_manager_hands_over_only_their_team_leaders_who_keep_their_callers(): void
@@ -325,7 +314,7 @@ class EmployeeTransferTest extends TestCase
         $this->assertSame($this->manager->id, HierarchyHelper::directBossId($this->movingTeamLeader->fresh()));
         $this->assertSame('clearTransferDependencies', $page->instance()->mountedActions[0]['name'] ?? null);
 
-        $page->assertMountedActionModalSee(["{$this->movingTeamLeader->emp_name} has a team or work that stays behind", $this->caller->emp_name])
+        $page->assertMountedActionModalSee(["{$this->movingTeamLeader->emp_name} has a team that stays behind", $this->caller->emp_name])
             ->assertMountedActionModalDontSee('open lead')
             ->setActionData(['direct_reports_target' => $this->otherTeamLeader->id])
             ->callMountedAction()
@@ -387,7 +376,7 @@ class EmployeeTransferTest extends TestCase
         ], $this->admin->id);
     }
 
-    public function test_leaving_still_needs_their_own_work_handed_over(): void
+    public function test_only_leaving_needs_their_own_work_handed_over(): void
     {
         $this->lead($this->caller);
         $this->lead($this->otherTeamLeader);

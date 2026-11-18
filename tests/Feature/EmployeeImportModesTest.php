@@ -337,10 +337,10 @@ class EmployeeImportModesTest extends TestCase
         $this->assertSame($this->caller->id, (int) $lead->fresh()->employee_id);
     }
 
-    public function test_moving_alone_is_refused_while_a_team_leader_holds_a_lead_somebody_else_created(): void
+    public function test_moving_alone_takes_a_lead_somebody_else_created_along_too(): void
     {
         $otherTeamLeader = $this->employee('TL02', Employee::DESIGNATION_TEAM_LEADER, $this->manager);
-        Lead::query()->create([
+        $lead = Lead::query()->create([
             'employee_id' => $otherTeamLeader->id,
             'created_by' => $this->caller->id,
             'customer_name' => 'Handed-over lead',
@@ -354,8 +354,9 @@ class EmployeeImportModesTest extends TestCase
             $this->updateRow($otherTeamLeader, ['reports_to' => $this->otherManager->emp_id]),
         ], EmployeeImporter::MODE_UPDATE, EmployeeImporter::MOVE_ALONE);
 
-        $this->assertStringContainsString('TL02: '.$otherTeamLeader->emp_name.' still has 1 open lead not created by them', $failures[0]);
-        $this->assertSame($this->manager->id, $otherTeamLeader->fresh()->manager_id);
+        $this->assertSame([], $failures);
+        $this->assertSame($this->otherManager->id, $otherTeamLeader->fresh()->manager_id);
+        $this->assertSame($otherTeamLeader->id, (int) $lead->fresh()->employee_id, 'Nothing is handed over while they stay on the rolls.');
     }
 
     public function test_moving_with_their_team_takes_everyone_under_them_along(): void

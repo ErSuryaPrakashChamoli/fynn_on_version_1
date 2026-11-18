@@ -45,7 +45,7 @@ class ListEmployees extends ListRecords
                 ->color('warning')
                 ->visible(fn (): bool => auth()->user()?->hasRole('Admin') === true)
                 ->modalHeading('Transfer / Reassign Employees')
-                ->modalDescription('Use Full Cluster to move a Cluster Manager\'s direct reports, with their teams, to another Cluster Manager. Use Flexible Reassignment to move any employee to anyone more senior — levels in between may be skipped, and each row can have a different destination. A caller takes all their open work along; a Team Leader or anybody above takes only the customers and leads they created. Anyone reporting to them, and work somebody else created and gave them, stays behind and is handed over first, right here.')
+                ->modalDescription('Use Full Cluster to move a Cluster Manager\'s direct reports, with their teams, to another Cluster Manager. Use Flexible Reassignment to move any employee to anyone more senior — levels in between may be skipped, and each row can have a different destination. Everyone takes all their own customers and leads along. Anyone reporting to them stays behind, keeps their own work and is given a new boss first, right here.')
                 ->modalSubmitActionLabel('Confirm Transfer')
                 ->modalWidth('5xl')
                 // Back from the hand-over step with the rows as they were.
@@ -236,8 +236,8 @@ class ListEmployees extends ListRecords
 
     /**
      * The Flexible Reassignment's hand-over step, mounted in its place when
-     * somebody being moved still has a team or work somebody else created
-     * (EmployeeDependencyService::SCOPE_MOVE). Once that person is clear it
+     * somebody being moved still has a team (EmployeeDependencyService::
+     * SCOPE_MOVE). Once that person is clear it
      * moves on to the next one, and finally back to the transfer form with
      * the same rows, ready to confirm.
      */
@@ -258,7 +258,7 @@ class ListEmployees extends ListRecords
             ->modalHeading(fn (array $arguments): string => EmployeeDependencyStep::heading($employee($arguments), $scope))
             ->modalDescription(fn (array $arguments): string => EmployeeDependencyStep::description(
                 $employee($arguments),
-                'Customers and leads they created go with them. The transfer comes back for you to confirm once nothing else is left.',
+                'Their customers and leads go with them. The transfer comes back for you to confirm once nobody is left reporting to them.',
                 $alsoMoving($arguments),
                 $scope,
             ))
