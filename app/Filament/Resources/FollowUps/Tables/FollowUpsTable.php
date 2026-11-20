@@ -68,6 +68,15 @@ class FollowUpsTable
                     ->searchable()
                     ->sortable(),
 
+                TextColumn::make('remarks')
+                    ->label('Remarks')
+                    ->placeholder('-')
+                    ->limit(60)
+                    ->tooltip(fn (FollowUp $record): ?string => $record->remarks)
+                    ->wrap()
+                    ->searchable()
+                    ->sortable(),
+
                 // TextColumn::make('next_follow_up_date')
                 //     ->date(),
 

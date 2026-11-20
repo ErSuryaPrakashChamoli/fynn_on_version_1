@@ -6,6 +6,7 @@ use App\Filament\Resources\AssignedLeads\AssignedLeadResource;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\AiCustomerRecord;
 use App\Models\Bank;
+use App\Models\Customer;
 use App\Models\FollowUp;
 use Coolsam\Flatpickr\Forms\Components\Flatpickr;
 use Filament\Forms\Components\Hidden;
@@ -30,6 +31,7 @@ class FollowUpForm
             && (auth()->user()?->hasRole('Admin') || AssignedLeadResource::getEloquentQuery()->where('customer_assignments.ai_customer_record_id', request('ai_customer_record'))->exists())
             ? AiCustomerRecord::find(request('ai_customer_record'))
             : null;
+        $previousFollowUp = self::previousFollowUp($customer, $aiRecord);
 
         return $schema
             ->schema([
@@ -179,7 +181,8 @@ class FollowUpForm
                                 'On Hold' => 'On Hold',
                                 'Out of Station' => 'Out of Station',
                             ])
-                            ->default('Awaiting Low ROI')
+                            // No preselected status: the caller must pick what
+                            // actually happened, or a default gets logged unseen.
                             ->live()
                             ->required()
                             ->afterStateUpdated(function ($state, $set) {
@@ -274,6 +277,7 @@ class FollowUpForm
                             ->helperText('Select date and time for the next follow-up.'),
 
                         Textarea::make('remarks')
+                            ->default($previousFollowUp?->remarks)
                             ->rows(5)
                             ->required()
                             ->columnSpanFull(),
@@ -296,6 +300,19 @@ class FollowUpForm
                     ->columns(2),
 
             ]);
+    }
+
+    /**
+     * The prospect's most recent follow-up, so a new follow-up opens with the
+     * remarks logged last time instead of an empty box.
+     */
+    public static function previousFollowUp(?Customer $customer, ?AiCustomerRecord $aiRecord): ?FollowUp
+    {
+        return match (true) {
+            $customer !== null => FollowUp::query()->where('customer_id', $customer->id)->latest('id')->first(),
+            $aiRecord !== null => FollowUp::query()->where('ai_customer_record_id', $aiRecord->id)->latest('id')->first(),
+            default => null,
+        };
     }
 
     /**

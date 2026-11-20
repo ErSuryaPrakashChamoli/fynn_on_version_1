@@ -18,4 +18,14 @@ class CreateFollowUp extends CreateRecord
 
         return $data;
     }
+
+    /**
+     * Back to "My Customer Follow-ups", where the new entry and its remarks
+     * are listed — not the edit page, which made the follow-up look gone and
+     * invited overwriting a log row instead of logging a new one.
+     */
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
+    }
 }

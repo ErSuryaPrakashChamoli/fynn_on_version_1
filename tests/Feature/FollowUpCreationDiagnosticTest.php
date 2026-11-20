@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\FollowUps\FollowUpResource;
 use App\Filament\Resources\FollowUps\Pages\CreateFollowUp;
+use App\Filament\Resources\FollowUps\Pages\ListFollowUps;
 use App\Filament\Widgets\AssignedLeadFollowUpCalendarWidget;
 use App\Models\Customer;
 use App\Models\Employee;
@@ -66,7 +67,8 @@ class FollowUpCreationDiagnosticTest extends TestCase
                 'remarks' => 'diagnostic test',
             ])
             ->call('create')
-            ->assertHasNoFormErrors();
+            ->assertHasNoFormErrors()
+            ->assertRedirect(FollowUpResource::getUrl('index'));
 
         $this->assertDatabaseHas('follow_ups', [
             'customer_id' => $customer->id,
@@ -80,6 +82,116 @@ class FollowUpCreationDiagnosticTest extends TestCase
             FollowUpResource::getEloquentQuery()->whereKey($followUp->id)->exists(),
             'Customer follow-up should be visible on "My Customer Follow-ups" / its calendar.'
         );
+    }
+
+    public function test_status_is_not_preselected_and_must_be_chosen(): void
+    {
+        Role::firstOrCreate(['name' => 'Admin']);
+
+        $employee = Employee::factory()->create(['designation' => Employee::DESIGNATION_CALLER]);
+        $this->actingAs(User::factory()->create(['employee_id' => $employee->id]));
+
+        $customer = Customer::factory()->create([
+            'assign_to' => $employee->id,
+            'employee_id' => $employee->id,
+        ]);
+
+        Livewire::withQueryParams(['customer' => $customer->id])
+            ->test(CreateFollowUp::class)
+            ->assertSchemaStateSet(['status' => null])
+            ->fillForm([
+                'follow_up_type' => 'Call',
+                'next_follow_up_date' => now()->addWeek()->format('Y-m-d H:i'),
+                'remarks' => 'no status picked',
+            ])
+            ->call('create')
+            ->assertHasFormErrors(['status' => 'required']);
+
+        $this->assertDatabaseMissing('follow_ups', ['customer_id' => $customer->id]);
+    }
+
+    public function test_a_new_follow_up_opens_with_the_previous_remarks(): void
+    {
+        Role::firstOrCreate(['name' => 'Admin']);
+
+        $employee = Employee::factory()->create(['designation' => Employee::DESIGNATION_CALLER]);
+        $this->actingAs(User::factory()->create(['employee_id' => $employee->id]));
+
+        $customer = Customer::factory()->create([
+            'assign_to' => $employee->id,
+            'employee_id' => $employee->id,
+        ]);
+
+        foreach (['first call, asked for documents', 'documents received, awaiting ROI'] as $remarks) {
+            FollowUp::create([
+                'customer_id' => $customer->id,
+                'employee_id' => $employee->id,
+                'follow_up_type' => 'Call',
+                'status' => 'Awaiting Low ROI',
+                'next_follow_up_date' => now()->addDay(),
+                'remarks' => $remarks,
+            ]);
+        }
+
+        Livewire::withQueryParams(['customer' => $customer->id])
+            ->test(CreateFollowUp::class)
+            ->assertSchemaStateSet(['remarks' => 'documents received, awaiting ROI'])
+            ->fillForm([
+                'follow_up_type' => 'WhatsApp',
+                'status' => 'On Hold',
+                'next_follow_up_date' => now()->addWeek()->format('Y-m-d H:i'),
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame(
+            'documents received, awaiting ROI',
+            FollowUp::where('customer_id', $customer->id)->latest('id')->value('remarks'),
+        );
+    }
+
+    public function test_a_first_follow_up_opens_with_empty_remarks(): void
+    {
+        Role::firstOrCreate(['name' => 'Admin']);
+
+        $employee = Employee::factory()->create(['designation' => Employee::DESIGNATION_CALLER]);
+        $this->actingAs(User::factory()->create(['employee_id' => $employee->id]));
+
+        $customer = Customer::factory()->create([
+            'assign_to' => $employee->id,
+            'employee_id' => $employee->id,
+        ]);
+
+        Livewire::withQueryParams(['customer' => $customer->id])
+            ->test(CreateFollowUp::class)
+            ->assertSchemaStateSet(['remarks' => null]);
+    }
+
+    public function test_the_follow_up_listing_shows_the_remarks(): void
+    {
+        Role::firstOrCreate(['name' => 'Admin']);
+
+        $employee = Employee::factory()->create(['designation' => Employee::DESIGNATION_CALLER]);
+        $this->actingAs(User::factory()->create(['employee_id' => $employee->id]));
+
+        $customer = Customer::factory()->create([
+            'assign_to' => $employee->id,
+            'employee_id' => $employee->id,
+        ]);
+
+        $followUp = FollowUp::create([
+            'customer_id' => $customer->id,
+            'employee_id' => $employee->id,
+            'follow_up_type' => 'WhatsApp',
+            'status' => 'On Hold',
+            'next_follow_up_date' => now()->addDay(),
+            'remarks' => 'Customer asked to call back after salary credit',
+        ]);
+
+        Livewire::test(ListFollowUps::class)
+            ->assertCanSeeTableRecords([$followUp])
+            ->assertTableColumnExists('remarks')
+            ->assertSee('Customer asked to call back after salary credit');
     }
 
     public function test_editing_a_lead_logs_a_follow_up_visible_on_the_lead_calendar(): void
