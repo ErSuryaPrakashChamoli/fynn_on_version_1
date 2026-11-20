@@ -28,6 +28,8 @@ use Throwable;
  */
 class CustomerEditRequestService
 {
+    private const CASHBACK_FOLLOWS_FORM = 'This file\'s cashback follows its cashback form — the Admin changes it there (Cashback Forms → Change amount).';
+
     public function __construct(private CustomerEligibilityService $eligibility) {}
 
     public static function isReviewer(?User $user): bool
@@ -97,6 +99,11 @@ class CustomerEditRequestService
         DB::transaction(function () use ($request, $reviewer, $note): void {
             /** @var Customer $customer */
             $customer = Customer::query()->lockForUpdate()->findOrFail($request->customer_id);
+
+            // A cashback form may have been filled since the request was raised.
+            if ($request->items->contains('field', 'cashback') && $this->cashbackFollowsForm($customer)) {
+                throw ValidationException::withMessages(['changes' => self::CASHBACK_FOLLOWS_FORM]);
+            }
 
             // Another file or lead may have taken the PAN since it was asked for.
             foreach ($request->items as $item) {
@@ -206,6 +213,10 @@ class CustomerEditRequestService
                 throw ValidationException::withMessages(["changes.{$index}.field" => CustomerEditableFields::fieldLabel($section, $field).' is listed twice.']);
             }
 
+            if ($field === 'cashback' && $this->cashbackFollowsForm($customer)) {
+                throw ValidationException::withMessages(["changes.{$index}.field" => self::CASHBACK_FOLLOWS_FORM]);
+            }
+
             if (in_array($field, $pending, true)) {
                 throw ValidationException::withMessages(["changes.{$index}.field" => CustomerEditableFields::fieldLabel($section, $field).' already has a pending request on this file.']);
             }
@@ -271,6 +282,12 @@ class CustomerEditRequestService
         if ($match) {
             throw ValidationException::withMessages([$key => "This PAN is already used by {$match->description()}."]);
         }
+    }
+
+    /** A file with a live cashback form takes its cashback from that form only. */
+    private function cashbackFollowsForm(Customer $customer): bool
+    {
+        return app(CustomerCashbackService::class)->liveRequest($customer) !== null;
     }
 
     private function same(?string $current, ?string $requested): bool

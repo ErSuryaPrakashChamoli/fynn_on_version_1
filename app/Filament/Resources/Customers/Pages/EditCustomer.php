@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Customers\Pages;
 
 use App\Filament\Resources\Customers\CustomerResource;
+use App\Services\CustomerCashbackService;
 use App\Services\CustomerEligibilityService;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\ViewAction;
@@ -51,6 +52,14 @@ class EditCustomer extends EditRecord
 
         if (! $isEligible && $submitted !== 'not_started') {
             $data['journey_status'] = $this->record->journey_status;
+        }
+
+        // A live cashback form fixes the declaration; a page opened before
+        // the form was filled must not write a stale one back.
+        $liveCashback = app(CustomerCashbackService::class)->liveRequest($this->record);
+
+        if ($liveCashback !== null) {
+            $data['cashback_option'] = $liveCashback->type->value;
         }
 
         return $data;

@@ -43,6 +43,7 @@ use App\Filament\Resources\ComplaintCategories\ComplaintCategoryResource;
 use App\Filament\Resources\ComplaintPriorities\ComplaintPriorityResource;
 use App\Filament\Resources\Complaints\ComplaintResource;
 use App\Filament\Resources\CostCenters\CostCenterResource;
+use App\Filament\Resources\CustomerCashbackRequests\CustomerCashbackRequestResource;
 use App\Filament\Resources\CustomerEditRequests\CustomerEditRequestResource;
 use App\Filament\Resources\CustomerEligibilityRequests\CustomerEligibilityRequestResource;
 use App\Filament\Resources\CustomerJourneyAudits\CustomerJourneyAuditResource;
@@ -700,7 +701,8 @@ class AdminPanelProvider extends PanelProvider
                 ]),
 
                 // The customer file and its follow-ups, the requests raised
-                // against a customer (duplicate PAN, eligibility, edits) and
+                // against a customer (duplicate PAN, eligibility, edits,
+                // cashback forms) and
                 // the Admin's OCR / AI document screens.
                 NavigationGroup::make('Customers')->icon(Heroicon::OutlinedUserCircle)->items([
                     ...$this->navigationItemsFor(CustomerResource::class),
@@ -710,6 +712,7 @@ class AdminPanelProvider extends PanelProvider
                     ...$this->navigationItemsFor(CustomerPanRequestResource::class),
                     ...$this->navigationItemsFor(CustomerEligibilityRequestResource::class),
                     ...$this->navigationItemsFor(CustomerEditRequestResource::class),
+                    ...$this->navigationItemsFor(CustomerCashbackRequestResource::class),
                     ...$this->navigationItemsFor(OcrDocumentResource::class),
                     ...$this->navigationItemsFor(AiCustomerRecordResource::class),
                     ...$this->navigationItemsFor(AiDocumentSchemaResource::class),

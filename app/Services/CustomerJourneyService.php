@@ -126,7 +126,15 @@ class CustomerJourneyService
             ]);
         }
 
-        DB::transaction(function () use ($customer, $data) {
+        // A disbursed file must declare its cashback; a declared cashback or
+        // expected cashback needs its form first, and the amount always
+        // comes from that form (CustomerCashbackService), never typed here.
+        $disbursed = ($data['disbursal_status'] ?? null) === 'disbursed';
+        $cashback = $disbursed
+            ? app(CustomerCashbackService::class)->cashbackForDeclaration($customer, $data['cashback_option'] ?? null)
+            : $customer->cashback;
+
+        DB::transaction(function () use ($customer, $data, $disbursed, $cashback) {
 
             $journeyStatus = match ($data['disbursal_status']) {
                 'disbursed' => 'sanctioned',
@@ -145,9 +153,8 @@ class CustomerJourneyService
                 'sanctioned_loan_amount' => filled($data['sanctioned_loan_amount'] ?? null)
                     ? preg_replace('/[^0-9]/', '', $data['sanctioned_loan_amount'])
                     : null,
-                'cashback' => filled($data['cashback'] ?? null)
-                    ? preg_replace('/[^0-9]/', '', $data['cashback'])
-                    : null,
+                'cashback' => $cashback,
+                'cashback_option' => $disbursed ? $data['cashback_option'] : $customer->cashback_option,
                 'subvention' => filled($data['subvention'] ?? null)
                     ? preg_replace('/[^0-9]/', '', $data['subvention'])
                     : null,

@@ -1,0 +1,242 @@
+<?php
+
+namespace App\Filament\Resources\CustomerCashbackRequests;
+
+use App\Enums\CashbackRequestStatus;
+use App\Filament\Resources\CustomerCashbackRequests\Schemas\CustomerCashbackRequestForm;
+use App\Models\CustomerCashbackRequest;
+use App\Models\User;
+use App\Services\CustomerCashbackService;
+use Closure;
+use Filament\Actions\Action;
+use Filament\Facades\Filament;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
+use Filament\Support\Icons\Heroicon;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * Approve / reject / retrieve / change amount / record payment on a
+ * cashback form, shared by the listing rows, the voucher page and the
+ * customer page. Each action re-checks the user inside
+ * CustomerCashbackService; visibility only hides what would be refused.
+ *
+ * $resolve maps the action's record to the form (the record is the form
+ * itself on the cashback screens, the customer on the customer page).
+ */
+class CustomerCashbackRequestActions
+{
+    /**
+     * @return list<Action>
+     */
+    public static function all(?Closure $resolve = null, ?Closure $after = null): array
+    {
+        return [
+            self::approve($resolve, $after),
+            self::reject($resolve, $after),
+            self::retrieve($resolve, $after),
+            self::changeAmount($resolve, $after),
+            self::updatePayment($resolve, $after),
+        ];
+    }
+
+    public static function approve(?Closure $resolve = null, ?Closure $after = null): Action
+    {
+        return Action::make('approveCashback')
+            ->label(fn ($record): string => self::isAdmin() ? 'Approve' : 'Approve & send to Admin')
+            ->icon(Heroicon::OutlinedCheckCircle)
+            ->color('success')
+            ->modalHeading(fn ($record): string => 'Approve cashback form '.self::form($record, $resolve)?->voucher_no)
+            ->modalDescription(fn ($record): string => self::isAdmin()
+                ? 'Final approval. The file\'s cashback is set to the approved amount and Accounts are told it is ready to pay.'
+                : 'Your approval sends the form to the Admin for final approval.')
+            ->fillForm(fn ($record): array => ['approved_amount' => self::form($record, $resolve)?->amount])
+            ->schema(fn (): array => array_values(array_filter([
+                self::isAdmin()
+                    ? TextInput::make('approved_amount')
+                        ->label('Approved amount')
+                        ->indianAmount(min: 1)
+                        ->required()
+                        ->helperText('Change it only if the approved cashback differs from what was asked for.')
+                    : null,
+                Textarea::make('note')->label('Note (optional)')->rows(2)->maxLength(1000),
+            ])))
+            ->visible(fn ($record): bool => self::can('canApprove', $record, $resolve))
+            ->action(function ($record, array $data) use ($resolve, $after): void {
+                self::run(
+                    fn (User $user, CustomerCashbackRequest $form) => app(CustomerCashbackService::class)->approve($form, $user, $data['note'] ?? null, $data['approved_amount'] ?? null),
+                    $record,
+                    $resolve,
+                    $after,
+                    fn (CustomerCashbackRequest $form): string => $form->status === CashbackRequestStatus::Approved ? 'Cashback approved' : 'Approved — sent to the Admin',
+                );
+            });
+    }
+
+    public static function reject(?Closure $resolve = null, ?Closure $after = null): Action
+    {
+        return Action::make('rejectCashback')
+            ->label('Reject')
+            ->icon(Heroicon::OutlinedXCircle)
+            ->color('danger')
+            ->modalHeading('Reject this cashback form')
+            ->modalDescription('The file\'s cashback goes back to 0 and the person who filled the form is told why. A new form can be filled after.')
+            ->schema([
+                Textarea::make('rejection_reason')->label('Why is it rejected?')->rows(2)->required()->maxLength(1000),
+            ])
+            ->visible(fn ($record): bool => self::can('canReject', $record, $resolve))
+            ->action(function ($record, array $data) use ($resolve, $after): void {
+                self::run(
+                    fn (User $user, CustomerCashbackRequest $form) => app(CustomerCashbackService::class)->reject($form, $user, (string) $data['rejection_reason']),
+                    $record,
+                    $resolve,
+                    $after,
+                    'Cashback form rejected',
+                );
+            });
+    }
+
+    public static function retrieve(?Closure $resolve = null, ?Closure $after = null): Action
+    {
+        return Action::make('retrieveCashback')
+            ->label('Retrieve expected cashback')
+            ->icon(Heroicon::OutlinedArrowUturnLeft)
+            ->color('gray')
+            ->requiresConfirmation()
+            ->modalHeading('Retrieve the expected cashback')
+            ->modalDescription(fn ($record): string => 'The expected cashback of ₹'.indianNumberFormat(self::form($record, $resolve)?->effectiveAmount()).' is not needed any more. The file\'s cashback goes back to 0 and the achievement figures recover it. This cannot be undone — a new form would be needed.')
+            ->schema([
+                Textarea::make('retrieval_reason')->label('Why is it not needed?')->rows(2)->required()->maxLength(1000),
+            ])
+            ->visible(fn ($record): bool => self::can('canRetrieve', $record, $resolve))
+            ->action(function ($record, array $data) use ($resolve, $after): void {
+                self::run(
+                    fn (User $user, CustomerCashbackRequest $form) => app(CustomerCashbackService::class)->retrieve($form, $user, (string) $data['retrieval_reason']),
+                    $record,
+                    $resolve,
+                    $after,
+                    'Expected cashback retrieved',
+                );
+            });
+    }
+
+    public static function changeAmount(?Closure $resolve = null, ?Closure $after = null): Action
+    {
+        return Action::make('changeCashbackAmount')
+            ->label('Change amount')
+            ->icon(Heroicon::OutlinedPencilSquare)
+            ->color('warning')
+            ->modalHeading('Change the approved cashback amount')
+            ->modalDescription('Only the Admin can change an approved amount. The file\'s cashback — and so the achievement and incentive figures — follow it, and the change is logged with your reason.')
+            ->fillForm(fn ($record): array => ['approved_amount' => self::form($record, $resolve)?->effectiveAmount()])
+            ->schema([
+                TextInput::make('approved_amount')->label('New amount')->indianAmount(min: 0)->required(),
+                Textarea::make('reason')->label('Why is it changing?')->rows(2)->required()->maxLength(1000),
+            ])
+            ->visible(fn ($record): bool => self::can('canChangeAmount', $record, $resolve))
+            ->action(function ($record, array $data) use ($resolve, $after): void {
+                self::run(
+                    fn (User $user, CustomerCashbackRequest $form) => app(CustomerCashbackService::class)->changeAmount($form, $user, $data['approved_amount'] ?? null, (string) ($data['reason'] ?? '')),
+                    $record,
+                    $resolve,
+                    $after,
+                    'Cashback amount changed',
+                );
+            });
+    }
+
+    public static function updatePayment(?Closure $resolve = null, ?Closure $after = null): Action
+    {
+        return Action::make('updateCashbackPayment')
+            ->label('Update payment')
+            ->icon(Heroicon::OutlinedBanknotes)
+            ->color('primary')
+            ->modalHeading(fn ($record): string => 'Payment of '.self::form($record, $resolve)?->voucher_no)
+            ->modalDescription(fn ($record): string => '₹'.indianNumberFormat(self::form($record, $resolve)?->effectiveAmount()).' to '.self::form($record, $resolve)?->customer?->customer_name.'. Only the Admin and Accounts can update it.')
+            ->fillForm(function ($record) use ($resolve): array {
+                $form = self::form($record, $resolve);
+
+                return [
+                    'payment_status' => $form?->payment_status->value,
+                    'payment_mode' => $form?->payment_mode?->value,
+                    'upi_platform' => $form?->upi_platform,
+                    'payee_upi' => $form?->payee_upi,
+                    'payee_account_no' => $form?->payee_account_no,
+                    'payee_ifsc' => $form?->payee_ifsc,
+                    'transaction_id' => $form?->transaction_id,
+                    'payment_date' => $form?->payment_date?->toDateString(),
+                    'payment_remarks' => $form?->payment_remarks,
+                ];
+            })
+            ->schema(CustomerCashbackRequestForm::paymentFields())
+            ->visible(fn ($record): bool => self::can('canUpdatePayment', $record, $resolve))
+            ->action(function ($record, array $data) use ($resolve, $after): void {
+                self::run(
+                    fn (User $user, CustomerCashbackRequest $form) => app(CustomerCashbackService::class)->updatePayment($form, $user, $data),
+                    $record,
+                    $resolve,
+                    $after,
+                    'Payment details saved',
+                );
+            });
+    }
+
+    private static function form(mixed $record, ?Closure $resolve): ?CustomerCashbackRequest
+    {
+        $form = $resolve ? $resolve($record) : $record;
+
+        return $form instanceof CustomerCashbackRequest ? $form : null;
+    }
+
+    private static function can(string $check, mixed $record, ?Closure $resolve): bool
+    {
+        $form = self::form($record, $resolve);
+
+        return $form !== null && app(CustomerCashbackService::class)->{$check}(self::user(), $form);
+    }
+
+    private static function isAdmin(): bool
+    {
+        return CustomerCashbackService::isAdmin(self::user());
+    }
+
+    private static function user(): ?User
+    {
+        $user = Filament::auth()->user();
+
+        return $user instanceof User ? $user : null;
+    }
+
+    /**
+     * Runs a service call and reports a refusal or validation error as a
+     * notification instead of throwing.
+     *
+     * @param  Closure(User, CustomerCashbackRequest): mixed  $callback
+     * @param  string|Closure(CustomerCashbackRequest): string  $success
+     */
+    private static function run(Closure $callback, mixed $record, ?Closure $resolve, ?Closure $after, string|Closure $success): void
+    {
+        $user = self::user();
+        $form = self::form($record, $resolve);
+
+        if (! $user instanceof User || ! $form instanceof CustomerCashbackRequest) {
+            return;
+        }
+
+        try {
+            $callback($user, $form);
+        } catch (AuthorizationException|ValidationException $exception) {
+            Notification::make()->title($exception->getMessage())->danger()->send();
+
+            return;
+        }
+
+        if ($after) {
+            $after($record);
+        }
+
+        Notification::make()->title($success instanceof Closure ? $success($form) : $success)->success()->send();
+    }
+}

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Customers\Schemas;
 
+use App\Enums\CashbackType;
 use App\Enums\JourneyModule;
 use App\Filament\Resources\Customers\Pages\CreateCustomer;
 use App\Models\Bank;
@@ -14,6 +15,7 @@ use App\Models\Employee;
 use App\Models\Lead;
 use App\Models\User;
 use App\Rules\PanIsAvailable;
+use App\Services\CustomerCashbackService;
 use App\Services\CustomerEligibilityService;
 use App\Services\CustomerJourneyService;
 use App\Services\Journey\CustomerJourneyAccessService;
@@ -29,6 +31,7 @@ use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -44,6 +47,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 class CustomerForm
@@ -161,6 +165,18 @@ class CustomerForm
      *
      * @return array<string, string>
      */
+    /** One line under the Step 4 cashback amount: where the figure comes from. */
+    protected static function cashbackFormStatus(?Customer $record): string
+    {
+        $live = $record ? app(CustomerCashbackService::class)->liveRequest($record) : null;
+
+        if ($live === null) {
+            return 'Comes from the approved cashback form. No form is in progress on this file.';
+        }
+
+        return sprintf('From cashback form %s — %s.%s', $live->voucher_no, strtolower($live->status->label()), $live->isApproved() ? ' Only the Admin can change it now.' : '');
+    }
+
     public static function bankOptions(): array
     {
         $banks = [
@@ -1549,23 +1565,45 @@ class CustomerForm
                                     ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
                                     ->required(fn (Get $get) => $get('disbursal_status') === 'disbursed'),
 
-                                TextInput::make('cashback')
-                                    ->label('Cashback Given')
-                                    ->prefix('₹')
-                                    ->amountInWords()
+                                // The declaration decides whether a cashback form is
+                                // needed; the amount is never typed here — it follows
+                                // the file's cashback form (CustomerCashbackService),
+                                // and only the Admin changes it after approval.
+                                Radio::make('cashback_option')
+                                    ->label('Cashback declaration')
+                                    ->options(CashbackType::declarationOptions())
+                                    ->inline()
                                     ->live()
-                                    ->required()
-                                    ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
-                                    ->afterStateUpdated(function ($state, callable $set) {
-                                        $value = preg_replace('/[^0-9]/', '', (string) $state);
+                                    ->dehydrated(true)
+                                    ->required(fn (Get $get): bool => $get('disbursal_status') === 'disbursed')
+                                    ->helperText(fn (Get $get): ?string => CashbackType::tryFrom((string) $get('cashback_option'))?->needsForm()
+                                        ? 'Fill the cashback form (button on the amount below, or the Cashback section on the file) before finalizing — it goes to the Manager and Admin for approval.'
+                                        : null)
+                                    ->disabled(fn (Get $get, ?Customer $record): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped'])
+                                        || ($record !== null && app(CustomerCashbackService::class)->liveRequest($record) !== null))
+                                    ->visible(fn (Get $get) => $get('disbursal_status') === 'disbursed')
+                                    ->columnSpanFull(),
 
-                                        if ($value !== '') {
-                                            $set('cashback', indianCurrencyFormat($value));
-                                        }
-                                    })
-                                    ->dehydrateStateUsing(fn ($state) => preg_replace('/[^0-9]/', '', (string) $state))
-                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
-                                    ->visible(fn (Get $get) => $get('disbursal_status') === 'disbursed'),
+                                TextInput::make('cashback')
+                                    ->label('Cashback amount')
+                                    ->prefix('₹')
+                                    ->disabled()
+                                    ->dehydrated(false)
+                                    ->formatStateUsing(fn ($state) => filled($state) ? indianNumberFormat($state) : '0')
+                                    ->helperText(fn (?Customer $record): string => self::cashbackFormStatus($record))
+                                    ->hintActions([
+                                        CustomerCashbackSection::fillAction('fillCashbackFormStep4', CashbackType::Cashback)
+                                            ->visible(fn (Get $get, ?Customer $record): bool => $get('cashback_option') === CashbackType::Cashback->value
+                                                && $record !== null
+                                                && app(CustomerCashbackService::class)->canRaiseOn(Filament::auth()->user(), $record)),
+                                        CustomerCashbackSection::fillAction('fillExpectedCashbackFormStep4', CashbackType::Expected)
+                                            ->label('Fill expected cashback form')
+                                            ->visible(fn (Get $get, ?Customer $record): bool => $get('cashback_option') === CashbackType::Expected->value
+                                                && $record !== null
+                                                && app(CustomerCashbackService::class)->canRaiseOn(Filament::auth()->user(), $record)),
+                                    ])
+                                    ->visible(fn (Get $get) => $get('disbursal_status') === 'disbursed'
+                                        && (CashbackType::tryFrom((string) $get('cashback_option'))?->needsForm() ?? filled($get('cashback')))),
 
                                 TextInput::make('subvention')
                                     ->label('Subvention Fees')
@@ -1660,14 +1698,27 @@ class CustomerForm
                                                     'disbursal_date' => $get('disbursal_date'),
                                                     'channel' => $get('channel'),
                                                     'sanctioned_loan_amount' => $get('sanctioned_loan_amount'),
-                                                    'cashback' => $get('cashback'),
+                                                    'cashback_option' => $get('cashback_option'),
                                                     'subvention' => $get('subvention'),
                                                     'docking' => $get('docking'),
                                                     'carry_forward_date' => $get('carry_forward_date'),
                                                     'sanctioned_remarks' => $get('sanctioned_remarks'),
                                                 ];
 
-                                                $record = CustomerJourneyService::sanction($record, $data);
+                                                // A declared cashback needs its form first;
+                                                // sanction() refuses and says so.
+                                                try {
+                                                    $record = CustomerJourneyService::sanction($record, $data);
+                                                } catch (ValidationException $exception) {
+                                                    Notification::make()
+                                                        ->danger()
+                                                        ->title($exception->getMessage())
+                                                        ->send();
+
+                                                    return;
+                                                }
+
+                                                $set('cashback', filled($record->cashback) ? indianNumberFormat($record->cashback) : '0');
                                                 // $record = CustomerJourneyService::finalize($record,$data);
 
                                                 $set('journey_status', $record->journey_status);

@@ -132,6 +132,8 @@ class IndianAmountFieldTest extends TestCase
             'app/Filament/Resources/OtherBankIncentiveSlabs/Schemas/OtherBankIncentiveSlabForm.php' => 2,
             'app/Filament/Resources/CustomerSettlements/RelationManagers/TransactionsRelationManager.php' => 1,
             'app/Filament/Resources/CustomerEditRequests/Schemas/CustomerEditRequestForm.php' => 1,
+            'app/Filament/Resources/CustomerCashbackRequests/Schemas/CustomerCashbackRequestForm.php' => 1,
+            'app/Filament/Resources/CustomerCashbackRequests/CustomerCashbackRequestActions.php' => 2,
             'app/Filament/Resources/AccountVerifications/Schemas/AccountVerificationForm.php' => 25,
             'app/Filament/Resources/CustomerSettlements/Schemas/CustomerSettlementForm.php' => 44,
         ];

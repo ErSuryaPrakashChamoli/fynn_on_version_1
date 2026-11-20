@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Customers\Schemas;
 
+use App\Enums\CashbackType;
 use App\Enums\JourneyAccessType;
 use App\Enums\JourneyModule;
 use App\Models\ActivityLog;
@@ -78,6 +79,8 @@ class CustomerInfolist
                 OtherBankSupportRemarksSection::make(),
 
                 CustomerEligibilitySection::make(),
+
+                CustomerCashbackSection::make(),
 
                 Section::make('Customer Overview')
                     ->icon(Heroicon::OutlinedUser)
@@ -322,6 +325,13 @@ class CustomerInfolist
 
                                 TextEntry::make('sanctioned_loan_amount')
                                     ->money('INR'),
+
+                                TextEntry::make('cashback_option')
+                                    ->label('Cashback Declaration')
+                                    ->badge()
+                                    ->formatStateUsing(fn (?string $state): string => CashbackType::labelFor($state))
+                                    ->color(fn (?string $state): string => CashbackType::tryFrom((string) $state)?->color() ?? 'gray')
+                                    ->placeholder('Not declared'),
 
                                 TextEntry::make('cashback')
                                     ->money('INR'),

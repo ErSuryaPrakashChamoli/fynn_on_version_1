@@ -63,6 +63,7 @@ use Throwable;
  * @property string|null $other_sanctioned_bank
  * @property numeric|null $sanctioned_loan_amount
  * @property numeric|null $cashback
+ * @property string|null $cashback_option
  * @property numeric|null $subvention
  * @property string|null $docking
  * @property numeric|null $payout_rate
@@ -169,6 +170,7 @@ class Customer extends Model
         'sanctioned_bank',
         'sanctioned_loan_amount',
         'cashback',
+        'cashback_option',
         'subvention',
         'payout_rate',
         'bank_condition',
@@ -416,6 +418,17 @@ class Customer extends Model
     public function eligibilityLogs(): HasMany
     {
         return $this->hasMany(CustomerEligibilityLog::class);
+    }
+
+    /**
+     * Cashback forms raised on this file, newest last. At most one is live
+     * (pending or approved) at a time — see CustomerCashbackService.
+     *
+     * @return HasMany<CustomerCashbackRequest, $this>
+     */
+    public function cashbackRequests(): HasMany
+    {
+        return $this->hasMany(CustomerCashbackRequest::class);
     }
 
     /**

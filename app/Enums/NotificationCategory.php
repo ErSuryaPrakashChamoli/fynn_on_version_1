@@ -23,6 +23,7 @@ enum NotificationCategory: string
     case HelpDesk = 'help_desk';
     case Voting = 'voting';
     case CustomerEdit = 'customer_edit';
+    case Cashback = 'cashback';
     case General = 'general';
 
     public function label(): string
@@ -38,6 +39,7 @@ enum NotificationCategory: string
             self::HelpDesk => 'Help Desk',
             self::Voting => 'Voting',
             self::CustomerEdit => 'Edit Requests',
+            self::Cashback => 'Cashback',
             self::General => 'General',
         };
     }
@@ -55,6 +57,7 @@ enum NotificationCategory: string
             self::HelpDesk => 'heroicon-o-lifebuoy',
             self::Voting => 'heroicon-o-hand-thumb-up',
             self::CustomerEdit => 'heroicon-o-pencil-square',
+            self::Cashback => 'heroicon-o-receipt-refund',
             self::General => 'heroicon-o-bell',
         };
     }
@@ -66,7 +69,7 @@ enum NotificationCategory: string
      */
     public static function requestCategories(): array
     {
-        return [self::Eligibility, self::PanRequest, self::CustomerEdit];
+        return [self::Eligibility, self::PanRequest, self::CustomerEdit, self::Cashback];
     }
 
     public function isRequest(): bool
@@ -109,6 +112,7 @@ enum NotificationCategory: string
             Str::contains($title, 'ticket') || Str::contains($title, 'complaint') => self::HelpDesk,
             Str::contains($title, 'vote') || Str::contains($title, 'poll') => self::Voting,
             Str::contains($title, 'edit request') => self::CustomerEdit,
+            Str::contains($title, 'cashback') => self::Cashback,
             default => self::General,
         };
     }
