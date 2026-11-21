@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\CashbackPaymentMode;
 use App\Enums\CashbackPaymentStatus;
 use App\Enums\CashbackRequestStatus;
+use App\Enums\CashbackReturnStatus;
 use App\Enums\CashbackType;
 use Database\Factories\CustomerCashbackRequestFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -57,6 +58,17 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property int|null $retrieved_by
  * @property Carbon|null $retrieved_at
  * @property string|null $retrieval_reason
+ * @property CashbackReturnStatus|null $return_status
+ * @property numeric|null $returned_amount
+ * @property Carbon|null $return_date
+ * @property CashbackPaymentMode|null $return_mode
+ * @property string|null $return_reference
+ * @property string|null $return_reason
+ * @property int|null $return_requested_by
+ * @property Carbon|null $return_requested_at
+ * @property int|null $return_reviewed_by
+ * @property Carbon|null $return_reviewed_at
+ * @property string|null $return_review_note
  * @property CashbackPaymentStatus $payment_status
  * @property string|null $transaction_id
  * @property Carbon|null $payment_date
@@ -80,6 +92,8 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property-read User|null $approver
  * @property-read User|null $rejecter
  * @property-read User|null $retriever
+ * @property-read User|null $returnRequester
+ * @property-read User|null $returnReviewer
  * @property-read User|null $payer
  * @property-read User|null $paymentUpdater
  */
@@ -123,6 +137,17 @@ class CustomerCashbackRequest extends Model
         'retrieved_by',
         'retrieved_at',
         'retrieval_reason',
+        'return_status',
+        'returned_amount',
+        'return_date',
+        'return_mode',
+        'return_reference',
+        'return_reason',
+        'return_requested_by',
+        'return_requested_at',
+        'return_reviewed_by',
+        'return_reviewed_at',
+        'return_review_note',
         'payment_status',
         'transaction_id',
         'payment_date',
@@ -143,8 +168,14 @@ class CustomerCashbackRequest extends Model
             'status' => CashbackRequestStatus::class,
             'payment_status' => CashbackPaymentStatus::class,
             'payment_mode' => CashbackPaymentMode::class,
+            'return_status' => CashbackReturnStatus::class,
+            'return_mode' => CashbackPaymentMode::class,
             'amount' => 'decimal:2',
             'approved_amount' => 'decimal:2',
+            'returned_amount' => 'decimal:2',
+            'return_date' => 'date',
+            'return_requested_at' => 'datetime',
+            'return_reviewed_at' => 'datetime',
             'supervisor_due_at' => 'datetime',
             'escalated_at' => 'datetime',
             'manager_approved_at' => 'datetime',
@@ -189,11 +220,14 @@ class CustomerCashbackRequest extends Model
         return $this->revision_of_id !== null;
     }
 
-    /** "Revision 1 of CB-000012" */
+    /**
+     * "Revision 1 of CB-000012". Reads the relation by name: inside the
+     * model `$this->original` is Eloquent's own original-attributes array.
+     */
     public function revisionLabel(): ?string
     {
         return $this->isRevision()
-            ? 'Revision '.$this->revision_no.' of '.$this->original?->voucher_no
+            ? 'Revision '.$this->revision_no.' of '.$this->getRelationValue('original')?->voucher_no
             : null;
     }
 
@@ -246,6 +280,18 @@ class CustomerCashbackRequest extends Model
     public function retriever(): BelongsTo
     {
         return $this->belongsTo(User::class, 'retrieved_by');
+    }
+
+    /** Who asked for the customer's return of the cashback to be recorded. */
+    public function returnRequester(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'return_requested_by');
+    }
+
+    /** The Admin who approved or rejected the return. */
+    public function returnReviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'return_reviewed_by');
     }
 
     public function payer(): BelongsTo
@@ -353,9 +399,38 @@ class CustomerCashbackRequest extends Model
         return $this->payment_status === CashbackPaymentStatus::Paid;
     }
 
-    /** The amount the file carries: the Admin's figure once approved, else the one asked for. */
+    /** The amount given: the Admin's figure once approved, else the one asked for. */
     public function effectiveAmount(): float
     {
         return (float) ($this->approved_amount ?? $this->amount);
+    }
+
+    /** The customer gave some or all of a paid cashback back, and the Admin approved it. */
+    public function isReturned(): bool
+    {
+        return $this->return_status === CashbackReturnStatus::Approved;
+    }
+
+    /** A return has been asked for and waits for the Admin. */
+    public function hasPendingReturn(): bool
+    {
+        return $this->return_status === CashbackReturnStatus::Pending;
+    }
+
+    /** The amount returned — counted only once the Admin approved the return. */
+    public function returnedAmount(): float
+    {
+        return $this->isReturned() ? (float) ($this->returned_amount ?? 0) : 0.0;
+    }
+
+    public function isFullyReturned(): bool
+    {
+        return $this->isReturned() && $this->returnedAmount() >= $this->effectiveAmount();
+    }
+
+    /** What the case carries from this form: the amount given less anything the customer returned. */
+    public function netAmount(): float
+    {
+        return round(max(0.0, $this->effectiveAmount() - $this->returnedAmount()), 2);
     }
 }

@@ -21,6 +21,7 @@ use App\Services\Journey\CustomerJourneyAccessService;
 use App\Services\MonthlyTargetGate;
 use App\Support\Demo\DemoContext;
 use App\Support\FollowUpCalendarCache;
+use App\Support\ReportingSnapshot;
 use Closure;
 use Filament\Forms\Components\Field;
 use Filament\Forms\Components\TextInput;
@@ -28,6 +29,8 @@ use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Text;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Queue\Events\QueueBusy;
 use Illuminate\Support\Facades\Event;
@@ -56,6 +59,13 @@ class AppServiceProvider extends ServiceProvider
          */
         $this->app->singleton(MonthlyTargetGate::class);
         $this->app->singleton(DailyCommitmentGate::class);
+
+        /*
+         * The employees / reporting-history read every hierarchy walk is
+         * built from, shared for the request or queue job. Retired on any
+         * write to those tables in boot() below.
+         */
+        $this->app->scoped(ReportingSnapshot::class);
 
         /*
          * The credit bureau behind the CIBIL module (config/cibil.php). The
@@ -91,6 +101,8 @@ class AppServiceProvider extends ServiceProvider
         );
 
         Customer::observe(CustomerObserver::class);
+
+        $this->retireReportingSnapshotOnChange();
 
         /*
          * The follow-up calendars cache each month's day chips
@@ -143,6 +155,25 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->registerAmountInWordsMacro();
+    }
+
+    /**
+     * ReportingSnapshot shares one read of the reporting tables per request.
+     * Any statement that writes to them, whichever way it was issued, and
+     * any rolled-back transaction (whose writes the memo may have read)
+     * clears it, so a walk after a change always sees the change.
+     */
+    protected function retireReportingSnapshotOnChange(): void
+    {
+        Event::listen(QueryExecuted::class, function (QueryExecuted $query): void {
+            if (ReportingSnapshot::changesReportingData($query->sql)) {
+                $this->app->make(ReportingSnapshot::class)->flush();
+            }
+        });
+
+        Event::listen(TransactionRolledBack::class, function (): void {
+            $this->app->make(ReportingSnapshot::class)->flush();
+        });
     }
 
     /**

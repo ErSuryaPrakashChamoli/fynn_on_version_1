@@ -21,9 +21,11 @@ use Illuminate\Support\Collection;
  * another Manager — is ignored rather than trusted, and because a boss
  * always outranks their report the tree can never loop.
  *
- * Loaded fresh each time and never cached: employees are created and
- * re-pointed within a single request (and a single test), and a stale tree
- * would quietly hand somebody the wrong team.
+ * Read once per request through ReportingSnapshot, which is retired the
+ * moment anything writes to employees or employee_reporting_history:
+ * employees are created and re-pointed within a single request (and a
+ * single test), and a stale tree would quietly hand somebody the wrong
+ * team. The tree itself is immutable, so sharing one is safe.
  *
  * load() is today's tree, read straight off the reporting columns.
  * load($date) is the tree as it stood on that day, rebuilt from
@@ -53,20 +55,22 @@ final class ReportingTree
             return ReportingTimeline::between($asOf, $asOf)->treeOn($asOf);
         }
 
-        return self::fromRows(self::employeeRows(), null);
+        return ReportingSnapshot::remember('tree:today', fn (): self => self::fromRows(self::employeeRows(), null));
     }
 
     /**
-     * Every employee with the columns the tree is built from.
+     * Every employee with the columns the tree is built from. Shared for the
+     * request (ReportingSnapshot): read the rows, never modify them — clone
+     * a row before changing it, as ReportingTimeline does.
      *
      * @return Collection<int, object>
      */
     public static function employeeRows(): Collection
     {
-        return Employee::query()
+        return ReportingSnapshot::remember('employee-rows', fn (): Collection => Employee::query()
             ->toBase()
             ->orderBy('id')
-            ->get(['id', 'emp_name', 'designation', 'exit_status', 'exit_date', ...array_keys(Employee::REPORTING_COLUMNS)]);
+            ->get(['id', 'emp_name', 'designation', 'exit_status', 'exit_date', ...array_keys(Employee::REPORTING_COLUMNS)]));
     }
 
     /**

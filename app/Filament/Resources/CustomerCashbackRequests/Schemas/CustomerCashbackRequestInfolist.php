@@ -4,6 +4,7 @@ namespace App\Filament\Resources\CustomerCashbackRequests\Schemas;
 
 use App\Enums\CashbackPaymentStatus;
 use App\Enums\CashbackRequestStatus;
+use App\Enums\CashbackReturnStatus;
 use App\Filament\Resources\CustomerCashbackRequests\CustomerCashbackRequestActions;
 use App\Filament\Resources\CustomerCashbackRequests\CustomerCashbackRequestResource;
 use App\Filament\Resources\Customers\CustomerResource;
@@ -19,8 +20,10 @@ use Filament\Support\Icons\Heroicon;
 use Spatie\Activitylog\Models\Activity;
 
 /**
- * The voucher, laid out like the paper Acknowledgment form, then who did
- * what (approvals, rejection, retrieval, payment) and the change history.
+ * The voucher, laid out like the paper Acknowledgment form, then — when the
+ * case has more than one form (a second payment, a revision) — every form
+ * on the case with who filled, signed off, approved and paid each and the
+ * case's total, then who did what on this form and its change history.
  */
 class CustomerCashbackRequestInfolist
 {
@@ -86,28 +89,26 @@ class CustomerCashbackRequestInfolist
                     ->schema([
                         View::make('filament.components.cashback-voucher')
                             ->viewData(fn (CustomerCashbackRequest $record): array => [
-                                'voucher' => $record->loadMissing(['customer', 'aro', 'teamLeader', 'manager', 'clusterManager', 'requester', 'managerApprover', 'approver', 'payer', 'original']),
+                                'voucher' => $record->loadMissing(['customer', 'aro', 'teamLeader', 'manager', 'clusterManager', 'requester', 'managerApprover', 'approver', 'payer', 'returnRequester', 'returnReviewer', 'original']),
                             ]),
                     ]),
 
-                Section::make('Payments on this cashback')
+                Section::make('Cashback forms on this case')
+                    ->key('caseCashbackForms')
                     ->icon(Heroicon::OutlinedBanknotes)
-                    ->description('The original form and every revision for a further payment, each with its own UTR.')
+                    ->description('Each cashback on this case is its own form with its own approval and UTR; the case\'s cashback is their total.')
                     ->columnSpanFull()
-                    ->visible(fn (CustomerCashbackRequest $record): bool => $record->isRevision() || $record->revisions()->exists())
+                    ->visible(fn (CustomerCashbackRequest $record): bool => $record->customer !== null && $record->customer->cashbackRequests()->count() > 1)
                     ->schema([
-                        RepeatableEntry::make('payments')
-                            ->hiddenLabel()
-                            ->state(fn (CustomerCashbackRequest $record): array => self::payments($record))
-                            ->schema([
-                                TextEntry::make('voucher')->label('Voucher')->weight('bold'),
-                                TextEntry::make('amount')->label('Amount'),
-                                TextEntry::make('approval')->label('Approval'),
-                                TextEntry::make('payment')->label('Payment'),
-                                TextEntry::make('utr')->label('UTR / Transaction ID'),
-                                TextEntry::make('paid_on')->label('Paid on'),
-                            ])
-                            ->columns(6),
+                        View::make('filament.components.cashback-case-forms')
+                            ->viewData(fn (CustomerCashbackRequest $record): array => [
+                                'forms' => $record->customer->cashbackRequests()
+                                    ->with(['requester', 'supervisor', 'managerApprover', 'approver', 'rejecter', 'retriever', 'returnRequester', 'returnReviewer'])
+                                    ->oldest('id')
+                                    ->get(),
+                                'currentId' => $record->getKey(),
+                                'cashbackBeforeForms' => (float) ($record->customer->cashback_before_forms ?? 0),
+                            ]),
                     ]),
 
                 Section::make('Approval trail')
@@ -138,6 +139,16 @@ class CustomerCashbackRequestInfolist
                                 ->label('Retrieved because')
                                 ->visible(fn (CustomerCashbackRequest $record): bool => $record->status === CashbackRequestStatus::Retrieved)
                                 ->helperText(fn (CustomerCashbackRequest $record): ?string => $record->retriever?->name.' · '.$record->retrieved_at?->format('d M Y, h:i A')),
+                            TextEntry::make('return_reason')
+                                ->label(fn (CustomerCashbackRequest $record): string => match ($record->return_status) {
+                                    CashbackReturnStatus::Approved => 'Customer returned ₹'.indianNumberFormat($record->returnedAmount()).($record->isFullyReturned() ? ' (all of it)' : ' of ₹'.indianNumberFormat($record->effectiveAmount())),
+                                    CashbackReturnStatus::Rejected => 'Return of ₹'.indianNumberFormat($record->returned_amount).' rejected by the Admin',
+                                    default => 'Return of ₹'.indianNumberFormat($record->returned_amount).' — waiting for the Admin',
+                                })
+                                ->color(fn (CustomerCashbackRequest $record): string => $record->return_status?->color() ?? 'gray')
+                                ->visible(fn (CustomerCashbackRequest $record): bool => $record->return_status !== null)
+                                ->helperText(fn (CustomerCashbackRequest $record): string => self::returnTrail($record))
+                                ->columnSpanFull(),
                             TextEntry::make('payment_updated_at')
                                 ->label('Payment last updated')
                                 ->dateTime('d M Y, h:i A')
@@ -166,6 +177,18 @@ class CustomerCashbackRequestInfolist
             ]);
     }
 
+    /** "Returned 21 Nov 2026 by UPI (UTR …) · asked by … · approved by … : note" */
+    protected static function returnTrail(CustomerCashbackRequest $record): string
+    {
+        return collect([
+            'Returned '.$record->return_date?->format('d M Y').' by '.($record->return_mode?->label() ?? '—').(filled($record->return_reference) ? ' (UTR '.$record->return_reference.')' : ''),
+            'Asked by '.($record->returnRequester?->name ?? '—').' · '.$record->return_requested_at?->format('d M Y, h:i A'),
+            $record->return_reviewed_at !== null
+                ? ($record->isReturned() ? 'Approved' : 'Rejected').' by '.($record->returnReviewer?->name ?? '—').' · '.$record->return_reviewed_at->format('d M Y, h:i A').(filled($record->return_review_note) ? ' — '.$record->return_review_note : '')
+                : null,
+        ])->filter()->implode(' · ');
+    }
+
     /** "Waiting · due 22 Nov, 4:30 PM" / "Approved by …" / "Not approved within 24 h — moved to Admin …" */
     protected static function supervisorState(CustomerCashbackRequest $record): ?string
     {
@@ -180,33 +203,6 @@ class CustomerCashbackRequestInfolist
             $record->status === CashbackRequestStatus::Rejected && $record->manager_approved_at === null => 'Rejected at this stage',
             default => null,
         };
-    }
-
-    /**
-     * The original form and its revisions, each with its payment.
-     *
-     * @return list<array{voucher: string, amount: string, approval: string, payment: string, utr: string, paid_on: string}>
-     */
-    protected static function payments(CustomerCashbackRequest $record): array
-    {
-        $original = $record->isRevision() ? $record->original : $record;
-
-        if ($original === null) {
-            return [];
-        }
-
-        return collect([$original])
-            ->merge($original->revisions()->get())
-            ->map(fn (CustomerCashbackRequest $form): array => [
-                'voucher' => (string) $form->voucher_no,
-                'amount' => '₹'.indianNumberFormat($form->effectiveAmount()),
-                'approval' => $form->status->label(),
-                'payment' => $form->payment_status->label(),
-                'utr' => $form->transaction_id ?? '—',
-                'paid_on' => $form->payment_date?->format('d M Y') ?? '—',
-            ])
-            ->values()
-            ->all();
     }
 
     /**

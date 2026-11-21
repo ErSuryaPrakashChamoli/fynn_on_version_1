@@ -146,7 +146,7 @@ class ComplaintsTable
                     ...ComplaintActions::quick(),
                     EditAction::make(),
                     DeleteAction::make(),
-                ]),
+                ])->dropdownPlacement('bottom-start'),
             ])
             ->emptyStateHeading('No tickets here')
             ->emptyStateDescription('Raise a ticket for anything about Fynn-On, IT, your workspace, an asset, your computer, or your team.');

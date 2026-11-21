@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\CustomerCashbackRequests;
 
+use App\Enums\CashbackReturnStatus;
 use App\Filament\Resources\CustomerCashbackRequests\Pages\CreateCustomerCashbackRequest;
 use App\Filament\Resources\CustomerCashbackRequests\Pages\ListCustomerCashbackRequests;
 use App\Filament\Resources\CustomerCashbackRequests\Pages\ViewCustomerCashbackRequest;
@@ -75,7 +76,10 @@ class CustomerCashbackRequestResource extends Resource
      */
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()->with(['customer', 'requester', 'aro', 'teamLeader', 'manager', 'clusterManager', 'supervisor']);
+        $query = parent::getEloquentQuery()->with([
+            'customer' => fn ($customer) => $customer->withCount(['cashbackRequests as live_cashback_forms_count' => fn (Builder $forms): Builder => $forms->live()]),
+            'requester', 'aro', 'teamLeader', 'manager', 'clusterManager', 'supervisor',
+        ]);
         $user = Filament::auth()->user();
 
         if (! $user instanceof User) {
@@ -133,7 +137,7 @@ class CustomerCashbackRequestResource extends Resource
         return false;
     }
 
-    /** Forms waiting on the signed-in user: the Admin's queue, or Accounts' unpaid approved forms. */
+    /** Forms waiting on the signed-in user: the Admin's queue (forms and returns to approve), or Accounts' unpaid approved forms. */
     public static function getNavigationBadge(): ?string
     {
         $user = Filament::auth()->user();
@@ -143,7 +147,9 @@ class CustomerCashbackRequestResource extends Resource
         }
 
         $count = match (true) {
-            $user->hasRole('Admin') => CustomerCashbackRequest::query()->pending()->count(),
+            $user->hasRole('Admin') => CustomerCashbackRequest::query()
+                ->where(fn (Builder $query): Builder => $query->pending()->orWhere('return_status', CashbackReturnStatus::Pending->value))
+                ->count(),
             $user->hasRole('Accounts') => CustomerCashbackRequest::query()
                 ->where('status', 'approved')
                 ->where('payment_status', '!=', 'paid')

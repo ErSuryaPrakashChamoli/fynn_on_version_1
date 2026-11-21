@@ -6,6 +6,7 @@ use App\Models\Customer;
 use App\Models\Employee;
 use App\Services\AchievementCalculatorService;
 use App\Services\TopPerformerService;
+use App\Support\SelectedMonth;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
@@ -110,5 +111,28 @@ class TopPerformerServicePercentageTest extends TestCase
 
         $this->assertSame($strong->emp_name, $names[0]);
         $this->assertContains($weak->emp_name, $names);
+    }
+
+    /**
+     * The leaderboard used to be cached by designation alone, so whoever
+     * filled the cache decided the month everybody saw, under their own
+     * month's label. Each figures month is cached on its own now.
+     */
+    public function test_each_figures_month_is_cached_on_its_own(): void
+    {
+        $caller = $this->callerWithAchievement(2000000, 4000000);
+        $currentMonth = now()->format('Y-m');
+        $previousMonth = now()->subMonthNoOverflow()->format('Y-m');
+
+        $thisMonth = (new TopPerformerService(new AchievementCalculatorService))->getTopPerformers($caller);
+
+        request()->cookies->set(SelectedMonth::COOKIE, $previousMonth);
+
+        $lastMonth = (new TopPerformerService(new AchievementCalculatorService))->getTopPerformers($caller);
+
+        $this->assertSame(50.0, collect($thisMonth)->firstWhere('name', $caller->emp_name)['percentage']);
+        $this->assertSame(0.0, collect($lastMonth)->firstWhere('name', $caller->emp_name)['percentage']);
+        $this->assertTrue(Cache::has('top-performers:'.Employee::DESIGNATION_CALLER.":{$currentMonth}"));
+        $this->assertTrue(Cache::has('top-performers:'.Employee::DESIGNATION_CALLER.":{$previousMonth}"));
     }
 }

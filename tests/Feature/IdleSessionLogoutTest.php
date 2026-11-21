@@ -214,6 +214,24 @@ class IdleSessionLogoutTest extends TestCase
     }
 
     /**
+     * A tab left open after its session expired keeps beating as a guest.
+     * There is no plain `login` route, so the guest redirect used to throw
+     * on every beat (a 500 every 30 seconds per tab); the script needs a 401
+     * to end the session.
+     */
+    public function test_a_guest_heartbeat_gets_a_401_not_a_server_error(): void
+    {
+        $this->postJson('/login-session/heartbeat', ['active' => true, 'interacted' => false])
+            ->assertUnauthorized();
+    }
+
+    public function test_a_guest_on_a_plain_authenticated_route_is_sent_to_the_admin_login(): void
+    {
+        $this->get('/ocr-documents/1/file')
+            ->assertRedirect('/admin/login');
+    }
+
+    /**
      * A browser that signed in before login sessions were tracked has no
      * `login_session_id` at all, and must keep working exactly as before.
      */

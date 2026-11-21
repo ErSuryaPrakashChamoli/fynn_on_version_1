@@ -50,12 +50,16 @@ class TopPerformerService
     private function getTopPerformersForDesignation(int $designation, int $limit): array
     {
         // This widget is rendered on every admin page (topbar render hook)
-        // and polled every 60s per open tab. Computing it involves a
-        // per-employee achievement query, so it's cached rather than
-        // recalculated on every request.
-        $performers = Cache::remember(
-            "top-performers:{$designation}",
-            now()->addMinutes(5),
+        // and polled every 60s per open tab. Computing it walks every Team
+        // Leader's and Manager's month (seconds of work), so it is cached
+        // per figures month: fresh for 5 minutes, then served stale for up
+        // to 30 while ONE refresh runs after the response has been sent —
+        // no page load ever waits for the recalculation.
+        $month = $this->getReferenceMonth()->format('Y-m');
+
+        $performers = Cache::flexible(
+            "top-performers:{$designation}:{$month}",
+            [now()->addMinutes(5), now()->addMinutes(30)],
             function () use ($designation) {
                 $employees = Employee::where('designation', $designation)
                     ->where('exit_status', 'no')
@@ -68,7 +72,8 @@ class TopPerformerService
                 usort($performers, fn ($a, $b) => $b['percentage'] <=> $a['percentage']);
 
                 return $performers;
-            }
+            },
+            lock: ['seconds' => 120],
         );
 
         return array_slice($performers, 0, $limit);

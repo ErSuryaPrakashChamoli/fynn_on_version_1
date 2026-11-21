@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\CashbackPaymentMode;
 use App\Enums\CashbackPaymentStatus;
 use App\Enums\CashbackRequestStatus;
+use App\Enums\CashbackReturnStatus;
 use App\Enums\CashbackType;
 use App\Enums\NotificationCategory;
 use App\Filament\Resources\CustomerCashbackRequests\CustomerCashbackRequestResource;
@@ -16,6 +17,7 @@ use App\Support\HierarchyHelper;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -50,6 +52,11 @@ use Throwable;
  *    (revise()): the revision is a new form on the same case, linked to the
  *    original, for the extra amount, approved through the same process and
  *    paid with its own UTR. A UTR is never recorded on two forms.
+ *  - A paid cashback the customer gives back (in full or in part) is
+ *    requested by the case's Team Leader or Manager (requestReturn()) and
+ *    counts only once the Admin approves it (approveReturn()): then the
+ *    case's cashback drops by the returned amount, so the figures recover
+ *    it. A rejected return can be asked for again.
  */
 class CustomerCashbackService
 {
@@ -160,6 +167,28 @@ class CustomerCashbackService
             && ! $request->isRevision()
             && $request->customer !== null
             && $this->canRaiseOn($user, $request->customer);
+    }
+
+    /**
+     * A cashback that reached the customer can be asked to be recorded as
+     * returned (in full or in part) by whoever may fill forms on the case,
+     * while no return on it is waiting or approved.
+     */
+    public function canRequestReturn(?User $user, CustomerCashbackRequest $request): bool
+    {
+        return $request->isApproved()
+            && $request->isPaid()
+            && ! $request->isReturned()
+            && ! $request->hasPendingReturn()
+            && $request->effectiveAmount() > 0
+            && $request->customer !== null
+            && $this->mayFillFor($user, $request->customer);
+    }
+
+    /** Only the Admin approves or rejects a requested return. */
+    public function canReviewReturn(?User $user, CustomerCashbackRequest $request): bool
+    {
+        return self::isAdmin($user) && $request->hasPendingReturn();
     }
 
     public function canChangeAmount(?User $user, CustomerCashbackRequest $request): bool
@@ -438,6 +467,12 @@ class CustomerCashbackService
             throw ValidationException::withMessages(['approved_amount' => 'This is already the approved amount.']);
         }
 
+        if ($request->isReturned() || $request->hasPendingReturn()) {
+            throw ValidationException::withMessages(['approved_amount' => $request->isReturned()
+                ? 'The customer has returned ₹'.indianNumberFormat($request->returnedAmount()).' of this cashback — its amount cannot change any more.'
+                : 'A return of this cashback is waiting for the Admin — approve or reject it first.']);
+        }
+
         DB::transaction(function () use ($request, $user, $newAmount, $oldAmount, $reason): void {
             $request->forceFill(['approved_amount' => $newAmount])->save();
 
@@ -472,6 +507,11 @@ class CustomerCashbackService
             ?? throw ValidationException::withMessages(['payment_status' => 'Choose Paid, Not Paid or On Hold.']);
 
         $paid = $status === CashbackPaymentStatus::Paid;
+
+        if (($request->isReturned() || $request->hasPendingReturn()) && ! $paid) {
+            throw ValidationException::withMessages(['payment_status' => 'A return of this cashback is recorded, so it was paid — its payment stays Paid.']);
+        }
+
         $payee = $this->validPayee($data, required: $paid);
         $mode = CashbackPaymentMode::tryFrom((string) ($payee['payment_mode'] ?? ''));
         $transactionId = filled($data['transaction_id'] ?? null) ? trim((string) $data['transaction_id']) : null;
@@ -528,6 +568,169 @@ class CustomerCashbackService
     }
 
     /**
+     * The case's Team Leader or Manager asks for a paid cashback the
+     * customer gave back (in full or in part) to be recorded: how much,
+     * when, how (mode + UTR, except cash) and why. Nothing changes on the
+     * case until the Admin approves it.
+     *
+     * @param  array{returned_amount?: mixed, return_date?: string|null, return_mode?: string|null, return_reference?: string|null, return_reason?: string|null}  $data
+     */
+    public function requestReturn(CustomerCashbackRequest $request, User $user, array $data): CustomerCashbackRequest
+    {
+        if (! $this->canRequestReturn($user, $request)) {
+            throw new AuthorizationException(match (true) {
+                $request->hasPendingReturn() => 'A return of this cashback is already waiting for the Admin.',
+                $request->isReturned() => 'The return of this cashback is already approved.',
+                ! $request->isPaid() => 'Only a cashback that was paid can be returned — an unpaid one is retrieved or its amount changed instead.',
+                default => 'Only the Team Leader or Manager of this case can ask for its cashback return to be recorded.',
+            });
+        }
+
+        $amount = $this->validAmount($data['returned_amount'] ?? null, 'returned_amount', allowZero: false);
+
+        if ($amount > $request->effectiveAmount()) {
+            throw ValidationException::withMessages(['returned_amount' => 'Only ₹'.indianNumberFormat($request->effectiveAmount()).' was paid on this form — the return cannot be more.']);
+        }
+
+        $mode = CashbackPaymentMode::tryFrom((string) ($data['return_mode'] ?? ''))
+            ?? throw ValidationException::withMessages(['return_mode' => 'Choose how the customer returned it.']);
+        $reference = filled($data['return_reference'] ?? null) ? trim((string) $data['return_reference']) : null;
+        $returnDate = filled($data['return_date'] ?? null) ? date('Y-m-d', (int) strtotime((string) $data['return_date'])) : null;
+        $reason = trim((string) ($data['return_reason'] ?? ''));
+
+        if ($mode->needsTransactionId() && $reference === null) {
+            throw ValidationException::withMessages(['return_reference' => 'Enter the UTR / transaction ID of the money returned.']);
+        }
+
+        if ($reference !== null) {
+            $sameReference = CustomerCashbackRequest::query()
+                ->where(fn (Builder $query): Builder => $query
+                    ->where('transaction_id', $reference)
+                    ->orWhere(fn (Builder $query): Builder => $query
+                        ->where('return_reference', $reference)
+                        ->whereKeyNot($request->getKey())
+                        ->where('return_status', '!=', CashbackReturnStatus::Rejected->value)))
+                ->value('voucher_no');
+
+            if ($sameReference !== null) {
+                throw ValidationException::withMessages(['return_reference' => "This UTR is already recorded on cashback form {$sameReference}."]);
+            }
+        }
+
+        if ($returnDate === null) {
+            throw ValidationException::withMessages(['return_date' => 'Enter the date it was returned.']);
+        }
+
+        if ($returnDate > today()->toDateString()) {
+            throw ValidationException::withMessages(['return_date' => 'The return date cannot be in the future.']);
+        }
+
+        if ($request->payment_date !== null && $returnDate < $request->payment_date->toDateString()) {
+            throw ValidationException::withMessages(['return_date' => 'It was paid on '.$request->payment_date->format('d M Y').' — it cannot be returned before that.']);
+        }
+
+        if ($reason === '') {
+            throw ValidationException::withMessages(['return_reason' => 'Say why the cashback was returned.']);
+        }
+
+        $request->forceFill([
+            'return_status' => CashbackReturnStatus::Pending,
+            'returned_amount' => $amount,
+            'return_date' => $returnDate,
+            'return_mode' => $mode,
+            'return_reference' => $reference,
+            'return_reason' => $reason,
+            'return_requested_by' => $user->getKey(),
+            'return_requested_at' => now(),
+            'return_reviewed_by' => null,
+            'return_reviewed_at' => null,
+            'return_review_note' => null,
+        ])->save();
+
+        $this->notify(
+            $this->admins()->reject(fn (User $recipient): bool => $recipient->is($user)),
+            'Cashback return to approve: '.$request->customer?->customer_name,
+            sprintf(
+                '%s says the customer returned ₹%s of %s (₹%s paid)%s. Reason: %s. It counts only once you approve it.',
+                $user->name,
+                indianNumberFormat($amount),
+                $request->voucher_no,
+                indianNumberFormat($request->effectiveAmount()),
+                $reference !== null ? ' — UTR '.$reference : '',
+                str($reason)->limit(120),
+            ),
+            'warning',
+            $request,
+        );
+
+        return $request;
+    }
+
+    /**
+     * The Admin confirms the requested return: from now on the case's
+     * cashback is less the returned amount.
+     */
+    public function approveReturn(CustomerCashbackRequest $request, User $user, ?string $note = null): CustomerCashbackRequest
+    {
+        if (! $this->canReviewReturn($user, $request)) {
+            throw new AuthorizationException($request->hasPendingReturn()
+                ? 'Only the Admin can approve a cashback return.'
+                : 'No return of this cashback is waiting for approval.');
+        }
+
+        $note = filled($note) ? trim((string) $note) : null;
+
+        DB::transaction(function () use ($request, $user, $note): void {
+            $request->forceFill([
+                'return_status' => CashbackReturnStatus::Approved,
+                'return_reviewed_by' => $user->getKey(),
+                'return_reviewed_at' => now(),
+                'return_review_note' => $note,
+            ])->save();
+
+            $this->syncCustomer($request->customer);
+        });
+
+        $this->notify(
+            $this->paymentUsers()->merge(collect([$request->returnRequester, $request->requester]))->filter()->unique('id')->reject(fn (User $recipient): bool => $recipient->is($user)),
+            'Cashback return approved: '.$request->customer?->customer_name,
+            sprintf('%s approved the return of ₹%s on %s. The case\'s cashback is now ₹%s.%s', $user->name, indianNumberFormat($request->returnedAmount()), $request->voucher_no, indianNumberFormat($request->customer?->cashback ?? 0), $note !== null ? ' Note: '.$note : ''),
+            'success',
+            $request,
+        );
+
+        return $request;
+    }
+
+    public function rejectReturn(CustomerCashbackRequest $request, User $user, string $reason): CustomerCashbackRequest
+    {
+        if (! $this->canReviewReturn($user, $request)) {
+            throw new AuthorizationException('Only the Admin can reject a cashback return waiting for approval.');
+        }
+
+        if (trim($reason) === '') {
+            throw ValidationException::withMessages(['return_review_note' => 'Say why the return is rejected.']);
+        }
+
+        $request->forceFill([
+            'return_status' => CashbackReturnStatus::Rejected,
+            'return_reviewed_by' => $user->getKey(),
+            'return_reviewed_at' => now(),
+            'return_review_note' => trim($reason),
+        ])->save();
+
+        $this->notify(
+            collect([$request->returnRequester])->filter()->reject(fn (User $recipient): bool => $recipient->is($user)),
+            'Cashback return rejected: '.$request->customer?->customer_name,
+            sprintf('%s rejected the return of ₹%s on %s. Reason: %s', $user->name, indianNumberFormat($request->returned_amount), $request->voucher_no, trim($reason)),
+            'danger',
+            $request,
+        );
+
+        return $request;
+    }
+
+    /**
      * What the disbursal step writes to customers.cashback for a declaration,
      * refusing to go ahead while a declared cashback has no form.
      *
@@ -572,7 +775,8 @@ class CustomerCashbackService
 
     /**
      * customers.cashback = the cashback carried before the first form plus
-     * every live form's amount; the declaration follows the live forms.
+     * every live form's amount, less anything the customer returned; the
+     * declaration follows the live forms.
      */
     public function syncCustomer(?Customer $customer): void
     {
@@ -593,7 +797,7 @@ class CustomerCashbackService
     {
         return round(
             (float) ($customer->cashback_before_forms ?? 0)
-                + $live->sum(fn (CustomerCashbackRequest $request): float => $request->effectiveAmount()),
+                + $live->sum(fn (CustomerCashbackRequest $request): float => $request->netAmount()),
             2,
         );
     }

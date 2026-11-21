@@ -250,6 +250,57 @@ class CustomerCashbackRequestForm
         ];
     }
 
+    /**
+     * A paid cashback the customer gave back: how much (up to what was
+     * paid), how and when it came back, and why.
+     *
+     * @return array<int, mixed>
+     */
+    public static function returnFields(?float $paidAmount): array
+    {
+        $mode = fn (Get $get): ?CashbackPaymentMode => CashbackPaymentMode::tryFrom((string) $get('return_mode'));
+
+        return [
+            TextInput::make('returned_amount')
+                ->label('Amount returned by the customer')
+                ->indianAmount(min: 1, max: $paidAmount)
+                ->required()
+                ->helperText($paidAmount !== null ? 'Up to ₹'.indianNumberFormat($paidAmount).' — the amount paid on this form. Less means part of it was returned.' : null)
+                ->columnSpanFull(),
+
+            ToggleButtons::make('return_mode')
+                ->label('Returned through')
+                ->options(CashbackPaymentMode::options())
+                ->inline()
+                ->live()
+                ->required()
+                ->columnSpanFull(),
+
+            Grid::make(2)
+                ->schema([
+                    TextInput::make('return_reference')
+                        ->label('UTR / Transaction ID of the return')
+                        ->maxLength(100)
+                        ->required(fn (Get $get): bool => (bool) $mode($get)?->needsTransactionId()),
+
+                    DatePicker::make('return_date')
+                        ->label('Returned on')
+                        ->native(false)
+                        ->displayFormat('d/m/Y')
+                        ->maxDate(today())
+                        ->required(),
+                ])
+                ->columnSpanFull(),
+
+            Textarea::make('return_reason')
+                ->label('Why was it returned?')
+                ->rows(2)
+                ->maxLength(1000)
+                ->required()
+                ->columnSpanFull(),
+        ];
+    }
+
     /** Value of the "Disbursed in" filter for cases not disbursed yet. */
     public const AT_DISBURSAL_STEP = 'at_disbursal_step';
 

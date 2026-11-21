@@ -5,6 +5,7 @@ namespace App\Filament\Resources\CustomerCashbackRequests\Tables;
 use App\Enums\CashbackPaymentMode;
 use App\Enums\CashbackPaymentStatus;
 use App\Enums\CashbackRequestStatus;
+use App\Enums\CashbackReturnStatus;
 use App\Enums\CashbackType;
 use App\Filament\Resources\CustomerCashbackRequests\CustomerCashbackRequestActions;
 use App\Models\CustomerCashbackRequest;
@@ -45,11 +46,25 @@ class CustomerCashbackRequestsTable
                     ->label('Amount')
                     ->state(fn (CustomerCashbackRequest $record): float => $record->effectiveAmount())
                     ->formatStateUsing(fn (float $state): string => '₹'.indianNumberFormat($state))
-                    ->description(fn (CustomerCashbackRequest $record): ?string => $record->approved_amount !== null && (float) $record->approved_amount !== (float) $record->amount
-                        ? 'Asked ₹'.indianNumberFormat($record->amount)
-                        : null)
+                    ->description(fn (CustomerCashbackRequest $record): ?string => match (true) {
+                        $record->isReturned() => 'Net ₹'.indianNumberFormat($record->netAmount()).' after return',
+                        $record->approved_amount !== null && (float) $record->approved_amount !== (float) $record->amount => 'Asked ₹'.indianNumberFormat($record->amount),
+                        default => null,
+                    })
                     ->alignEnd()
                     ->sortable(query: fn ($query, string $direction) => $query->orderByRaw('COALESCE(approved_amount, amount) '.($direction === 'desc' ? 'desc' : 'asc'))),
+
+                TextColumn::make('customer.cashback')
+                    ->label('Case total')
+                    ->formatStateUsing(fn ($state): string => '₹'.indianNumberFormat($state ?? 0))
+                    ->description(fn (CustomerCashbackRequest $record): ?string => ($record->customer?->live_cashback_forms_count ?? 0) > 1
+                        ? 'Sum of '.$record->customer->live_cashback_forms_count.' forms'
+                        : null)
+                    ->tooltip('All the cashback on this case — every pending or approved form added up, less anything returned.')
+                    ->placeholder('—')
+                    ->alignEnd()
+                    ->toggleable()
+                    ->sortable(),
 
                 TextColumn::make('status')
                     ->label('Approval')
@@ -73,6 +88,12 @@ class CustomerCashbackRequestsTable
                     ->badge()
                     ->formatStateUsing(fn (CashbackPaymentStatus $state): string => $state->label())
                     ->color(fn (CashbackPaymentStatus $state): string => $state->color())
+                    ->description(fn (CustomerCashbackRequest $record): ?string => match (true) {
+                        $record->isFullyReturned() => 'Returned in full',
+                        $record->isReturned() => 'Returned ₹'.indianNumberFormat($record->returnedAmount()),
+                        $record->hasPendingReturn() => 'Return of ₹'.indianNumberFormat($record->returned_amount).' waiting for Admin',
+                        default => null,
+                    })
                     ->sortable(),
 
                 TextColumn::make('payment_mode')
@@ -141,10 +162,19 @@ class CustomerCashbackRequestsTable
                 SelectFilter::make('type')
                     ->label('Declaration')
                     ->options(CashbackType::formOptions()),
+
+                SelectFilter::make('return_status')
+                    ->label('Cashback return')
+                    ->options(CashbackReturnStatus::options()),
             ])
             ->recordActions([
                 ViewAction::make(),
-                ActionGroup::make(CustomerCashbackRequestActions::all()),
+                // The row's actions bar is docked at the row's left edge
+                // (theme.css "Table row contextual actions"), so the menu
+                // opens to the right — Filament's bottom-end default would
+                // open it leftwards, under the sidebar.
+                ActionGroup::make(CustomerCashbackRequestActions::all())
+                    ->dropdownPlacement('bottom-start'),
             ]);
     }
 }

@@ -11,7 +11,7 @@
             @if ($cashbackBeforeForms > 0)
                 ₹{{ indianNumberFormat($cashbackBeforeForms) }} cashback was on this case before its first form and still counts.
             @endif
-            Open a voucher to retrieve an expected cashback, change an approved amount or record the payment.
+            Each cashback is its own form, and the case's cashback is their total. Open a voucher to retrieve an expected cashback, change an approved amount, record the payment or ask for a cashback the customer returned to be recorded (the Admin approves it).
         </p>
     @endif
 
@@ -47,12 +47,23 @@
                     $request->rejection_reason ? 'Rejected: '.$request->rejection_reason : null,
                     $request->retrieval_reason ? 'Retrieved: '.$request->retrieval_reason : null,
                     $request->payment_remarks ? 'Payment: '.$request->payment_remarks : null,
+                    $request->isReturned() ? 'Customer returned ₹'.indianNumberFormat($request->returnedAmount()).' on '.$request->return_date?->format('d M Y').' (approved by the Admin): '.$request->return_reason : null,
+                    $request->hasPendingReturn() ? 'Return of ₹'.indianNumberFormat($request->returned_amount).' waiting for the Admin: '.$request->return_reason : null,
                 ]) as $line)
                     <p class="mt-1 whitespace-pre-line text-gray-700 dark:text-gray-200">{{ $line }}</p>
                 @endforeach
 
                 <p class="fynn-list-meta mt-1">
                     Filled by {{ $request->requester?->name ?? 'Former user' }} · {{ $request->created_at?->format('d M Y, h:i A') }}
+                    @if ($request->manager_approved_at)
+                        · Signed off by {{ $request->managerApprover?->name ?? '—' }} · {{ $request->manager_approved_at->format('d M Y, h:i A') }}
+                    @endif
+                    @if ($request->isApproved() && $request->approved_at)
+                        · Approved by {{ $request->approver?->name ?? '—' }} · {{ $request->approved_at->format('d M Y, h:i A') }}
+                    @endif
+                    @if ($request->isPaid() && $request->transaction_id)
+                        · UTR {{ $request->transaction_id }}
+                    @endif
                 </p>
             </div>
         </div>

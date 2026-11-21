@@ -18,8 +18,8 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Approve / reject / retrieve / change amount / record payment on a
- * cashback form, shared by the listing rows, the voucher page and the
+ * Approve / reject / retrieve / change amount / record payment / request a
+ * return (and the Admin's approval of it) on a cashback form, shared by the listing rows, the voucher page and the
  * customer page. Each action re-checks the user inside
  * CustomerCashbackService; visibility only hides what would be refused.
  *
@@ -40,6 +40,9 @@ class CustomerCashbackRequestActions
             self::changeAmount($resolve, $after),
             self::updatePayment($resolve, $after),
             self::revise($resolve),
+            self::requestReturn($resolve, $after),
+            self::approveReturn($resolve, $after),
+            self::rejectReturn($resolve, $after),
         ];
     }
 
@@ -244,6 +247,113 @@ class CustomerCashbackRequestActions
                     ])
                     ->send();
             });
+    }
+
+    /**
+     * The customer gave a paid cashback back (in full or in part): the
+     * case's Team Leader or Manager asks for it to be recorded with the
+     * amount, how and when it came back and why. It counts only once the
+     * Admin approves it (approveReturn()).
+     */
+    public static function requestReturn(?Closure $resolve = null, ?Closure $after = null): Action
+    {
+        return Action::make('requestCashbackReturn')
+            ->label('Request cashback return')
+            ->icon(Heroicon::OutlinedArrowUturnDown)
+            ->color('danger')
+            ->modalHeading(fn ($record): string => 'Cashback returned on '.self::form($record, $resolve)?->voucher_no)
+            ->modalDescription(function ($record) use ($resolve): string {
+                $form = self::form($record, $resolve);
+
+                return sprintf(
+                    '₹%s was paid to %s%s%s. Fill in what the customer paid back. The Admin approves it — only then does the case\'s cashback drop by that amount and the achievement figures recover it.',
+                    indianNumberFormat($form?->effectiveAmount()),
+                    $form?->customer?->customer_name ?? 'the customer',
+                    $form?->payment_date ? ' on '.$form->payment_date->format('d M Y') : '',
+                    filled($form?->transaction_id) ? ' (UTR '.$form->transaction_id.')' : '',
+                );
+            })
+            ->modalSubmitActionLabel('Send to Admin for approval')
+            ->fillForm(fn ($record): array => [
+                'returned_amount' => self::form($record, $resolve)?->effectiveAmount(),
+                'return_date' => today()->toDateString(),
+            ])
+            ->schema(fn ($record): array => CustomerCashbackRequestForm::returnFields(self::form($record, $resolve)?->effectiveAmount()))
+            ->visible(fn ($record): bool => self::can('canRequestReturn', $record, $resolve))
+            ->action(function ($record, array $data) use ($resolve, $after): void {
+                self::run(
+                    fn (User $user, CustomerCashbackRequest $form) => app(CustomerCashbackService::class)->requestReturn($form, $user, $data),
+                    $record,
+                    $resolve,
+                    $after,
+                    'Cashback return sent to the Admin for approval',
+                );
+            });
+    }
+
+    public static function approveReturn(?Closure $resolve = null, ?Closure $after = null): Action
+    {
+        return Action::make('approveCashbackReturn')
+            ->label('Approve cashback return')
+            ->icon(Heroicon::OutlinedCheckCircle)
+            ->color('success')
+            ->modalHeading(fn ($record): string => 'Approve the cashback return on '.self::form($record, $resolve)?->voucher_no)
+            ->modalDescription(fn ($record): string => self::returnSummary(self::form($record, $resolve)).' Once approved, the case\'s cashback drops by this amount.')
+            ->schema([
+                Textarea::make('note')->label('Note (optional)')->rows(2)->maxLength(1000),
+            ])
+            ->visible(fn ($record): bool => self::can('canReviewReturn', $record, $resolve))
+            ->action(function ($record, array $data) use ($resolve, $after): void {
+                self::run(
+                    fn (User $user, CustomerCashbackRequest $form) => app(CustomerCashbackService::class)->approveReturn($form, $user, $data['note'] ?? null),
+                    $record,
+                    $resolve,
+                    $after,
+                    fn (CustomerCashbackRequest $form): string => 'Return of ₹'.indianNumberFormat($form->returnedAmount()).' approved',
+                );
+            });
+    }
+
+    public static function rejectReturn(?Closure $resolve = null, ?Closure $after = null): Action
+    {
+        return Action::make('rejectCashbackReturn')
+            ->label('Reject cashback return')
+            ->icon(Heroicon::OutlinedXCircle)
+            ->color('danger')
+            ->modalHeading(fn ($record): string => 'Reject the cashback return on '.self::form($record, $resolve)?->voucher_no)
+            ->modalDescription(fn ($record): string => self::returnSummary(self::form($record, $resolve)).' The case\'s cashback stays as it is; the return can be asked for again.')
+            ->schema([
+                Textarea::make('return_review_note')->label('Why is it rejected?')->rows(2)->required()->maxLength(1000),
+            ])
+            ->visible(fn ($record): bool => self::can('canReviewReturn', $record, $resolve))
+            ->action(function ($record, array $data) use ($resolve, $after): void {
+                self::run(
+                    fn (User $user, CustomerCashbackRequest $form) => app(CustomerCashbackService::class)->rejectReturn($form, $user, (string) $data['return_review_note']),
+                    $record,
+                    $resolve,
+                    $after,
+                    'Cashback return rejected',
+                );
+            });
+    }
+
+    /** "Asha asked to record ₹2,000 returned on 21 Nov 2026 by UPI (UTR …): reason." */
+    private static function returnSummary(?CustomerCashbackRequest $form): string
+    {
+        if ($form === null) {
+            return '';
+        }
+
+        return sprintf(
+            '%s asked to record ₹%s of ₹%s returned on %s by %s%s: %s.',
+            $form->returnRequester?->name ?? 'Someone',
+            indianNumberFormat($form->returned_amount),
+            indianNumberFormat($form->effectiveAmount()),
+            $form->return_date?->format('d M Y') ?? '—',
+            $form->return_mode?->label() ?? '—',
+            filled($form->return_reference) ? ' (UTR '.$form->return_reference.')' : '',
+            rtrim((string) $form->return_reason, '.'),
+        );
     }
 
     private static function form(mixed $record, ?Closure $resolve): ?CustomerCashbackRequest

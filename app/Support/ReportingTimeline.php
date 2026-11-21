@@ -33,8 +33,9 @@ use Illuminate\Support\Collection;
  * employee's first non-joining change is that change's old columns). Exit
  * rows never move anybody. The latest line is always today's reporting
  * columns, so a column edited without a history row is still honoured from
- * the last recorded change onward. Built fresh on every call, like
- * ReportingTree.
+ * the last recorded change onward. Built once per period per request and
+ * shared through ReportingSnapshot, like ReportingTree: a write to the
+ * employees or history tables retires every timeline built before it.
  *
  * Designations are rebuilt the same way from 'designation' rows: before a
  * promotion the employee holds their old designation, from its effective
@@ -71,6 +72,14 @@ final class ReportingTimeline
             [$start, $end] = [$end, $start];
         }
 
+        return ReportingSnapshot::remember(
+            "timeline:{$start->toDateString()}:{$end->toDateString()}",
+            fn (): self => self::build($start, $end),
+        );
+    }
+
+    private static function build(CarbonImmutable $start, CarbonImmutable $end): self
+    {
         $rows = ReportingTree::employeeRows();
         $lines = self::linesFromHistory();
         $designationLines = self::designationLinesFromHistory();
@@ -293,10 +302,7 @@ final class ReportingTimeline
             return [];
         }
 
-        $employees = Employee::query()
-            ->whereIn('id', array_keys($spans))
-            ->get(['id', 'reporting_date', 'exit_status', 'exit_date'])
-            ->keyBy('id');
+        $employees = self::onRollsRows();
 
         $days = [];
 
@@ -315,13 +321,27 @@ final class ReportingTimeline
     }
 
     /**
+     * Every employee's on-rolls columns (OnRollsWindow), keyed by id, read
+     * once per request (ReportingSnapshot).
+     *
+     * @return Collection<int, Employee>
+     */
+    private static function onRollsRows(): Collection
+    {
+        return ReportingSnapshot::remember('on-rolls-rows', fn (): Collection => Employee::query()
+            ->get(['id', 'reporting_date', 'exit_status', 'exit_date'])
+            ->keyBy('id'));
+    }
+
+    /**
      * The designation $employee held on $day: from their 'designation'
-     * history rows, today's designation once the latest one applies. Reads
-     * only that employee's rows, so it is cheap enough per figure.
+     * history rows, today's designation once the latest one applies. The
+     * rows come from the request's shared read (ReportingSnapshot), so it
+     * is free per figure.
      */
     public static function designationOn(Employee $employee, CarbonInterface $day): ?int
     {
-        $line = self::lineOn(self::designationLinesFromHistory($employee->id)[$employee->id] ?? null, $day->toDateString());
+        $line = self::lineOn(self::designationLinesFromHistory()[$employee->id] ?? null, $day->toDateString());
 
         return $line['designation'] ?? ($employee->designation === null ? null : (int) $employee->designation);
     }
@@ -436,6 +456,14 @@ final class ReportingTimeline
      */
     private static function linesFromHistory(): array
     {
+        return ReportingSnapshot::remember('reporting-lines', self::readLinesFromHistory(...));
+    }
+
+    /**
+     * @return array<int, list<array{from: ?string, columns: array<string, ?int>}>>
+     */
+    private static function readLinesFromHistory(): array
+    {
         $changes = EmployeeReportingHistory::query()
             ->toBase()
             ->whereNotIn('change_type', ReportingLineService::NON_REPORTING_CHANGES)
@@ -479,12 +507,19 @@ final class ReportingTimeline
      *
      * @return array<int, list<array{from: ?string, designation: ?int}>>
      */
-    private static function designationLinesFromHistory(?int $employeeId = null): array
+    private static function designationLinesFromHistory(): array
+    {
+        return ReportingSnapshot::remember('designation-lines', self::readDesignationLinesFromHistory(...));
+    }
+
+    /**
+     * @return array<int, list<array{from: ?string, designation: ?int}>>
+     */
+    private static function readDesignationLinesFromHistory(): array
     {
         $changes = EmployeeReportingHistory::query()
             ->toBase()
             ->where('change_type', ReportingLineService::CHANGE_DESIGNATION)
-            ->when($employeeId !== null, fn ($query) => $query->where('employee_id', $employeeId))
             ->orderBy('employee_id')
             ->orderBy('effective_date')
             ->orderBy('id')

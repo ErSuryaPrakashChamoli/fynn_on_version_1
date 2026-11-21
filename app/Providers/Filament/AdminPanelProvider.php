@@ -657,7 +657,46 @@ class AdminPanelProvider extends PanelProvider
      */
     protected function buildNavigation(NavigationBuilder $builder): NavigationBuilder
     {
-        return $builder->groups(SidebarShortcuts::arrange(
+        return $builder->groups($this->navigationGroupsForRequest());
+    }
+
+    /**
+     * Filament rebuilds the navigation every time anything asks for it: the
+     * sidebar, the topbar, the module search, the favourites star and more,
+     * seven times on one page load. Each build runs every submodule's
+     * canAccess() and navigation-badge count queries. The groups are built
+     * once per request instead (kept on the request, so every HTTP and
+     * Livewire request still gets a fresh build), per panel and user, and
+     * rebuilt when the user's favourites change.
+     *
+     * @return list<NavigationGroup>
+     */
+    protected function navigationGroupsForRequest(): array
+    {
+        $user = ($user = Filament::auth()->user()) instanceof User ? $user : null;
+
+        $key = implode('|', [
+            'fynn.navigation',
+            Filament::getCurrentOrDefaultPanel()->getId(),
+            $user?->getKey() ?? 'guest',
+            md5((string) json_encode($user?->sidebarFavourites() ?? [])),
+        ]);
+
+        $attributes = request()->attributes;
+
+        if (! $attributes->has($key)) {
+            $attributes->set($key, $this->navigationGroups($user));
+        }
+
+        return $attributes->get($key);
+    }
+
+    /**
+     * @return list<NavigationGroup>
+     */
+    protected function navigationGroups(?User $user): array
+    {
+        return SidebarShortcuts::arrange(
             dashboard: NavigationGroup::make()->items($this->navigationItemsFor(Dashboard::class)),
             modules: [
                 // Credit bureau (Surepass CIBIL): only for the Admin and
@@ -792,8 +831,8 @@ class AdminPanelProvider extends PanelProvider
                     ...$this->navigationItemsFor(MyVotes::class),
                 ]),
             ],
-            user: ($user = Filament::auth()->user()) instanceof User ? $user : null,
-        ));
+            user: $user,
+        );
     }
 
     /**

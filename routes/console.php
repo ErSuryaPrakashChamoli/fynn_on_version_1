@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
+use Laravel\Telescope\Telescope;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -139,3 +140,13 @@ if (config('demo.panel_enabled') && config('demo.schedule_enabled')) {
         ->everyFiveMinutes()
         ->withoutOverlapping();
 }
+
+/*
+ * Telescope is registered only in the local environment (AppServiceProvider)
+ * and stores every query it sees. Never pruned, it grew to 2.8 million rows
+ * (2.2 GB) in five days, slowing every request and database dump. Keep the
+ * last two days.
+ */
+Schedule::command('telescope:prune --hours=48')
+    ->daily()
+    ->when(fn (): bool => app()->environment('local') && class_exists(Telescope::class));

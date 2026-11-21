@@ -1,6 +1,7 @@
 @php
     use App\Enums\CashbackPaymentMode;
     use App\Enums\CashbackPaymentStatus;
+    use App\Enums\CashbackReturnStatus;
 
     /** @var \App\Models\CustomerCashbackRequest $voucher */
     $customer = $voucher->customer;
@@ -40,13 +41,14 @@
     .cashback-voucher td.cv-sign-value.cv-tone--missed { color: #b91c1c; }
     .cashback-voucher .cv-to-fill { color: #9ca3af; font-style: italic; font-size: 0.75rem; }
     .cashback-voucher .cv-revision { text-align: center; margin: -1rem 0 1rem; font-weight: 600; color: #b45309; }
+    .cashback-voucher .cv-returned { font-weight: 700; color: #b91c1c; }
     .dark .cashback-voucher { color: #f3f4f6; background: #18181b; border-color: rgba(255, 255, 255, 0.1); }
     .dark .cashback-voucher td, .dark .cashback-voucher .cv-mode, .dark .cashback-voucher tr.cv-gap td { border-color: #71717a; }
     .dark .cashback-voucher .cv-mode--on { background: #f3f4f6; color: #18181b; }
     .dark .cashback-voucher td.cv-sign-value, .dark .cashback-voucher .cv-status--paid { color: #34d399; }
     .dark .cashback-voucher .cv-muted { color: #a1a1aa; }
     .dark .cashback-voucher td.cv-sign-value.cv-tone--waiting, .dark .cashback-voucher .cv-revision { color: #fbbf24; }
-    .dark .cashback-voucher td.cv-sign-value.cv-tone--missed { color: #f87171; }
+    .dark .cashback-voucher td.cv-sign-value.cv-tone--missed, .dark .cashback-voucher .cv-returned { color: #f87171; }
     @media print {
         body * { visibility: hidden !important; }
         .cashback-voucher, .cashback-voucher * { visibility: visible !important; }
@@ -173,5 +175,30 @@
                 @endif
             </td>
         </tr>
+        @if ($voucher->return_status !== null && $voucher->return_status !== CashbackReturnStatus::Rejected)
+            <tr>
+                <td class="cv-label">Returned by Customer</td>
+                <td colspan="3">
+                    <span @class(['cv-returned' => $voucher->isReturned()])>₹{{ indianNumberFormat($voucher->returned_amount) }}{{ $voucher->isFullyReturned() ? ' — returned in full' : '' }}</span>
+                    on {{ $date($voucher->return_date) }} · {{ $voucher->return_mode?->label() }}{{ $voucher->return_reference ? ' · UTR '.$voucher->return_reference : '' }}
+                    <div class="cv-muted">{{ $voucher->return_reason }}</div>
+                    <div class="cv-muted">Asked by {{ $voucher->returnRequester?->name ?? '—' }} · {{ $voucher->return_requested_at?->format('d/m/Y, h:i A') }}</div>
+                </td>
+            </tr>
+            <tr>
+                <td class="cv-label">Return Approved By</td>
+                <td>{{ $voucher->isReturned() ? $voucher->returnReviewer?->name : '' }}</td>
+                <td class="cv-sign">Signature</td>
+                <td @class(['cv-sign-value', 'cv-tone--waiting' => $voucher->hasPendingReturn()])>
+                    {{ $voucher->isReturned() ? 'Digitally signed · '.$voucher->return_reviewed_at?->format('d/m/Y, h:i A') : 'Awaiting the Admin\'s approval' }}
+                </td>
+            </tr>
+            @if ($voucher->isReturned())
+                <tr>
+                    <td class="cv-label">Net Cashback</td>
+                    <td colspan="3">₹{{ indianNumberFormat($voucher->netAmount()) }}</td>
+                </tr>
+            @endif
+        @endif
     </table>
 </div>

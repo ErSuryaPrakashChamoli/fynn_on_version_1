@@ -20,6 +20,9 @@ class ViewCustomerCashbackRequest extends ViewRecord
             CustomerCashbackRequestActions::retrieve(after: fn () => $this->record->refresh()),
             CustomerCashbackRequestActions::changeAmount(after: fn () => $this->record->refresh()),
             CustomerCashbackRequestActions::revise(),
+            CustomerCashbackRequestActions::requestReturn(after: fn () => $this->record->refresh()),
+            CustomerCashbackRequestActions::approveReturn(after: fn () => $this->record->refresh()),
+            CustomerCashbackRequestActions::rejectReturn(after: fn () => $this->record->refresh()),
             Action::make('printVoucher')
                 ->label('Print voucher')
                 ->icon('heroicon-o-printer')

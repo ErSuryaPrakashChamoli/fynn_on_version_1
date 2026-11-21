@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\CashbackPaymentStatus;
 use App\Enums\CashbackRequestStatus;
+use App\Enums\CashbackReturnStatus;
 use App\Enums\CashbackType;
 use App\Filament\Resources\CustomerCashbackRequests\CustomerCashbackRequestResource;
 use App\Filament\Resources\CustomerCashbackRequests\Pages\CreateCustomerCashbackRequest;
@@ -721,7 +722,7 @@ class CustomerCashbackFormTest extends TestCase
 
         $this->actingAs($this->adminUser);
         Livewire::test(ViewCustomerCashbackRequest::class, ['record' => $original->id])
-            ->assertSee('Payments on this cashback')
+            ->assertSee('Cashback forms on this case')
             ->assertSee('UTR-FIRST')
             ->assertSee('UTR-SECOND')
             ->assertSee($original->voucher_no.'/R1');
@@ -909,6 +910,253 @@ class CustomerCashbackFormTest extends TestCase
             ->get('/admin')
             ->assertOk()
             ->assertSee(CustomerCashbackRequestResource::getUrl('index'), escape: false);
+    }
+
+    public function test_the_teams_return_request_counts_only_once_the_admin_approves_it(): void
+    {
+        $form = $this->paidForm('5000', 'UTR-PAID');
+        $this->assertSame(5000.0, (float) $this->customer->fresh()->cashback);
+
+        // The case's Team Leader and up ask; the Admin, Accounts, the caller and outsiders do not.
+        $this->assertTrue($this->cashback->canRequestReturn($this->teamLeaderUser, $form));
+        $this->assertTrue($this->cashback->canRequestReturn($this->managerUser, $form));
+        $this->assertFalse($this->cashback->canRequestReturn($this->accountsUser, $form));
+        $this->assertFalse($this->cashback->canRequestReturn($this->callerUser, $form));
+        $this->assertFalse($this->cashback->canRequestReturn($this->outsiderUser, $form));
+
+        $this->cashback->requestReturn($form, $this->teamLeaderUser, $this->returnedWith('2000', 'UTR-BACK'));
+
+        $form->refresh();
+        $this->assertSame(CashbackReturnStatus::Pending, $form->return_status);
+        $this->assertTrue($form->hasPendingReturn());
+        $this->assertFalse($form->isReturned());
+        $this->assertSame(0.0, $form->returnedAmount());
+        $this->assertSame(5000.0, (float) $this->customer->fresh()->cashback, 'A return waiting for the Admin does not count yet.');
+        $this->assertSame(1, $this->adminUser->notifications()->where('data->title', 'like', 'Cashback return to approve%')->count());
+
+        // Only one return at a time; only the Admin reviews it.
+        $this->assertFalse($this->cashback->canRequestReturn($this->teamLeaderUser, $form));
+        $this->assertFalse($this->cashback->canReviewReturn($this->managerUser, $form));
+        $this->assertFalse($this->cashback->canReviewReturn($this->accountsUser, $form));
+
+        try {
+            $this->cashback->approveReturn($form, $this->managerUser);
+            $this->fail('Only the Admin approves a return.');
+        } catch (AuthorizationException) {
+            // expected
+        }
+
+        // While it waits, the payment cannot be unmarked and the amount cannot change.
+        try {
+            $this->cashback->updatePayment($form, $this->accountsUser, ['payment_status' => 'not_paid']);
+            $this->fail('A cashback being returned stays paid.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('payment_status', $exception->errors());
+        }
+
+        try {
+            $this->cashback->changeAmount($form, $this->adminUser, '1000', 'Lower.');
+            $this->fail('The amount cannot change while a return waits.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('approved_amount', $exception->errors());
+        }
+
+        $this->cashback->approveReturn($form, $this->adminUser, 'Money received.');
+
+        $form->refresh();
+        $this->assertTrue($form->isReturned());
+        $this->assertSame(2000.0, $form->returnedAmount());
+        $this->assertSame(3000.0, $form->netAmount());
+        $this->assertFalse($form->isFullyReturned());
+        $this->assertSame($this->adminUser->id, $form->return_reviewed_by);
+        $this->assertSame($this->teamLeaderUser->id, $form->return_requested_by);
+        $this->assertSame(3000.0, (float) $this->customer->fresh()->cashback);
+        $this->assertSame(1, $this->teamLeaderUser->notifications()->where('data->title', 'like', 'Cashback return approved%')->count());
+        $this->assertFalse($this->cashback->canRequestReturn($this->teamLeaderUser, $form), 'A return is approved once per form.');
+        $this->assertTrue(Activity::query()->where('subject_id', $form->id)->where('subject_type', $form->getMorphClass())->get()
+            ->contains(fn (Activity $activity): bool => data_get($activity->attribute_changes, 'attributes.return_status') === 'approved'));
+    }
+
+    public function test_a_rejected_return_leaves_the_cashback_and_can_be_asked_for_again(): void
+    {
+        $form = $this->paidForm('5000', 'UTR-PAID');
+
+        $this->cashback->requestReturn($form, $this->managerUser, $this->returnedWith('5000', 'UTR-WRONG'));
+
+        try {
+            $this->cashback->rejectReturn($form->fresh(), $this->adminUser, '  ');
+            $this->fail('A rejection needs a reason.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('return_review_note', $exception->errors());
+        }
+
+        $this->cashback->rejectReturn($form->fresh(), $this->adminUser, 'Not in the bank statement.');
+
+        $form->refresh();
+        $this->assertSame(CashbackReturnStatus::Rejected, $form->return_status);
+        $this->assertSame(5000.0, (float) $this->customer->fresh()->cashback);
+        $this->assertSame(1, $this->managerUser->notifications()->where('data->title', 'like', 'Cashback return rejected%')->count());
+
+        // Asked for again, even with the same UTR, then approved in full.
+        $this->assertTrue($this->cashback->canRequestReturn($this->teamLeaderUser, $form));
+        $this->cashback->requestReturn($form, $this->teamLeaderUser, $this->returnedWith('5000', 'UTR-WRONG'));
+        $this->cashback->approveReturn($form->fresh(), $this->adminUser);
+
+        $this->assertTrue($form->fresh()->isFullyReturned());
+        $this->assertSame(0.0, (float) $this->customer->fresh()->cashback);
+    }
+
+    public function test_a_return_request_is_validated_and_only_for_a_paid_cashback(): void
+    {
+        $unpaid = $this->cashback->raise($this->adminUser, $this->customer, $this->upiForm(['amount' => '4000']));
+
+        $this->assertFalse($this->cashback->canRequestReturn($this->teamLeaderUser, $unpaid));
+
+        try {
+            $this->cashback->requestReturn($unpaid, $this->teamLeaderUser, $this->returnedWith('1000', 'UTR-X'));
+            $this->fail('An unpaid cashback cannot be returned.');
+        } catch (AuthorizationException $exception) {
+            $this->assertStringContainsString('Only a cashback that was paid', $exception->getMessage());
+        }
+
+        $form = $this->cashback->updatePayment($unpaid, $this->accountsUser, $this->paidWith('UTR-PAID'));
+
+        foreach ([
+            'returned_amount' => ['returned_amount' => '4000.01'],
+            'return_mode' => ['return_mode' => ''],
+            'return_reference' => ['return_reference' => ''],
+            'return_date' => ['return_date' => today()->addDay()->toDateString()],
+            'return_reason' => ['return_reason' => ' '],
+        ] as $errorKey => $override) {
+            try {
+                $this->cashback->requestReturn($form, $this->teamLeaderUser, array_merge($this->returnedWith('1000', 'UTR-BACK'), $override));
+                $this->fail("Expected a {$errorKey} error.");
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey($errorKey, $exception->errors());
+            }
+        }
+
+        try {
+            $this->cashback->requestReturn($form, $this->teamLeaderUser, $this->returnedWith('1000', 'UTR-PAID'));
+            $this->fail('The payout UTR cannot be the return UTR.');
+        } catch (ValidationException $exception) {
+            $this->assertStringContainsString($form->voucher_no, $exception->errors()['return_reference'][0]);
+        }
+
+        // Cash needs no UTR.
+        $this->cashback->requestReturn($form, $this->teamLeaderUser, array_merge($this->returnedWith('1000', ''), ['return_mode' => 'cash']));
+        $this->assertTrue($form->fresh()->hasPendingReturn());
+        $this->assertNull($form->fresh()->return_reference);
+    }
+
+    public function test_the_voucher_page_requests_a_return_and_the_admin_approves_it(): void
+    {
+        $form = $this->paidForm('6000', 'UTR-PAID');
+
+        $this->actingAs($this->accountsUser);
+        Livewire::test(ViewCustomerCashbackRequest::class, ['record' => $form->id])
+            ->assertActionHidden('requestCashbackReturn')
+            ->assertActionHidden('approveCashbackReturn');
+
+        $this->actingAs($this->teamLeaderUser);
+        Livewire::test(ViewCustomerCashbackRequest::class, ['record' => $form->id])
+            ->assertActionHidden('approveCashbackReturn')
+            ->callAction('requestCashbackReturn', [
+                'returned_amount' => '6,000',
+                'return_mode' => 'upi',
+                'return_reference' => 'UTR-RETURNED',
+                'return_date' => today()->toDateString(),
+                'return_reason' => 'Loan cancelled — customer paid the cashback back.',
+            ])
+            ->assertHasNoFormErrors()
+            ->assertNotified('Cashback return sent to the Admin for approval')
+            ->assertSee('Awaiting the Admin&#039;s approval', escape: false)
+            ->assertActionHidden('requestCashbackReturn');
+
+        $this->assertSame(6000.0, (float) $this->customer->fresh()->cashback);
+
+        $this->actingAs($this->adminUser);
+        Livewire::test(ListCustomerCashbackRequests::class)
+            ->filterTable('return_status', 'pending')
+            ->assertCanSeeTableRecords([$form])
+            ->assertSee('Return of ₹6,000 waiting for Admin');
+
+        Livewire::test(ViewCustomerCashbackRequest::class, ['record' => $form->id])
+            ->callAction('approveCashbackReturn', ['note' => 'Seen in the bank.'])
+            ->assertNotified('Return of ₹6,000 approved')
+            ->assertSee('Returned by Customer')
+            ->assertSee('returned in full')
+            ->assertSee('UTR-RETURNED')
+            ->assertSee('Net Cashback');
+
+        $this->assertSame(0.0, (float) $this->customer->fresh()->cashback);
+    }
+
+    public function test_two_cashbacks_on_a_case_add_up_and_each_shows_who_approved_it_and_when(): void
+    {
+        $this->adminUser->forceFill(['name' => 'Anil Admin'])->save();
+        $this->managerUser->forceFill(['name' => 'Meena Manager'])->save();
+
+        $first = $this->paidForm('9000', 'UTR-FIRST');
+        $second = $this->cashback->revise($this->teamLeaderUser, $first, $this->upiForm(['amount' => '3000', 'remarks' => 'Second cashback promised.']));
+        $this->cashback->approve($second, $this->managerUser);
+        $this->cashback->approve($second->fresh(), $this->adminUser);
+        $this->cashback->updatePayment($second->fresh(), $this->accountsUser, $this->paidWith('UTR-SECOND'));
+
+        $this->assertSame(12000.0, (float) $this->customer->fresh()->cashback);
+
+        $this->actingAs($this->adminUser);
+        Livewire::test(ViewCustomerCashbackRequest::class, ['record' => $second->id])
+            ->assertSee('Cashback forms on this case')
+            ->assertSee($first->voucher_no)
+            ->assertSee($second->voucher_no)
+            ->assertSee('₹9,000')
+            ->assertSee('₹3,000')
+            ->assertSee('₹12,000')
+            ->assertSee('Meena Manager')
+            ->assertSee('Anil Admin')
+            ->assertSee($second->fresh()->approved_at->format('d M Y, h:i A'))
+            ->assertSee('UTR-FIRST')
+            ->assertSee('UTR-SECOND')
+            ->assertSee('2 forms counted');
+
+        Livewire::test(ListCustomerCashbackRequests::class)
+            ->assertCanSeeTableRecords([$first, $second])
+            ->assertSee('Case total')
+            ->assertSee('Sum of 2 forms');
+    }
+
+    public function test_a_single_form_shows_no_case_breakdown(): void
+    {
+        $form = $this->paidForm('5000', 'UTR-ONLY');
+
+        $this->actingAs($this->adminUser);
+        Livewire::test(ViewCustomerCashbackRequest::class, ['record' => $form->id])
+            ->assertDontSee('Cashback forms on this case');
+    }
+
+    public function test_the_row_actions_menu_opens_to_the_right_of_the_docked_actions_bar(): void
+    {
+        $form = $this->paidForm('5000', 'UTR-MENU');
+
+        $this->actingAs($this->adminUser);
+        Livewire::test(ListCustomerCashbackRequests::class)
+            ->assertCanSeeTableRecords([$form])
+            ->assertSeeHtml('x-float.placement.bottom-start.flip.teleport');
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function returnedWith(string $amount, string $reference): array
+    {
+        return [
+            'returned_amount' => $amount,
+            'return_mode' => 'upi',
+            'return_reference' => $reference,
+            'return_date' => today()->toDateString(),
+            'return_reason' => 'Customer gave it back.',
+        ];
     }
 
     /**

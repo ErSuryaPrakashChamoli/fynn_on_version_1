@@ -23,8 +23,8 @@ use Livewire\Component;
  * The case's cashback and its cashback forms on the customer page: fill a
  * new form (also for a case punched in on an earlier day or month), and
  * approve / reject the one waiting at the user's stage. A case can carry
- * several forms, so retrieving, changing an amount and recording a payment
- * happen on each form's voucher. Every write goes through
+ * several forms, so retrieving, changing an amount, recording a payment and
+ * requesting / approving a returned cashback happen on each form's voucher. Every write goes through
  * CustomerCashbackService.
  */
 class CustomerCashbackSection
@@ -58,7 +58,7 @@ class CustomerCashbackSection
                 View::make('filament.components.customer-cashback-forms')
                     ->viewData(fn (?Customer $record): array => [
                         'requests' => $record
-                            ? $record->cashbackRequests()->with(['requester', 'supervisor'])->latest('id')->get()
+                            ? $record->cashbackRequests()->with(['requester', 'supervisor', 'managerApprover', 'approver'])->latest('id')->get()
                             : collect(),
                         'cashbackBeforeForms' => (float) ($record?->cashback_before_forms ?? 0),
                     ]),

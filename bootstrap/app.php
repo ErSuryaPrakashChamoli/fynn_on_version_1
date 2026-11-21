@@ -3,6 +3,7 @@
 use App\Http\Middleware\Portal\DetectDemoContext;
 use App\Http\Middleware\Portal\RestrictPortalUsers;
 use App\Http\Middleware\Portal\UseDemoContext;
+use Filament\Facades\Filament;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -55,10 +56,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToGroup('web', DetectDemoContext::class);
 
         // A guest on one of the plain /demo routes is sent to the demo
-        // login. Every other route keeps Laravel's default target.
-        $middleware->redirectGuestsTo(
-            fn (Request $request): string => $request->is('demo', 'demo/*') ? '/demo/login' : route('login'),
-        );
+        // login, any other guest to the admin panel's login (there is no
+        // plain `login` route — asking for one turned every guest hit on
+        // these routes into a 500). A JSON caller such as the login
+        // heartbeat gets a bare 401 it can act on instead of a redirect.
+        $middleware->redirectGuestsTo(fn (Request $request): ?string => match (true) {
+            $request->expectsJson() => null,
+            $request->is('demo', 'demo/*') => '/demo/login',
+            default => Filament::getDefaultPanel()->getLoginUrl(),
+        });
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

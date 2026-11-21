@@ -121,7 +121,20 @@ return [
     ],
 
     'ignore_commands' => [
-        //
+        // The scheduler's every-few-minutes housekeeping (routes/console.php)
+        // wrote almost all of the ~600,000 entries a day the table took on.
+        // The ScheduleWatcher still records each run and its output.
+        'queue:monitor',
+        'ocr:check-stuck',
+        'journey:check-sla-breaches',
+        'follow-ups:send-reminders',
+        'follow-ups:escalate',
+        'complaints:escalate',
+        'cashback:escalate-overdue',
+        'sessions:close-idle',
+        'portal:expire-accounts',
+        'demo:run',
+        'telescope:prune',
     ],
 
     /*

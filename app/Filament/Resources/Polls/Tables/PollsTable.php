@@ -103,7 +103,7 @@ class PollsTable
                 ActionGroup::make([
                     EditAction::make(),
                     DeleteAction::make(),
-                ]),
+                ])->dropdownPlacement('bottom-start'),
             ]);
     }
 }
