@@ -66,7 +66,7 @@ class CreateCustomerCashbackRequest extends CreateRecord
             ->success()
             ->title('Cashback form '.$record->voucher_no.' submitted')
             ->body(match ($record->status) {
-                CashbackRequestStatus::PendingManager => 'It now goes to the Manager, then the Admin, for approval.',
+                CashbackRequestStatus::PendingManager => 'It now goes to '.($record->supervisor?->emp_name ?? 'your supervisor').' for approval within 24 hours (by '.$record->supervisor_due_at?->format('d M, h:i A').'), then the Admin. If not approved in time it moves to the Admin on its own.',
                 CashbackRequestStatus::PendingAdmin => 'It now goes to the Admin for approval.',
                 default => 'Approved — Accounts can now pay it.',
             });

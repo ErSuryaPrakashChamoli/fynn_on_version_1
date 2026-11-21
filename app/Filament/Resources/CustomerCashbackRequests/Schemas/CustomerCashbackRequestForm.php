@@ -7,6 +7,7 @@ use App\Enums\CashbackPaymentStatus;
 use App\Enums\CashbackType;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\Customer;
+use App\Models\CustomerCashbackRequest;
 use App\Services\CustomerCashbackService;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Placeholder;
@@ -18,15 +19,21 @@ use Filament\Forms\Components\ToggleButtons;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\HtmlString;
 
 /**
  * The cashback form (the paper "Acknowledgment" voucher, made digital).
- * The customer's name, PAN, mobile, disbursal amount and month come from
- * the file, so only the cashback itself and how to pay it are asked for.
- * fields() is shared with the customer page's "Fill cashback form" modals.
+ * Opened on its own (Cashback Forms → Fill cashback form, or from the
+ * Customers list), the user picks the case — any case at the disbursal
+ * step or punched in on an earlier day or month, narrowed by disbursal
+ * month if wanted. The customer's name, PAN, mobile, disbursal amount and
+ * month come from the case, so only the cashback itself and how to pay it
+ * are asked for. fields() is shared with the customer page's modals.
  */
 class CustomerCashbackRequestForm
 {
@@ -34,23 +41,36 @@ class CustomerCashbackRequestForm
     {
         return $schema
             ->components([
-                Section::make('Customer file')
+                Section::make('Which case?')
                     ->icon(Heroicon::OutlinedFolderOpen)
-                    ->description('Only files at the disbursal step or disbursed, with no cashback form in progress, are listed. The customer\'s details are taken from the file.')
+                    ->description('Any case of yours at the disbursal step or already disbursed — today or on an earlier day or month. A case whose form is still waiting for approval is not listed until that form is approved or rejected. A new form adds to the cashback the case already carries.')
                     ->schema([
+                        Select::make('disbursal_month')
+                            ->label('Disbursed in')
+                            ->placeholder('Any time')
+                            ->options(self::periodOptions())
+                            ->searchable(false)
+                            ->live()
+                            ->dehydrated(false)
+                            ->afterStateUpdated(fn (Set $set): mixed => $set('customer_id', null)),
+
                         Select::make('customer_id')
-                            ->label('Customer')
+                            ->label('Case')
                             ->required()
                             ->live()
-                            ->getSearchResultsUsing(fn (string $search): array => self::customerSearch($search))
+                            ->options(fn (Get $get): array => self::caseOptions($get('disbursal_month')))
+                            ->getSearchResultsUsing(fn (string $search, Get $get): array => self::customerSearch($search, $get('disbursal_month')))
                             ->getOptionLabelUsing(fn ($value): ?string => self::customerLabel($value))
-                            ->helperText('Search by name, mobile, PAN or application number.'),
+                            ->helperText('Pick from the list or search by name, mobile, PAN, application or LAN number.')
+                            ->columnSpan(2),
 
                         Placeholder::make('customer_summary')
-                            ->label('From the file')
+                            ->label('From the case')
                             ->visible(fn (Get $get): bool => filled($get('customer_id')))
-                            ->content(fn (Get $get): HtmlString => self::summary($get('customer_id'))),
+                            ->content(fn (Get $get): HtmlString => self::summary($get('customer_id')))
+                            ->columnSpanFull(),
                     ])
+                    ->columns(3)
                     ->columnSpanFull(),
 
                 Section::make('Cashback')
@@ -97,6 +117,32 @@ class CustomerCashbackRequestForm
                 ->label('Remarks')
                 ->rows(2)
                 ->maxLength(1000)
+                ->columnSpanFull(),
+        ];
+    }
+
+    /**
+     * A revision of a paid cashback: the extra amount, the reason, and how
+     * this second payment goes (pre-filled from the original).
+     *
+     * @return array<int, mixed>
+     */
+    public static function revisionFields(?CashbackType $type): array
+    {
+        return [
+            TextInput::make('amount')
+                ->label('Extra amount to be paid')
+                ->indianAmount(min: 1)
+                ->required()
+                ->columnSpanFull(),
+
+            ...self::payeeFields($type === CashbackType::Cashback),
+
+            Textarea::make('remarks')
+                ->label('Why does it have to be paid again?')
+                ->rows(2)
+                ->maxLength(1000)
+                ->required()
                 ->columnSpanFull(),
         ];
     }
@@ -184,6 +230,13 @@ class CustomerCashbackRequestForm
                         ->displayFormat('d/m/Y')
                         ->maxDate(today())
                         ->required($isPaid),
+
+                    TextInput::make('paid_by_name')
+                        ->label('Paid by')
+                        ->helperText('Who made the payment.')
+                        ->maxLength(150)
+                        ->visible($isPaid)
+                        ->required($isPaid),
                 ])
                 ->columnSpanFull(),
 
@@ -197,22 +250,80 @@ class CustomerCashbackRequestForm
         ];
     }
 
+    /** Value of the "Disbursed in" filter for cases not disbursed yet. */
+    public const AT_DISBURSAL_STEP = 'at_disbursal_step';
+
     /**
-     * Files the user may see (the customer listing's own scope) at the
-     * disbursal step or disbursed, with no live cashback form.
+     * "Disbursed in" choices: the cases still at Step 4, then the last 24
+     * months, newest first.
+     *
+     * @return array<string, string>
+     */
+    public static function periodOptions(): array
+    {
+        $months = collect(range(0, 23))
+            ->mapWithKeys(fn (int $back): array => [
+                now()->startOfMonth()->subMonths($back)->format('Y-m') => now()->startOfMonth()->subMonths($back)->format('F Y'),
+            ])
+            ->all();
+
+        return [self::AT_DISBURSAL_STEP => 'Not disbursed yet (at disbursal step)', ...$months];
+    }
+
+    /**
+     * Cases the user may see (the customer listing's own scope) at the
+     * disbursal step or disbursed on any day, with no form waiting for
+     * approval, optionally only those disbursed in one month.
+     */
+    protected static function caseQuery(?string $period): Builder
+    {
+        $query = CustomerResource::getEloquentQuery()
+            ->whereIn('journey_status', CustomerCashbackService::OPEN_JOURNEY_STATUSES)
+            ->whereDoesntHave('cashbackRequests', fn ($query) => $query->pending());
+
+        if ($period === self::AT_DISBURSAL_STEP) {
+            return $query->where('journey_status', 'approved');
+        }
+
+        if (filled($period) && preg_match('/^\d{4}-\d{2}$/', (string) $period)) {
+            $month = Carbon::createFromFormat('Y-m-d', $period.'-01')->startOfMonth();
+
+            return $query->whereBetween('disbursal_date', [$month->toDateString(), $month->copy()->endOfMonth()->toDateString()]);
+        }
+
+        return $query;
+    }
+
+    /**
+     * The list shown before typing: the chosen month's cases, or the most
+     * recently disbursed ones.
      *
      * @return array<int, string>
      */
-    protected static function customerSearch(string $search): array
+    protected static function caseOptions(?string $period): array
     {
-        return CustomerResource::getEloquentQuery()
-            ->whereIn('journey_status', CustomerCashbackService::OPEN_JOURNEY_STATUSES)
-            ->whereDoesntHave('cashbackRequests', fn ($query) => $query->live())
+        return self::caseQuery($period)
+            ->orderByDesc('disbursal_date')
+            ->orderByDesc('id')
+            ->limit(filled($period) ? 300 : 50)
+            ->get()
+            ->mapWithKeys(fn (Customer $customer): array => [$customer->id => self::labelFor($customer)])
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected static function customerSearch(string $search, ?string $period = null): array
+    {
+        return self::caseQuery($period)
             ->where(fn ($query) => $query
                 ->where('customer_name', 'like', "%{$search}%")
                 ->orWhere('mobile_no', 'like', "%{$search}%")
                 ->orWhere('pan_number', 'like', "%{$search}%")
-                ->orWhere('application_no', 'like', "%{$search}%"))
+                ->orWhere('application_no', 'like', "%{$search}%")
+                ->orWhere('lan_no', 'like', "%{$search}%"))
+            ->orderByDesc('disbursal_date')
             ->orderBy('customer_name')
             ->limit(50)
             ->get()
@@ -227,18 +338,32 @@ class CustomerCashbackRequestForm
         return $customer ? self::labelFor($customer) : null;
     }
 
+    /** "Ravi Sharma · FA2610150001 · disbursed 15 Oct 2026 · ₹5,00,000 · cashback ₹2,000" */
     protected static function labelFor(Customer $customer): string
     {
-        return trim($customer->customer_name.' · '.($customer->application_no ?: $customer->mobile_no));
+        return collect([
+            $customer->customer_name,
+            $customer->application_no ?: $customer->mobile_no,
+            $customer->disbursal_date ? 'disbursed '.$customer->disbursal_date->format('d M Y') : 'not disbursed yet',
+            filled($customer->sanctioned_loan_amount) ? '₹'.indianNumberFormat($customer->sanctioned_loan_amount) : null,
+            (float) ($customer->cashback ?? 0) > 0 ? 'cashback ₹'.indianNumberFormat($customer->cashback) : null,
+        ])->filter()->implode(' · ');
     }
 
     protected static function summary(mixed $customerId): HtmlString
     {
-        $customer = filled($customerId) ? CustomerResource::getEloquentQuery()->with('assignedTo')->find((int) $customerId) : null;
+        $customer = filled($customerId)
+            ? CustomerResource::getEloquentQuery()->with(['assignedTo', 'cashbackRequests'])->find((int) $customerId)
+            : null;
 
         if (! $customer) {
             return new HtmlString('—');
         }
+
+        $forms = $customer->cashbackRequests
+            ->sortBy('id')
+            ->map(fn (CustomerCashbackRequest $form): string => $form->voucher_no.' '.$form->type->label().' ₹'.indianNumberFormat($form->effectiveAmount()).' ('.strtolower($form->status->label()).')')
+            ->implode(', ');
 
         $rows = [
             'Name' => $customer->customer_name,
@@ -247,6 +372,8 @@ class CustomerCashbackRequestForm
             'Disbursal amount' => filled($customer->sanctioned_loan_amount) ? '₹'.indianNumberFormat($customer->sanctioned_loan_amount) : 'Not disbursed yet',
             'Month / Year' => $customer->disbursal_date?->format('F Y') ?? '—',
             'ARO (file owner)' => $customer->assignedTo?->emp_name ?? '—',
+            'Cashback already on the case' => '₹'.indianNumberFormat($customer->cashback ?? 0).' — this form adds to it',
+            'Earlier forms' => $forms ?: 'None',
         ];
 
         return new HtmlString(collect($rows)

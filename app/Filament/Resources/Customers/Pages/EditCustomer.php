@@ -54,12 +54,12 @@ class EditCustomer extends EditRecord
             $data['journey_status'] = $this->record->journey_status;
         }
 
-        // A live cashback form fixes the declaration; a page opened before
-        // the form was filled must not write a stale one back.
-        $liveCashback = app(CustomerCashbackService::class)->liveRequest($this->record);
+        // Live cashback forms fix the declaration; a page opened before a
+        // form was filled must not write a stale one back.
+        $optionFromForms = app(CustomerCashbackService::class)->optionFromForms($this->record);
 
-        if ($liveCashback !== null) {
-            $data['cashback_option'] = $liveCashback->type->value;
+        if ($optionFromForms !== null) {
+            $data['cashback_option'] = $optionFromForms;
         }
 
         return $data;

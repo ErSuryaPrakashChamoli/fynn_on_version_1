@@ -10,7 +10,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Filament/Resources/AiCustomerRecords/** | .ai/rules/ai-customer-records.md |
 | app/Livewire/** | .ai/rules/app-livewire.md |
 | app/**/Customer*.php | .ai/rules/app.md |
-| app/Services/CustomerCashbackService.php, app/Models/CustomerCashbackRequest.php, app/Filament/Resources/CustomerCashbackRequests/**, app/Filament/Resources/Customers/Schemas/CustomerCashbackSection.php, app/Enums/Cashback*.php, app/Services/CustomerJourneyService.php | .ai/rules/cashback.md |
+| app/Services/CustomerCashbackService.php, app/Console/Commands/EscalateOverdueCashbackForms.php, app/Models/CustomerCashbackRequest.php, app/Filament/Resources/CustomerCashbackRequests/**, app/Filament/Resources/Customers/Schemas/CustomerCashbackSection.php, app/Enums/Cashback*.php, app/Services/CustomerJourneyService.php | .ai/rules/cashback.md |
 | app/Services/Cibil/**, app/Filament/Resources/CibilReports/**, app/Filament/Resources/CibilRequests/**, app/Filament/Pages/Cibil*.php, app/Support/Cibil*.php, app/Models/CibilReport.php, app/Models/CibilSetting.php, config/cibil.php | .ai/rules/cibil.md |
 | app/Filament/**, app/Support/ColumnHeaderFilters/**, app/Enums/ColumnHeaderFilterKind.php, resources/js/column-header-filter.js, resources/css/column-header-filters.css, resources/views/filament/components/column-header-filter*.blade.php | .ai/rules/column-header-filters.md |
 | resources/views/components/daily-commitment/** | .ai/rules/components-daily-commitment.md |

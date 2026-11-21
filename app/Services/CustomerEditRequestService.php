@@ -284,10 +284,13 @@ class CustomerEditRequestService
         }
     }
 
-    /** A file with a live cashback form takes its cashback from that form only. */
+    /**
+     * Once a case has a cashback form, its cashback is worked out from its
+     * forms (CustomerCashbackService::syncCustomer) and is changed there.
+     */
     private function cashbackFollowsForm(Customer $customer): bool
     {
-        return app(CustomerCashbackService::class)->liveRequest($customer) !== null;
+        return $customer->cashbackRequests()->exists();
     }
 
     private function same(?string $current, ?string $requested): bool

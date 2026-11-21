@@ -24,6 +24,7 @@ class CustomerCashbackRequestsTable
                 TextColumn::make('voucher_no')
                     ->label('Voucher No')
                     ->weight('bold')
+                    ->description(fn (CustomerCashbackRequest $record): ?string => $record->isRevision() ? 'Revision '.$record->revision_no.' — second payment' : null)
                     ->searchable()
                     ->sortable(),
 
@@ -55,6 +56,16 @@ class CustomerCashbackRequestsTable
                     ->badge()
                     ->formatStateUsing(fn (CashbackRequestStatus $state): string => $state->label())
                     ->color(fn (CashbackRequestStatus $state): string => $state->color())
+                    ->description(fn (CustomerCashbackRequest $record): ?string => $record->escalated_at !== null && $record->status === CashbackRequestStatus::PendingAdmin
+                        ? 'Supervisor missed 24 h'
+                        : $record->supervisorTatLabel())
+                    ->sortable(),
+
+                TextColumn::make('supervisor.emp_name')
+                    ->label('Supervisor')
+                    ->description(fn (CustomerCashbackRequest $record): ?string => $record->supervisor_due_at?->format('d M, h:i A'))
+                    ->placeholder('—')
+                    ->toggleable()
                     ->sortable(),
 
                 TextColumn::make('payment_status')
@@ -84,9 +95,15 @@ class CustomerCashbackRequestsTable
                     ->sortable(),
 
                 TextColumn::make('manager.emp_name')
-                    ->label('Floor Manager')
+                    ->label('Manager')
                     ->placeholder('—')
                     ->toggleable()
+                    ->sortable(),
+
+                TextColumn::make('clusterManager.emp_name')
+                    ->label('Cluster Manager')
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true)
                     ->sortable(),
 
                 TextColumn::make('requester.name')

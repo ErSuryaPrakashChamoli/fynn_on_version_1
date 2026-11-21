@@ -16,6 +16,7 @@ use App\Support\HierarchyHelper;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -25,19 +26,30 @@ use Throwable;
  * The single write path for cashback forms and for customers.cashback on
  * files declared for cashback (the digital "Acknowledgment" voucher).
  *
- *  - A Team Leader or anyone above them on the file's chain fills the form;
- *    a Team Leader's waits for the Manager, then the Admin. A Manager's (or
- *    Cluster Manager's / Business Head's) goes straight to the Admin; the
- *    Admin's own is approved as it is filled.
- *  - A file holds at most one live (pending or approved) form, and
- *    customers.cashback always equals that form's amount (0 when none is
- *    live) — so the achievement and incentive maths, which already read
- *    customers.cashback, follow the form, its approval, a retrieval or the
- *    Admin's change without any change of their own.
+ *  - A Team Leader or anyone above them on the file's chain fills the form.
+ *    A Team Leader's goes first to their own supervisor (their nearest
+ *    active Manager / Cluster Manager / Business Head), who has 24 hours
+ *    (SUPERVISOR_TAT_HOURS) to approve or reject it; after that it moves to
+ *    the Admin on its own (escalateOverdue(), run by cashback:escalate-overdue).
+ *    A Manager's (or Cluster Manager's / Business Head's) goes straight to
+ *    the Admin; the Admin's own is approved as it is filled. The Admin can
+ *    approve at any stage.
+ *  - A case can get a new cashback any time after it is punched in (from
+ *    the Cashback Forms screen, picking the case), so it may carry several
+ *    forms; only one may wait for approval at a time. customers.cashback
+ *    always equals the live (pending or approved) forms' amounts plus any
+ *    cashback the case carried before its first form
+ *    (customers.cashback_before_forms) — so the achievement and incentive
+ *    maths, which already read customers.cashback, follow every form, its
+ *    approval, a retrieval or the Admin's change with no change of their own.
  *  - After approval only the Admin changes the amount; the Admin or
  *    Accounts record the payment (mode, UTR, date, Paid / Not Paid / On Hold).
  *  - An unpaid expected cashback can be retrieved by the Team Leader or
  *    Manager when it is not needed any more; the file's cashback drops to 0.
+ *  - A paid cashback that has to be paid a second time is revised
+ *    (revise()): the revision is a new form on the same case, linked to the
+ *    original, for the extra amount, approved through the same process and
+ *    paid with its own UTR. A UTR is never recorded on two forms.
  */
 class CustomerCashbackService
 {
@@ -49,6 +61,9 @@ class CustomerCashbackService
 
     /** Who records the payment against an approved form. */
     public const PAYMENT_ROLES = ['Admin', 'Accounts'];
+
+    /** Hours the supervisor has before a Team Leader's form moves to the Admin. */
+    public const SUPERVISOR_TAT_HOURS = 24;
 
     /** Journey stages a form can be filled at: credit approved (Step 4 open) or disbursed. */
     public const OPEN_JOURNEY_STATUSES = ['approved', 'sanctioned'];
@@ -65,23 +80,43 @@ class CustomerCashbackService
         return $user !== null && $user->hasAnyRole(self::PAYMENT_ROLES);
     }
 
-    public function liveRequest(Customer $customer): ?CustomerCashbackRequest
+    /**
+     * The case's pending and approved forms, oldest first.
+     *
+     * @return Collection<int, CustomerCashbackRequest>
+     */
+    public function liveRequests(Customer $customer): Collection
     {
         return $customer->cashbackRequests()
             ->live()
+            ->oldest('id')
+            ->get();
+    }
+
+    public function hasLiveForms(Customer $customer): bool
+    {
+        return $customer->cashbackRequests()->live()->exists();
+    }
+
+    /** The one form on the case still waiting for approval, if any. */
+    public function pendingRequest(Customer $customer): ?CustomerCashbackRequest
+    {
+        return $customer->cashbackRequests()
+            ->pending()
             ->latest('id')
             ->first();
     }
 
     /**
      * The owner's chain (Team Leader and up) or a continuity stand-in, or
-     * the Admin — on a file at Step 4 or later with no live form.
+     * the Admin — on a case at Step 4 or already disbursed (any earlier day
+     * or month), with no other form waiting for approval.
      */
     public function canRaiseOn(?User $user, Customer $customer): bool
     {
         return $this->mayFillFor($user, $customer)
             && in_array(strtolower((string) $customer->journey_status), self::OPEN_JOURNEY_STATUSES, true)
-            && $this->liveRequest($customer) === null;
+            && $this->pendingRequest($customer) === null;
     }
 
     public function canApprove(?User $user, CustomerCashbackRequest $request): bool
@@ -95,7 +130,8 @@ class CustomerCashbackService
         }
 
         return $request->status === CashbackRequestStatus::PendingManager
-            && $this->signsForManager($user, $request);
+            && ! $request->isPastSupervisorTat()
+            && $this->signsAsSupervisor($user, $request);
     }
 
     public function canReject(?User $user, CustomerCashbackRequest $request): bool
@@ -112,6 +148,20 @@ class CustomerCashbackService
             && $this->mayFillFor($user, $request->customer);
     }
 
+    /**
+     * A paid form (not itself a revision) can be revised for a second
+     * payment by whoever may fill forms on the case, while no other form on
+     * the case waits for approval.
+     */
+    public function canRevise(?User $user, CustomerCashbackRequest $request): bool
+    {
+        return $request->isApproved()
+            && $request->isPaid()
+            && ! $request->isRevision()
+            && $request->customer !== null
+            && $this->canRaiseOn($user, $request->customer);
+    }
+
     public function canChangeAmount(?User $user, CustomerCashbackRequest $request): bool
     {
         return self::isAdmin($user) && $request->isApproved();
@@ -125,7 +175,7 @@ class CustomerCashbackService
     /**
      * @param  array{type?: string|null, amount?: mixed, remarks?: string|null, payment_mode?: string|null, upi_platform?: string|null, payee_upi?: string|null, payee_account_no?: string|null, payee_ifsc?: string|null}  $data
      */
-    public function raise(User $user, Customer $customer, array $data): CustomerCashbackRequest
+    public function raise(User $user, Customer $customer, array $data, ?CustomerCashbackRequest $revisionOf = null): CustomerCashbackRequest
     {
         if (! $this->mayFillFor($user, $customer)) {
             throw new AuthorizationException('Only the Team Leader or Manager of this file (or the Admin) can fill its cashback form.');
@@ -144,24 +194,36 @@ class CustomerCashbackService
         $amount = $this->validAmount($data['amount'] ?? null, 'amount', allowZero: false);
         $payee = $this->validPayee($data, required: $type === CashbackType::Cashback);
 
-        $request = DB::transaction(function () use ($user, $customer, $type, $amount, $payee, $data): CustomerCashbackRequest {
+        $request = DB::transaction(function () use ($user, $customer, $type, $amount, $payee, $data, $revisionOf): CustomerCashbackRequest {
             /** @var Customer $customer */
             $customer = Customer::query()->lockForUpdate()->findOrFail($customer->getKey());
 
-            if ($this->liveRequest($customer) !== null) {
-                throw ValidationException::withMessages(['type' => 'This file already has a cashback form in progress or approved.']);
+            if ($pending = $this->pendingRequest($customer)) {
+                throw ValidationException::withMessages(['type' => "This case already has cashback form {$pending->voucher_no} waiting for approval — it has to be approved or rejected first."]);
+            }
+
+            // The first form keeps whatever cashback the case already carried.
+            if ($customer->cashback_before_forms === null) {
+                $customer->forceFill(['cashback_before_forms' => $this->cashbackBeforeForms($customer)]);
             }
 
             $now = now();
             $owner = $customer->assign_to ? Employee::query()->find($customer->assign_to) : null;
+            $supervisor = self::isAdmin($user) || $user->hasAnyRole(self::MANAGER_ROLES) ? null : $this->supervisorOf($user);
             $status = match (true) {
                 self::isAdmin($user) => CashbackRequestStatus::Approved,
                 $user->hasAnyRole(self::MANAGER_ROLES) => CashbackRequestStatus::PendingAdmin,
+                // Nobody above the filler with a login to approve: the Admin has it.
+                $supervisor === null => CashbackRequestStatus::PendingAdmin,
                 default => CashbackRequestStatus::PendingManager,
             };
 
+            $revisionNo = $revisionOf ? ((int) $revisionOf->revisions()->max('revision_no')) + 1 : null;
+
             $request = CustomerCashbackRequest::query()->create([
                 'customer_id' => $customer->getKey(),
+                'revision_of_id' => $revisionOf?->getKey(),
+                'revision_no' => $revisionNo,
                 'type' => $type,
                 'amount' => $amount,
                 'approved_amount' => $status === CashbackRequestStatus::Approved ? $amount : null,
@@ -171,25 +233,38 @@ class CustomerCashbackService
                 'aro_employee_id' => $owner?->getKey(),
                 'team_leader_employee_id' => $this->chainMember($owner, Employee::DESIGNATION_TEAM_LEADER)?->getKey(),
                 'manager_employee_id' => $this->chainMember($owner, Employee::DESIGNATION_MANAGER)?->getKey(),
+                'cluster_manager_employee_id' => $this->chainMember($owner, Employee::DESIGNATION_CLUSTER)?->getKey(),
+                'supervisor_employee_id' => $supervisor?->getKey(),
+                'supervisor_due_at' => $status === CashbackRequestStatus::PendingManager ? $now->copy()->addHours(self::SUPERVISOR_TAT_HOURS) : null,
                 'requested_by' => $user->getKey(),
-                'manager_approved_by' => $status !== CashbackRequestStatus::PendingManager && ! self::isAdmin($user) ? $user->getKey() : null,
-                'manager_approved_at' => $status !== CashbackRequestStatus::PendingManager && ! self::isAdmin($user) ? $now : null,
+                'manager_approved_by' => $user->hasAnyRole(self::MANAGER_ROLES) && ! self::isAdmin($user) ? $user->getKey() : null,
+                'manager_approved_at' => $user->hasAnyRole(self::MANAGER_ROLES) && ! self::isAdmin($user) ? $now : null,
                 'approved_by' => $status === CashbackRequestStatus::Approved ? $user->getKey() : null,
                 'approved_at' => $status === CashbackRequestStatus::Approved ? $now : null,
                 'payment_status' => CashbackPaymentStatus::NotPaid,
             ]);
 
-            $request->forceFill(['voucher_no' => self::voucherNumber($request->getKey())])->saveQuietly();
+            $request->forceFill([
+                'voucher_no' => $revisionOf ? $revisionOf->voucher_no.'/R'.$revisionNo : self::voucherNumber($request->getKey()),
+            ])->saveQuietly();
 
             $this->syncCustomer($customer);
 
             return $request;
         });
 
-        $summary = sprintf('%s filled a %s form for ₹%s.', $user->name, strtolower($type->label()), indianNumberFormat($amount));
+        $summary = $revisionOf
+            ? sprintf('%s revised paid cashback %s for a second payment of ₹%s.', $user->name, $revisionOf->voucher_no, indianNumberFormat($amount))
+            : sprintf('%s filled a %s form for ₹%s.', $user->name, strtolower($type->label()), indianNumberFormat($amount));
 
         match ($request->status) {
-            CashbackRequestStatus::PendingManager => $this->notify($this->managerStageUsers($request), 'Cashback form to approve: '.$customer->customer_name, $summary, 'warning', $request),
+            CashbackRequestStatus::PendingManager => $this->notify(
+                $this->supervisorUsers($request),
+                'Cashback form to approve: '.$customer->customer_name,
+                $summary.sprintf(' Approve or reject it within %d hours (by %s) — after that it moves to the Admin.', self::SUPERVISOR_TAT_HOURS, $request->supervisor_due_at?->format('d M, h:i A')),
+                'warning',
+                $request,
+            ),
             CashbackRequestStatus::PendingAdmin => $this->notify($this->admins(), 'Cashback form to approve: '.$customer->customer_name, $summary, 'warning', $request),
             default => $this->notify($this->paymentUsers()->reject(fn (User $recipient): bool => $recipient->is($user)), 'Cashback approved: '.$customer->customer_name, $summary.' Approved by the Admin — ready to pay.', 'success', $request),
         };
@@ -198,15 +273,44 @@ class CustomerCashbackService
     }
 
     /**
-     * Manager sign-off moves a Team Leader's form on to the Admin; the
-     * Admin's approval (at either stage) is final and may set the amount.
+     * A second payment on a paid cashback: a new form on the same case,
+     * linked to $original, of the same kind, for the extra amount, with a
+     * reason. It goes through the same approval (supervisor within the TAT,
+     * then the Admin) and is paid with its own UTR.
+     *
+     * @param  array{amount?: mixed, remarks?: string|null, payment_mode?: string|null, upi_platform?: string|null, payee_upi?: string|null, payee_account_no?: string|null, payee_ifsc?: string|null}  $data
+     */
+    public function revise(User $user, CustomerCashbackRequest $original, array $data): CustomerCashbackRequest
+    {
+        if (! $this->canRevise($user, $original)) {
+            throw new AuthorizationException(match (true) {
+                $original->isRevision() => 'Revise the original cashback form, not a revision.',
+                ! $original->isPaid() => 'Only a paid cashback can be revised for a second payment.',
+                $original->customer && $this->pendingRequest($original->customer) => 'Another cashback form on this case is waiting for approval — it has to be approved or rejected first.',
+                default => 'Only the Team Leader or Manager of this case (or the Admin) can revise its cashback.',
+            });
+        }
+
+        if (blank($data['remarks'] ?? null)) {
+            throw ValidationException::withMessages(['remarks' => 'Say why the cashback has to be paid again.']);
+        }
+
+        return $this->raise($user, $original->customer, [...$data, 'type' => $original->type->value], $original);
+    }
+
+    /**
+     * The supervisor's sign-off (within the TAT) moves a Team Leader's form
+     * on to the Admin; the Admin's approval (at either stage) is final and
+     * may set the amount.
      */
     public function approve(CustomerCashbackRequest $request, User $user, ?string $note = null, mixed $amount = null): CustomerCashbackRequest
     {
         if (! $this->canApprove($user, $request)) {
-            throw new AuthorizationException($request->isPending()
-                ? 'This cashback form is waiting for someone else to approve it.'
-                : 'This cashback form has already been '.strtolower($request->status->label()).'.');
+            throw new AuthorizationException(match (true) {
+                $request->isPastSupervisorTat() => 'The '.self::SUPERVISOR_TAT_HOURS.'-hour approval time is over — this cashback form has moved to the Admin.',
+                $request->isPending() => 'This cashback form is waiting for someone else to approve it.',
+                default => 'This cashback form has already been '.strtolower($request->status->label()).'.',
+            });
         }
 
         $note = filled($note) ? trim((string) $note) : null;
@@ -220,7 +324,7 @@ class CustomerCashbackService
             ])->save();
 
             $this->notify($this->admins(), 'Cashback form to approve: '.$request->customer?->customer_name, sprintf('%s approved %s for ₹%s. It needs the Admin\'s approval.', $user->name, $request->voucher_no, indianNumberFormat($request->amount)), 'warning', $request);
-            $this->notifyRequester($request, 'approved by the Manager — now with the Admin', 'info', $note);
+            $this->notifyRequester($request, 'approved by the supervisor — now with the Admin', 'info', $note);
 
             return $request;
         }
@@ -241,7 +345,7 @@ class CustomerCashbackService
 
         $this->notifyRequester($request, 'approved', 'success', $note);
         $this->notify(
-            User::query()->role('Accounts')->where('is_active', true)->get(),
+            $this->activeUsersWithRoles(['Accounts']),
             'Cashback approved: '.$request->customer?->customer_name,
             sprintf('%s for ₹%s is approved and ready to pay.', $request->voucher_no, indianNumberFormat($approvedAmount)),
             'success',
@@ -356,7 +460,7 @@ class CustomerCashbackService
      * Payment details and status, kept by the Admin / Accounts. Paid needs
      * the mode, the date and (except cash) the UTR; On Hold needs a reason.
      *
-     * @param  array{payment_status?: string|null, payment_mode?: string|null, upi_platform?: string|null, payee_upi?: string|null, payee_account_no?: string|null, payee_ifsc?: string|null, transaction_id?: string|null, payment_date?: string|null, payment_remarks?: string|null}  $data
+     * @param  array{payment_status?: string|null, payment_mode?: string|null, upi_platform?: string|null, payee_upi?: string|null, payee_account_no?: string|null, payee_ifsc?: string|null, transaction_id?: string|null, payment_date?: string|null, paid_by_name?: string|null, payment_remarks?: string|null}  $data
      */
     public function updatePayment(CustomerCashbackRequest $request, User $user, array $data): CustomerCashbackRequest
     {
@@ -378,6 +482,17 @@ class CustomerCashbackService
             throw ValidationException::withMessages(['transaction_id' => 'Enter the UTR / transaction ID of the payment.']);
         }
 
+        if ($transactionId !== null) {
+            $sameUtr = CustomerCashbackRequest::query()
+                ->whereKeyNot($request->getKey())
+                ->where('transaction_id', $transactionId)
+                ->value('voucher_no');
+
+            if ($sameUtr !== null) {
+                throw ValidationException::withMessages(['transaction_id' => "This UTR is already recorded on cashback form {$sameUtr}. A second payment needs its own UTR — revise the cashback for it."]);
+            }
+        }
+
         if ($paid && $paymentDate === null) {
             throw ValidationException::withMessages(['payment_date' => 'Enter the date it was paid.']);
         }
@@ -390,6 +505,7 @@ class CustomerCashbackService
             throw ValidationException::withMessages(['payment_remarks' => 'Say why the payment is on hold.']);
         }
 
+        $paidByName = filled($data['paid_by_name'] ?? null) ? trim((string) $data['paid_by_name']) : null;
         $previous = $request->payment_status;
 
         $request->forceFill([
@@ -398,6 +514,7 @@ class CustomerCashbackService
             'transaction_id' => $transactionId,
             'payment_date' => $paymentDate,
             'paid_by' => $paid ? ($request->isPaid() && $request->paid_by ? $request->paid_by : $user->getKey()) : null,
+            'paid_by_name' => $paid ? ($paidByName ?? $user->name) : null,
             'payment_remarks' => $remarks,
             'payment_updated_by' => $user->getKey(),
             'payment_updated_at' => now(),
@@ -421,26 +538,41 @@ class CustomerCashbackService
         $declared = CashbackType::tryFrom((string) $option)
             ?? throw ValidationException::withMessages(['cashback_option' => 'Declare whether this file has cashback, expected cashback or none.']);
 
-        $live = $this->liveRequest($customer);
+        $live = $this->liveRequests($customer);
 
         if (! $declared->needsForm()) {
-            if ($live !== null) {
-                throw ValidationException::withMessages(['cashback_option' => "This file has cashback form {$live->voucher_no} — it cannot be declared as no cashback."]);
+            if ($live->isNotEmpty()) {
+                throw ValidationException::withMessages(['cashback_option' => "This file has cashback form {$live->first()->voucher_no} — it cannot be declared as no cashback."]);
             }
 
             return 0.0;
         }
 
-        if ($live === null || $live->type !== $declared) {
+        if (! $live->contains(fn (CustomerCashbackRequest $request): bool => $request->type === $declared)) {
             throw ValidationException::withMessages(['cashback_option' => 'Fill the '.strtolower($declared->label()).' form for this file before going ahead.']);
         }
 
-        return $live->effectiveAmount();
+        return $this->totalFor($customer, $live);
     }
 
     /**
-     * customers.cashback follows the live form (0 when none is live); the
-     * declaration follows the live form's type.
+     * The declaration the live forms imply: Cashback if any is a cashback,
+     * else Expected if any is expected; null when no form is live.
+     */
+    public function optionFromForms(Customer $customer): ?string
+    {
+        $types = $this->liveRequests($customer)->map(fn (CustomerCashbackRequest $request): CashbackType => $request->type);
+
+        return match (true) {
+            $types->contains(CashbackType::Cashback) => CashbackType::Cashback->value,
+            $types->contains(CashbackType::Expected) => CashbackType::Expected->value,
+            default => null,
+        };
+    }
+
+    /**
+     * customers.cashback = the cashback carried before the first form plus
+     * every live form's amount; the declaration follows the live forms.
      */
     public function syncCustomer(?Customer $customer): void
     {
@@ -448,12 +580,33 @@ class CustomerCashbackService
             return;
         }
 
-        $live = $this->liveRequest($customer);
-
         $customer->forceFill([
-            'cashback' => $live?->effectiveAmount() ?? 0,
-            'cashback_option' => $live?->type->value ?? $customer->cashback_option,
+            'cashback' => $this->totalFor($customer, $this->liveRequests($customer)),
+            'cashback_option' => $this->optionFromForms($customer) ?? $customer->cashback_option,
         ])->save();
+    }
+
+    /**
+     * @param  Collection<int, CustomerCashbackRequest>  $live
+     */
+    private function totalFor(Customer $customer, Collection $live): float
+    {
+        return round(
+            (float) ($customer->cashback_before_forms ?? 0)
+                + $live->sum(fn (CustomerCashbackRequest $request): float => $request->effectiveAmount()),
+            2,
+        );
+    }
+
+    /**
+     * What a case carried before its first form: the typed cashback of an
+     * already disbursed case. A case still at Step 4 never counted, so 0.
+     */
+    private function cashbackBeforeForms(Customer $customer): float
+    {
+        $disbursed = strtolower((string) $customer->journey_status) === 'sanctioned' || (bool) $customer->disbursal_finalized;
+
+        return $disbursed ? (float) ($customer->cashback ?? 0) : 0.0;
     }
 
     public static function voucherNumber(int $id): string
@@ -476,12 +629,102 @@ class CustomerCashbackService
             && $this->eligibility->canWorkOn($user, $customer);
     }
 
-    private function signsForManager(User $user, CustomerCashbackRequest $request): bool
+    /**
+     * Moves every Team Leader's form whose supervisor let the TAT run out on
+     * to the Admin, and tells the Admin, the supervisor and the filler.
+     * Returns how many moved.
+     */
+    public function escalateOverdue(?Carbon $now = null): int
     {
-        return $request->customer !== null
-            && $user->hasAnyRole(self::MANAGER_ROLES)
-            && (int) $request->requested_by !== (int) $user->getKey()
-            && $this->eligibility->canWorkOn($user, $request->customer);
+        $now ??= now();
+        $moved = 0;
+
+        $ids = CustomerCashbackRequest::query()->overdueForSupervisor($now)->orderBy('id')->pluck('id');
+
+        foreach ($ids as $id) {
+            $request = DB::transaction(function () use ($id, $now): ?CustomerCashbackRequest {
+                $request = CustomerCashbackRequest::query()->lockForUpdate()->find($id);
+
+                // The supervisor may have acted between the query and the lock.
+                if (! $request || ! $request->isPastSupervisorTat($now)) {
+                    return null;
+                }
+
+                $request->forceFill([
+                    'status' => CashbackRequestStatus::PendingAdmin,
+                    'escalated_at' => $now,
+                ])->save();
+
+                return $request;
+            });
+
+            if ($request === null) {
+                continue;
+            }
+
+            $moved++;
+            $supervisor = $request->supervisor?->emp_name ?? 'The supervisor';
+            $summary = sprintf('%s (₹%s) was not approved by %s within %d hours.', $request->voucher_no, indianNumberFormat($request->amount), $supervisor, self::SUPERVISOR_TAT_HOURS);
+
+            $this->notify($this->admins(), 'Cashback form to approve: '.$request->customer?->customer_name, $summary.' It has moved to you for approval.', 'warning', $request);
+            $this->notify(
+                $this->supervisorUsers($request, fallBackToAdmins: false)->merge(collect([$request->requester]))->filter(),
+                'Cashback form moved to the Admin: '.$request->customer?->customer_name,
+                $summary.' The Admin will approve or reject it now.',
+                'gray',
+                $request,
+            );
+        }
+
+        return $moved;
+    }
+
+    /**
+     * The supervisor of whoever fills the form: their nearest active boss
+     * at Manager level or above who has an active login. Null when there
+     * is none, and the form goes to the Admin.
+     */
+    private function supervisorOf(User $user): ?Employee
+    {
+        $employee = $user->employee;
+
+        if ($employee === null) {
+            return null;
+        }
+
+        $supervisor = HierarchyHelper::nearestAncestor(
+            $employee,
+            [Employee::DESIGNATION_MANAGER, Employee::DESIGNATION_CLUSTER, Employee::DESIGNATION_BUSINESS_HEAD],
+            activeOnly: true,
+        );
+
+        $hasLogin = $supervisor !== null
+            && User::query()->where('employee_id', $supervisor->getKey())->where('is_active', true)->exists();
+
+        return $hasLogin ? $supervisor : null;
+    }
+
+    /**
+     * The form's supervisor, or anyone above them, signs it off — never the
+     * person who filled it. Forms from before supervisors were recorded
+     * fall back to any Manager on the file's chain.
+     */
+    private function signsAsSupervisor(User $user, CustomerCashbackRequest $request): bool
+    {
+        if ($request->customer === null
+            || ! $user->hasAnyRole(self::MANAGER_ROLES)
+            || (int) $request->requested_by === (int) $user->getKey()) {
+            return false;
+        }
+
+        if ($request->supervisor_employee_id === null) {
+            return $this->eligibility->canWorkOn($user, $request->customer);
+        }
+
+        $employee = $user->employee;
+
+        return $employee !== null
+            && HierarchyHelper::visibleSubordinateIds($employee)->contains((int) $request->supervisor_employee_id);
     }
 
     /** The owner themself when they hold $designation, else their nearest such boss. */
@@ -558,23 +801,20 @@ class CustomerCashbackService
     }
 
     /**
-     * Who signs a Team Leader's form off: the file's Manager, else the
-     * nearest Cluster Manager / Business Head above the owner, plus anyone
-     * standing in for the owner. Falls back to the Admin.
+     * The supervisor's logins (falling back to the file's Manager for forms
+     * from before supervisors were recorded), else the Admins.
      *
      * @return Collection<int, User>
      */
-    private function managerStageUsers(CustomerCashbackRequest $request): Collection
+    private function supervisorUsers(CustomerCashbackRequest $request, bool $fallBackToAdmins = true): Collection
     {
-        $owner = $request->aro;
-        $signer = $request->manager
-            ?? ($owner ? HierarchyHelper::nearestAncestor($owner, [Employee::DESIGNATION_CLUSTER, Employee::DESIGNATION_BUSINESS_HEAD]) : null);
+        $signerId = $request->supervisor_employee_id ?? $request->manager_employee_id;
 
-        $users = $signer
-            ? User::query()->where('employee_id', $signer->getKey())->where('is_active', true)->get()
+        $users = $signerId
+            ? User::query()->where('employee_id', $signerId)->where('is_active', true)->get()
             : collect();
 
-        return $users->isNotEmpty() ? $users : $this->admins();
+        return $users->isNotEmpty() || ! $fallBackToAdmins ? $users : $this->admins();
     }
 
     /**
@@ -582,7 +822,7 @@ class CustomerCashbackService
      */
     private function admins(): Collection
     {
-        return User::query()->role('Admin')->where('is_active', true)->get();
+        return $this->activeUsersWithRoles(['Admin']);
     }
 
     /**
@@ -590,7 +830,24 @@ class CustomerCashbackService
      */
     private function paymentUsers(): Collection
     {
-        return User::query()->role(self::PAYMENT_ROLES)->where('is_active', true)->get();
+        return $this->activeUsersWithRoles(self::PAYMENT_ROLES);
+    }
+
+    /**
+     * Active users holding any of $roles. Matched by name on purpose: the
+     * role() scope throws RoleDoesNotExist when a role (e.g. Accounts) has
+     * not been created on this install, which would break the approval
+     * itself; a missing role here just means nobody to notify.
+     *
+     * @param  list<string>  $roles
+     * @return Collection<int, User>
+     */
+    private function activeUsersWithRoles(array $roles): Collection
+    {
+        return User::query()
+            ->whereHas('roles', fn ($query) => $query->whereIn('name', $roles))
+            ->where('is_active', true)
+            ->get();
     }
 
     private function notifyRequester(CustomerCashbackRequest $request, string $outcome, string $color, ?string $note): void

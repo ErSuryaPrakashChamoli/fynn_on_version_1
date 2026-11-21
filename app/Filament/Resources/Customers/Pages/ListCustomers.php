@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Customers\Pages;
 
 use App\Filament\Concerns\HasColumnHeaderFilters;
+use App\Filament\Resources\CustomerCashbackRequests\CustomerCashbackRequestResource;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\Employee;
 use Filament\Actions\Action;
@@ -56,6 +57,20 @@ class ListCustomers extends ListRecords
                         true
                     );
                 }),
+
+            /*
+            |--------------------------------------------------------------------------
+            | Cashback Form
+            |--------------------------------------------------------------------------
+            | A new cashback on any case — including one punched in on an
+            | earlier day or month: opens the form, where the case is picked.
+            */
+            Action::make('fillCashbackForm')
+                ->label('Cashback Form')
+                ->icon('heroicon-o-receipt-refund')
+                ->color('gray')
+                ->url(fn (): string => CustomerCashbackRequestResource::getUrl('create'))
+                ->visible(fn (): bool => CustomerCashbackRequestResource::canCreate()),
         ];
     }
 }

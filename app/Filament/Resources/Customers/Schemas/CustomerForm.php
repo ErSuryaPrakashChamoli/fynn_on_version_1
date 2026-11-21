@@ -8,6 +8,7 @@ use App\Filament\Resources\Customers\Pages\CreateCustomer;
 use App\Models\Bank;
 use App\Models\City;
 use App\Models\Customer;
+use App\Models\CustomerCashbackRequest;
 use App\Models\CustomerDocument;
 use App\Models\CustomerPanRequest;
 use App\Models\CustomerStageHistory;
@@ -168,13 +169,20 @@ class CustomerForm
     /** One line under the Step 4 cashback amount: where the figure comes from. */
     protected static function cashbackFormStatus(?Customer $record): string
     {
-        $live = $record ? app(CustomerCashbackService::class)->liveRequest($record) : null;
+        $live = $record ? app(CustomerCashbackService::class)->liveRequests($record) : collect();
 
-        if ($live === null) {
-            return 'Comes from the approved cashback form. No form is in progress on this file.';
+        if ($live->isEmpty()) {
+            return 'Comes from the case\'s cashback forms. No form is in progress on this file.';
         }
 
-        return sprintf('From cashback form %s — %s.%s', $live->voucher_no, strtolower($live->status->label()), $live->isApproved() ? ' Only the Admin can change it now.' : '');
+        $forms = $live
+            ->map(fn (CustomerCashbackRequest $form): string => $form->voucher_no.' ('.strtolower($form->status->label()).')')
+            ->implode(', ');
+        $before = (float) ($record?->cashback_before_forms ?? 0) > 0
+            ? ' plus ₹'.indianNumberFormat($record->cashback_before_forms).' entered before cashback forms'
+            : '';
+
+        return "From cashback form(s) {$forms}{$before}. Only the Admin changes an approved amount.";
     }
 
     public static function bankOptions(): array
@@ -1580,7 +1588,7 @@ class CustomerForm
                                         ? 'Fill the cashback form (button on the amount below, or the Cashback section on the file) before finalizing — it goes to the Manager and Admin for approval.'
                                         : null)
                                     ->disabled(fn (Get $get, ?Customer $record): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped'])
-                                        || ($record !== null && app(CustomerCashbackService::class)->liveRequest($record) !== null))
+                                        || ($record !== null && app(CustomerCashbackService::class)->hasLiveForms($record)))
                                     ->visible(fn (Get $get) => $get('disbursal_status') === 'disbursed')
                                     ->columnSpanFull(),
 

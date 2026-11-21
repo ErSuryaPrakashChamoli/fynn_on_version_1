@@ -75,7 +75,7 @@ class CustomerCashbackRequestResource extends Resource
      */
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery()->with(['customer', 'requester', 'aro', 'teamLeader', 'manager']);
+        $query = parent::getEloquentQuery()->with(['customer', 'requester', 'aro', 'teamLeader', 'manager', 'clusterManager', 'supervisor']);
         $user = Filament::auth()->user();
 
         if (! $user instanceof User) {

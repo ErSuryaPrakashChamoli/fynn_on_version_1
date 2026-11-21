@@ -2,6 +2,7 @@
 
 namespace App\Filament\Exports;
 
+use App\Enums\CashbackType;
 use App\Filament\Actions\DataDownloadApproval;
 use App\Models\Customer;
 use Filament\Actions\Exports\ExportColumn;
@@ -77,6 +78,11 @@ class CustomerExporter extends Exporter
             ExportColumn::make('other_sanctioned_bank'),
             ExportColumn::make('sanctioned_loan_amount'),
             ExportColumn::make('cashback'),
+            ExportColumn::make('cashback_option')
+                ->label('Cashback declaration')
+                ->formatStateUsing(fn (?string $state): string => CashbackType::labelFor($state)),
+            ExportColumn::make('cashback_before_forms')
+                ->label('Cashback before cashback forms'),
             ExportColumn::make('subvention'),
             ExportColumn::make('docking'),
             ExportColumn::make('payout_rate'),

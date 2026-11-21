@@ -14,7 +14,12 @@ class ViewCustomerCashbackRequest extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            ...CustomerCashbackRequestActions::all(after: fn () => $this->record->refresh()),
+            // Record payment sits on the voucher itself (CustomerCashbackRequestInfolist).
+            CustomerCashbackRequestActions::approve(after: fn () => $this->record->refresh()),
+            CustomerCashbackRequestActions::reject(after: fn () => $this->record->refresh()),
+            CustomerCashbackRequestActions::retrieve(after: fn () => $this->record->refresh()),
+            CustomerCashbackRequestActions::changeAmount(after: fn () => $this->record->refresh()),
+            CustomerCashbackRequestActions::revise(),
             Action::make('printVoucher')
                 ->label('Print voucher')
                 ->icon('heroicon-o-printer')

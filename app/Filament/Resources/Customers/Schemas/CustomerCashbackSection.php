@@ -20,16 +20,18 @@ use Illuminate\Validation\ValidationException;
 use Livewire\Component;
 
 /**
- * The file's cashback declaration and its cashback forms on the customer
- * page: fill the form, approve / reject it at the user's stage, retrieve
- * an expected cashback, and (Admin / Accounts) change the amount or record
- * the payment. Every write goes through CustomerCashbackService.
+ * The case's cashback and its cashback forms on the customer page: fill a
+ * new form (also for a case punched in on an earlier day or month), and
+ * approve / reject the one waiting at the user's stage. A case can carry
+ * several forms, so retrieving, changing an amount and recording a payment
+ * happen on each form's voucher. Every write goes through
+ * CustomerCashbackService.
  */
 class CustomerCashbackSection
 {
     public static function make(): Section
     {
-        $live = fn (?Customer $record) => $record ? app(CustomerCashbackService::class)->liveRequest($record) : null;
+        $pending = fn (?Customer $record) => $record ? app(CustomerCashbackService::class)->pendingRequest($record) : null;
         $refresh = fn (mixed $record): mixed => $record instanceof Customer ? $record->refresh() : null;
 
         return Section::make('Cashback')
@@ -37,9 +39,10 @@ class CustomerCashbackSection
             ->icon(Heroicon::OutlinedReceiptRefund)
             ->description(fn (?Customer $record): string => match (true) {
                 $record === null => '',
-                $live($record) !== null => CashbackType::labelFor($record->cashback_option).' — ₹'.indianNumberFormat($record->cashback ?? 0).' on this file, from its cashback form.',
+                app(CustomerCashbackService::class)->hasLiveForms($record) => CashbackType::labelFor($record->cashback_option).' — ₹'.indianNumberFormat($record->cashback ?? 0).' on this case, from its cashback forms'
+                    .((float) ($record->cashback_before_forms ?? 0) > 0 ? ' (incl. ₹'.indianNumberFormat($record->cashback_before_forms).' entered before forms).' : '.'),
                 filled($record->cashback_option) => 'Declared: '.CashbackType::labelFor($record->cashback_option).'.',
-                default => 'Cashback forms on this file.',
+                default => 'Cashback forms on this case.',
             })
             ->columnSpanFull()
             ->collapsible()
@@ -48,21 +51,24 @@ class CustomerCashbackSection
                     || $record->cashbackRequests()->exists()))
             ->headerActions([
                 self::fillAction(),
-                ...CustomerCashbackRequestActions::all($live, $refresh),
+                CustomerCashbackRequestActions::approve($pending, $refresh),
+                CustomerCashbackRequestActions::reject($pending, $refresh),
             ])
             ->schema([
                 View::make('filament.components.customer-cashback-forms')
                     ->viewData(fn (?Customer $record): array => [
                         'requests' => $record
-                            ? $record->cashbackRequests()->with(['requester'])->latest('id')->get()
+                            ? $record->cashbackRequests()->with(['requester', 'supervisor'])->latest('id')->get()
                             : collect(),
+                        'cashbackBeforeForms' => (float) ($record?->cashback_before_forms ?? 0),
                     ]),
             ]);
     }
 
     /**
-     * Fill the cashback form from the customer page (Team Leader and above,
-     * or the Admin). The declaration is chosen in the form itself.
+     * Fill a cashback form from the customer page (Team Leader and above,
+     * or the Admin). The declaration is chosen in the form itself; a new
+     * form adds to the cashback the case already carries.
      */
     public static function fillAction(string $name = 'fillCashbackForm', ?CashbackType $fixedType = null): Action
     {
@@ -73,7 +79,8 @@ class CustomerCashbackSection
             ->visible(fn (?Customer $record): bool => $record !== null
                 && app(CustomerCashbackService::class)->canRaiseOn(self::user(), $record))
             ->modalHeading('Cashback form')
-            ->modalDescription(fn (?Customer $record): string => trim(($record?->customer_name ?? '').' · PAN '.($record?->pan_number ?? '—').' · '.($record?->mobile_no ?? '')).'. The customer\'s details come from the file.')
+            ->modalDescription(fn (?Customer $record): string => trim(($record?->customer_name ?? '').' · PAN '.($record?->pan_number ?? '—').' · '.($record?->mobile_no ?? '')).'. The customer\'s details come from the file.'
+                .((float) ($record?->cashback ?? 0) > 0 ? ' This case already carries ₹'.indianNumberFormat($record->cashback).' cashback — this form adds to it.' : ''))
             ->modalSubmitActionLabel('Submit for approval')
             ->schema(CustomerCashbackRequestForm::fields($fixedType))
             ->action(function (array $data, Customer $record, Component $livewire) use ($fixedType): void {
@@ -100,7 +107,11 @@ class CustomerCashbackSection
                 Notification::make()
                     ->success()
                     ->title('Cashback form '.$form->voucher_no.' submitted')
-                    ->body($form->isApproved() ? 'Approved — Accounts can now pay it.' : 'It is now waiting for approval.')
+                    ->body(match (true) {
+                        $form->isApproved() => 'Approved — Accounts can now pay it.',
+                        $form->supervisor_due_at !== null => 'Waiting for '.($form->supervisor?->emp_name ?? 'the supervisor').' — 24 hours to approve, then it moves to the Admin.',
+                        default => 'It is now waiting for the Admin\'s approval.',
+                    })
                     ->actions([
                         Action::make('open')->label('Open voucher')->url(CustomerCashbackRequestResource::getUrl('view', ['record' => $form])),
                     ])

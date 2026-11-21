@@ -6,9 +6,14 @@
     $customer = $voucher->customer;
     $date = fn ($value): string => $value ? $value->format('d/m/Y') : '';
     $signed = fn ($user, $at): string => $user ? 'Digitally signed · '.$at?->format('d/m/Y, h:i A') : '';
-    $requesterIsTeamLeader = $voucher->team_leader_employee_id !== null
-        && (int) $voucher->requester?->employee_id === (int) $voucher->team_leader_employee_id;
     $mode = $voucher->payment_mode;
+    $chain = [
+        'ARO Name' => [$voucher->aro, null],
+        'TL Name' => [$voucher->teamLeader, $voucher->chainSignature($voucher->team_leader_employee_id)],
+        'Manager Name' => [$voucher->manager, $voucher->chainSignature($voucher->manager_employee_id)],
+        'Cluster Manager Name' => [$voucher->clusterManager, $voucher->chainSignature($voucher->cluster_manager_employee_id)],
+    ];
+    $toFill = 'To be filled by Admin / Accounts';
 @endphp
 
 {{-- Styles are inline (no theme build needed) and scoped to the voucher. --}}
@@ -31,16 +36,23 @@
     .cashback-voucher .cv-status--paid { color: #047857; }
     .cashback-voucher .cv-status--on_hold { color: #b45309; }
     .cashback-voucher .cv-status--not_paid { color: #4b5563; }
+    .cashback-voucher td.cv-sign-value.cv-tone--waiting { color: #b45309; }
+    .cashback-voucher td.cv-sign-value.cv-tone--missed { color: #b91c1c; }
+    .cashback-voucher .cv-to-fill { color: #9ca3af; font-style: italic; font-size: 0.75rem; }
+    .cashback-voucher .cv-revision { text-align: center; margin: -1rem 0 1rem; font-weight: 600; color: #b45309; }
     .dark .cashback-voucher { color: #f3f4f6; background: #18181b; border-color: rgba(255, 255, 255, 0.1); }
     .dark .cashback-voucher td, .dark .cashback-voucher .cv-mode, .dark .cashback-voucher tr.cv-gap td { border-color: #71717a; }
     .dark .cashback-voucher .cv-mode--on { background: #f3f4f6; color: #18181b; }
     .dark .cashback-voucher td.cv-sign-value, .dark .cashback-voucher .cv-status--paid { color: #34d399; }
     .dark .cashback-voucher .cv-muted { color: #a1a1aa; }
+    .dark .cashback-voucher td.cv-sign-value.cv-tone--waiting, .dark .cashback-voucher .cv-revision { color: #fbbf24; }
+    .dark .cashback-voucher td.cv-sign-value.cv-tone--missed { color: #f87171; }
     @media print {
         body * { visibility: hidden !important; }
         .cashback-voucher, .cashback-voucher * { visibility: visible !important; }
         .cashback-voucher { position: absolute; inset: 0 auto auto 0; width: 100%; max-width: none; border: 0; color: #000 !important; background: #fff !important; }
         .cashback-voucher td, .cashback-voucher .cv-mode { border-color: #000 !important; }
+        .cashback-voucher .cv-to-fill { visibility: hidden !important; }
     }
 </style>
 
@@ -52,6 +64,10 @@
     </div>
 
     <div class="cashback-voucher__title">Acknowledgment</div>
+
+    @if ($voucher->isRevision())
+        <div class="cv-revision">{{ $voucher->revisionLabel() }} — second payment on the same cashback</div>
+    @endif
 
     <div class="cashback-voucher__meta">
         <div><strong>Voucher No :</strong> {{ $voucher->voucher_no }}</div>
@@ -104,24 +120,14 @@
                 @endif
             </td>
         </tr>
-        <tr>
-            <td class="cv-label">ARO Name</td>
-            <td>{{ $voucher->aro?->emp_name }}</td>
-            <td class="cv-sign">Signature</td>
-            <td class="cv-sign-value"></td>
-        </tr>
-        <tr>
-            <td class="cv-label">TL Name</td>
-            <td>{{ $voucher->teamLeader?->emp_name }}</td>
-            <td class="cv-sign">Signature</td>
-            <td class="cv-sign-value">{{ $requesterIsTeamLeader ? $signed($voucher->requester, $voucher->created_at) : '' }}</td>
-        </tr>
-        <tr>
-            <td class="cv-label">Floor Manager Name</td>
-            <td>{{ $voucher->managerApprover?->name ?? $voucher->manager?->emp_name }}</td>
-            <td class="cv-sign">Signature</td>
-            <td class="cv-sign-value">{{ $signed($voucher->managerApprover, $voucher->manager_approved_at) }}</td>
-        </tr>
+        @foreach ($chain as $label => [$person, $signature])
+            <tr>
+                <td class="cv-label">{{ $label }}</td>
+                <td>{{ $person?->emp_name }}</td>
+                <td class="cv-sign">Signature</td>
+                <td @class(['cv-sign-value', 'cv-tone--'.($signature['tone'] ?? 'signed')])>{{ $signature['text'] ?? '' }}</td>
+            </tr>
+        @endforeach
         <tr>
             <td class="cv-label">Approved By</td>
             <td>{{ $voucher->approver?->name }}</td>
@@ -130,15 +136,33 @@
         </tr>
         <tr>
             <td class="cv-label">UTR/Transection ID<div class="cv-muted">(it is for payer use only)</div></td>
-            <td colspan="3">{{ $voucher->transaction_id }}</td>
+            <td colspan="3">
+                {{ $voucher->transaction_id }}
+                @if (blank($voucher->transaction_id) && $voucher->isApproved())
+                    <span class="cv-to-fill">{{ $toFill }}</span>
+                @endif
+            </td>
         </tr>
         <tr>
             <td class="cv-label">Paid By</td>
-            <td>{{ $voucher->payer?->name }}</td>
+            <td>
+                {{ $voucher->paid_by_name ?? $voucher->payer?->name }}
+                @if (! $voucher->isPaid() && $voucher->isApproved())
+                    <span class="cv-to-fill">{{ $toFill }}</span>
+                @endif
+            </td>
             <td class="cv-sign">Signature</td>
-            <td class="cv-sign-value">{{ $voucher->isPaid() ? $signed($voucher->payer, $voucher->payment_updated_at) : '' }}</td>
+            <td class="cv-sign-value">{{ $voucher->isPaid() && $voucher->payer ? 'Recorded by '.$voucher->payer->name.' · '.$voucher->payment_updated_at?->format('d/m/Y, h:i A') : '' }}</td>
         </tr>
-        <tr><td class="cv-label">Payment Date</td><td colspan="3">{{ $date($voucher->payment_date) }}</td></tr>
+        <tr>
+            <td class="cv-label">Payment Date</td>
+            <td colspan="3">
+                {{ $date($voucher->payment_date) }}
+                @if (blank($voucher->payment_date) && $voucher->isApproved())
+                    <span class="cv-to-fill">{{ $toFill }}</span>
+                @endif
+            </td>
+        </tr>
         <tr>
             <td class="cv-label">Status</td>
             <td colspan="3">

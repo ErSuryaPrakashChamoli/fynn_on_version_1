@@ -51,6 +51,15 @@ Schedule::command('complaints:escalate')
     ->withoutOverlapping();
 
 /*
+ * Cashback forms: a Team Leader's form not approved or rejected by their
+ * supervisor within 24 hours moves to the Admin. Every 5 minutes so the
+ * TAT is kept to within a few minutes.
+ */
+Schedule::command('cashback:escalate-overdue')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
+/*
  * Daily Commitment: freeze yesterday's commitments (MET / OVERACHIEVED /
  * FAILED) once the day is over. The module's screens always compute live,
  * so this only keeps the stored history honest.
@@ -124,5 +133,9 @@ if (config('demo.panel_enabled') && config('demo.schedule_enabled')) {
 
     Schedule::command('demo:run complaints:escalate')
         ->everyFifteenMinutes()
+        ->withoutOverlapping();
+
+    Schedule::command('demo:run cashback:escalate-overdue')
+        ->everyFiveMinutes()
         ->withoutOverlapping();
 }

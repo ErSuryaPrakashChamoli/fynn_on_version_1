@@ -4,8 +4,11 @@ namespace App\Filament\Resources\CustomerCashbackRequests\Schemas;
 
 use App\Enums\CashbackPaymentStatus;
 use App\Enums\CashbackRequestStatus;
+use App\Filament\Resources\CustomerCashbackRequests\CustomerCashbackRequestActions;
+use App\Filament\Resources\CustomerCashbackRequests\CustomerCashbackRequestResource;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\CustomerCashbackRequest;
+use App\Services\CustomerCashbackService;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Grid;
@@ -50,16 +53,61 @@ class CustomerCashbackRequestInfolist
                                 ->label('Filled by')
                                 ->helperText(fn (CustomerCashbackRequest $record): ?string => $record->created_at?->format('d M Y, h:i A')),
                         ]),
+
+                        Grid::make(4)->schema([
+                            TextEntry::make('supervisor.emp_name')
+                                ->label('Supervisor approval')
+                                ->placeholder('Not needed — went straight to the Admin')
+                                ->helperText(fn (CustomerCashbackRequest $record): ?string => self::supervisorState($record))
+                                ->color(fn (CustomerCashbackRequest $record): ?string => $record->escalated_at !== null || $record->isPastSupervisorTat() ? 'danger' : null)
+                                ->columnSpan(2),
+                            TextEntry::make('revision_of_id')
+                                ->label('Revision of')
+                                ->visible(fn (CustomerCashbackRequest $record): bool => $record->isRevision())
+                                ->state(fn (CustomerCashbackRequest $record): ?string => $record->revisionLabel())
+                                ->url(fn (CustomerCashbackRequest $record): ?string => $record->original
+                                    ? CustomerCashbackRequestResource::getUrl('view', ['record' => $record->original])
+                                    : null)
+                                ->color('primary')
+                                ->columnSpan(2),
+                        ]),
                     ]),
 
                 Section::make('Voucher')
+                    ->key('cashbackVoucher')
                     ->icon(Heroicon::OutlinedDocumentText)
+                    ->description(fn (CustomerCashbackRequest $record): ?string => $record->isApproved() && ! $record->isPaid()
+                        ? 'Admin / Accounts: use Record payment to fill the UTR / transaction ID, paid by, payment date and status.'
+                        : null)
+                    ->headerActions([
+                        CustomerCashbackRequestActions::updatePayment(),
+                    ])
                     ->columnSpanFull()
                     ->schema([
                         View::make('filament.components.cashback-voucher')
                             ->viewData(fn (CustomerCashbackRequest $record): array => [
-                                'voucher' => $record->loadMissing(['customer', 'aro', 'teamLeader', 'manager', 'requester', 'managerApprover', 'approver', 'payer']),
+                                'voucher' => $record->loadMissing(['customer', 'aro', 'teamLeader', 'manager', 'clusterManager', 'requester', 'managerApprover', 'approver', 'payer', 'original']),
                             ]),
+                    ]),
+
+                Section::make('Payments on this cashback')
+                    ->icon(Heroicon::OutlinedBanknotes)
+                    ->description('The original form and every revision for a further payment, each with its own UTR.')
+                    ->columnSpanFull()
+                    ->visible(fn (CustomerCashbackRequest $record): bool => $record->isRevision() || $record->revisions()->exists())
+                    ->schema([
+                        RepeatableEntry::make('payments')
+                            ->hiddenLabel()
+                            ->state(fn (CustomerCashbackRequest $record): array => self::payments($record))
+                            ->schema([
+                                TextEntry::make('voucher')->label('Voucher')->weight('bold'),
+                                TextEntry::make('amount')->label('Amount'),
+                                TextEntry::make('approval')->label('Approval'),
+                                TextEntry::make('payment')->label('Payment'),
+                                TextEntry::make('utr')->label('UTR / Transaction ID'),
+                                TextEntry::make('paid_on')->label('Paid on'),
+                            ])
+                            ->columns(6),
                     ]),
 
                 Section::make('Approval trail')
@@ -116,6 +164,49 @@ class CustomerCashbackRequestInfolist
                             ->placeholder('No changes recorded yet.'),
                     ]),
             ]);
+    }
+
+    /** "Waiting · due 22 Nov, 4:30 PM" / "Approved by …" / "Not approved within 24 h — moved to Admin …" */
+    protected static function supervisorState(CustomerCashbackRequest $record): ?string
+    {
+        if ($record->supervisor_employee_id === null) {
+            return null;
+        }
+
+        return match (true) {
+            $record->escalated_at !== null => 'Not approved within '.CustomerCashbackService::SUPERVISOR_TAT_HOURS.' hours — moved to the Admin on '.$record->escalated_at->format('d M Y, h:i A'),
+            $record->manager_approved_at !== null => 'Approved by '.($record->managerApprover?->name ?? '—').' on '.$record->manager_approved_at->format('d M Y, h:i A'),
+            $record->status === CashbackRequestStatus::PendingManager => $record->supervisorTatLabel().' ('.$record->supervisor_due_at?->format('d M Y, h:i A').')',
+            $record->status === CashbackRequestStatus::Rejected && $record->manager_approved_at === null => 'Rejected at this stage',
+            default => null,
+        };
+    }
+
+    /**
+     * The original form and its revisions, each with its payment.
+     *
+     * @return list<array{voucher: string, amount: string, approval: string, payment: string, utr: string, paid_on: string}>
+     */
+    protected static function payments(CustomerCashbackRequest $record): array
+    {
+        $original = $record->isRevision() ? $record->original : $record;
+
+        if ($original === null) {
+            return [];
+        }
+
+        return collect([$original])
+            ->merge($original->revisions()->get())
+            ->map(fn (CustomerCashbackRequest $form): array => [
+                'voucher' => (string) $form->voucher_no,
+                'amount' => '₹'.indianNumberFormat($form->effectiveAmount()),
+                'approval' => $form->status->label(),
+                'payment' => $form->payment_status->label(),
+                'utr' => $form->transaction_id ?? '—',
+                'paid_on' => $form->payment_date?->format('d M Y') ?? '—',
+            ])
+            ->values()
+            ->all();
     }
 
     /**

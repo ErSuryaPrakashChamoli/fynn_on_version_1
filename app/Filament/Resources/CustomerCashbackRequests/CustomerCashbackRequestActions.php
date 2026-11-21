@@ -39,6 +39,7 @@ class CustomerCashbackRequestActions
             self::retrieve($resolve, $after),
             self::changeAmount($resolve, $after),
             self::updatePayment($resolve, $after),
+            self::revise($resolve),
         ];
     }
 
@@ -150,7 +151,7 @@ class CustomerCashbackRequestActions
     public static function updatePayment(?Closure $resolve = null, ?Closure $after = null): Action
     {
         return Action::make('updateCashbackPayment')
-            ->label('Update payment')
+            ->label('Record payment')
             ->icon(Heroicon::OutlinedBanknotes)
             ->color('primary')
             ->modalHeading(fn ($record): string => 'Payment of '.self::form($record, $resolve)?->voucher_no)
@@ -167,6 +168,7 @@ class CustomerCashbackRequestActions
                     'payee_ifsc' => $form?->payee_ifsc,
                     'transaction_id' => $form?->transaction_id,
                     'payment_date' => $form?->payment_date?->toDateString(),
+                    'paid_by_name' => $form?->paid_by_name ?? self::user()?->name,
                     'payment_remarks' => $form?->payment_remarks,
                 ];
             })
@@ -180,6 +182,67 @@ class CustomerCashbackRequestActions
                     $after,
                     'Payment details saved',
                 );
+            });
+    }
+
+    /**
+     * A second payment on a paid cashback: opens a revision for the extra
+     * amount, which goes through the same approval and is paid with its
+     * own UTR.
+     */
+    public static function revise(?Closure $resolve = null): Action
+    {
+        return Action::make('reviseCashback')
+            ->label('Revise cashback')
+            ->icon(Heroicon::OutlinedArrowPathRoundedSquare)
+            ->color('warning')
+            ->modalHeading(fn ($record): string => 'Revise cashback '.self::form($record, $resolve)?->voucher_no)
+            ->modalDescription(function ($record) use ($resolve): string {
+                $form = self::form($record, $resolve);
+
+                return sprintf(
+                    '₹%s was paid%s. Fill the extra amount to be paid now — the revision goes through the same approval (supervisor within 24 hours, then the Admin) and is paid with its own UTR. The case\'s cashback becomes the total of both.',
+                    indianNumberFormat($form?->effectiveAmount()),
+                    filled($form?->transaction_id) ? ' (UTR '.$form->transaction_id.')' : '',
+                );
+            })
+            ->modalSubmitActionLabel('Submit revision for approval')
+            ->fillForm(function ($record) use ($resolve): array {
+                $form = self::form($record, $resolve);
+
+                return [
+                    'payment_mode' => $form?->payment_mode?->value,
+                    'upi_platform' => $form?->upi_platform,
+                    'payee_upi' => $form?->payee_upi,
+                    'payee_account_no' => $form?->payee_account_no,
+                    'payee_ifsc' => $form?->payee_ifsc,
+                ];
+            })
+            ->schema(fn ($record): array => CustomerCashbackRequestForm::revisionFields(self::form($record, $resolve)?->type))
+            ->visible(fn ($record): bool => self::can('canRevise', $record, $resolve))
+            ->action(function ($record, array $data) use ($resolve): void {
+                $user = self::user();
+                $original = self::form($record, $resolve);
+
+                if (! $user instanceof User || ! $original instanceof CustomerCashbackRequest) {
+                    return;
+                }
+
+                try {
+                    $revision = app(CustomerCashbackService::class)->revise($user, $original, $data);
+                } catch (AuthorizationException|ValidationException $exception) {
+                    Notification::make()->title($exception->getMessage())->danger()->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->success()
+                    ->title('Revision '.$revision->voucher_no.' submitted for approval')
+                    ->actions([
+                        Action::make('open')->label('Open revision')->url(CustomerCashbackRequestResource::getUrl('view', ['record' => $revision])),
+                    ])
+                    ->send();
             });
     }
 

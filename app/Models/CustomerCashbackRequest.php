@@ -8,9 +8,11 @@ use App\Enums\CashbackRequestStatus;
 use App\Enums\CashbackType;
 use Database\Factories\CustomerCashbackRequestFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
@@ -23,6 +25,8 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property int $id
  * @property string|null $voucher_no
  * @property int $customer_id
+ * @property int|null $revision_of_id
+ * @property int|null $revision_no
  * @property CashbackType $type
  * @property numeric $amount
  * @property numeric|null $approved_amount
@@ -36,6 +40,10 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property int|null $aro_employee_id
  * @property int|null $team_leader_employee_id
  * @property int|null $manager_employee_id
+ * @property int|null $cluster_manager_employee_id
+ * @property int|null $supervisor_employee_id
+ * @property Carbon|null $supervisor_due_at
+ * @property Carbon|null $escalated_at
  * @property int|null $requested_by
  * @property int|null $manager_approved_by
  * @property Carbon|null $manager_approved_at
@@ -53,15 +61,20 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property string|null $transaction_id
  * @property Carbon|null $payment_date
  * @property int|null $paid_by
+ * @property string|null $paid_by_name
  * @property string|null $payment_remarks
  * @property int|null $payment_updated_by
  * @property Carbon|null $payment_updated_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Customer $customer
+ * @property-read CustomerCashbackRequest|null $original
+ * @property-read Collection<int, CustomerCashbackRequest> $revisions
  * @property-read Employee|null $aro
  * @property-read Employee|null $teamLeader
  * @property-read Employee|null $manager
+ * @property-read Employee|null $clusterManager
+ * @property-read Employee|null $supervisor
  * @property-read User|null $requester
  * @property-read User|null $managerApprover
  * @property-read User|null $approver
@@ -78,6 +91,8 @@ class CustomerCashbackRequest extends Model
     protected $fillable = [
         'voucher_no',
         'customer_id',
+        'revision_of_id',
+        'revision_no',
         'type',
         'amount',
         'approved_amount',
@@ -91,6 +106,10 @@ class CustomerCashbackRequest extends Model
         'aro_employee_id',
         'team_leader_employee_id',
         'manager_employee_id',
+        'cluster_manager_employee_id',
+        'supervisor_employee_id',
+        'supervisor_due_at',
+        'escalated_at',
         'requested_by',
         'manager_approved_by',
         'manager_approved_at',
@@ -108,6 +127,7 @@ class CustomerCashbackRequest extends Model
         'transaction_id',
         'payment_date',
         'paid_by',
+        'paid_by_name',
         'payment_remarks',
         'payment_updated_by',
         'payment_updated_at',
@@ -125,6 +145,8 @@ class CustomerCashbackRequest extends Model
             'payment_mode' => CashbackPaymentMode::class,
             'amount' => 'decimal:2',
             'approved_amount' => 'decimal:2',
+            'supervisor_due_at' => 'datetime',
+            'escalated_at' => 'datetime',
             'manager_approved_at' => 'datetime',
             'approved_at' => 'datetime',
             'rejected_at' => 'datetime',
@@ -148,6 +170,33 @@ class CustomerCashbackRequest extends Model
         return $this->belongsTo(Customer::class);
     }
 
+    /** The paid form this one revises (a second payment on the same cashback). */
+    public function original(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'revision_of_id');
+    }
+
+    /**
+     * @return HasMany<CustomerCashbackRequest, $this>
+     */
+    public function revisions(): HasMany
+    {
+        return $this->hasMany(self::class, 'revision_of_id')->orderBy('revision_no');
+    }
+
+    public function isRevision(): bool
+    {
+        return $this->revision_of_id !== null;
+    }
+
+    /** "Revision 1 of CB-000012" */
+    public function revisionLabel(): ?string
+    {
+        return $this->isRevision()
+            ? 'Revision '.$this->revision_no.' of '.$this->original?->voucher_no
+            : null;
+    }
+
     public function aro(): BelongsTo
     {
         return $this->belongsTo(Employee::class, 'aro_employee_id');
@@ -161,6 +210,17 @@ class CustomerCashbackRequest extends Model
     public function manager(): BelongsTo
     {
         return $this->belongsTo(Employee::class, 'manager_employee_id');
+    }
+
+    public function clusterManager(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'cluster_manager_employee_id');
+    }
+
+    /** Whoever filled the form reports to them; they approve it first, within the TAT. */
+    public function supervisor(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'supervisor_employee_id');
     }
 
     public function requester(): BelongsTo
@@ -210,6 +270,67 @@ class CustomerCashbackRequest extends Model
             CashbackRequestStatus::PendingManager->value,
             CashbackRequestStatus::PendingAdmin->value,
         ]);
+    }
+
+    /** Waiting for the supervisor with the 24-hour turnaround already over. */
+    public function scopeOverdueForSupervisor(Builder $query, ?Carbon $now = null): Builder
+    {
+        return $query
+            ->where('status', CashbackRequestStatus::PendingManager->value)
+            ->whereNotNull('supervisor_due_at')
+            ->where('supervisor_due_at', '<=', $now ?? now());
+    }
+
+    public function isPastSupervisorTat(?Carbon $now = null): bool
+    {
+        return $this->status === CashbackRequestStatus::PendingManager
+            && $this->supervisor_due_at !== null
+            && $this->supervisor_due_at->lte($now ?? now());
+    }
+
+    /** "Due in 5 hours" / "Overdue by 2 hours" while the supervisor has it. */
+    public function supervisorTatLabel(): ?string
+    {
+        if ($this->status !== CashbackRequestStatus::PendingManager || $this->supervisor_due_at === null) {
+            return null;
+        }
+
+        return $this->isPastSupervisorTat()
+            ? 'TAT over — moving to Admin'
+            : 'Due '.$this->supervisor_due_at->diffForHumans(['parts' => 2]);
+    }
+
+    /**
+     * The voucher's signature cell for one person on the file's chain (TL,
+     * Manager, Cluster Manager): signed when they filled the form or signed
+     * it off as supervisor; otherwise, if it was waiting on them, whether
+     * it still is or moved to the Admin after the TAT.
+     *
+     * @return array{text: string, tone: 'signed'|'waiting'|'missed'}|null
+     */
+    public function chainSignature(?int $employeeId): ?array
+    {
+        if ($employeeId === null) {
+            return null;
+        }
+
+        if ((int) $this->requester?->employee_id === $employeeId) {
+            return ['text' => 'Filled & signed · '.$this->created_at?->format('d/m/Y, h:i A'), 'tone' => 'signed'];
+        }
+
+        if ($this->manager_approved_at !== null && (int) $this->managerApprover?->employee_id === $employeeId) {
+            return ['text' => 'Digitally signed · '.$this->manager_approved_at->format('d/m/Y, h:i A'), 'tone' => 'signed'];
+        }
+
+        if ((int) $this->supervisor_employee_id !== $employeeId) {
+            return null;
+        }
+
+        return match (true) {
+            $this->escalated_at !== null => ['text' => 'Not signed within 24 h — moved to Admin '.$this->escalated_at->format('d/m/Y, h:i A'), 'tone' => 'missed'],
+            $this->status === CashbackRequestStatus::PendingManager => ['text' => 'Awaiting approval · due '.$this->supervisor_due_at?->format('d/m/Y, h:i A'), 'tone' => 'waiting'],
+            default => null,
+        };
     }
 
     public function isLive(): bool

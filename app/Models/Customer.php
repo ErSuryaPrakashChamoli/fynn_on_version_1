@@ -64,6 +64,7 @@ use Throwable;
  * @property numeric|null $sanctioned_loan_amount
  * @property numeric|null $cashback
  * @property string|null $cashback_option
+ * @property numeric|null $cashback_before_forms
  * @property numeric|null $subvention
  * @property string|null $docking
  * @property numeric|null $payout_rate
@@ -421,8 +422,8 @@ class Customer extends Model
     }
 
     /**
-     * Cashback forms raised on this file, newest last. At most one is live
-     * (pending or approved) at a time — see CustomerCashbackService.
+     * Cashback forms raised on this file. Several can be approved; at most
+     * one waits for approval at a time — see CustomerCashbackService.
      *
      * @return HasMany<CustomerCashbackRequest, $this>
      */

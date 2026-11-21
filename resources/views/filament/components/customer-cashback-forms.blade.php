@@ -2,9 +2,19 @@
     use App\Filament\Resources\CustomerCashbackRequests\CustomerCashbackRequestResource;
 
     /** @var \Illuminate\Support\Collection<int, \App\Models\CustomerCashbackRequest> $requests */
+    /** @var float $cashbackBeforeForms */
 @endphp
 
 <div class="space-y-3">
+    @if ($requests->isNotEmpty())
+        <p class="fynn-list-meta">
+            @if ($cashbackBeforeForms > 0)
+                ₹{{ indianNumberFormat($cashbackBeforeForms) }} cashback was on this case before its first form and still counts.
+            @endif
+            Open a voucher to retrieve an expected cashback, change an approved amount or record the payment.
+        </p>
+    @endif
+
     @forelse ($requests as $request)
         <div class="group/tl flex gap-3 text-sm">
             <div class="flex flex-col items-center" aria-hidden="true">
@@ -22,6 +32,14 @@
                     <x-filament::badge :color="$request->status->color()" size="sm">{{ $request->status->label() }}</x-filament::badge>
                     @if ($request->isApproved())
                         <x-filament::badge :color="$request->payment_status->color()" size="sm">{{ $request->payment_status->label() }}</x-filament::badge>
+                    @endif
+                    @if ($request->isRevision())
+                        <span class="fynn-list-meta">Revision {{ $request->revision_no }} — second payment</span>
+                    @endif
+                    @if ($tat = $request->supervisorTatLabel())
+                        <span class="fynn-list-meta">{{ $request->supervisor?->emp_name }} · {{ $tat }}</span>
+                    @elseif ($request->escalated_at && $request->status === \App\Enums\CashbackRequestStatus::PendingAdmin)
+                        <span class="fynn-list-meta">Supervisor missed 24 h — with the Admin</span>
                     @endif
                 </div>
 
