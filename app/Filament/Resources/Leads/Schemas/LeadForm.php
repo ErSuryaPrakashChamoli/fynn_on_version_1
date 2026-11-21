@@ -44,11 +44,15 @@ class LeadForm
                     ->icon(Heroicon::OutlinedUser)
                     ->schema([
 
+                        // Fields that tidy their own value (name, PAN, salary)
+                        // sync on blur: sent on every keystroke, the tidied value
+                        // came back over letters still being typed.
                         TextInput::make('customer_name')
                             ->label('Customer Name')
                             ->required()
                             ->maxLength(255)
-                            ->live()
+                            ->live(onBlur: true)
+                            ->extraInputAttributes(['style' => 'text-transform: capitalize'])
                             ->afterStateUpdated(function ($state, callable $set) {
                                 $set('customer_name', Str::title($state));
                             }),
@@ -95,7 +99,8 @@ class LeadForm
                         TextInput::make('pan_number')
                             ->label('PAN Number')
                             // ->required()
-                            ->live()
+                            ->live(onBlur: true)
+                            ->extraInputAttributes(['style' => 'text-transform: uppercase'])
                             ->maxLength(10)
                             ->minLength(10)
                             ->afterStateUpdated(function (?string $state, Set $set, $livewire, ?Lead $record) {
@@ -190,7 +195,7 @@ class LeadForm
                             ->label('Salary')
                             ->prefix('₹')
                             ->amountInWords()
-                            ->live()
+                            ->live(onBlur: true)
                             ->formatStateUsing(fn ($state) => filled($state)
                                 ? indianCurrencyFormat($state)
                                 : null)

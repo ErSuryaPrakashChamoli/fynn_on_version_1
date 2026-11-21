@@ -227,7 +227,7 @@ class CustomerForm
         $currencyField = fn (string $name, string $label) => TextInput::make($name)
             ->label($label)
             ->prefix('₹')
-            ->live()
+            ->live(onBlur: true)
             ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
             ->afterStateUpdated(function ($state, Set $set) use ($name) {
                 $value = preg_replace('/[^0-9]/', '', (string) $state);
@@ -700,11 +700,15 @@ class CustomerForm
                                 'regex' => 'Please enter a valid PAN number like ABCDE1234F.',
                             ]),
 
+                        // Fields that tidy their own value (names, amounts) sync on
+                        // blur: sent on every keystroke, the tidied value came
+                        // back over letters still being typed.
                         TextInput::make('customer_name')
                             ->label('Customer Name')
                             ->required()
                             ->maxLength(255)
-                            ->live()
+                            ->live(onBlur: true)
+                            ->extraInputAttributes(['style' => 'text-transform: capitalize'])
                             ->disabled(
                                 fn (Get $get, ?Customer $record) => self::lockCallerFields($record)
                                     || self::hasPanConflict($get)
@@ -853,7 +857,7 @@ class CustomerForm
                             ->label('Salary')
                             ->prefix('₹')
                             ->amountInWords()
-                            ->live()
+                            ->live(onBlur: true)
                             // ->required()
                             ->required(
                                 fn (Get $get) => $get('eligibility_status') === 'eligible'
@@ -1059,7 +1063,8 @@ class CustomerForm
                                 TextInput::make('company_category')
                                     ->label('Company Name')
                                     ->maxLength(255)
-                                    ->live()
+                                    ->live(onBlur: true)
+                                    ->extraInputAttributes(['style' => 'text-transform: capitalize'])
                                     ->required(
                                         fn (Get $get) => auth()->user()->hasAnyRole([
                                             'Admin',
@@ -1187,7 +1192,7 @@ class CustomerForm
                                     ->label('Eligible Loan Amount')
                                     ->prefix('₹')
                                     ->amountInWords()
-                                    ->live()
+                                    ->live(onBlur: true)
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->afterStateUpdated(function ($state, callable $set) {
                                         $value = preg_replace('/[^0-9]/', '', (string) $state);
@@ -1386,7 +1391,7 @@ class CustomerForm
                                     ->label('Approved Sanctioned Amount')
                                     ->prefix('₹')
                                     ->amountInWords()
-                                    ->live()
+                                    ->live(onBlur: true)
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->afterStateUpdated(function ($state, callable $set) {
@@ -1423,7 +1428,8 @@ class CustomerForm
                                     ->label('Enter Bank Name')
                                     ->visible(fn ($get) => $get('sanctioned_bank') === 'other')
                                     ->required(fn ($get) => $get('sanctioned_bank') === 'other')
-                                    ->live()
+                                    ->live(onBlur: true)
+                                    ->extraInputAttributes(['style' => 'text-transform: capitalize'])
                                     ->dehydrated(true)
                                     ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
                                     ->afterStateUpdated(fn ($state, callable $set) => $set('other_sanctioned_bank', Str::title($state)))
@@ -1558,7 +1564,7 @@ class CustomerForm
                                     ->label('Final Net Disbursed Loan Amount')
                                     ->prefix('₹')
                                     ->amountInWords()
-                                    ->live()
+                                    ->live(onBlur: true)
                                     ->dehydrated(true)
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->afterStateUpdated(function ($state, callable $set) {
@@ -1618,7 +1624,7 @@ class CustomerForm
                                     ->prefix('₹')
                                     ->amountInWords()
                                     ->required()
-                                    ->live()
+                                    ->live(onBlur: true)
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->afterStateUpdated(function ($state, callable $set) {
                                         $value = preg_replace('/[^0-9]/', '', (string) $state);
@@ -1635,7 +1641,7 @@ class CustomerForm
                                     ->label('Docking Charges')
                                     ->prefix('₹')
                                     ->amountInWords()
-                                    ->live()
+                                    ->live(onBlur: true)
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
                                     ->required()

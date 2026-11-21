@@ -241,8 +241,9 @@ class SidebarModuleAccordionTest extends TestCase
         $sidebar = $this->sidebarFor('Admin', Employee::DESIGNATION_ADMIN);
 
         $this->assertCount(13, $sidebar['Credit & Accounts']);
-        $this->assertCount(11, $sidebar['Customers']);
+        $this->assertCount(12, $sidebar['Customers']);
         $this->assertContains('Cashback Forms', $sidebar['Customers']);
+        $this->assertContains('Cashback Analysis', $sidebar['Customers']);
         $this->assertCount(5, $sidebar['Leads']);
         $this->assertCount(13, $sidebar['People & Organisation']);
         $this->assertContains('Monitoring & Reports', $sidebar['Leads']);

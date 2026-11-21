@@ -150,7 +150,7 @@ class AssignedLeadForm
                             ->label('Salary')
                             ->prefix('₹')
                             ->amountInWords()
-                            ->live()
+                            ->live(onBlur: true)
                             ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                             ->afterStateUpdated(function ($state, Set $set) {
                                 $value = preg_replace('/[^0-9]/', '', (string) $state);

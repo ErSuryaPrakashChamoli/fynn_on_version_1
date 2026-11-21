@@ -77,6 +77,7 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property string|null $payment_remarks
  * @property int|null $payment_updated_by
  * @property Carbon|null $payment_updated_at
+ * @property array<string, mixed>|null $analysis_snapshot
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Customer $customer
@@ -184,6 +185,7 @@ class CustomerCashbackRequest extends Model
             'retrieved_at' => 'datetime',
             'payment_date' => 'date',
             'payment_updated_at' => 'datetime',
+            'analysis_snapshot' => 'array',
         ];
     }
 

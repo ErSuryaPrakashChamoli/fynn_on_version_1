@@ -402,6 +402,16 @@ class HierarchyHelper
                 : Employee::query()->whereRaw('1 = 0');
         }
 
+        return self::branchTopsDuring($start, $end);
+    }
+
+    /**
+     * The top of every branch on any day of [$start, $end]: each Business
+     * Head or Cluster Manager on the rolls with no boss (or an exited one)
+     * — where the Admin's company-wide view starts.
+     */
+    public static function branchTopsDuring(CarbonInterface $start, CarbonInterface $end): Builder
+    {
         $topIds = [];
 
         foreach (ReportingTimeline::between($start, $end)->segments() as $segment) {

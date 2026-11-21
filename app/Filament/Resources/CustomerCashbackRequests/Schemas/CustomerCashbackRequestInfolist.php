@@ -9,6 +9,7 @@ use App\Filament\Resources\CustomerCashbackRequests\CustomerCashbackRequestActio
 use App\Filament\Resources\CustomerCashbackRequests\CustomerCashbackRequestResource;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\CustomerCashbackRequest;
+use App\Services\CashbackAnalysisService;
 use App\Services\CustomerCashbackService;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -17,10 +18,13 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\Carbon;
 use Spatie\Activitylog\Models\Activity;
 
 /**
- * The voucher, laid out like the paper Acknowledgment form, then — when the
+ * The cashback analysis of everyone on the case's chain (saved when the
+ * form was raised, and as on now while it waits for approval), then the
+ * voucher, laid out like the paper Acknowledgment form, then — when the
  * case has more than one form (a second payment, a revision) — every form
  * on the case with who filled, signed off, approved and paid each and the
  * case's total, then who did what on this form and its change history.
@@ -74,6 +78,18 @@ class CustomerCashbackRequestInfolist
                                 ->color('primary')
                                 ->columnSpan(2),
                         ]),
+                    ]),
+
+                Section::make('Cashback analysis')
+                    ->key('cashbackAnalysis')
+                    ->icon(Heroicon::OutlinedPercentBadge)
+                    ->description('Cases punched in, cases with cashback, cashback, disbursal and approval amounts and cashback % of everyone on this case\'s chain, for the month the case counts in — what to weigh before approving.')
+                    ->columnSpanFull()
+                    ->collapsible()
+                    ->collapsed(fn (CustomerCashbackRequest $record): bool => ! $record->isPending())
+                    ->schema([
+                        View::make('filament.components.cashback-form-analysis')
+                            ->viewData(fn (CustomerCashbackRequest $record): array => self::analysisViewData($record)),
                     ]),
 
                 Section::make('Voucher')
@@ -175,6 +191,42 @@ class CustomerCashbackRequestInfolist
                             ->placeholder('No changes recorded yet.'),
                     ]),
             ]);
+    }
+
+    /**
+     * What cashback-form-analysis.blade.php shows for a form: the analysis
+     * saved when it was raised and — while it waits for approval, or when
+     * nothing was saved (forms raised before analyses were kept) — the
+     * analysis as it stands now. $withSaved false gives only today's (the
+     * approve / reject pop-ups).
+     *
+     * @return array{blocks: list<array{title: string, analysis: array<string, mixed>}>, note: string|null}
+     */
+    public static function analysisViewData(CustomerCashbackRequest $record, bool $withSaved = true): array
+    {
+        $saved = $withSaved && is_array($record->analysis_snapshot) && $record->analysis_snapshot !== [] ? $record->analysis_snapshot : null;
+        $blocks = [];
+
+        if ($saved !== null) {
+            $blocks[] = [
+                'title' => 'When the form was raised · '.Carbon::parse($saved['as_of'] ?? $record->created_at)->format('d M Y, h:i A'),
+                'analysis' => $saved,
+            ];
+        }
+
+        if ($saved === null || $record->isPending()) {
+            $blocks[] = [
+                'title' => 'As on now · '.now()->format('d M Y, h:i A'),
+                'analysis' => app(CashbackAnalysisService::class)->forForm($record),
+            ];
+        }
+
+        return [
+            'blocks' => $blocks,
+            'note' => $withSaved && $saved === null
+                ? 'This form was raised before analyses were saved on forms, so only today\'s figures are shown.'
+                : null,
+        ];
     }
 
     /** "Returned 21 Nov 2026 by UPI (UTR …) · asked by … · approved by … : note" */

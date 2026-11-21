@@ -4,6 +4,7 @@ namespace App\Filament\Resources\CustomerCashbackRequests;
 
 use App\Enums\CashbackRequestStatus;
 use App\Filament\Resources\CustomerCashbackRequests\Schemas\CustomerCashbackRequestForm;
+use App\Filament\Resources\CustomerCashbackRequests\Schemas\CustomerCashbackRequestInfolist;
 use App\Models\CustomerCashbackRequest;
 use App\Models\User;
 use App\Services\CustomerCashbackService;
@@ -13,8 +14,10 @@ use Filament\Facades\Filament;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
+use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\View\View;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -56,6 +59,8 @@ class CustomerCashbackRequestActions
             ->modalDescription(fn ($record): string => self::isAdmin()
                 ? 'Final approval. The file\'s cashback is set to the approved amount and Accounts are told it is ready to pay.'
                 : 'Your approval sends the form to the Admin for final approval.')
+            ->modalContent(fn ($record): ?View => self::analysis($record, $resolve))
+            ->modalWidth(Width::FiveExtraLarge)
             ->fillForm(fn ($record): array => ['approved_amount' => self::form($record, $resolve)?->amount])
             ->schema(fn (): array => array_values(array_filter([
                 self::isAdmin()
@@ -87,6 +92,8 @@ class CustomerCashbackRequestActions
             ->color('danger')
             ->modalHeading('Reject this cashback form')
             ->modalDescription('The file\'s cashback goes back to 0 and the person who filled the form is told why. A new form can be filled after.')
+            ->modalContent(fn ($record): ?View => self::analysis($record, $resolve))
+            ->modalWidth(Width::FiveExtraLarge)
             ->schema([
                 Textarea::make('rejection_reason')->label('Why is it rejected?')->rows(2)->required()->maxLength(1000),
             ])
@@ -354,6 +361,20 @@ class CustomerCashbackRequestActions
             filled($form->return_reference) ? ' (UTR '.$form->return_reference.')' : '',
             rtrim((string) $form->return_reason, '.'),
         );
+    }
+
+    /**
+     * The cashback analysis of everyone on the form's chain as it stands
+     * now, shown in the approve / reject pop-ups so the decision is taken
+     * on it.
+     */
+    private static function analysis(mixed $record, ?Closure $resolve): ?View
+    {
+        $form = self::form($record, $resolve);
+
+        return $form
+            ? view('filament.components.cashback-form-analysis', CustomerCashbackRequestInfolist::analysisViewData($form, withSaved: false))
+            : null;
     }
 
     private static function form(mixed $record, ?Closure $resolve): ?CustomerCashbackRequest

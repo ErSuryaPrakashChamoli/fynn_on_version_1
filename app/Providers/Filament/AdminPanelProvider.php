@@ -4,6 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Pages\AssignedLeadFollowUpCalendar;
 use App\Filament\Pages\Auth\Login;
+use App\Filament\Pages\CashbackAnalysis;
 use App\Filament\Pages\ChangePassword;
 use App\Filament\Pages\CibilAccessSettings;
 use App\Filament\Pages\CibilAuditHistory;
@@ -741,7 +742,7 @@ class AdminPanelProvider extends PanelProvider
 
                 // The customer file and its follow-ups, the requests raised
                 // against a customer (duplicate PAN, eligibility, edits,
-                // cashback forms) and
+                // cashback forms and their analysis) and
                 // the Admin's OCR / AI document screens.
                 NavigationGroup::make('Customers')->icon(Heroicon::OutlinedUserCircle)->items([
                     ...$this->navigationItemsFor(CustomerResource::class),
@@ -752,6 +753,7 @@ class AdminPanelProvider extends PanelProvider
                     ...$this->navigationItemsFor(CustomerEligibilityRequestResource::class),
                     ...$this->navigationItemsFor(CustomerEditRequestResource::class),
                     ...$this->navigationItemsFor(CustomerCashbackRequestResource::class),
+                    ...$this->navigationItemsFor(CashbackAnalysis::class),
                     ...$this->navigationItemsFor(OcrDocumentResource::class),
                     ...$this->navigationItemsFor(AiCustomerRecordResource::class),
                     ...$this->navigationItemsFor(AiDocumentSchemaResource::class),

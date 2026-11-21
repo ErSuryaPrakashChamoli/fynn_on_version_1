@@ -75,7 +75,10 @@ class CustomerCashbackService
     /** Journey stages a form can be filled at: credit approved (Step 4 open) or disbursed. */
     public const OPEN_JOURNEY_STATUSES = ['approved', 'sanctioned'];
 
-    public function __construct(private CustomerEligibilityService $eligibility) {}
+    public function __construct(
+        private CustomerEligibilityService $eligibility,
+        private CashbackAnalysisService $analysis,
+    ) {}
 
     public static function isAdmin(?User $user): bool
     {
@@ -282,6 +285,8 @@ class CustomerCashbackService
             return $request;
         });
 
+        $this->recordAnalysis($request);
+
         $summary = $revisionOf
             ? sprintf('%s revised paid cashback %s for a second payment of ₹%s.', $user->name, $revisionOf->voucher_no, indianNumberFormat($amount))
             : sprintf('%s filled a %s form for ₹%s.', $user->name, strtolower($type->label()), indianNumberFormat($amount));
@@ -299,6 +304,20 @@ class CustomerCashbackService
         };
 
         return $request;
+    }
+
+    /**
+     * Saves the cashback analysis of everyone on the form's chain, as it
+     * stands with this form counted, so whoever approves it acts on it and
+     * the basis stays on record. A failure here never blocks the form.
+     */
+    protected function recordAnalysis(CustomerCashbackRequest $request): void
+    {
+        try {
+            $request->forceFill(['analysis_snapshot' => $this->analysis->forForm($request)])->saveQuietly();
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 
     /**
