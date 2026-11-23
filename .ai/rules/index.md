@@ -6,7 +6,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | --- | --- |
 | app/Filament/Academy/** | .ai/rules/academy.md |
 | resources/js/listing-sticky-header.js, resources/css/filament/admin/theme.css, resources/js/sidebar-hover-expand.js, resources/css/filament/admin/theme.css | .ai/rules/admin.md |
-| app/Filament/Actions/AssignCustomersToUserBulkAction.php, app/Filament/Resources/AiCustomerRecords/**, app/Services/CustomerAssignmentService.php, app/Support/AiRecordSerialRanges.php, app/Filament/Exports/AiCustomerRecordExporter.php | .ai/rules/ai-customer-records-services.md |
+| app/Filament/Actions/AssignCustomersToUserBulkAction.php, app/Filament/Resources/AiCustomerRecords/**, app/Services/CustomerAssignmentService.php, app/Support/AiRecordSerialRanges.php, app/Filament/Exports/AiCustomerRecordExporter.php, app/Services/CustomerDataImportService.php, app/Filament/Actions/ImportCustomerDataAction.php, app/Support/SpreadsheetFile.php, app/Models/CustomerDataField.php | .ai/rules/ai-customer-records-services.md |
 | app/Filament/Resources/AiCustomerRecords/** | .ai/rules/ai-customer-records.md |
 | app/Livewire/** | .ai/rules/app-livewire.md |
 | app/**/Customer*.php | .ai/rules/app.md |

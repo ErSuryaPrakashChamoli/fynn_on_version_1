@@ -4,6 +4,7 @@ namespace App\Filament\Resources\AiCustomerRecords\Tables;
 
 use App\Filament\Actions\AssignCustomersToUserBulkAction;
 use App\Filament\Actions\DataDownloadApproval;
+use App\Filament\Actions\ImportCustomerDataAction;
 use App\Filament\Exports\AiCustomerRecordExporter;
 use App\Filament\Imports\AiCustomerRecordImporter;
 // use Filament\Actions\BulkActionGroup;
@@ -170,6 +171,7 @@ class AiCustomerRecordsTable
                         ->icon('heroicon-o-arrow-down-tray'),
                     'customer data',
                 ),
+                ImportCustomerDataAction::make(),
                 ImportAction::make()
                     ->label('Import Customer Data')
                     ->icon('heroicon-o-arrow-up-tray')

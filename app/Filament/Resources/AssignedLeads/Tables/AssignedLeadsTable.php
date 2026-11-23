@@ -4,6 +4,7 @@ namespace App\Filament\Resources\AssignedLeads\Tables;
 
 use App\Filament\Actions\DataDownloadApproval;
 use App\Filament\Actions\DropFollowUpActions;
+use App\Filament\Actions\ImportCustomerDataAction;
 use App\Filament\Exports\AssignedLeadExporter;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\Customer;
@@ -264,6 +265,9 @@ class AssignedLeadsTable
                 ViewAction::make(),
             ])
             ->headerActions([
+                // Admin only: upload Excel/CSV, tick fields, optionally assign.
+                ImportCustomerDataAction::make(),
+
                 // Admin only, with the owner's authenticator code. Exports
                 // what the listing shows: Assigned On range / topbar month,
                 // filters, header filters and search.
