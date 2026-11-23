@@ -24,6 +24,7 @@ use App\Services\OtherBankSupportService;
 use App\Services\PanDuplicateService;
 use App\Support\HierarchyHelper;
 use App\Support\PanMatch;
+use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\Action as FormAction;
 use Filament\Facades\Filament;
@@ -38,6 +39,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\ViewField;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -53,6 +55,20 @@ use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 class CustomerForm
 {
+    /**
+     * Stages after Step 1 (SFL).
+     *
+     * @var array<int, string>
+     */
+    protected const PAST_SFL = ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward'];
+
+    /**
+     * Stages after Step 2 (Underwriting) and Step 3 (Credit Approval).
+     *
+     * @var array<int, string>
+     */
+    protected const PAST_UNDERWRITING = ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward'];
+
     protected static function lockCallerFields(?Customer $record): bool
     {
         if (! $record) {
@@ -189,6 +205,100 @@ class CustomerForm
     protected static function subventionFromCashbackForms(?Customer $record): ?float
     {
         return $record ? app(CustomerCashbackService::class)->subventionFromForms($record) : null;
+    }
+
+    /**
+     * Step 4 (Disbursal) and its Finalize Disbursal button belong to the
+     * Manager seat and everyone senior to it. Under skip-level reporting a
+     * Team Leader can report straight to a Cluster Manager or Business Head,
+     * and then nobody but the Admin could ever disburse that team's files.
+     * Other Bank Support and a continuity stand-in for the owner get it too.
+     */
+    protected static function canWorkDisbursal(?Customer $record): bool
+    {
+        return auth()->user()->hasAnyRole(['Admin', 'Manager', 'Cluster Manager', 'Business Head', OtherBankSupportService::ROLE])
+            || self::actsForOwner($record, JourneyModule::DisbursalProcessing);
+    }
+
+    /**
+     * A journey box locks once the file has moved past its step, but only
+     * when the saved file already holds a value for it. A required box left
+     * empty (imported or older files) stays open so it can be filled;
+     * otherwise every Save fails on a box nobody can edit.
+     *
+     * @param  array<int, string>  $laterStages
+     */
+    protected static function lockedPastStep(Get $get, ?Customer $record, string $field, array $laterStages): bool
+    {
+        return in_array(strtolower((string) $get('journey_status')), $laterStages, true)
+            && filled($record?->getAttribute($field));
+    }
+
+    /**
+     * Runs a stage-move check before the confirmation opens. When it refuses,
+     * each message is shown under its box (as Save does) and a toast says
+     * why, and the file stays where it is.
+     *
+     * @param  Closure(): void  $check
+     *
+     * @throws ValidationException
+     */
+    protected static function refuseIncompleteStep(Component $component, Closure $check): void
+    {
+        try {
+            $check();
+        } catch (ValidationException $exception) {
+            $statePath = $component->getRootContainer()->getStatePath();
+
+            Notification::make()
+                ->danger()
+                ->title('Fill the highlighted fields before moving this file on.')
+                ->body(collect($exception->errors())->flatten()->implode(' '))
+                ->send();
+
+            throw ValidationException::withMessages(
+                collect($exception->errors())
+                    ->mapWithKeys(fn (array $messages, string $field): array => [($statePath ? "{$statePath}." : '').$field => $messages])
+                    ->all()
+            );
+        }
+    }
+
+    /**
+     * What "Approve & Move to Credit Approval" sends to the journey service.
+     *
+     * @return array<string, mixed>
+     */
+    protected static function approvalStepData(Get $get): array
+    {
+        return [
+            'approved_loan_amount' => $get('approved_loan_amount'),
+            'sanctioned_bank' => $get('sanctioned_bank'),
+            'other_sanctioned_bank' => $get('other_sanctioned_bank'),
+            'approved_remarks' => $get('approved_remarks'),
+            'approval_date' => $get('approval_date'),
+            'underwriting_remarks' => $get('underwriting_remarks'),
+        ];
+    }
+
+    /**
+     * What "Finalize Disbursal" sends to the journey service.
+     *
+     * @return array<string, mixed>
+     */
+    protected static function disbursalStepData(Get $get): array
+    {
+        return [
+            'disbursal_status' => $get('disbursal_status'),
+            'disbursal_date' => $get('disbursal_date'),
+            'channel' => $get('channel'),
+            'sanctioned_loan_amount' => $get('sanctioned_loan_amount'),
+            'cashback_option' => $get('cashback_option'),
+            'subvention' => $get('subvention'),
+            'docking' => $get('docking'),
+            'carry_forward_date' => $get('carry_forward_date'),
+            'sanctioned_remarks' => $get('sanctioned_remarks'),
+        ];
     }
 
     public static function bankOptions(): array
@@ -1191,7 +1301,7 @@ class CustomerForm
                                     ->required()
 
                                     // Fix: Agli stages me yeh field non-editable ho jaye par data visible rahe
-                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get, ?Customer $record): bool => self::lockedPastStep($get, $record, 'lan_no', self::PAST_SFL))
                                     ->dehydrated(),
 
                                 TextInput::make('eligible_loan_amount')
@@ -1215,18 +1325,8 @@ class CustomerForm
                                         return $value !== '' ? $value : null;
                                     })
                                     ->disabled(
-                                        fn (Get $get): bool => $get('eligibility_status') !== 'eligible'
-                                            || in_array(
-                                                strtolower((string) $get('journey_status')),
-                                                [
-                                                    'underwriting',
-                                                    'approved',
-                                                    'sanctioned',
-                                                    'not_approved',
-                                                    'dropped',
-                                                    'carry_forward',
-                                                ]
-                                            )
+                                        fn (Get $get, ?Customer $record): bool => $get('eligibility_status') !== 'eligible'
+                                            || self::lockedPastStep($get, $record, 'eligible_loan_amount', self::PAST_SFL)
                                     )
                                     ->dehydrated(),
 
@@ -1240,7 +1340,7 @@ class CustomerForm
                                     // ->required()
                                     ->required(fn (Get $get) => $get('eligibility_status') === 'eligible')
                                     // Fix: Underwriting ya uske aage selection freeze ho jaye
-                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get, ?Customer $record): bool => self::lockedPastStep($get, $record, 'documentation_status', self::PAST_SFL))
                                     ->dehydrated(),
 
                                 CheckboxList::make('pending_document')
@@ -1262,7 +1362,7 @@ class CustomerForm
                                     ->visible(fn (Get $get): bool => strtolower((string) $get('documentation_status')) === 'pending')
                                     ->required(fn (Get $get): bool => strtolower((string) $get('documentation_status')) === 'pending')
                                     // Fix: Lock checkbox list when moved ahead
-                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get, ?Customer $record): bool => self::lockedPastStep($get, $record, 'pending_document', self::PAST_SFL))
                                     ->dehydrated(),
 
                                 Textarea::make('sfl_remarks')
@@ -1271,7 +1371,7 @@ class CustomerForm
                                     ->columnSpanFull()
                                     ->required()
                                     // Fix: Underwriting ya uske aage remarks non-editable ho jaye
-                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['underwriting', 'approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get, ?Customer $record): bool => self::lockedPastStep($get, $record, 'sfl_remarks', self::PAST_SFL))
                                     ->dehydrated(),
 
                                 Hidden::make('underwriting_status')
@@ -1326,14 +1426,10 @@ class CustomerForm
 
                         // ---------------- PROGRESSIVE STEP 2: UNDERWRITING SECTION ----------------
 
+                        // Locked box by box (not the whole section), so a box an
+                        // older file left empty can still be filled after approval.
                         Section::make('Step 2: Underwriting Analysis')
                             ->icon(Heroicon::OutlinedDocumentMagnifyingGlass)
-                            ->disabled(
-                                fn (Get $get): bool => in_array(
-                                    strtolower((string) $get('journey_status')),
-                                    ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']
-                                )
-                            )
                             ->schema([
                                 Select::make('underwriting_status')
                                     ->label('Underwriting Status Decision')
@@ -1342,6 +1438,7 @@ class CustomerForm
                                         'approved' => 'Approved',
                                         'rejected' => 'Rejected',
                                     ])
+                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), self::PAST_UNDERWRITING, true))
                                     ->live()
                                     ->required(function (Get $get) {
                                         return auth()->user()->hasAnyRole(['Admin', 'Team Leader', 'Manager', 'Cluster Manager', 'Business Head', OtherBankSupportService::ROLE])
@@ -1356,6 +1453,7 @@ class CustomerForm
                                     ->suffixIcon('heroicon-m-calendar')
                                     ->visible(fn (Get $get) => $get('underwriting_status') === 'approved')
                                     ->required(fn (Get $get) => $get('underwriting_status') === 'approved')
+                                    ->disabled(fn (Get $get, ?Customer $record): bool => self::lockedPastStep($get, $record, 'approval_date', self::PAST_UNDERWRITING))
                                     ->dehydrated(true)
                                     ->label('Approval Date'),
 
@@ -1364,7 +1462,7 @@ class CustomerForm
                                     ->rows(2)
                                     ->required()
                                     ->columnSpanFull()
-                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get, ?Customer $record): bool => self::lockedPastStep($get, $record, 'underwriting_remarks', self::PAST_UNDERWRITING))
                                     ->dehydrated(),
 
                             ])
@@ -1399,7 +1497,7 @@ class CustomerForm
                                     ->amountInWords()
                                     ->live(onBlur: true)
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
-                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get, ?Customer $record): bool => self::lockedPastStep($get, $record, 'approved_loan_amount', self::PAST_UNDERWRITING))
                                     ->afterStateUpdated(function ($state, callable $set) {
                                         $value = preg_replace('/[^0-9]/', '', (string) $state);
                                         if ($value !== '') {
@@ -1423,7 +1521,7 @@ class CustomerForm
                                             $component->state($get('bank_eligible_for'));
                                         }
                                     })
-                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get, ?Customer $record): bool => self::lockedPastStep($get, $record, 'sanctioned_bank', self::PAST_UNDERWRITING))
                                     ->dehydrated(true)
                                     ->live(),
 
@@ -1437,7 +1535,7 @@ class CustomerForm
                                     ->live(onBlur: true)
                                     ->extraInputAttributes(['style' => 'text-transform: capitalize'])
                                     ->dehydrated(true)
-                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get, ?Customer $record): bool => self::lockedPastStep($get, $record, 'other_sanctioned_bank', self::PAST_UNDERWRITING))
                                     ->afterStateUpdated(fn ($state, callable $set) => $set('other_sanctioned_bank', Str::title($state)))
                                     ->maxLength(255),
 
@@ -1445,7 +1543,7 @@ class CustomerForm
                                     ->label('Approved Credit Remarks')
                                     ->rows(2)
                                     ->required()
-                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['approved', 'sanctioned', 'not_approved', 'dropped', 'carry_forward']))
+                                    ->disabled(fn (Get $get, ?Customer $record): bool => self::lockedPastStep($get, $record, 'approved_remarks', self::PAST_UNDERWRITING))
                                     ->dehydrated(true)
                                     ->columnSpanFull(),
 
@@ -1461,6 +1559,13 @@ class CustomerForm
                                             ->icon('heroicon-m-check-badge')
                                             ->color('success')
                                             ->requiresConfirmation()
+                                            // Empty Step 2 / Step 3 boxes are flagged before the
+                                            // confirmation opens; the file does not move.
+                                            ->mountUsing(function (Component $component, ?Customer $record, Get $get): void {
+                                                if ($record) {
+                                                    self::refuseIncompleteStep($component, fn () => CustomerJourneyService::ensureReadyForApproval($record, self::approvalStepData($get)));
+                                                }
+                                            })
                                             // FIX 2: Added $set utility layer
                                             ->action(function (?Model $record, callable $set, Get $get) {
 
@@ -1468,16 +1573,17 @@ class CustomerForm
                                                     return;
                                                 }
 
-                                                $data = [
-                                                    'approved_loan_amount' => $get('approved_loan_amount'),
-                                                    'sanctioned_bank' => $get('sanctioned_bank'),
-                                                    'other_sanctioned_bank' => $get('other_sanctioned_bank'),
-                                                    'approved_remarks' => $get('approved_remarks'),
-                                                    'approval_date' => $get('approval_date'),
-                                                    'underwriting_remarks' => $get('underwriting_remarks'),
-                                                ];
+                                                try {
+                                                    $record = CustomerJourneyService::approve($record, self::approvalStepData($get));
+                                                } catch (ValidationException $exception) {
+                                                    Notification::make()
+                                                        ->danger()
+                                                        ->title($exception->getMessage())
+                                                        ->send();
 
-                                                $record = CustomerJourneyService::approve($record, $data);
+                                                    return;
+                                                }
+
                                                 $set('journey_status', $record->journey_status);
 
                                                 // $set('journey_status', $record->journey_status);
@@ -1508,9 +1614,8 @@ class CustomerForm
                                         )
                                     );
                             })
-                            ->disabled(
-                                fn (Get $get): bool => strtolower((string) $get('journey_status')) === 'sanctioned'
-                            )
+                            // Each box locks itself once filled (lockedPastStep), so a
+                            // box an older file left empty can still be filled.
                             ->dehydrated(),
 
                         // ---------------- PROGRESSIVE STEP 4: DISBURSED SECTION ----------------
@@ -1697,12 +1802,7 @@ class CustomerForm
                                     ->visible(
                                         fn (Get $get, ?Customer $record): bool => ! $get('disbursal_finalized')
                                             && $get('disbursal_status') === 'disbursed'
-                                            && (
-                                                auth()->user()->hasRole('Admin')
-                                                || auth()->user()->hasRole('Manager')
-                                                || auth()->user()->hasRole(OtherBankSupportService::ROLE)
-                                                || self::actsForOwner($record, JourneyModule::DisbursalProcessing)
-                                            )
+                                            && self::canWorkDisbursal($record)
                                     )
                                     ->hintAction(
 
@@ -1711,28 +1811,23 @@ class CustomerForm
                                             ->icon('heroicon-m-check-circle')
                                             ->color('success')
                                             ->requiresConfirmation()
+                                            // Empty Step 4 boxes are flagged before the
+                                            // confirmation opens; the file does not move.
+                                            ->mountUsing(function (Component $component, ?Customer $record, Get $get): void {
+                                                if ($record) {
+                                                    self::refuseIncompleteStep($component, fn () => CustomerJourneyService::ensureReadyForDisbursal($record, self::disbursalStepData($get)));
+                                                }
+                                            })
                                             ->action(function (?Model $record, callable $set, Get $get) {
 
                                                 if (! $record) {
                                                     return;
                                                 }
 
-                                                $data = [
-                                                    'disbursal_status' => $get('disbursal_status'),
-                                                    'disbursal_date' => $get('disbursal_date'),
-                                                    'channel' => $get('channel'),
-                                                    'sanctioned_loan_amount' => $get('sanctioned_loan_amount'),
-                                                    'cashback_option' => $get('cashback_option'),
-                                                    'subvention' => $get('subvention'),
-                                                    'docking' => $get('docking'),
-                                                    'carry_forward_date' => $get('carry_forward_date'),
-                                                    'sanctioned_remarks' => $get('sanctioned_remarks'),
-                                                ];
-
                                                 // A declared cashback needs its form first;
                                                 // sanction() refuses and says so.
                                                 try {
-                                                    $record = CustomerJourneyService::sanction($record, $data);
+                                                    $record = CustomerJourneyService::sanction($record, self::disbursalStepData($get));
                                                 } catch (ValidationException $exception) {
                                                     Notification::make()
                                                         ->danger()
@@ -1764,12 +1859,7 @@ class CustomerForm
 
                             ->columns(2)
                             ->visible(
-                                fn (Get $get, ?Customer $record) => (
-                                    auth()->user()->hasRole('Admin')
-                                    || auth()->user()->hasRole('Manager')
-                                    || auth()->user()->hasRole(OtherBankSupportService::ROLE)
-                                    || self::actsForOwner($record, JourneyModule::DisbursalProcessing)
-                                )
+                                fn (Get $get, ?Customer $record) => self::canWorkDisbursal($record)
                                     && (
                                         ($get('credit_approval_completed') ?? false)
                                         || in_array(

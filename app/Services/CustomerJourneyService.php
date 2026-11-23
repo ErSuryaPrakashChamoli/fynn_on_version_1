@@ -10,6 +10,13 @@ use Illuminate\Validation\ValidationException;
 class CustomerJourneyService
 {
     /**
+     * The Disbursal step's outcomes (Step 4 "Disbursal Status").
+     *
+     * @var array<int, string>
+     */
+    public const DISBURSAL_STATUSES = ['disbursed', 'carry_forward', 'dropped', 'on_hold'];
+
+    /**
      * Create Journey History
      */
     protected static function log(
@@ -55,6 +62,85 @@ class CustomerJourneyService
     }
 
     /**
+     * Refuses to move a file to Credit Approval while a required box of the
+     * Underwriting or Credit Approval step is empty. Once approved those boxes
+     * lock, so a gap let through here could never be filled later. Each
+     * message is keyed by its form field so the form shows it under that box.
+     *
+     * @param  array<string, mixed>  $data
+     *
+     * @throws ValidationException
+     */
+    public static function ensureReadyForApproval(Customer $customer, array $data): void
+    {
+        $bank = ($data['sanctioned_bank'] ?? null) ?: $customer->bank_eligible_for;
+
+        $missing = array_filter([
+            'approval_date' => blank($data['approval_date'] ?? null) ? 'Enter the approval date.' : null,
+            'underwriting_remarks' => blank($data['underwriting_remarks'] ?? null) ? 'Enter the underwriting remarks.' : null,
+            'approved_loan_amount' => self::positiveAmount($data['approved_loan_amount'] ?? null) === null ? 'Enter the approved sanctioned amount.' : null,
+            'sanctioned_bank' => blank($bank) ? 'Choose the final sanctioned issuing bank.' : null,
+            'other_sanctioned_bank' => $bank === 'other' && blank($data['other_sanctioned_bank'] ?? null) ? 'Enter the bank name.' : null,
+            'approved_remarks' => blank($data['approved_remarks'] ?? null) ? 'Enter the approved credit remarks.' : null,
+        ]);
+
+        if ($missing !== []) {
+            throw ValidationException::withMessages($missing);
+        }
+    }
+
+    /**
+     * Refuses to close the Disbursal step while a box it needs is empty:
+     * remarks always, plus date / channel / net amount / subvention for a
+     * disbursal and the date for a carry forward. The cashback declaration
+     * is checked separately by sanction() (CustomerCashbackService).
+     *
+     * @param  array<string, mixed>  $data
+     *
+     * @throws ValidationException
+     */
+    public static function ensureReadyForDisbursal(Customer $customer, array $data): void
+    {
+        $status = $data['disbursal_status'] ?? null;
+
+        if (! in_array($status, self::DISBURSAL_STATUSES, true)) {
+            throw ValidationException::withMessages([
+                'disbursal_status' => 'Choose the disbursal status.',
+            ]);
+        }
+
+        $disbursed = $status === 'disbursed';
+
+        $missing = array_filter([
+            'disbursal_date' => $disbursed && blank($data['disbursal_date'] ?? null) ? 'Enter the disbursal date.' : null,
+            'channel' => $disbursed && blank($data['channel'] ?? null) ? 'Choose the channel.' : null,
+            'sanctioned_loan_amount' => $disbursed && self::positiveAmount($data['sanctioned_loan_amount'] ?? null) === null ? 'Enter the final net disbursed loan amount.' : null,
+            'subvention' => $disbursed
+                && blank($data['subvention'] ?? null)
+                && app(CustomerCashbackService::class)->subventionFromForms($customer) === null
+                    ? 'Enter the subvention fees (0 if none).'
+                    : null,
+            'carry_forward_date' => $status === 'carry_forward' && blank($data['carry_forward_date'] ?? null) ? 'Enter the carry forward date.' : null,
+            'sanctioned_remarks' => blank($data['sanctioned_remarks'] ?? null) ? 'Enter the final disbursal remarks.' : null,
+        ]);
+
+        if ($missing !== []) {
+            throw ValidationException::withMessages($missing);
+        }
+    }
+
+    /**
+     * The digits of a typed rupee amount ("9,11,441" → "911441"), or null
+     * when nothing above zero was typed.
+     */
+    protected static function positiveAmount(mixed $amount): ?string
+    {
+        $digits = preg_replace('/[^0-9]/', '', (string) $amount);
+
+        return $digits !== '' && (int) $digits > 0 ? $digits : null;
+    }
+
+    /**
      * Approve Underwriting
      */
     public static function approve(Customer $customer, array $data): Customer
@@ -65,6 +151,8 @@ class CustomerJourneyService
                 'journey_status' => 'Customer is not in Underwriting stage.',
             ]);
         }
+
+        self::ensureReadyForApproval($customer, $data);
 
         DB::transaction(function () use ($customer, $data) {
 
@@ -126,6 +214,8 @@ class CustomerJourneyService
             ]);
         }
 
+        self::ensureReadyForDisbursal($customer, $data);
+
         // A disbursed file must declare its cashback; a declared cashback or
         // expected cashback needs its form first, and the amount always
         // comes from that form (CustomerCashbackService), never typed here.
@@ -184,6 +274,7 @@ class CustomerJourneyService
                     'disbursed' => 'Moved to Disbursal',
                     'carry_forward' => 'Marked as Carry Forward',
                     'dropped' => 'Application Dropped',
+                    'on_hold' => 'Marked as On Hold',
                 }
             );
         });

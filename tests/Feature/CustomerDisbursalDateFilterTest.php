@@ -61,6 +61,9 @@ class CustomerDisbursalDateFilterTest extends TestCase
         $disbursed = CustomerJourneyService::sanction($customer, [
             'disbursal_status' => 'disbursed',
             'disbursal_date' => '2026-08-15',
+            'channel' => 'ruloans',
+            'sanctioned_loan_amount' => '500000',
+            'subvention' => '0',
             'cashback_option' => 'none',
             'sanctioned_remarks' => 'ok',
         ]);

@@ -430,6 +430,7 @@ class CustomerCashbackFormTest extends TestCase
         $base = [
             'disbursal_status' => 'disbursed',
             'disbursal_date' => today()->toDateString(),
+            'channel' => 'ruloans',
             'sanctioned_loan_amount' => '500000',
             'subvention' => '0',
             'docking' => '0',
@@ -467,6 +468,9 @@ class CustomerCashbackFormTest extends TestCase
         $customer = CustomerJourneyService::sanction($this->customer, [
             'disbursal_status' => 'disbursed',
             'disbursal_date' => today()->toDateString(),
+            'channel' => 'ruloans',
+            'sanctioned_loan_amount' => '500000',
+            'subvention' => '0',
             'cashback_option' => 'none',
             'sanctioned_remarks' => 'ok',
         ]);

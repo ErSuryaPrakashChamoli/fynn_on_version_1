@@ -49,7 +49,7 @@ class JourneyBankCarryForwardTest extends TestCase
     {
         $customer = $this->underwritingCustomer(['sanctioned_bank' => null]);
 
-        $approved = CustomerJourneyService::approve($customer, ['sanctioned_bank' => null]);
+        $approved = CustomerJourneyService::approve($customer, $this->approvalData(['sanctioned_bank' => null]));
 
         $this->assertSame('ABFL', $approved->sanctioned_bank);
     }
@@ -58,9 +58,25 @@ class JourneyBankCarryForwardTest extends TestCase
     {
         $customer = $this->underwritingCustomer(['sanctioned_bank' => null]);
 
-        $approved = CustomerJourneyService::approve($customer, ['sanctioned_bank' => 'HDFC Bank']);
+        $approved = CustomerJourneyService::approve($customer, $this->approvalData(['sanctioned_bank' => 'HDFC Bank']));
 
         $this->assertSame('HDFC Bank', $approved->sanctioned_bank);
+    }
+
+    /**
+     * The rest of the Step 2 / Step 3 boxes approve() requires.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function approvalData(array $overrides): array
+    {
+        return array_merge([
+            'approval_date' => today()->toDateString(),
+            'underwriting_remarks' => 'Approved.',
+            'approved_loan_amount' => '500000',
+            'approved_remarks' => 'Approved.',
+        ], $overrides);
     }
 
     /**
