@@ -6,7 +6,6 @@ use App\Filament\Actions\AssignCustomersToUserBulkAction;
 use App\Filament\Actions\DataDownloadApproval;
 use App\Filament\Actions\ImportCustomerDataAction;
 use App\Filament\Exports\AiCustomerRecordExporter;
-use App\Filament\Imports\AiCustomerRecordImporter;
 // use Filament\Actions\BulkActionGroup;
 // use Filament\Actions\DeleteBulkAction;
 use App\Models\AiCustomerRecord;
@@ -24,7 +23,6 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ExportAction;
-use Filament\Actions\ImportAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -172,11 +170,6 @@ class AiCustomerRecordsTable
                     'customer data',
                 ),
                 ImportCustomerDataAction::make(),
-                ImportAction::make()
-                    ->label('Import Customer Data')
-                    ->icon('heroicon-o-arrow-up-tray')
-                    ->color('primary')
-                    ->importer(AiCustomerRecordImporter::class),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([

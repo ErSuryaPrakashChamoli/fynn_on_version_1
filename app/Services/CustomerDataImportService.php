@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AiCustomerRecord;
 use App\Models\AiDocumentSchema;
 use App\Models\CustomerDataField;
+use App\Models\OcrDocument;
 use App\Models\User;
 use App\Support\SpreadsheetFile;
 use Illuminate\Support\Facades\DB;
@@ -157,14 +158,123 @@ class CustomerDataImportService
     }
 
     /**
-     * The ticked rows, checked: each has a name and a column from the file,
-     * and no field or new-field name is ticked twice.
+     * The column picker for an AI Document upload. The last uploaded
+     * document's columns come ticked, in its order, so a repeat format needs
+     * no clicks; every other saved field follows, unticked. With no earlier
+     * document, Customer Name and Mobile Number are ticked.
+     *
+     * @return list<array{key: ?string, is_new: bool, include: bool, label: string, type: string}>
+     */
+    public function documentFieldRows(): array
+    {
+        $savedFields = CustomerDataField::query()->ordered()->get();
+        $lastColumns = OcrDocument::query()->whereNotNull('schema_id')->latest('id')->first()?->schema?->getFieldDefinitions()
+            ?? [['key' => 'customer_name'], ['key' => 'mobile_number']];
+
+        $rows = [];
+        $usedFieldIds = [];
+
+        foreach ($lastColumns as $column) {
+            $key = (string) ($column['key'] ?? '');
+            $label = trim((string) ($column['label'] ?? '')) ?: Str::headline($key);
+
+            $field = $savedFields->firstWhere('key', $key)
+                ?? $savedFields->first(fn (CustomerDataField $field): bool => $field->matchesColumn($label) || $field->matchesColumn($key));
+
+            if ($field && ! in_array($field->id, $usedFieldIds, true)) {
+                $usedFieldIds[] = $field->id;
+                $rows[] = self::documentRow($field, include: true);
+
+                continue;
+            }
+
+            if (! $field && $label !== '') {
+                // A column of an older hand-made template: offered as it was,
+                // and saved as a field if it is kept ticked.
+                $rows[] = [
+                    'key' => null,
+                    'is_new' => true,
+                    'include' => true,
+                    'label' => $label,
+                    'type' => array_key_exists((string) ($column['type'] ?? ''), CustomerDataField::TYPES) ? (string) $column['type'] : 'text',
+                ];
+            }
+        }
+
+        foreach ($savedFields as $field) {
+            if (! in_array($field->id, $usedFieldIds, true)) {
+                $rows[] = self::documentRow($field, include: false);
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * The template an AI Document is read with: exactly the ticked fields,
+     * top to bottom being the document's columns left to right — the OCR
+     * table reader assigns columns by position. A template with this name
+     * and the same columns is reused; otherwise a new one is made, numbered
+     * when the name is already taken.
      *
      * @param  array<array-key, array<string, mixed>>  $fieldRows
-     * @param  array<string, string>  $columnOptions
+     *
+     * @throws InvalidArgumentException When nothing is ticked, a new field has no name, or a field is ticked twice.
+     */
+    public function templateForDocument(string $name, array $fieldRows, ?User $user = null): AiDocumentSchema
+    {
+        $name = Str::limit(trim($name), 240, '') ?: 'AI Document '.now()->format('d M Y H:i');
+        $chosenRows = $this->chosenRows($fieldRows, null);
+
+        return DB::transaction(function () use ($name, $chosenRows, $user): AiDocumentSchema {
+            $definitions = array_map(
+                fn (CustomerDataField $field): array => $field->toTemplateField(),
+                $this->resolveFields($chosenRows, $user),
+            );
+            $keys = array_column($definitions, 'key');
+
+            $sameName = AiDocumentSchema::query()
+                ->whereRaw('LOWER(name) = ?', [Str::lower($name)])
+                ->get();
+
+            $identical = $sameName->first(
+                fn (AiDocumentSchema $template): bool => array_map('strval', array_column($template->getFieldDefinitions(), 'key')) === $keys,
+            );
+
+            if ($identical) {
+                $identical->update(['is_active' => true]);
+
+                return $identical;
+            }
+
+            $uniqueName = $name;
+            $counter = 2;
+
+            while ($sameName->isNotEmpty() && AiDocumentSchema::query()->whereRaw('LOWER(name) = ?', [Str::lower($uniqueName)])->exists()) {
+                $uniqueName = "{$name} ({$counter})";
+                $counter++;
+            }
+
+            return AiDocumentSchema::create([
+                'name' => $uniqueName,
+                'description' => 'Created by AI Documents upload',
+                'fields' => $definitions,
+                'is_active' => true,
+                'created_by' => $user?->id,
+            ]);
+        });
+    }
+
+    /**
+     * The ticked rows, checked: each has a name, a column from the file
+     * (when reading a file's columns), and no field or new-field name is
+     * ticked twice.
+     *
+     * @param  array<array-key, array<string, mixed>>  $fieldRows
+     * @param  array<string, string>|null  $columnOptions  Null when there are no file columns to map (AI Documents).
      * @return list<array{key: ?string, is_new: bool, label: string, column: string, type: string}>
      */
-    private function chosenRows(array $fieldRows, array $columnOptions): array
+    private function chosenRows(array $fieldRows, ?array $columnOptions): array
     {
         $chosen = [];
         $seenNames = [];
@@ -183,7 +293,7 @@ class CustomerDataImportService
                 throw new InvalidArgumentException('Give every ticked new field a name.');
             }
 
-            if (! array_key_exists($column, $columnOptions)) {
+            if ($columnOptions !== null && ! array_key_exists($column, $columnOptions)) {
                 throw new InvalidArgumentException("Pick the column in your file for \"{$label}\".");
             }
 
@@ -269,50 +379,40 @@ class CustomerDataImportService
      */
     private function saveFields(array $chosenRows, array $columnOptions, ?User $uploadedBy): array
     {
-        $savedFields = CustomerDataField::query()->ordered()->get();
-        $nextSortOrder = (int) $savedFields->max('sort_order') + 1;
-        $fields = [];
+        $fields = $this->resolveFields($chosenRows, $uploadedBy);
 
-        foreach ($chosenRows as $chosen) {
-            $field = $chosen['is_new']
-                ? $savedFields->first(fn (CustomerDataField $field): bool => $field->key === CustomerDataField::keyForLabel($chosen['label']) || $field->matchesColumn($chosen['label']))
-                : $savedFields->firstWhere('key', $chosen['key']);
-
-            if (! $field) {
-                $field = CustomerDataField::create([
-                    'key' => $this->unusedKey(CustomerDataField::keyForLabel($chosen['label'])),
-                    'label' => Str::limit($chosen['label'], 150, ''),
-                    'type' => $chosen['type'],
-                    'aliases' => [],
-                    'sort_order' => $nextSortOrder++,
-                    'created_by' => $uploadedBy?->id,
-                ]);
-
-                $savedFields->push($field);
-            }
-
-            if (in_array($field->key, array_map(fn (CustomerDataField $chosenField): string => $chosenField->key, $fields), true)) {
-                throw new InvalidArgumentException("\"{$field->label}\" is ticked twice. Untick one of them.");
-            }
-
-            $field->rememberColumn($columnOptions[$chosen['column']]);
-            $fields[] = $field;
+        foreach ($fields as $index => $field) {
+            $field->rememberColumn($columnOptions[$chosenRows[$index]['column']]);
         }
 
         return $fields;
     }
 
-    private function unusedKey(string $key): string
+    /**
+     * @param  list<array{key: ?string, is_new: bool, label: string, type: string}>  $chosenRows
+     * @return list<CustomerDataField>
+     *
+     * @throws InvalidArgumentException When two rows end up as the same field.
+     */
+    private function resolveFields(array $chosenRows, ?User $user): array
     {
-        $candidate = $key;
-        $counter = 2;
+        $fields = [];
 
-        while (CustomerDataField::query()->where('key', $candidate)->exists()) {
-            $candidate = "{$key}_{$counter}";
-            $counter++;
+        foreach ($chosenRows as $chosen) {
+            $field = $chosen['is_new']
+                ? null
+                : CustomerDataField::query()->where('key', $chosen['key'])->first();
+
+            $field ??= CustomerDataField::findOrCreateForLabel($chosen['label'], $chosen['type'], $user?->id);
+
+            if (collect($fields)->contains(fn (CustomerDataField $chosenField): bool => $chosenField->is($field))) {
+                throw new InvalidArgumentException("\"{$field->label}\" is ticked twice. Untick one of them.");
+            }
+
+            $fields[] = $field;
         }
 
-        return $candidate;
+        return $fields;
     }
 
     /**
@@ -335,13 +435,7 @@ class CustomerDataImportService
                 continue;
             }
 
-            $definitions->push([
-                'key' => $field->key,
-                'label' => $field->label,
-                'aliases' => $field->aliases ?? [],
-                'type' => $field->type,
-                'required' => false,
-            ]);
+            $definitions->push($field->toTemplateField());
         }
 
         if ($template) {
@@ -370,6 +464,20 @@ class CustomerDataImportService
             'include' => $include,
             'label' => $field->label,
             'column' => $column,
+            'type' => $field->type,
+        ];
+    }
+
+    /**
+     * @return array{key: string, is_new: bool, include: bool, label: string, type: string}
+     */
+    private static function documentRow(CustomerDataField $field, bool $include): array
+    {
+        return [
+            'key' => $field->key,
+            'is_new' => false,
+            'include' => $include,
+            'label' => $field->label,
             'type' => $field->type,
         ];
     }

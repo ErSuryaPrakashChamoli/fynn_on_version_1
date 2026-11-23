@@ -30,7 +30,15 @@ class ViewOcrDocument extends ViewRecord
                 ->schema([
                     TextEntry::make('status')->badge(),
                     TextEntry::make('document_type')->label('Document Type'),
-                    TextEntry::make('schema.name')->label('Data Template'),
+                    TextEntry::make('schema.name')->label('Data Name'),
+                    TextEntry::make('columns')
+                        ->label('Columns (left to right)')
+                        ->state(fn ($record): array => collect($record->schema?->getFieldDefinitions() ?? [])
+                            ->map(fn (array $field): string => (string) ($field['label'] ?? $field['key']))
+                            ->all())
+                        ->badge()
+                        ->color('gray')
+                        ->columnSpanFull(),
                     TextEntry::make('ai_customer_records_count')->label('Rows Extracted')->state(fn ($record) => $record->aiCustomerRecords()->count()),
                     TextEntry::make('page_count')->label('Pages'),
                     TextEntry::make('formatted_confidence')->label('OCR Confidence'),

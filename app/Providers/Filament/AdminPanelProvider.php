@@ -34,7 +34,6 @@ use App\Filament\Pages\TeamPerformance;
 use App\Filament\Resources\AccountVerifications\AccountVerificationResource;
 use App\Filament\Resources\ActivityLogs\ActivityLogResource;
 use App\Filament\Resources\AiCustomerRecords\AiCustomerRecordResource;
-use App\Filament\Resources\AiDocumentSchemas\AiDocumentSchemaResource;
 use App\Filament\Resources\Announcements\AnnouncementResource;
 use App\Filament\Resources\AssignedLeads\AssignedLeadResource;
 use App\Filament\Resources\CibilReports\CibilReportResource;
@@ -45,6 +44,7 @@ use App\Filament\Resources\ComplaintPriorities\ComplaintPriorityResource;
 use App\Filament\Resources\Complaints\ComplaintResource;
 use App\Filament\Resources\CostCenters\CostCenterResource;
 use App\Filament\Resources\CustomerCashbackRequests\CustomerCashbackRequestResource;
+use App\Filament\Resources\CustomerDataFields\CustomerDataFieldResource;
 use App\Filament\Resources\CustomerEditRequests\CustomerEditRequestResource;
 use App\Filament\Resources\CustomerEligibilityRequests\CustomerEligibilityRequestResource;
 use App\Filament\Resources\CustomerJourneyAudits\CustomerJourneyAuditResource;
@@ -756,7 +756,9 @@ class AdminPanelProvider extends PanelProvider
                     ...$this->navigationItemsFor(CashbackAnalysis::class),
                     ...$this->navigationItemsFor(OcrDocumentResource::class),
                     ...$this->navigationItemsFor(AiCustomerRecordResource::class),
-                    ...$this->navigationItemsFor(AiDocumentSchemaResource::class),
+                    // Saved upload fields replace hand-made Data Templates
+                    // (AiDocumentSchemaResource stays reachable by URL only).
+                    ...$this->navigationItemsFor(CustomerDataFieldResource::class),
                 ]),
 
                 // Standalone module: each salesperson's morning commitment

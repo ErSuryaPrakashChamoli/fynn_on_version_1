@@ -116,6 +116,74 @@ class CustomerDataField extends Model
     }
 
     /**
+     * The saved field a newly typed field name stands for — one whose key or
+     * names already match it, so "Contact No" reuses Mobile Number instead
+     * of creating a near-duplicate — or a new saved field for it.
+     */
+    public static function findOrCreateForLabel(string $label, string $type, ?int $createdBy = null): self
+    {
+        $label = Str::limit(trim($label), 150, '');
+
+        if ($existing = self::otherFieldNamed($label)) {
+            return $existing;
+        }
+
+        return self::create([
+            'key' => self::uniqueKeyForLabel($label),
+            'label' => $label,
+            'type' => array_key_exists($type, self::TYPES) ? $type : 'text',
+            'aliases' => [],
+            'sort_order' => (int) self::query()->max('sort_order') + 1,
+            'created_by' => $createdBy,
+        ]);
+    }
+
+    /**
+     * keyForLabel(), numbered when that key is already taken.
+     */
+    public static function uniqueKeyForLabel(string $label): string
+    {
+        $key = self::keyForLabel($label);
+        $uniqueKey = $key;
+        $counter = 2;
+
+        while (self::query()->where('key', $uniqueKey)->exists()) {
+            $uniqueKey = "{$key}_{$counter}";
+            $counter++;
+        }
+
+        return $uniqueKey;
+    }
+
+    /**
+     * Another saved field that already answers to $name, if any.
+     */
+    public static function otherFieldNamed(string $name, ?self $except = null): ?self
+    {
+        return self::query()
+            ->when($except, fn (Builder $query) => $query->whereKeyNot($except->getKey()))
+            ->ordered()
+            ->get()
+            ->first(fn (self $field): bool => $field->key === self::keyForLabel($name) || $field->matchesColumn($name));
+    }
+
+    /**
+     * This field as a Document Schema column definition.
+     *
+     * @return array{key: string, label: string, aliases: list<string>, type: string, required: bool}
+     */
+    public function toTemplateField(): array
+    {
+        return [
+            'key' => $this->key,
+            'label' => $this->label,
+            'aliases' => array_values($this->aliases ?? []),
+            'type' => $this->type,
+            'required' => false,
+        ];
+    }
+
+    /**
      * "Contact No.", "contact_no" and "ContactNo" all compact to "contactno".
      */
     public static function compact(string $value): string

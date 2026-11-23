@@ -205,7 +205,7 @@ class SidebarModuleAccordionTest extends TestCase
         $this->assertSame(['Complaints & Tickets'], $sidebar['Help Desk']);
         $this->assertNotContains('Monitoring & Reports', $sidebar['Leads']);
 
-        foreach (['AI Documents', 'Customer Data', 'Data Templates'] as $adminOnly) {
+        foreach (['AI Documents', 'Customer Data', 'Data Fields'] as $adminOnly) {
             $this->assertNotContains($adminOnly, $sidebar['Customers']);
         }
 

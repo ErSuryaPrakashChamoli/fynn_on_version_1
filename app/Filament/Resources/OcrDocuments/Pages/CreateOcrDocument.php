@@ -5,8 +5,12 @@ namespace App\Filament\Resources\OcrDocuments\Pages;
 use App\Filament\Resources\OcrDocuments\OcrDocumentResource;
 use App\Jobs\ProcessOcrDocument;
 use App\Models\OcrDocument;
-use Illuminate\Support\Facades\Storage;
+use App\Services\CustomerDataImportService;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 class CreateOcrDocument extends CreateRecord
 {
@@ -16,7 +20,11 @@ class CreateOcrDocument extends CreateRecord
     {
         $path = $data['original_path'] ?? null;
 
-        $data['original_name'] = $path ? basename($path) : 'document';
+        // storeFileNamesIn() keeps the name the file was uploaded with; the
+        // stored path itself is a random name.
+        $data['original_name'] = filled($data['original_name'] ?? null)
+            ? $data['original_name']
+            : ($path ? basename($path) : 'document');
 
         // FileUpload uses the configured Laravel disk. In Laravel 12/13 the
         // local disk normally points to storage/app/private, so never build
@@ -31,7 +39,26 @@ class CreateOcrDocument extends CreateRecord
         }
         $data['uploaded_by'] = auth()->id();
         $data['status'] = 'pending';
-        $data['title'] ??= $data['original_name'];
+        $data['title'] = filled($data['title'] ?? null)
+            ? trim($data['title'])
+            : Str::beforeLast($data['original_name'], '.');
+
+        // The ticked columns become the template the document is read with.
+        try {
+            $data['schema_id'] = app(CustomerDataImportService::class)
+                ->templateForDocument($data['title'], $data['columns'] ?? [], auth()->user())
+                ->id;
+        } catch (InvalidArgumentException $exception) {
+            Notification::make()
+                ->title('Check the columns')
+                ->body($exception->getMessage())
+                ->danger()
+                ->send();
+
+            $this->halt();
+        }
+
+        unset($data['columns']);
 
         return $data;
     }

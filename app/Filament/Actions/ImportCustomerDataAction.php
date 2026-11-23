@@ -77,8 +77,8 @@ class ImportCustomerDataAction
                     ->afterStateUpdated(fn (mixed $state, Get $get, Set $set) => self::readFile($state, $get, $set)),
 
                 TextInput::make('template_name')
-                    ->label('Template name')
-                    ->helperText('Shown in the Template column. Type an existing template name to add these rows to it.')
+                    ->label('Name for this data')
+                    ->helperText('Shown in the Template column on Assigned Leads. Use an earlier name to add these rows to that data.')
                     ->datalist(fn (): array => AiDocumentSchema::query()->latest('id')->limit(50)->pluck('name')->all())
                     ->required()
                     ->maxLength(255),
@@ -270,7 +270,7 @@ class ImportCustomerDataAction
             ->filter(fn (mixed $row): bool => is_array($row) && ($row['include'] ?? false))
             ->map(fn (array $row): string => trim((string) ($row['label'] ?? '')).' ← '.($columns[$row['column'] ?? ''] ?? '?'));
 
-        return 'Template "'.trim((string) $get('template_name')).'" — '.$chosen->count().' '.Str::plural('field', $chosen->count()).': '.$chosen->implode(', ').'.';
+        return '"'.trim((string) $get('template_name')).'" — '.$chosen->count().' '.Str::plural('field', $chosen->count()).': '.$chosen->implode(', ').'.';
     }
 
     /**

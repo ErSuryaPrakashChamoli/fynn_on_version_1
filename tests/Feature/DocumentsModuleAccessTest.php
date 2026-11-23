@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\AiCustomerRecords\AiCustomerRecordResource;
 use App\Filament\Resources\AiDocumentSchemas\AiDocumentSchemaResource;
+use App\Filament\Resources\CustomerDataFields\CustomerDataFieldResource;
 use App\Filament\Resources\OcrDocuments\OcrDocumentResource;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -19,6 +20,7 @@ class DocumentsModuleAccessTest extends TestCase
         OcrDocumentResource::class,
         AiCustomerRecordResource::class,
         AiDocumentSchemaResource::class,
+        CustomerDataFieldResource::class,
     ];
 
     protected function setUp(): void
