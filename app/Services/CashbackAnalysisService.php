@@ -20,21 +20,27 @@ use Illuminate\Support\Collection;
  *    counted for the team its owner was in on that day — the same cases
  *    and the same attribution as the achievement figures
  *    (AchievementCalculatorService::disbursedCustomersFor());
- *  - cases with cashback, total cashback and disbursal on those cases, read
- *    the way the achievement maths read them (MIS figure first, else the
- *    case's own — customers.cashback already follows the live cashback
- *    forms, pending ones included);
+ *  - cases with cashback / subvention, total cashback, subvention and
+ *    disbursal on those cases, read the way the achievement maths read
+ *    them (MIS figure first, else the case's own — customers.cashback and
+ *    customers.subvention already follow the live cashback forms, pending
+ *    ones included);
  *  - cases approved in the month (approval date) and their approved amount;
- *  - cashback as a % of disbursal and of cases, and the average cashback.
+ *  - cashback and subvention, apart and together, as a % of disbursal, the
+ *    share of cases carrying each, and the average per case.
  *
  * forForm() runs it for everyone on a cashback form's chain — saved on the
- * form when it is raised (analysis_snapshot) so whoever approves it acts on
- * the analysis and the basis stays on record.
+ * form when it is raised (analysis_snapshot) so whoever approves it weighs
+ * the cashback and subvention together and the basis stays on record.
+ * Snapshots saved before subvention was analysed lack its keys.
  */
 class CashbackAnalysisService
 {
     /** The cashback the achievement maths read: the MIS figure when the settlement has one, else the case's own. */
     private const CASHBACK_SQL = 'COALESCE(CASE WHEN cs.mis_cashback IS NOT NULL THEN cs.mis_cashback ELSE customers.cashback END, 0)';
+
+    /** The subvention the achievement maths read, the same way. */
+    private const SUBVENTION_SQL = 'COALESCE(CASE WHEN cs.mis_subvention IS NOT NULL THEN cs.mis_subvention ELSE customers.subvention END, 0)';
 
     public function __construct(private AchievementCalculatorService $achievement) {}
 
@@ -42,7 +48,7 @@ class CashbackAnalysisService
      * The month's figures for $employee (null: the whole company). With
      * $within, only what $employee did while in $within's branch.
      *
-     * @return array{cases_punched_in: int, cases_with_cashback: int, cases_with_cashback_percent: float, cashback_amount: float, disbursal_amount: float, approved_cases: int, approval_amount: float, cashback_percent: float, average_cashback: float}
+     * @return array<string, int|float> see summarise()
      */
     public function figures(?Employee $employee, Carbon $month, ?Employee $within = null): array
     {
@@ -55,6 +61,10 @@ class CashbackAnalysisService
             ->whereRaw(self::CASHBACK_SQL.' > 0')
             ->count();
 
+        $casesWithSubvention = $this->withSettlement(clone $disbursed)
+            ->whereRaw(self::SUBVENTION_SQL.' > 0')
+            ->count();
+
         $approved = $this->casesDatedIn($employee, 'customers.approval_date', $start, $end, $within)
             ->toBase()
             ->selectRaw('COUNT(*) as cases, SUM(customers.approved_loan_amount) as amount')
@@ -64,6 +74,8 @@ class CashbackAnalysisService
             casesPunchedIn: (clone $disbursed)->count(),
             casesWithCashback: $casesWithCashback,
             cashbackAmount: $totals['cashback'],
+            casesWithSubvention: $casesWithSubvention,
+            subventionAmount: $totals['subvention'],
             disbursalAmount: $totals['actual'],
             approvedCases: (int) ($approved->cases ?? 0),
             approvalAmount: (float) ($approved->amount ?? 0),
@@ -102,7 +114,7 @@ class CashbackAnalysisService
 
         $rest = self::remainder($total, $rows);
 
-        if ($rest['cases_punched_in'] > 0 || $rest['approved_cases'] > 0 || $rest['cashback_amount'] > 0) {
+        if ($rest['cases_punched_in'] > 0 || $rest['approved_cases'] > 0 || $rest['deductions_amount'] > 0) {
             $rows[] = [
                 'employee_id' => null,
                 'name' => $isCompany ? 'Outside these branches' : $employee->emp_name.' — own cases',
@@ -158,7 +170,7 @@ class CashbackAnalysisService
 
         $case = $customer
             ? $this->achievement->computeAchievementTotals(Customer::query()->whereKey($customer->getKey()))
-            : ['actual' => 0.0, 'cashback' => 0.0];
+            : ['actual' => 0.0, 'cashback' => 0.0, 'subvention' => 0.0];
 
         return [
             'as_of' => now()->toDateTimeString(),
@@ -169,12 +181,16 @@ class CashbackAnalysisService
                 'voucher_no' => $form->voucher_no,
                 'type' => $form->type->label(),
                 'amount' => $form->effectiveAmount(),
+                'subvention_amount' => $form->declaresSubvention() ? (float) $form->subvention_amount : null,
                 'status' => $form->status->label(),
             ],
             'case' => [
                 'disbursal_amount' => (float) $case['actual'],
                 'cashback_amount' => (float) $case['cashback'],
                 'cashback_percent' => self::percent((float) $case['cashback'], (float) $case['actual']),
+                'subvention_amount' => (float) $case['subvention'],
+                'subvention_percent' => self::percent((float) $case['subvention'], (float) $case['actual']),
+                'deductions_percent' => self::percent((float) $case['cashback'] + (float) $case['subvention'], (float) $case['actual']),
                 'disbursed_on' => $disbursedOn?->toDateString(),
             ],
             'people' => array_values($people),
@@ -251,20 +267,38 @@ class CashbackAnalysisService
     }
 
     /**
-     * @return array{cases_punched_in: int, cases_with_cashback: int, cases_with_cashback_percent: float, cashback_amount: float, disbursal_amount: float, approved_cases: int, approval_amount: float, cashback_percent: float, average_cashback: float}
+     * The figures with every ratio worked out; deductions = cashback +
+     * subvention.
+     *
+     * @return array{cases_punched_in: int, cases_with_cashback: int, cases_with_cashback_percent: float, cashback_amount: float, cashback_percent: float, average_cashback: float, cases_with_subvention: int, cases_with_subvention_percent: float, subvention_amount: float, subvention_percent: float, average_subvention: float, deductions_amount: float, deductions_percent: float, disbursal_amount: float, approved_cases: int, approval_amount: float}
      */
-    public static function summarise(int $casesPunchedIn, int $casesWithCashback, float $cashbackAmount, float $disbursalAmount, int $approvedCases, float $approvalAmount): array
-    {
+    public static function summarise(
+        int $casesPunchedIn,
+        int $casesWithCashback,
+        float $cashbackAmount,
+        int $casesWithSubvention,
+        float $subventionAmount,
+        float $disbursalAmount,
+        int $approvedCases,
+        float $approvalAmount,
+    ): array {
         return [
             'cases_punched_in' => $casesPunchedIn,
             'cases_with_cashback' => $casesWithCashback,
             'cases_with_cashback_percent' => self::percent($casesWithCashback, $casesPunchedIn),
             'cashback_amount' => round($cashbackAmount, 2),
+            'cashback_percent' => self::percent($cashbackAmount, $disbursalAmount),
+            'average_cashback' => $casesWithCashback > 0 ? round($cashbackAmount / $casesWithCashback, 2) : 0.0,
+            'cases_with_subvention' => $casesWithSubvention,
+            'cases_with_subvention_percent' => self::percent($casesWithSubvention, $casesPunchedIn),
+            'subvention_amount' => round($subventionAmount, 2),
+            'subvention_percent' => self::percent($subventionAmount, $disbursalAmount),
+            'average_subvention' => $casesWithSubvention > 0 ? round($subventionAmount / $casesWithSubvention, 2) : 0.0,
+            'deductions_amount' => round($cashbackAmount + $subventionAmount, 2),
+            'deductions_percent' => self::percent($cashbackAmount + $subventionAmount, $disbursalAmount),
             'disbursal_amount' => round($disbursalAmount, 2),
             'approved_cases' => $approvedCases,
             'approval_amount' => round($approvalAmount, 2),
-            'cashback_percent' => self::percent($cashbackAmount, $disbursalAmount),
-            'average_cashback' => $casesWithCashback > 0 ? round($cashbackAmount / $casesWithCashback, 2) : 0.0,
         ];
     }
 
@@ -329,6 +363,8 @@ class CashbackAnalysisService
             casesPunchedIn: max(0, (int) round($left('cases_punched_in'))),
             casesWithCashback: max(0, (int) round($left('cases_with_cashback'))),
             cashbackAmount: max(0.0, round($left('cashback_amount'), 2)),
+            casesWithSubvention: max(0, (int) round($left('cases_with_subvention'))),
+            subventionAmount: max(0.0, round($left('subvention_amount'), 2)),
             disbursalAmount: max(0.0, round($left('disbursal_amount'), 2)),
             approvedCases: max(0, (int) round($left('approved_cases'))),
             approvalAmount: max(0.0, round($left('approval_amount'), 2)),

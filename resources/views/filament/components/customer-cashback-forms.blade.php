@@ -29,6 +29,9 @@
                     </a>
                     <x-filament::badge :color="$request->type->color()" size="sm">{{ $request->type->label() }}</x-filament::badge>
                     <span class="font-semibold text-gray-950 dark:text-white">₹{{ indianNumberFormat($request->effectiveAmount()) }}</span>
+                    @if ($request->declaresSubvention())
+                        <span class="fynn-list-meta">subvention ₹{{ indianNumberFormat($request->subvention_amount) }}</span>
+                    @endif
                     <x-filament::badge :color="$request->status->color()" size="sm">{{ $request->status->label() }}</x-filament::badge>
                     @if ($request->isApproved())
                         <x-filament::badge :color="$request->payment_status->color()" size="sm">{{ $request->payment_status->label() }}</x-filament::badge>

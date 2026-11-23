@@ -221,6 +221,7 @@ class CustomerCashbackRequestActions
                 $form = self::form($record, $resolve);
 
                 return [
+                    'subvention_amount' => $form?->customer?->subvention,
                     'payment_mode' => $form?->payment_mode?->value,
                     'upi_platform' => $form?->upi_platform,
                     'payee_upi' => $form?->payee_upi,

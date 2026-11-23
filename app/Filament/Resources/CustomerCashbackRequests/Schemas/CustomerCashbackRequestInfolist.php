@@ -83,7 +83,7 @@ class CustomerCashbackRequestInfolist
                 Section::make('Cashback analysis')
                     ->key('cashbackAnalysis')
                     ->icon(Heroicon::OutlinedPercentBadge)
-                    ->description('Cases punched in, cases with cashback, cashback, disbursal and approval amounts and cashback % of everyone on this case\'s chain, for the month the case counts in — what to weigh before approving.')
+                    ->description('Cases punched in, cashback and subvention (amounts, cases and % of disbursal, apart and together), disbursal and approval amounts of everyone on this case\'s chain, for the month the case counts in — what to weigh before approving.')
                     ->columnSpanFull()
                     ->collapsible()
                     ->collapsed(fn (CustomerCashbackRequest $record): bool => ! $record->isPending())

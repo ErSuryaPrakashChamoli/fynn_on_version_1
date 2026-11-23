@@ -26,8 +26,13 @@
                     {{ ($analysis['month_basis'] ?? 'disbursal') === 'disbursal'
                         ? 'the month this case was disbursed in'.(filled($case['disbursed_on'] ?? null) ? ' ('.\Illuminate\Support\Carbon::parse($case['disbursed_on'])->format('d M Y').')' : '').', where its cashback counts.'
                         : 'the month the form was raised (the case is not disbursed yet).' }}
-                    This case: cashback {{ $rupees($case['cashback_amount'] ?? 0) }} on {{ $rupees($case['disbursal_amount'] ?? 0) }} disbursal
-                    ({{ number_format((float) ($case['cashback_percent'] ?? 0), 2) }}%) · this form {{ $form['voucher_no'] ?? '' }}: {{ $rupees($form['amount'] ?? 0) }} {{ strtolower($form['type'] ?? '') }}.
+                    This case: cashback {{ $rupees($case['cashback_amount'] ?? 0) }} ({{ number_format((float) ($case['cashback_percent'] ?? 0), 2) }}%)
+                    @if (array_key_exists('subvention_amount', $case))
+                        and subvention {{ $rupees($case['subvention_amount']) }} ({{ number_format((float) ($case['subvention_percent'] ?? 0), 2) }}%) —
+                        {{ number_format((float) ($case['deductions_percent'] ?? 0), 2) }}% together —
+                    @endif
+                    on {{ $rupees($case['disbursal_amount'] ?? 0) }} disbursal.
+                    This form {{ $form['voucher_no'] ?? '' }}: {{ $rupees($form['amount'] ?? 0) }} {{ strtolower($form['type'] ?? '') }}@if (($form['subvention_amount'] ?? null) !== null), subvention declared {{ $rupees($form['subvention_amount']) }}@endif.
                 </span>
             </p>
             @if (empty($analysis['people']))

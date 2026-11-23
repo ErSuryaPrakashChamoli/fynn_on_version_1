@@ -32,8 +32,9 @@ use Illuminate\Support\HtmlString;
  * Customers list), the user picks the case — any case at the disbursal
  * step or punched in on an earlier day or month, narrowed by disbursal
  * month if wanted. The customer's name, PAN, mobile, disbursal amount and
- * month come from the case, so only the cashback itself and how to pay it
- * are asked for. fields() is shared with the customer page's modals.
+ * month come from the case, so only the cashback, the case's subvention and
+ * how to pay it are asked for. fields() is shared with the customer page's
+ * modals.
  */
 class CustomerCashbackRequestForm
 {
@@ -58,6 +59,7 @@ class CustomerCashbackRequestForm
                             ->label('Case')
                             ->required()
                             ->live()
+                            ->afterStateUpdated(fn (Set $set, mixed $state): mixed => $set('subvention_amount', self::caseSubvention($state)))
                             ->options(fn (Get $get): array => self::caseOptions($get('disbursal_month')))
                             ->getSearchResultsUsing(fn (string $search, Get $get): array => self::customerSearch($search, $get('disbursal_month')))
                             ->getOptionLabelUsing(fn ($value): ?string => self::customerLabel($value))
@@ -109,6 +111,8 @@ class CustomerCashbackRequestForm
                 ->required()
                 ->columnSpanFull(),
 
+            self::subventionField(),
+
             ...self::payeeFields($fixedType !== null
                 ? $fixedType === CashbackType::Cashback
                 : fn (Get $get): bool => $get('type') === CashbackType::Cashback->value),
@@ -136,6 +140,8 @@ class CustomerCashbackRequestForm
                 ->required()
                 ->columnSpanFull(),
 
+            self::subventionField(),
+
             ...self::payeeFields($type === CashbackType::Cashback),
 
             Textarea::make('remarks')
@@ -145,6 +151,34 @@ class CustomerCashbackRequestForm
                 ->required()
                 ->columnSpanFull(),
         ];
+    }
+
+    /**
+     * The case's subvention, declared with the cashback (0 when there is
+     * none). It becomes the case's subvention as soon as the form is filled
+     * and is weighed with the cashback by whoever approves it.
+     */
+    public static function subventionField(): TextInput
+    {
+        return TextInput::make('subvention_amount')
+            ->label('Subvention on this case')
+            ->indianAmount(min: 0)
+            ->required()
+            ->helperText('The subvention fees on this case — 0 if none. It becomes the case\'s subvention as soon as the form is filled; a rejected or retrieved form puts the earlier figure back.')
+            ->columnSpanFull();
+    }
+
+    /**
+     * The case's current subvention, ready for the subvention box (Indian
+     * commas), or null when the case has none recorded.
+     */
+    public static function caseSubvention(mixed $customerId): ?string
+    {
+        $customer = filled($customerId) && is_numeric($customerId)
+            ? CustomerResource::getEloquentQuery()->find((int) $customerId)
+            : null;
+
+        return $customer && $customer->subvention !== null ? indianNumberFormat($customer->subvention) : null;
     }
 
     /**
@@ -424,6 +458,7 @@ class CustomerCashbackRequestForm
             'Month / Year' => $customer->disbursal_date?->format('F Y') ?? '—',
             'ARO (file owner)' => $customer->assignedTo?->emp_name ?? '—',
             'Cashback already on the case' => '₹'.indianNumberFormat($customer->cashback ?? 0).' — this form adds to it',
+            'Subvention on the case now' => $customer->subvention !== null ? '₹'.indianNumberFormat($customer->subvention) : 'Not recorded',
             'Earlier forms' => $forms ?: 'None',
         ];
 

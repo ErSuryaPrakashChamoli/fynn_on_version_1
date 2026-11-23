@@ -30,6 +30,8 @@ class CustomerEditRequestService
 {
     private const CASHBACK_FOLLOWS_FORM = 'This file\'s cashback follows its cashback form — the Admin changes it there (Cashback Forms → Change amount).';
 
+    private const SUBVENTION_FOLLOWS_FORM = 'This file\'s subvention is declared on its cashback forms — declare the new figure on a cashback form.';
+
     public function __construct(private CustomerEligibilityService $eligibility) {}
 
     public static function isReviewer(?User $user): bool
@@ -103,6 +105,10 @@ class CustomerEditRequestService
             // A cashback form may have been filled since the request was raised.
             if ($request->items->contains('field', 'cashback') && $this->cashbackFollowsForm($customer)) {
                 throw ValidationException::withMessages(['changes' => self::CASHBACK_FOLLOWS_FORM]);
+            }
+
+            if ($request->items->contains('field', 'subvention') && app(CustomerCashbackService::class)->subventionFollowsForms($customer)) {
+                throw ValidationException::withMessages(['changes' => self::SUBVENTION_FOLLOWS_FORM]);
             }
 
             // Another file or lead may have taken the PAN since it was asked for.
@@ -215,6 +221,10 @@ class CustomerEditRequestService
 
             if ($field === 'cashback' && $this->cashbackFollowsForm($customer)) {
                 throw ValidationException::withMessages(["changes.{$index}.field" => self::CASHBACK_FOLLOWS_FORM]);
+            }
+
+            if ($field === 'subvention' && app(CustomerCashbackService::class)->subventionFollowsForms($customer)) {
+                throw ValidationException::withMessages(["changes.{$index}.field" => self::SUBVENTION_FOLLOWS_FORM]);
             }
 
             if (in_array($field, $pending, true)) {

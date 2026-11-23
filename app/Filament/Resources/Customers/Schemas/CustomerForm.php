@@ -185,6 +185,12 @@ class CustomerForm
         return "From cashback form(s) {$forms}{$before}. Only the Admin changes an approved amount.";
     }
 
+    /** The subvention a live cashback form declares for the case, if any (then Step 4 does not ask for it). */
+    protected static function subventionFromCashbackForms(?Customer $record): ?float
+    {
+        return $record ? app(CustomerCashbackService::class)->subventionFromForms($record) : null;
+    }
+
     public static function bankOptions(): array
     {
         $banks = [
@@ -1623,7 +1629,10 @@ class CustomerForm
                                     ->label('Subvention Fees')
                                     ->prefix('₹')
                                     ->amountInWords()
-                                    ->required()
+                                    ->required(fn (?Customer $record): bool => self::subventionFromCashbackForms($record) === null)
+                                    ->helperText(fn (?Customer $record): ?string => self::subventionFromCashbackForms($record) !== null
+                                        ? 'Declared on the case\'s cashback form — a new cashback form changes it; a rejected one puts the earlier figure back.'
+                                        : null)
                                     ->live(onBlur: true)
                                     ->formatStateUsing(fn ($state) => filled($state) ? indianCurrencyFormat($state) : null)
                                     ->afterStateUpdated(function ($state, callable $set) {
@@ -1634,7 +1643,8 @@ class CustomerForm
                                         }
                                     })
                                     ->dehydrateStateUsing(fn ($state) => preg_replace('/[^0-9]/', '', (string) $state))
-                                    ->disabled(fn (Get $get): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped']))
+                                    ->disabled(fn (Get $get, ?Customer $record): bool => in_array(strtolower((string) $get('journey_status')), ['sanctioned', 'not_approved', 'dropped'])
+                                        || self::subventionFromCashbackForms($record) !== null)
                                     ->visible(fn (Get $get) => $get('disbursal_status') === 'disbursed'),
 
                                 TextInput::make('docking')

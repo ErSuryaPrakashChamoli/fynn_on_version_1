@@ -65,6 +65,7 @@ use Throwable;
  * @property numeric|null $cashback
  * @property string|null $cashback_option
  * @property numeric|null $cashback_before_forms
+ * @property numeric|null $subvention_before_forms
  * @property numeric|null $subvention
  * @property string|null $docking
  * @property numeric|null $payout_rate

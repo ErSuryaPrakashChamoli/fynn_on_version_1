@@ -130,11 +130,24 @@ class CustomerJourneyService
         // expected cashback needs its form first, and the amount always
         // comes from that form (CustomerCashbackService), never typed here.
         $disbursed = ($data['disbursal_status'] ?? null) === 'disbursed';
+        $cashbackService = app(CustomerCashbackService::class);
         $cashback = $disbursed
-            ? app(CustomerCashbackService::class)->cashbackForDeclaration($customer, $data['cashback_option'] ?? null)
+            ? $cashbackService->cashbackForDeclaration($customer, $data['cashback_option'] ?? null)
             : $customer->cashback;
 
-        DB::transaction(function () use ($customer, $data, $disbursed, $cashback) {
+        // A subvention declared on a live cashback form is the case's; the
+        // typed one applies only when no live form declares it (and then is
+        // what a later rejected or retrieved form falls back to).
+        $formSubvention = $cashbackService->subventionFromForms($customer);
+        $typedSubvention = filled($data['subvention'] ?? null)
+            ? preg_replace('/[^0-9]/', '', $data['subvention'])
+            : null;
+
+        DB::transaction(function () use ($customer, $data, $disbursed, $cashback, $cashbackService, $formSubvention, $typedSubvention) {
+
+            if ($formSubvention === null && $cashbackService->subventionFollowsForms($customer)) {
+                $customer->forceFill(['subvention_before_forms' => (float) ($typedSubvention ?? 0)]);
+            }
 
             $journeyStatus = match ($data['disbursal_status']) {
                 'disbursed' => 'sanctioned',
@@ -155,9 +168,7 @@ class CustomerJourneyService
                     : null,
                 'cashback' => $cashback,
                 'cashback_option' => $disbursed ? $data['cashback_option'] : $customer->cashback_option,
-                'subvention' => filled($data['subvention'] ?? null)
-                    ? preg_replace('/[^0-9]/', '', $data['subvention'])
-                    : null,
+                'subvention' => $formSubvention ?? $typedSubvention,
                 'docking' => filled($data['docking'] ?? null)
                     ? preg_replace('/[^0-9]/', '', $data['docking'])
                     : null,

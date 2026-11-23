@@ -82,6 +82,7 @@ class CustomerCashbackSection
             ->modalDescription(fn (?Customer $record): string => trim(($record?->customer_name ?? '').' · PAN '.($record?->pan_number ?? '—').' · '.($record?->mobile_no ?? '')).'. The customer\'s details come from the file.'
                 .((float) ($record?->cashback ?? 0) > 0 ? ' This case already carries ₹'.indianNumberFormat($record->cashback).' cashback — this form adds to it.' : ''))
             ->modalSubmitActionLabel('Submit for approval')
+            ->fillForm(fn (?Customer $record): array => ['subvention_amount' => $record?->subvention])
             ->schema(CustomerCashbackRequestForm::fields($fixedType))
             ->action(function (array $data, Customer $record, Component $livewire) use ($fixedType): void {
                 $user = self::user();

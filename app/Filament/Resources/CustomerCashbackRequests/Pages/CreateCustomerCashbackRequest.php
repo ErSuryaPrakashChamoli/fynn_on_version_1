@@ -21,13 +21,14 @@ class CreateCustomerCashbackRequest extends CreateRecord
 
     protected static bool $canCreateAnother = false;
 
-    /** Pre-fills the file when opened from a customer page (?customer=ID). */
+    /** Pre-fills the file, and its current subvention, when opened from a customer page (?customer=ID). */
     protected function afterFill(): void
     {
         $customerId = request()->integer('customer');
+        $customer = $customerId ? CustomerResource::getEloquentQuery()->find($customerId) : null;
 
-        if ($customerId && CustomerResource::getEloquentQuery()->whereKey($customerId)->exists()) {
-            $this->form->fill(['customer_id' => $customerId]);
+        if ($customer) {
+            $this->form->fill(['customer_id' => $customer->getKey(), 'subvention_amount' => $customer->subvention]);
         }
     }
 

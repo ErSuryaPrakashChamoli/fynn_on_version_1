@@ -31,6 +31,7 @@ use Spatie\Activitylog\Support\LogOptions;
  * @property CashbackType $type
  * @property numeric $amount
  * @property numeric|null $approved_amount
+ * @property numeric|null $subvention_amount
  * @property CashbackRequestStatus $status
  * @property string|null $remarks
  * @property CashbackPaymentMode|null $payment_mode
@@ -111,6 +112,7 @@ class CustomerCashbackRequest extends Model
         'type',
         'amount',
         'approved_amount',
+        'subvention_amount',
         'status',
         'remarks',
         'payment_mode',
@@ -173,6 +175,7 @@ class CustomerCashbackRequest extends Model
             'return_mode' => CashbackPaymentMode::class,
             'amount' => 'decimal:2',
             'approved_amount' => 'decimal:2',
+            'subvention_amount' => 'decimal:2',
             'returned_amount' => 'decimal:2',
             'return_date' => 'date',
             'return_requested_at' => 'datetime',
@@ -405,6 +408,12 @@ class CustomerCashbackRequest extends Model
     public function effectiveAmount(): float
     {
         return (float) ($this->approved_amount ?? $this->amount);
+    }
+
+    /** The form declared the case's subvention (forms filled before subvention was asked did not). */
+    public function declaresSubvention(): bool
+    {
+        return $this->subvention_amount !== null;
     }
 
     /** The customer gave some or all of a paid cashback back, and the Admin approved it. */

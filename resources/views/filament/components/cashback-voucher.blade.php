@@ -97,6 +97,15 @@
                 @endif
             </td>
         </tr>
+        @if ($voucher->declaresSubvention())
+            <tr>
+                <td class="cv-label">Subvention on the case</td>
+                <td colspan="3">
+                    ₹{{ indianNumberFormat($voucher->subvention_amount) }}
+                    <div class="cv-muted">{{ indianAmountInWordsWithPaise($voucher->subvention_amount) }}</div>
+                </td>
+            </tr>
+        @endif
         <tr class="cv-gap"><td colspan="4"></td></tr>
         <tr>
             <td class="cv-label">Payment Mode</td>

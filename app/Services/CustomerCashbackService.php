@@ -44,6 +44,12 @@ use Throwable;
  *    (customers.cashback_before_forms) — so the achievement and incentive
  *    maths, which already read customers.cashback, follow every form, its
  *    approval, a retrieval or the Admin's change with no change of their own.
+ *  - Every form also declares the case's subvention. The case's
+ *    customers.subvention follows the latest live form that declared one,
+ *    at once (a pending form counts, like its cashback); what the case
+ *    carried before the first such form is kept in
+ *    customers.subvention_before_forms, so a rejected or retrieved form puts
+ *    the previous figure back. Step 4 and edit requests then leave it alone.
  *  - After approval only the Admin changes the amount; the Admin or
  *    Accounts record the payment (mode, UTR, date, Paid / Not Paid / On Hold).
  *  - An unpaid expected cashback can be retrieved by the Team Leader or
@@ -224,9 +230,10 @@ class CustomerCashbackService
         }
 
         $amount = $this->validAmount($data['amount'] ?? null, 'amount', allowZero: false);
+        $subvention = blank($data['subvention_amount'] ?? null) ? null : $this->validAmount($data['subvention_amount'], 'subvention_amount', allowZero: true);
         $payee = $this->validPayee($data, required: $type === CashbackType::Cashback);
 
-        $request = DB::transaction(function () use ($user, $customer, $type, $amount, $payee, $data, $revisionOf): CustomerCashbackRequest {
+        $request = DB::transaction(function () use ($user, $customer, $type, $amount, $subvention, $payee, $data, $revisionOf): CustomerCashbackRequest {
             /** @var Customer $customer */
             $customer = Customer::query()->lockForUpdate()->findOrFail($customer->getKey());
 
@@ -237,6 +244,11 @@ class CustomerCashbackService
             // The first form keeps whatever cashback the case already carried.
             if ($customer->cashback_before_forms === null) {
                 $customer->forceFill(['cashback_before_forms' => $this->cashbackBeforeForms($customer)]);
+            }
+
+            // The first form declaring subvention keeps what the case carried.
+            if ($subvention !== null && $customer->subvention_before_forms === null) {
+                $customer->forceFill(['subvention_before_forms' => (float) ($customer->subvention ?? 0)]);
             }
 
             $now = now();
@@ -259,6 +271,7 @@ class CustomerCashbackService
                 'type' => $type,
                 'amount' => $amount,
                 'approved_amount' => $status === CashbackRequestStatus::Approved ? $amount : null,
+                'subvention_amount' => $subvention,
                 'status' => $status,
                 'remarks' => filled($data['remarks'] ?? null) ? trim((string) $data['remarks']) : null,
                 ...$payee,
@@ -287,9 +300,10 @@ class CustomerCashbackService
 
         $this->recordAnalysis($request);
 
-        $summary = $revisionOf
+        $summary = ($revisionOf
             ? sprintf('%s revised paid cashback %s for a second payment of ₹%s.', $user->name, $revisionOf->voucher_no, indianNumberFormat($amount))
-            : sprintf('%s filled a %s form for ₹%s.', $user->name, strtolower($type->label()), indianNumberFormat($amount));
+            : sprintf('%s filled a %s form for ₹%s.', $user->name, strtolower($type->label()), indianNumberFormat($amount)))
+            .($subvention !== null ? sprintf(' Subvention on the case: ₹%s.', indianNumberFormat($subvention)) : '');
 
         match ($request->status) {
             CashbackRequestStatus::PendingManager => $this->notify(
@@ -793,9 +807,35 @@ class CustomerCashbackService
     }
 
     /**
+     * The subvention the case's live forms declare: the latest live form
+     * that declared one; null when none does (the case's own figure stands).
+     */
+    public function subventionFromForms(Customer $customer): ?float
+    {
+        $declaring = $customer->cashbackRequests()
+            ->live()
+            ->whereNotNull('subvention_amount')
+            ->latest('id')
+            ->first();
+
+        return $declaring ? (float) $declaring->subvention_amount : null;
+    }
+
+    /**
+     * Whether the case's subvention is worked out from its cashback forms:
+     * once any form declared it, Step 4 and edit requests leave it alone.
+     */
+    public function subventionFollowsForms(Customer $customer): bool
+    {
+        return $customer->subvention_before_forms !== null;
+    }
+
+    /**
      * customers.cashback = the cashback carried before the first form plus
      * every live form's amount, less anything the customer returned; the
-     * declaration follows the live forms.
+     * declaration follows the live forms. customers.subvention = the latest
+     * live declaring form's subvention, else what the case carried before
+     * the first declaring form (untouched when no form ever declared one).
      */
     public function syncCustomer(?Customer $customer): void
     {
@@ -803,10 +843,16 @@ class CustomerCashbackService
             return;
         }
 
-        $customer->forceFill([
+        $changes = [
             'cashback' => $this->totalFor($customer, $this->liveRequests($customer)),
             'cashback_option' => $this->optionFromForms($customer) ?? $customer->cashback_option,
-        ])->save();
+        ];
+
+        if ($this->subventionFollowsForms($customer)) {
+            $changes['subvention'] = $this->subventionFromForms($customer) ?? (float) $customer->subvention_before_forms;
+        }
+
+        $customer->forceFill($changes)->save();
     }
 
     /**

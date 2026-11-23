@@ -84,6 +84,8 @@ class CustomerExporter extends Exporter
             ExportColumn::make('cashback_before_forms')
                 ->label('Cashback before cashback forms'),
             ExportColumn::make('subvention'),
+            ExportColumn::make('subvention_before_forms')
+                ->label('Subvention before cashback forms'),
             ExportColumn::make('docking'),
             ExportColumn::make('payout_rate'),
             ExportColumn::make('bank_condition'),

@@ -1,6 +1,7 @@
 @php
     /**
      * One row per person (CashbackAnalysisService::breakdown() / forForm()['people']).
+     * Analyses saved before subvention was analysed have no subvention keys: those cells show "—".
      *
      * @var list<array<string, mixed>> $rows
      * @var array<string, int|float>|null $total  shown as the footer when given
@@ -10,7 +11,9 @@
     $total ??= null;
     $withRole ??= false;
     $drillDown ??= false;
-    $rupees = fn ($amount): string => '₹'.indianNumberFormat(round((float) $amount));
+    $rupees = fn ($amount): string => $amount === null ? '—' : '₹'.indianNumberFormat(round((float) $amount));
+    $percent = fn ($value): string => $value === null ? '—' : number_format((float) $value, 2).'%';
+    $cases = fn ($count): string => $count === null ? '' : $count.' '.\Illuminate\Support\Str::plural('case', (int) $count);
 @endphp
 
 <div class="fynn-table-wrap overflow-x-auto">
@@ -22,12 +25,13 @@
                 @endif
                 <th>Employee</th>
                 <th class="fynn-num">Cases punched in</th>
-                <th class="fynn-num">Cases with cashback</th>
                 <th class="fynn-num">Cashback</th>
+                <th class="fynn-num">Subvention</th>
                 <th class="fynn-num">Disbursal</th>
                 <th class="fynn-num">Approval</th>
                 <th class="fynn-num">Cashback %</th>
-                <th class="fynn-num">Avg / case</th>
+                <th class="fynn-num">Subvention %</th>
+                <th class="fynn-num">Cashback + subvention %</th>
             </tr>
         </thead>
         <tbody>
@@ -48,17 +52,23 @@
                     </td>
                     <td class="fynn-num">{{ $row['cases_punched_in'] }}</td>
                     <td class="fynn-num">
-                        {{ $row['cases_with_cashback'] }}
-                        <div class="fynn-list-meta">{{ number_format($row['cases_with_cashback_percent'], 2) }}% of cases</div>
+                        <span class="font-semibold">{{ $rupees($row['cashback_amount']) }}</span>
+                        <div class="fynn-list-meta">{{ $cases($row['cases_with_cashback']) }} · {{ $percent($row['cases_with_cashback_percent']) }} of cases</div>
                     </td>
-                    <td class="fynn-num font-semibold">{{ $rupees($row['cashback_amount']) }}</td>
+                    <td class="fynn-num">
+                        <span class="font-semibold">{{ $rupees($row['subvention_amount'] ?? null) }}</span>
+                        @if (array_key_exists('cases_with_subvention', $row))
+                            <div class="fynn-list-meta">{{ $cases($row['cases_with_subvention']) }} · {{ $percent($row['cases_with_subvention_percent'] ?? null) }} of cases</div>
+                        @endif
+                    </td>
                     <td class="fynn-num">{{ $rupees($row['disbursal_amount']) }}</td>
                     <td class="fynn-num">
                         {{ $rupees($row['approval_amount']) }}
-                        <div class="fynn-list-meta">{{ $row['approved_cases'] }} {{ \Illuminate\Support\Str::plural('case', $row['approved_cases']) }}</div>
+                        <div class="fynn-list-meta">{{ $cases($row['approved_cases']) }}</div>
                     </td>
-                    <td class="fynn-num font-semibold">{{ number_format($row['cashback_percent'], 2) }}%</td>
-                    <td class="fynn-num">{{ $rupees($row['average_cashback']) }}</td>
+                    <td class="fynn-num font-semibold">{{ $percent($row['cashback_percent']) }}</td>
+                    <td class="fynn-num font-semibold">{{ $percent($row['subvention_percent'] ?? null) }}</td>
+                    <td class="fynn-num font-semibold">{{ $percent($row['deductions_percent'] ?? null) }}</td>
                 </tr>
             @endforeach
         </tbody>
@@ -67,12 +77,13 @@
                 <tr>
                     <th @if ($withRole) colspan="2" @endif>Total</th>
                     <td class="fynn-num">{{ $total['cases_punched_in'] }}</td>
-                    <td class="fynn-num">{{ $total['cases_with_cashback'] }}</td>
                     <td class="fynn-num">{{ $rupees($total['cashback_amount']) }}</td>
+                    <td class="fynn-num">{{ $rupees($total['subvention_amount'] ?? null) }}</td>
                     <td class="fynn-num">{{ $rupees($total['disbursal_amount']) }}</td>
                     <td class="fynn-num">{{ $rupees($total['approval_amount']) }}</td>
-                    <td class="fynn-num">{{ number_format($total['cashback_percent'], 2) }}%</td>
-                    <td class="fynn-num">{{ $rupees($total['average_cashback']) }}</td>
+                    <td class="fynn-num">{{ $percent($total['cashback_percent']) }}</td>
+                    <td class="fynn-num">{{ $percent($total['subvention_percent'] ?? null) }}</td>
+                    <td class="fynn-num">{{ $percent($total['deductions_percent'] ?? null) }}</td>
                 </tr>
             </tfoot>
         @endif

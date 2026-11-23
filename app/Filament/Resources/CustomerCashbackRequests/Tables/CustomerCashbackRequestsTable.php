@@ -54,6 +54,15 @@ class CustomerCashbackRequestsTable
                     ->alignEnd()
                     ->sortable(query: fn ($query, string $direction) => $query->orderByRaw('COALESCE(approved_amount, amount) '.($direction === 'desc' ? 'desc' : 'asc'))),
 
+                TextColumn::make('subvention_amount')
+                    ->label('Subvention declared')
+                    ->formatStateUsing(fn ($state): string => '₹'.indianNumberFormat($state))
+                    ->tooltip('The case\'s subvention declared on this form — the case\'s subvention follows the latest live form.')
+                    ->placeholder('—')
+                    ->alignEnd()
+                    ->toggleable()
+                    ->sortable(),
+
                 TextColumn::make('customer.cashback')
                     ->label('Case total')
                     ->formatStateUsing(fn ($state): string => '₹'.indianNumberFormat($state ?? 0))

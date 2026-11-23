@@ -43,8 +43,9 @@ use UnitEnum;
  * Customers → Cashback Analysis: the cashback given by one employee —
  * Caller, Team Leader, Manager, Cluster Manager or above, each with their
  * branch rolled up — or the whole company, in one month till date
- * (CashbackAnalysisService): cases punched in, cases with cashback, total
- * cashback, disbursal and approval amounts and cashback %, split by the
+ * (CashbackAnalysisService): cases punched in, cases with cashback and with
+ * subvention, total cashback and subvention, disbursal and approval amounts
+ * and their % of disbursal, split by the
  * people reporting to them, then every cashback request raised in the month
  * with the analysis saved when it was raised, for future reference.
  *
@@ -293,13 +294,22 @@ class CashbackAnalysis extends Page implements HasTable
                     ->alignEnd()
                     ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderByRaw('COALESCE(approved_amount, amount) '.($direction === 'desc' ? 'desc' : 'asc'))),
 
+                TextColumn::make('subvention_amount')
+                    ->label('Subvention declared')
+                    ->formatStateUsing(fn ($state): string => '₹'.indianNumberFormat($state))
+                    ->tooltip('The case\'s subvention declared on this form.')
+                    ->placeholder('—')
+                    ->alignEnd()
+                    ->sortable(),
+
                 TextColumn::make('case_cashback_percent')
                     ->label('Case cashback %')
                     ->state(fn (CustomerCashbackRequest $record): ?string => self::snapshotValue($record, 'case.cashback_percent'))
                     ->description(fn (CustomerCashbackRequest $record): ?string => $record->analysis_snapshot
                         ? '₹'.indianNumberFormat(round((float) data_get($record->analysis_snapshot, 'case.cashback_amount'))).' on ₹'.indianNumberFormat(round((float) data_get($record->analysis_snapshot, 'case.disbursal_amount')))
+                            .(data_get($record->analysis_snapshot, 'case.subvention_percent') !== null ? ' · subvention '.self::snapshotValue($record, 'case.subvention_percent') : '')
                         : null)
-                    ->tooltip('This case\'s cashback against its disbursal when the form was raised.')
+                    ->tooltip('This case\'s cashback (and subvention) against its disbursal when the form was raised.')
                     ->placeholder('Not saved')
                     ->alignEnd(),
 
@@ -308,8 +318,9 @@ class CashbackAnalysis extends Page implements HasTable
                     ->state(fn (CustomerCashbackRequest $record): ?string => self::snapshotValue($record, 'owner.cashback_percent'))
                     ->description(fn (CustomerCashbackRequest $record): ?string => ($owner = self::snapshotOwner($record))
                         ? $owner['cases_with_cashback'].' of '.$owner['cases_punched_in'].' cases · ₹'.indianNumberFormat(round((float) $owner['cashback_amount']))
+                            .(isset($owner['subvention_percent']) ? ' · subvention '.number_format((float) $owner['subvention_percent'], 2).'%' : '')
                         : null)
-                    ->tooltip('The case owner\'s cashback % of disbursal for the month, when the form was raised.')
+                    ->tooltip('The case owner\'s cashback % (and subvention %) of disbursal for the month, when the form was raised.')
                     ->placeholder('Not saved')
                     ->alignEnd(),
 
