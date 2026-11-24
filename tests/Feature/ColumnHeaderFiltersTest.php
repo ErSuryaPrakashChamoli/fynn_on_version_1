@@ -10,6 +10,7 @@ use App\Models\Employee;
 use App\Models\User;
 use App\Support\ColumnHeaderFilters\ColumnHeaderFilter;
 use App\Support\ColumnHeaderFilters\ColumnHeaderFilters;
+use App\Support\SelectedMonth;
 use Filament\Facades\Filament;
 use Filament\Tables\Contracts\HasTable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -220,7 +221,9 @@ class ColumnHeaderFiltersTest extends TestCase
         $october = Customer::factory()->create(['employee_id' => $this->alice->id]);
         $october->forceFill(['created_at' => Carbon::parse('2026-10-05 18:30')])->save();
 
-        $component = Livewire::test(ListCustomers::class);
+        // The listing shows the files added in the topbar period; take all
+        // time so both months are on it.
+        $component = Livewire::withCookies([SelectedMonth::PERIOD_COOKIE => SelectedMonth::MODE_ALL])->test(ListCustomers::class);
 
         $options = $component->instance()->getTableHeaderFilterOptions('created_at');
 

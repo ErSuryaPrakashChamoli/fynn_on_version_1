@@ -1,9 +1,12 @@
 ---
 paths:
-  - 'app/Filament/Resources/Customers/**'
+  - 'app/Filament/Resources/Customers/**, app/Support/CustomerListingPeriod.php, app/Filament/Actions/ListingStatusPicker.php'
 ---
 
 # Customers
+
+## Listing period: date added for every status, disbursal date only for "Disbursed"
+User decision 2026-11-24 (replaces the 2026-09-02 rule that showed every not-yet-disbursed file under every month, so month totals never added up to All time). App\Support\CustomerListingPeriod::apply() is the single scope for the My Customers listing and therefore its export: with "All statuses" or any stage but Disbursed, files whose created_at is in the topbar period (SelectedMonth::range()); with "Disbursed" (journey_status 'sanctioned'), files whose disbursal_date is in it (legacy disbursed files with no disbursal_date fall back to created_at). A file added in Sep and disbursed in Nov is under Sep with all statuses and under Nov with Disbursed. The status is ListCustomers::$customerStatus (URL `?status=`), picked from the shared "Status: …" button beside "Export Customers" (App\Filament\Actions\ListingStatusPicker, items customerStatus_<status>; My Leads uses the same button, see leads.md); statusOptions() lists the real journey_status values (incl. not_started) and also feeds the Journey Status filter; the table description states which date is used. Tests that expect older customers on the listing must park the period (Livewire::withCookies([SelectedMonth::PERIOD_COOKIE => 'all'])). Covered by tests/Feature/SelectedPeriodListingExportTest.php and CustomerDisbursalDateFilterTest.php.
 
 ## Continuity stand-ins pass role gates via actsForOwner()
 A role-name gate on a journey stage (e.g. canWorkDisbursal() on Step 4 and Finalize Disbursal) must also allow CustomerForm::actsForOwner($record, JourneyModule::X), which wraps CustomerJourneyAccessService::actsForOwner(). That check is true for the backup of an active continuity rule, or the holder of an active emergency takeover, on that module. Don't use decide() for this: it returns Normal first for anyone with hierarchy access, so a Team Leader backing up their own Manager would be missed. Edit access goes only through CustomerResource::canEdit(). Callers reach it only through the delegation Gate, so ViewCustomer, EditCustomer::mount and the table EditAction all call canEdit(). Notifications about a customer also go to activeBackupIdsFor(). Backup coverage walks visibleSubordinateIds. Covered by tests/Feature/JourneyContinuity/BackupInheritsOwnerAccessTest.php.

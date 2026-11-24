@@ -4,14 +4,15 @@ namespace App\Filament\Resources\Customers\Tables;
 
 use App\Filament\Actions\AssignCustomersToUserBulkAction;
 use App\Filament\Actions\DataDownloadApproval;
+use App\Filament\Actions\ListingStatusPicker;
 use App\Filament\Exports\CustomerExporter;
 use App\Filament\Imports\CustomerImporter;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Filament\Resources\FollowUps\FollowUpResource;
 use App\Models\Employee;
 use App\Services\OtherBankSupportService;
+use App\Support\CustomerListingPeriod;
 use App\Support\EmployeeOptions;
-use App\Support\SelectedMonth;
 use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -36,6 +37,7 @@ class CustomersTable
     {
         return $table
             ->defaultSort('id', 'desc')
+            ->description(fn (mixed $livewire): string => CustomerListingPeriod::describe(data_get($livewire, 'customerStatus')))
             ->columns([
                 //
                 TextColumn::make('application_no')
@@ -182,17 +184,7 @@ class CustomersTable
 
                 SelectFilter::make('journey_status')
                     ->label('Journey Status')
-                    ->options([
-                        'sfl' => 'SFL',
-                        'underwriting' => 'Underwriting',
-                        'approved' => 'Approved',
-                        'sanctioned' => 'Sanctioned',
-                        'disbursal_documents' => 'Disbursal Documents',
-                        'completed' => 'Completed',
-                        'carry_forward' => 'Carry Forward',
-                        'dropped' => 'Dropped',
-                        'not_approved' => 'Not Approved',
-                    ])
+                    ->options(CustomerListingPeriod::statusOptions())
                     ->searchable()
                     ->preload(),
 
@@ -356,13 +348,12 @@ class CustomersTable
             ])
             ->defaultPaginationPageOption(5)
             ->modifyQueryUsing(
-                // Customers whose journey is still incomplete/not yet
-                // disbursed stay visible under every month (they have no
-                // disbursal_date to match); only disbursed customers are
-                // filtered to the month they were actually disbursed in.
-                fn (Builder $query) => $query->where(
-                    fn (Builder $q) => $q->whereNull('disbursal_date')
-                        ->orWhereBetween('disbursal_date', SelectedMonth::range())
+                // Files added in the topbar period, narrowed to the status
+                // picked beside "Export Customers"; with "Disbursed" picked,
+                // files disbursed in the period instead.
+                fn (Builder $query, mixed $livewire): Builder => CustomerListingPeriod::apply(
+                    $query,
+                    data_get($livewire, 'customerStatus'),
                 )
             )
             ->recordActions([
@@ -380,6 +371,8 @@ class CustomersTable
                     ])),
             ])
             ->headerActions([
+
+                ListingStatusPicker::make('customerStatus', CustomerListingPeriod::statusChoices()),
 
                 DataDownloadApproval::protect(
                     ExportAction::make()

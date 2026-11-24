@@ -16,10 +16,11 @@ use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 /**
- * The global month selector must scope customers by disbursal_date, not by
- * created_at/approval_date: a customer whose journey is still open (no
- * disbursal_date yet) stays visible under every month, while a disbursed
- * customer only appears under the month it was actually disbursed in.
+ * Since 2026-11-24 the customers listing shows the files ADDED in the
+ * selected month, whatever their stage (an open journey no longer shows
+ * under every month); with the "Disbursed" status picked it shows the files
+ * DISBURSED in that month by disbursal_date, not created_at/approval_date
+ * (App\Support\CustomerListingPeriod).
  * Customer Settlement and MIS Verification follow the same disbursal_date
  * rule rather than mis_disbursal_date/updated_at.
  */
@@ -81,31 +82,46 @@ class CustomerDisbursalDateFilterTest extends TestCase
         $this->assertNull($carriedForward->disbursal_date);
     }
 
-    public function test_customers_list_always_shows_open_journeys_but_scopes_disbursed_ones_to_the_selected_month(): void
+    public function test_customers_list_scopes_by_date_added_and_the_disbursed_status_by_disbursal_date(): void
     {
         $this->actingAsAdmin();
 
         $stillInPipeline = Customer::factory()->create([
+            'journey_status' => 'sfl',
+            'created_at' => Carbon::create(2026, 8, 3),
+            'disbursal_status' => null,
+            'disbursal_date' => null,
+        ]);
+
+        $openSinceJanuary = Customer::factory()->create([
+            'journey_status' => 'sfl',
             'created_at' => Carbon::create(2026, 1, 5),
             'disbursal_status' => null,
             'disbursal_date' => null,
         ]);
 
         $disbursedInAugust = Customer::factory()->create([
+            'journey_status' => 'sanctioned',
             'created_at' => Carbon::create(2026, 1, 5),
             'disbursal_status' => 'disbursed',
             'disbursal_date' => Carbon::create(2026, 8, 10),
         ]);
 
         $disbursedInJuly = Customer::factory()->create([
+            'journey_status' => 'sanctioned',
             'created_at' => Carbon::create(2026, 8, 20),
             'disbursal_status' => 'disbursed',
             'disbursal_date' => Carbon::create(2026, 7, 1),
         ]);
 
+        // All statuses: the files added in August, wherever they stand.
         Livewire::test(ListCustomers::class)
-            ->assertCanSeeTableRecords([$stillInPipeline, $disbursedInAugust])
-            ->assertCanNotSeeTableRecords([$disbursedInJuly]);
+            ->assertCanSeeTableRecords([$stillInPipeline, $disbursedInJuly])
+            ->assertCanNotSeeTableRecords([$disbursedInAugust, $openSinceJanuary])
+            // Disbursed: the files disbursed in August, whenever added.
+            ->set('customerStatus', 'sanctioned')
+            ->assertCanSeeTableRecords([$disbursedInAugust])
+            ->assertCanNotSeeTableRecords([$disbursedInJuly, $stillInPipeline, $openSinceJanuary]);
     }
 
     public function test_mis_verification_scopes_disbursed_customers_by_disbursal_date(): void

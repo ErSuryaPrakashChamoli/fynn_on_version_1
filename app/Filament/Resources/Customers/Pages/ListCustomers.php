@@ -6,15 +6,25 @@ use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\CustomerCashbackRequests\CustomerCashbackRequestResource;
 use App\Filament\Resources\Customers\CustomerResource;
 use App\Models\Employee;
+use App\Support\CustomerListingPeriod;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
+use Livewire\Attributes\Url;
 
 class ListCustomers extends ListRecords
 {
     use HasColumnHeaderFilters;
 
     protected static string $resource = CustomerResource::class;
+
+    /**
+     * The journey status picked beside "Export Customers" ("all" or a
+     * customers.journey_status); the listing and its export both follow
+     * it, together with the topbar period (CustomerListingPeriod).
+     */
+    #[Url(as: 'status')]
+    public string $customerStatus = CustomerListingPeriod::ALL_STATUSES;
 
     protected function getHeaderActions(): array
     {

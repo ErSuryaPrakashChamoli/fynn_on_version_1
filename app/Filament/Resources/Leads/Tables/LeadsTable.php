@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Leads\Tables;
 
 use App\Filament\Actions\DataDownloadApproval;
 use App\Filament\Actions\DropFollowUpActions;
+use App\Filament\Actions\ListingStatusPicker;
 use App\Filament\Exports\LeadExporter;
 use App\Filament\Imports\LeadImporter;
 use App\Filament\Resources\Customers\CustomerResource;
@@ -11,7 +12,7 @@ use App\Models\CustomerAssignment;
 use App\Models\Employee;
 use App\Models\Lead;
 use App\Support\EmployeeOptions;
-use App\Support\SelectedMonth;
+use App\Support\LeadListingPeriod;
 use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -37,6 +38,7 @@ class LeadsTable
     {
         return $table
             ->defaultSort('id', 'desc')
+            ->description(fn (mixed $livewire): string => LeadListingPeriod::describe(data_get($livewire, 'leadStatus')))
             ->columns([
                 TextColumn::make('customer_name')
                     ->label('Prospect Name')
@@ -275,9 +277,16 @@ class LeadsTable
 
             ])
             ->modifyQueryUsing(
-                fn (Builder $query) => $query->whereBetween('created_at', SelectedMonth::range())
+                // Leads added in the topbar period, narrowed to the status
+                // picked beside "Export Leads".
+                fn (Builder $query, mixed $livewire): Builder => LeadListingPeriod::apply(
+                    $query,
+                    data_get($livewire, 'leadStatus'),
+                )
             )
             ->headerActions([
+
+                ListingStatusPicker::make('leadStatus', LeadListingPeriod::statusChoices()),
 
                 DataDownloadApproval::protect(
                     ExportAction::make()
