@@ -283,11 +283,11 @@ class SkipLevelReportingTest extends TestCase
 
         $this->skipLevelTeamLeader->forceFill(['exit_status' => 'yes', 'exit_date' => '2026-10-15'])->save();
 
-        // 15 of October's 31 days — ten or more: their caller counts the
-        // part-month target and their understaffed top-up counts in full
-        // for the Cluster Manager.
+        // 15 of October's 31 days — ten or more: their caller counts their
+        // full target and their understaffed top-up counts in full for the
+        // Cluster Manager.
         $this->assertEqualsWithDelta(
-            2 * self::CALLER_TARGET + self::TOP_UP + 1500000.0 + self::TOP_UP,
+            2 * self::CALLER_TARGET + self::TOP_UP + self::CALLER_TARGET + self::TOP_UP,
             (new AchievementCalculatorService)->getTarget($this->cluster, Carbon::create(2026, 10, 1)),
             0.01,
         );

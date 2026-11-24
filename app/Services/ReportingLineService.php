@@ -393,6 +393,116 @@ class ReportingLineService
         TargetCategoryTimeline::forget();
     }
 
+    /**
+     * Whether a reporting-line history row put the employee under somebody
+     * else. A row that kept the very same people above them — only re-filed
+     * into other columns after a boss's designation change ("Follows X's
+     * designation change."), or that changed nothing at all — did not: it
+     * neither blocks an earlier-dated change nor survives one
+     * (dropSupersededLines()).
+     */
+    public static function movesEmployee(object $row): bool
+    {
+        if ($row->change_type === 'joining') {
+            return true;
+        }
+
+        return self::bossIdsOf($row, 'old_') !== self::bossIdsOf($row, 'new_');
+    }
+
+    /**
+     * Remove $employeeId's reporting-line rows dated on or after $date that
+     * did not move them (movesEmployee()). A change dated $date sets their
+     * line from that day, and these rows, left behind it, would put back
+     * the columns of the position they held before — so a promotion back-
+     * dated past a "Follows X's designation change." row is not undone by
+     * it from that row's date. Rows in $exceptIds are kept.
+     *
+     * @param  list<int>  $exceptIds
+     * @return int how many rows were removed
+     */
+    public function dropSupersededLines(int $employeeId, CarbonInterface|string $date, array $exceptIds = []): int
+    {
+        $ids = EmployeeReportingHistory::query()
+            ->toBase()
+            ->where('employee_id', $employeeId)
+            ->whereNotIn('change_type', [...self::NON_REPORTING_CHANGES, 'joining'])
+            ->whereDate('effective_date', '>=', Carbon::parse($date)->toDateString())
+            ->whereNotIn('id', $exceptIds)
+            ->get()
+            ->reject(fn (object $row): bool => self::movesEmployee($row))
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        if ($ids !== []) {
+            EmployeeReportingHistory::query()->whereKey($ids)->delete();
+        }
+
+        return count($ids);
+    }
+
+    /**
+     * Re-link the effective_to of $employeeId's history once rows were
+     * re-dated or removed: within each kind (reporting line, designation,
+     * target category) a row ends where the next one starts, and the latest
+     * stays open — or ends on the exit date of somebody who has left, as
+     * EmployeeInactivationService closes it. Shown on the lifecycle; every
+     * figure reads effective_date only.
+     */
+    public function resequenceHistory(int $employeeId): void
+    {
+        $employee = Employee::query()->find($employeeId, ['id', 'exit_status', 'exit_date']);
+        $exitDate = $employee && strtolower(trim((string) $employee->exit_status)) === 'yes' && filled($employee->exit_date)
+            ? Carbon::parse($employee->exit_date)->toDateString()
+            : null;
+
+        EmployeeReportingHistory::query()
+            ->where('employee_id', $employeeId)
+            ->where('change_type', '!=', 'exit')
+            ->orderBy('effective_date')
+            ->orderBy('id')
+            ->get()
+            ->groupBy(fn (EmployeeReportingHistory $row): string => in_array($row->change_type, [self::CHANGE_DESIGNATION, self::CHANGE_TARGET_CATEGORY], true)
+                ? $row->change_type
+                : 'line')
+            ->each(function (Collection $chain) use ($exitDate): void {
+                $chain = $chain->values();
+
+                foreach ($chain as $index => $row) {
+                    $next = $chain->get($index + 1);
+                    $effectiveTo = $next ? $next->effective_date->toDateString() : $exitDate;
+
+                    if ($row->effective_to?->toDateString() !== $effectiveTo) {
+                        $row->forceFill(['effective_to' => $effectiveTo])->save();
+                    }
+                }
+            });
+    }
+
+    /**
+     * The distinct people a row's $prefix ('old_' / 'new_') columns put
+     * above the employee, whatever column each sits in.
+     *
+     * @return list<int>
+     */
+    private static function bossIdsOf(object $row, string $prefix): array
+    {
+        $ids = [];
+
+        foreach (array_keys(Employee::REPORTING_COLUMNS) as $column) {
+            $value = $row->{$prefix.$column} ?? null;
+
+            if ($value !== null && (int) $value !== 0) {
+                $ids[(int) $value] = (int) $value;
+            }
+        }
+
+        sort($ids);
+
+        return $ids;
+    }
+
     private function canHaveBoss(?int $designation): bool
     {
         return Employee::designationRank($designation) > 0

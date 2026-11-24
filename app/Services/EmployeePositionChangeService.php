@@ -12,6 +12,7 @@ use App\Support\ReportingTree;
 use App\Support\TargetCategoryTimeline;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -89,11 +90,23 @@ class EmployeePositionChangeService
 
             $remarks = filled($remarks) ? trim($remarks) : $this->describe($previousDesignation, $designation, $previousCategory, $category);
 
+            // A back-dated change sets their line from its effective date:
+            // rows after it that kept the same people above them (re-slots
+            // after a boss's designation change) would put the old position's
+            // columns back from their own date.
+            if ($designationChanges) {
+                $this->reportingLines->dropSupersededLines($employee->id, $effectiveDay);
+            }
+
             // Read before the position changes: the tree finds a boss only
             // through the column matching their position.
             $stayingTeamIds = $designationChanges
                 ? $this->moveTeam($employee, $designation, $teamBossId, $effectiveDay, $performedBy)
                 : [];
+
+            foreach ($stayingTeamIds as $reportId) {
+                $this->reportingLines->dropSupersededLines($reportId, $effectiveDay);
+            }
 
             $employee->forceFill([
                 'designation' => $designation,
@@ -132,9 +145,201 @@ class EmployeePositionChangeService
             if ($categoryChanges) {
                 $this->reportingLines->recordCategoryChange($employee, $previousCategory, $effectiveDay, $remarks, $performedBy?->id);
             }
+
+            foreach ([$employee->id, ...$stayingTeamIds] as $employeeId) {
+                $this->reportingLines->resequenceHistory($employeeId);
+            }
         });
 
         app(MonthlyTargetGate::class)->forget();
+    }
+
+    /**
+     * The latest dated position or target change of $employee — the day it
+     * took effect and every history row written with it: their own
+     * designation, target category and reporting-line rows of that day, and
+     * the rows of the team it re-slotted, handed over or re-filled — or
+     * null when no position or target change was ever recorded for them.
+     *
+     * @return array{date: CarbonImmutable, rows: Collection<int, EmployeeReportingHistory>, designation: ?EmployeeReportingHistory, category: ?EmployeeReportingHistory}|null
+     */
+    public function lastChange(Employee $employee): ?array
+    {
+        $anchorDate = EmployeeReportingHistory::query()
+            ->where('employee_id', $employee->id)
+            ->whereIn('change_type', [ReportingLineService::CHANGE_DESIGNATION, ReportingLineService::CHANGE_TARGET_CATEGORY])
+            ->max('effective_date');
+
+        if ($anchorDate === null) {
+            return null;
+        }
+
+        $date = CarbonImmutable::parse($anchorDate)->startOfDay();
+
+        $ownRows = EmployeeReportingHistory::query()
+            ->where('employee_id', $employee->id)
+            ->where('change_type', '!=', 'exit')
+            ->whereDate('effective_date', $date->toDateString())
+            ->orderBy('id')
+            ->get();
+
+        $lineRemarks = $ownRows
+            ->reject(fn (EmployeeReportingHistory $row): bool => in_array($row->change_type, [ReportingLineService::CHANGE_DESIGNATION, ReportingLineService::CHANGE_TARGET_CATEGORY], true))
+            ->pluck('remarks')
+            ->filter()
+            ->all();
+
+        $teamRemarks = [
+            "Follows {$employee->emp_name}'s designation change.",
+            "Handed over from {$employee->emp_name}.",
+        ];
+
+        $teamRows = EmployeeReportingHistory::query()
+            ->where('employee_id', '!=', $employee->id)
+            ->whereNotIn('change_type', ReportingLineService::NON_REPORTING_CHANGES)
+            ->whereDate('effective_date', $date->toDateString())
+            ->whereIn('remarks', [...$teamRemarks, ...$lineRemarks])
+            ->orderBy('id')
+            ->get()
+            // Re-filled below them by their own move: the row names them.
+            ->filter(fn (EmployeeReportingHistory $row): bool => in_array($row->remarks, $teamRemarks, true)
+                || $this->rowNames($row, $employee->id));
+
+        return [
+            'date' => $date,
+            'rows' => $ownRows->concat($teamRows)->values(),
+            'designation' => $ownRows->firstWhere('change_type', ReportingLineService::CHANGE_DESIGNATION),
+            'category' => $ownRows->firstWhere('change_type', ReportingLineService::CHANGE_TARGET_CATEGORY),
+        ];
+    }
+
+    /**
+     * "Promotion: Caller → Team Leader. Target category: Silver → Gold." for
+     * $employee's last recorded change (lastChange()), or null.
+     */
+    public function lastChangeSummary(Employee $employee): ?string
+    {
+        $change = $this->lastChange($employee);
+
+        if ($change === null) {
+            return null;
+        }
+
+        $designation = $change['designation'];
+        $category = $change['category'];
+
+        return trim($this->describe(
+            (int) ($designation?->old_designation ?? $employee->designation),
+            (int) ($designation?->new_designation ?? $employee->designation),
+            $category ? $category->old_category : null,
+            $category ? $category->new_category : null,
+        ));
+    }
+
+    /**
+     * Move $employee's last recorded position or target change (lastChange())
+     * to $effectiveDate — for a promotion, demotion or new target keyed in
+     * with the wrong date. Every row written with it moves together (their
+     * own, and their team's re-slot, hand-over and re-fill rows), so every
+     * month figure follows the corrected day. Rows after the new date that
+     * only re-filed them under the same people are removed, as for a
+     * back-dated change().
+     *
+     * @throws ValidationException when nothing was recorded, the date does
+     *                             not move, is in the future, before they
+     *                             joined or after they left, or would jump
+     *                             past another recorded change
+     */
+    public function redateLastChange(Employee $employee, CarbonInterface $effectiveDate, ?User $performedBy = null): void
+    {
+        $newDay = CarbonImmutable::parse($effectiveDate->toDateString());
+
+        DB::transaction(function () use ($employee, $newDay, $performedBy): void {
+            /** @var Employee $employee */
+            $employee = Employee::query()->whereKey($employee->id)->lockForUpdate()->firstOrFail();
+
+            $change = $this->lastChange($employee) ?? $this->fail('effective_date', "No promotion, demotion or target change is recorded for {$employee->emp_name}.");
+            $oldDay = $change['date'];
+
+            $this->assertRedateAllowed($employee, $change, $newDay);
+
+            $rows = $change['rows'];
+            $note = ' Effective date corrected from '.$oldDay->format('d M Y').' to '.$newDay->format('d M Y')
+                .($performedBy ? " by {$performedBy->name}" : '').'.';
+
+            foreach ($rows as $row) {
+                $isAnchor = in_array($row->change_type, [ReportingLineService::CHANGE_DESIGNATION, ReportingLineService::CHANGE_TARGET_CATEGORY], true);
+
+                $row->forceFill([
+                    'effective_date' => $newDay->toDateString(),
+                    ...($isAnchor ? ['remarks' => mb_substr(trim(($row->remarks ?? '').$note), 0, 1000)] : []),
+                ])->save();
+            }
+
+            $employeeIds = $rows->pluck('employee_id')->map(fn ($id): int => (int) $id)->unique()->values();
+
+            if ($newDay->lt($oldDay)) {
+                foreach ($this->lineMovedIds($change) as $employeeId) {
+                    $this->reportingLines->dropSupersededLines($employeeId, $newDay, $rows->modelKeys());
+                }
+            }
+
+            foreach ($employeeIds as $employeeId) {
+                $this->reportingLines->resequenceHistory($employeeId);
+            }
+        });
+
+        TargetCategoryTimeline::forget();
+        app(MonthlyTargetGate::class)->forget();
+    }
+
+    /**
+     * "Team Leader since 01 Nov 2026 — promoted from Caller." for the
+     * position $employee holds, or null when no dated change gave it them.
+     */
+    public function positionSince(Employee $employee): ?string
+    {
+        $row = EmployeeReportingHistory::query()
+            ->where('employee_id', $employee->id)
+            ->where('change_type', ReportingLineService::CHANGE_DESIGNATION)
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($row === null || (int) $row->new_designation !== (int) $employee->designation) {
+            return null;
+        }
+
+        $labels = Employee::designationOptions();
+        $verb = match ($this->kindOfChange((int) $row->old_designation, (int) $row->new_designation)) {
+            'Promotion' => 'promoted',
+            'Demotion' => 'demoted',
+            default => 'moved',
+        };
+
+        return ($labels[$employee->designation] ?? '—').' since '.$row->effective_date->format('d M Y')
+            ." — {$verb} from ".($labels[$row->old_designation] ?? '—').'.';
+    }
+
+    /**
+     * "Alpha since 01 Nov 2026 (was Silver)." for the target category
+     * $employee holds, or null when no dated change gave it them.
+     */
+    public function categorySince(Employee $employee): ?string
+    {
+        $row = EmployeeReportingHistory::query()
+            ->where('employee_id', $employee->id)
+            ->where('change_type', ReportingLineService::CHANGE_TARGET_CATEGORY)
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($row === null || (string) $row->new_category !== (string) $employee->category) {
+            return null;
+        }
+
+        return (TargetCategory::labelFor($employee->category) ?? 'No category').' since '.$row->effective_date->format('d M Y')
+            .' (was '.(TargetCategory::labelFor($row->old_category) ?? 'none').').';
     }
 
     /**
@@ -193,10 +398,18 @@ class EmployeePositionChangeService
         }
 
         if ($designationChanges) {
+            // A row that only re-filed them under the same people (after a
+            // boss's designation change) holds nothing back: the change
+            // replaces it (dropSupersededLines()).
             $lastLineChange = EmployeeReportingHistory::query()
+                ->toBase()
                 ->where('employee_id', $employee->id)
                 ->whereNotIn('change_type', ['exit', ReportingLineService::CHANGE_TARGET_CATEGORY])
-                ->max('effective_date');
+                ->get()
+                ->filter(fn (object $row): bool => $row->change_type === ReportingLineService::CHANGE_DESIGNATION
+                    || ReportingLineService::movesEmployee($row))
+                ->map(fn (object $row): string => substr((string) $row->effective_date, 0, 10))
+                ->max();
 
             if ($lastLineChange !== null) {
                 $dates[] = CarbonImmutable::parse($lastLineChange)->startOfDay();
@@ -296,6 +509,96 @@ class EmployeePositionChangeService
         if ($earliest !== null && $effectiveDay->lt($earliest)) {
             $this->fail('effective_date', 'The effective date cannot be before '.$earliest->format('d M Y').' — their joining date or last recorded change.');
         }
+    }
+
+    /**
+     * @param  array{date: CarbonImmutable, rows: Collection<int, EmployeeReportingHistory>, designation: ?EmployeeReportingHistory, category: ?EmployeeReportingHistory}  $change
+     */
+    private function assertRedateAllowed(Employee $employee, array $change, CarbonImmutable $newDay): void
+    {
+        $oldDay = $change['date'];
+
+        if ($newDay->equalTo($oldDay)) {
+            $this->fail('effective_date', 'The change already takes effect on '.$oldDay->format('d M Y').'.');
+        }
+
+        if ($newDay->isAfter(today())) {
+            $this->fail('effective_date', 'The effective date cannot be in the future.');
+        }
+
+        if (filled($employee->doj) && $newDay->lt(CarbonImmutable::parse($employee->doj)->startOfDay())) {
+            $this->fail('effective_date', 'The effective date cannot be before they joined on '.CarbonImmutable::parse($employee->doj)->format('d M Y').'.');
+        }
+
+        if (strtolower(trim((string) $employee->exit_status)) === 'yes' && filled($employee->exit_date)
+            && $newDay->gt(CarbonImmutable::parse($employee->exit_date)->startOfDay())) {
+            $this->fail('effective_date', 'The effective date cannot be after they left on '.CarbonImmutable::parse($employee->exit_date)->format('d M Y').'.');
+        }
+
+        // Moving back: rows strictly between the two days. Moving forward:
+        // rows after the old day up to and including the new one.
+        $earlier = $newDay->lt($oldDay);
+        $lineMovedIds = $this->lineMovedIds($change);
+        $names = Employee::query()->whereIn('id', $change['rows']->pluck('employee_id'))->pluck('emp_name', 'id');
+
+        $inBetween = EmployeeReportingHistory::query()
+            ->whereIn('employee_id', $change['rows']->pluck('employee_id')->unique())
+            ->whereKeyNot($change['rows']->modelKeys())
+            ->where('change_type', '!=', 'exit')
+            ->whereDate('effective_date', '>', ($earlier ? $newDay : $oldDay)->toDateString())
+            ->whereDate('effective_date', $earlier ? '<' : '<=', ($earlier ? $oldDay : $newDay)->toDateString())
+            ->orderBy('effective_date')
+            ->get();
+
+        foreach ($inBetween as $row) {
+            $isOwn = (int) $row->employee_id === $employee->id;
+
+            $blocks = match ($row->change_type) {
+                ReportingLineService::CHANGE_DESIGNATION => $isOwn && $change['designation'] !== null,
+                ReportingLineService::CHANGE_TARGET_CATEGORY => $isOwn && $change['category'] !== null,
+                default => in_array((int) $row->employee_id, $lineMovedIds, true) && ReportingLineService::movesEmployee($row),
+            };
+
+            if ($blocks) {
+                $this->fail('effective_date', 'The effective date cannot move past '
+                    .($isOwn ? 'their' : ($names[$row->employee_id] ?? 'a team member')."'s")
+                    .' other change recorded on '.$row->effective_date->format('d M Y')
+                    .'. Choose a date on the same side of it.');
+            }
+        }
+    }
+
+    /**
+     * Who had their reporting line moved by $change: the employee when it
+     * changed their position or their own line, and every team member it
+     * re-slotted, handed over or re-filled.
+     *
+     * @param  array{rows: Collection<int, EmployeeReportingHistory>, category: ?EmployeeReportingHistory}  $change
+     * @return list<int>
+     */
+    private function lineMovedIds(array $change): array
+    {
+        return $change['rows']
+            ->reject(fn (EmployeeReportingHistory $row): bool => $row->change_type === ReportingLineService::CHANGE_TARGET_CATEGORY)
+            ->pluck('employee_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Whether $row's old or new reporting columns name $employeeId.
+     */
+    private function rowNames(EmployeeReportingHistory $row, int $employeeId): bool
+    {
+        foreach (array_keys(Employee::REPORTING_COLUMNS) as $column) {
+            if ((int) $row->{'old_'.$column} === $employeeId || (int) $row->{'new_'.$column} === $employeeId) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

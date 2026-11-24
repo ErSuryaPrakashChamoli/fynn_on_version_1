@@ -406,6 +406,54 @@ class EmployeeImportModesTest extends TestCase
         $this->assertSame($this->teamLeader->id, $caller->manager_id);
     }
 
+    public function test_a_promotion_is_dated_from_the_effective_date_given(): void
+    {
+        $effectiveDate = today()->subDays(5)->toDateString();
+
+        $failures = $this->import([
+            $this->updateRow($this->caller, ['designation' => 'Team Leader', 'reports_to' => $this->manager->emp_id, 'effective_date' => $effectiveDate]),
+        ], EmployeeImporter::MODE_UPDATE);
+
+        $this->assertSame([], $failures);
+        $this->assertSame(Employee::DESIGNATION_TEAM_LEADER, $this->caller->fresh()->designation);
+
+        foreach ([ReportingLineService::CHANGE_DESIGNATION, ReportingLineService::CHANGE_REPORTING] as $changeType) {
+            $this->assertSame($effectiveDate, EmployeeReportingHistory::query()
+                ->where('employee_id', $this->caller->id)
+                ->where('change_type', $changeType)
+                ->sole()
+                ->effective_date
+                ->toDateString());
+        }
+    }
+
+    public function test_a_promotion_without_an_effective_date_is_dated_the_day_of_the_upload(): void
+    {
+        $failures = $this->import([
+            $this->updateRow($this->caller, ['designation' => 'Team Leader', 'reports_to' => $this->manager->emp_id]),
+        ], EmployeeImporter::MODE_UPDATE);
+
+        $this->assertSame([], $failures);
+        $this->assertSame(today()->toDateString(), EmployeeReportingHistory::query()
+            ->where('employee_id', $this->caller->id)
+            ->where('change_type', ReportingLineService::CHANGE_DESIGNATION)
+            ->sole()
+            ->effective_date
+            ->toDateString());
+    }
+
+    public function test_an_effective_date_in_the_future_or_before_joining_is_refused(): void
+    {
+        $failures = $this->import([
+            $this->updateRow($this->caller, ['designation' => 'Team Leader', 'reports_to' => $this->manager->emp_id, 'effective_date' => today()->addDay()->toDateString()]),
+            $this->updateRow($this->caller, ['designation' => 'Team Leader', 'reports_to' => $this->manager->emp_id, 'effective_date' => '2024-01-01']),
+        ], EmployeeImporter::MODE_UPDATE);
+
+        $this->assertStringContainsString('effective_date cannot be in the future', $failures[0]);
+        $this->assertStringContainsString('effective_date cannot be before 15 Jan 2025', $failures[1]);
+        $this->assertSame(Employee::DESIGNATION_CALLER, $this->caller->fresh()->designation);
+    }
+
     public function test_update_refuses_a_boss_who_is_not_senior(): void
     {
         $failures = $this->import([
@@ -619,7 +667,7 @@ class EmployeeImportModesTest extends TestCase
         $rows = collect($this->downloadedRows())->keyBy('emp_id');
 
         $this->assertSame(
-            ['emp_id', 'emp_name', 'email', 'designation', 'doj', 'reporting_date', 'reports_to', 'cost_center', 'unit_name', 'status', 'inactive_date'],
+            ['emp_id', 'emp_name', 'email', 'designation', 'doj', 'reporting_date', 'reports_to', 'cost_center', 'unit_name', 'status', 'inactive_date', 'effective_date'],
             array_keys($rows->first()),
         );
         $this->assertSame('Caller', $rows['CL01']['designation']);

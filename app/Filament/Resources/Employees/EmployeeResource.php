@@ -19,6 +19,7 @@ use App\Models\Position;
 use App\Models\TargetCategory;
 use App\Models\Unit;
 use App\Services\EmployeeDependencyService;
+use App\Services\EmployeePositionChangeService;
 use App\Services\ReportingLineService;
 use App\Support\EmployeeOptions;
 use App\Support\HierarchyHelper;
@@ -98,9 +99,14 @@ class EmployeeResource extends Resource
                         ->searchable()
                         ->disabled(fn (?Employee $record): bool => self::isOnTheRolls($record))
                         ->dehydrated(fn (?Employee $record): bool => ! self::isOnTheRolls($record))
-                        ->helperText(fn (?Employee $record): ?string => self::isOnTheRolls($record)
-                            ? 'Use “Change Position / Target” at the top of this page — it hands over their work first and dates the promotion or demotion.'
-                            : null)
+                        // The effective date of the position held: every
+                        // target and team figure follows it.
+                        ->helperText(fn (?Employee $record): ?string => collect([
+                            $record?->exists ? app(EmployeePositionChangeService::class)->positionSince($record) : null,
+                            self::isOnTheRolls($record)
+                                ? 'Use “Change Position / Target” at the top of this page — it dates the promotion or demotion, and targets and team figures follow that date.'
+                                : null,
+                        ])->filter()->implode(' ') ?: null)
                         ->live()
                         ->afterStateUpdated(function (Set $set, Get $get, $state): void {
                             // Drop a boss who is not senior to the new level.
@@ -136,11 +142,14 @@ class EmployeeResource extends Resource
                         // Target", so earlier months keep the old one.
                         ->disabled(fn (?Employee $record): bool => self::isOnTheRolls($record))
                         ->dehydrated(fn (?Employee $record): bool => ! self::isOnTheRolls($record))
-                        ->helperText(fn (Get $get, ?Employee $record): ?string => match (true) {
-                            self::isOnTheRolls($record) => 'Use “Change Position / Target” at the top of this page — the new target applies from its effective date and earlier months keep the old one.',
-                            Employee::designationRank(self::designationOf($get('designation'))) > 0 => null,
-                            default => 'Not used for this position — it carries no LMS target.',
-                        })
+                        ->helperText(fn (Get $get, ?Employee $record): ?string => collect([
+                            $record?->exists ? app(EmployeePositionChangeService::class)->categorySince($record) : null,
+                            match (true) {
+                                self::isOnTheRolls($record) => 'Use “Change Position / Target” at the top of this page — the new target applies from its effective date and earlier months keep the old one.',
+                                Employee::designationRank(self::designationOf($get('designation'))) > 0 => null,
+                                default => 'Not used for this position — it carries no LMS target.',
+                            },
+                        ])->filter()->implode(' ') ?: null)
                         ->native(false),
 
                     // The one reporting choice. Every reporting column

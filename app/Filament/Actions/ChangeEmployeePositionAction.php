@@ -18,6 +18,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
+use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -89,7 +90,7 @@ class ChangeEmployeePositionAction
 
                 $record->refresh();
 
-                if ($livewire instanceof EditRecord) {
+                if ($livewire instanceof EditRecord || $livewire instanceof ViewRecord) {
                     $livewire->refreshFormData(['designation', 'position', 'category']);
                     $livewire->data['reports_to'] = HierarchyHelper::directBossId($record);
                 }
@@ -109,11 +110,16 @@ class ChangeEmployeePositionAction
     private static function currentSummary(Employee $employee): string
     {
         $bossId = HierarchyHelper::directBossId($employee);
+        $service = app(EmployeePositionChangeService::class);
 
-        return 'Now: '.(Employee::designationOptions()[$employee->designation] ?? '—')
-            .', target category '.(TargetCategory::labelFor($employee->category) ?? 'none')
-            .', reporting to '.($bossId ? app(ReportingLineService::class)->lineSummary($bossId) : 'nobody')
-            .'. Their customers and leads stay with them. Earlier months keep what they held before the effective date.';
+        return collect([
+            'Now: '.(Employee::designationOptions()[$employee->designation] ?? '—')
+                .', target category '.(TargetCategory::labelFor($employee->category) ?? 'none')
+                .', reporting to '.($bossId ? app(ReportingLineService::class)->lineSummary($bossId) : 'nobody').'.',
+            $service->positionSince($employee),
+            $service->categorySince($employee),
+            'Their customers and leads stay with them. Earlier months keep what they held before the effective date.',
+        ])->filter()->implode(' ');
     }
 
     /**

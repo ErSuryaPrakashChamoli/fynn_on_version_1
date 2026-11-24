@@ -24,9 +24,10 @@ use Tests\TestCase;
  * Caller A reports to Team Leader B (Manager M1) until 25 Oct 2026 and to
  * Team Leader C (Manager M2) from 26 Oct. The move is keyed in on 14 Nov.
  * Months before the change must stay with B and October is split by date.
- * The target follows the joiner/leaver rule: a team the caller was in for
- * their whole month counts their own target; a team they moved into or out
- * of counts the ₹15L part-month target for 10+ days in it, otherwise 0.
+ * The target follows the 10-day rule (user decision 2026-11-24): a team the
+ * caller was in for their whole month counts their own target; a team they
+ * moved into or out of counts that same full target for 10+ days in it,
+ * otherwise 0.
  */
 class ReportingChangeMonthWiseTest extends TestCase
 {
@@ -35,8 +36,6 @@ class ReportingChangeMonthWiseTest extends TestCase
     private const CALLER_TARGET = 2500000.0;
 
     private const TOP_UP = 3000000.0;
-
-    private const PART_MONTH_TARGET = 1500000.0;
 
     private Employee $managerOne;
 
@@ -177,7 +176,7 @@ class ReportingChangeMonthWiseTest extends TestCase
 
         $this->assertSame(1000000.0, $withinB['count_achievement']);
         $this->assertSame(500000.0, $withinC['count_achievement']);
-        $this->assertSame(self::PART_MONTH_TARGET, $withinB['target']);
+        $this->assertSame(self::CALLER_TARGET, $withinB['target']);
         $this->assertSame(0.0, $withinC['target']);
 
         // Seen on their own, the caller still has their whole month.
@@ -188,32 +187,62 @@ class ReportingChangeMonthWiseTest extends TestCase
 
     /*
     |--------------------------------------------------------------------------
-    | Target: the 10-day joiner/leaver rule for a move, full month otherwise
+    | Target: a move counts the full target in every team with 10+ days
     |--------------------------------------------------------------------------
     */
 
-    public function test_a_late_month_move_counts_the_part_month_target_only_in_the_old_team(): void
+    public function test_a_late_month_move_counts_the_full_target_only_in_the_old_team(): void
     {
         $this->moveCallerAToTeamLeaderC();
 
         $timeline = ReportingTimeline::forMonth($this->month(10));
 
         // 25 days with B (10+), 6 days with C (under 10).
-        $this->assertSame(self::PART_MONTH_TARGET, $this->calculator->callerTargetShares($this->teamLeaderB, $timeline)[$this->callerA->id]);
-        $this->assertSame(self::PART_MONTH_TARGET, $this->calculator->callerTargetShares($this->managerOne, $timeline)[$this->callerA->id]);
+        $this->assertSame(self::CALLER_TARGET, $this->calculator->callerTargetShares($this->teamLeaderB, $timeline)[$this->callerA->id]);
+        $this->assertSame(self::CALLER_TARGET, $this->calculator->callerTargetShares($this->managerOne, $timeline)[$this->callerA->id]);
         $this->assertSame(0.0, $this->calculator->callerTargetShares($this->teamLeaderC, $timeline)[$this->callerA->id]);
         $this->assertSame(0.0, $this->calculator->callerTargetShares($this->managerTwo, $timeline)[$this->callerA->id]);
     }
 
-    public function test_a_mid_month_move_counts_the_part_month_target_in_both_teams(): void
+    public function test_a_mid_month_move_counts_the_full_target_in_both_teams(): void
     {
         $this->moveCallerAToTeamLeaderC('2026-10-16');
 
         $timeline = ReportingTimeline::forMonth($this->month(10));
 
         // 15 days with B and 16 with C: both are 10+.
-        $this->assertSame(self::PART_MONTH_TARGET, $this->calculator->callerTargetShares($this->teamLeaderB, $timeline)[$this->callerA->id]);
-        $this->assertSame(self::PART_MONTH_TARGET, $this->calculator->callerTargetShares($this->teamLeaderC, $timeline)[$this->callerA->id]);
+        $this->assertSame(self::CALLER_TARGET, $this->calculator->callerTargetShares($this->teamLeaderB, $timeline)[$this->callerA->id]);
+        $this->assertSame(self::CALLER_TARGET, $this->calculator->callerTargetShares($this->teamLeaderC, $timeline)[$this->callerA->id]);
+    }
+
+    public function test_a_caller_moved_in_on_the_second_counts_their_full_target_in_the_new_team(): void
+    {
+        // Moved on 2 Oct: 30 of 31 days with C, 1 day with B.
+        $this->moveCallerAToTeamLeaderC('2026-10-02');
+
+        $timeline = ReportingTimeline::forMonth($this->month(10));
+
+        $this->assertSame(self::CALLER_TARGET, $this->calculator->callerTargetShares($this->teamLeaderC, $timeline)[$this->callerA->id]);
+        $this->assertSame(0.0, $this->calculator->callerTargetShares($this->teamLeaderB, $timeline)[$this->callerA->id]);
+        $this->assertSame(self::CALLER_TARGET + self::TOP_UP, $this->calculator->getTarget($this->teamLeaderC, $this->month(10)));
+        $this->assertSame(self::CALLER_TARGET, $this->calculator->getTarget($this->callerA, $this->month(10), $this->teamLeaderC));
+        $this->assertStringEndsWith(
+            'With 10 or more days here, their full target of ₹25,00,000 counts.',
+            $this->calculator->reportingSpanNote($this->callerA, $this->teamLeaderC, $this->month(10), withRule: true),
+        );
+    }
+
+    public function test_a_joiner_who_moved_carries_their_part_month_target_not_the_full_one(): void
+    {
+        // Joined on 5 Oct, so their own month is the ₹15L part-month target;
+        // moved on 20 Oct with 15 days in B and 12 in C.
+        $this->callerA->forceFill(['doj' => '2026-10-05', 'reporting_date' => '2026-10-05'])->save();
+        $this->moveCallerAToTeamLeaderC('2026-10-20');
+
+        $timeline = ReportingTimeline::forMonth($this->month(10));
+
+        $this->assertSame(1500000.0, $this->calculator->callerTargetShares($this->teamLeaderB, $timeline)[$this->callerA->id]);
+        $this->assertSame(1500000.0, $this->calculator->callerTargetShares($this->teamLeaderC, $timeline)[$this->callerA->id]);
     }
 
     public function test_a_boss_the_caller_never_left_counts_their_full_month_target(): void
@@ -345,10 +374,10 @@ class ReportingChangeMonthWiseTest extends TestCase
             $this->calculator->getTarget($this->teamLeaderB, $this->month(9)),
         );
 
-        // October: B keeps the part-month target for A's 25 days, C gets
+        // October: B keeps A's full target for their 25 days, C gets
         // nothing for 6, and both Team Leaders are understaffed all month.
         $this->assertSame(
-            self::PART_MONTH_TARGET + self::TOP_UP,
+            self::CALLER_TARGET + self::TOP_UP,
             $this->calculator->getTarget($this->teamLeaderB, $this->month(10)),
         );
         $this->assertSame(
@@ -427,7 +456,7 @@ class ReportingChangeMonthWiseTest extends TestCase
             ->test(ViewTeam::class, ['record' => $this->teamLeaderB])
             ->assertCanSeeTableRecords([$this->callerA])
             ->assertTableColumnStateSet('count_achievement', 1000000.0, $this->callerA)
-            ->assertTableColumnStateSet('target', self::PART_MONTH_TARGET, $this->callerA);
+            ->assertTableColumnStateSet('target', self::CALLER_TARGET, $this->callerA);
 
         Livewire::withCookie('selected_month', '2026-10')
             ->test(ViewTeam::class, ['record' => $this->teamLeaderC])
@@ -440,12 +469,12 @@ class ReportingChangeMonthWiseTest extends TestCase
         );
         $this->assertSame(
             'In this team 01 Oct – 25 Oct (25 of 31 days). Only cases disbursed on those days count here.'
-                .' With 10 or more days here, the part-month target of ₹15,00,000 counts.',
+                .' With 10 or more days here, their full target of ₹25,00,000 counts.',
             $this->calculator->reportingSpanNote($this->callerA, $this->teamLeaderB, $this->month(10), withRule: true),
         );
         $this->assertSame(
             'In this team 26 Oct – 31 Oct (6 of 31 days). Only cases disbursed on those days count here.'
-                .' Under 10 days here, so no target counts.',
+                .' Under 10 days here while on the rolls, so no target counts.',
             $this->calculator->reportingSpanNote($this->callerA, $this->teamLeaderC, $this->month(10), withRule: true),
         );
     }

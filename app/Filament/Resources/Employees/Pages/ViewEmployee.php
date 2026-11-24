@@ -2,7 +2,10 @@
 
 namespace App\Filament\Resources\Employees\Pages;
 
+use App\Filament\Actions\ChangeEmployeePositionAction;
+use App\Filament\Actions\CorrectPositionChangeDateAction;
 use App\Filament\Resources\Employees\EmployeeResource;
+use App\Support\HierarchyHelper;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
@@ -10,6 +13,17 @@ use Filament\Resources\Pages\ViewRecord;
 class ViewEmployee extends ViewRecord
 {
     protected static string $resource = EmployeeResource::class;
+
+    /**
+     * Reports To is not a column — it is read off the reporting tree, as on
+     * the Edit page, or the field would show empty for everybody.
+     */
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        $data['reports_to'] = HierarchyHelper::directBossId($this->record);
+
+        return $data;
+    }
 
     protected function getHeaderActions(): array
     {
@@ -52,6 +66,8 @@ class ViewEmployee extends ViewRecord
                     ]);
                 }),
 
+            ChangeEmployeePositionAction::make(),
+            CorrectPositionChangeDateAction::make(),
             EditAction::make(),
         ];
     }

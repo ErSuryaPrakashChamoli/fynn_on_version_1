@@ -1,9 +1,12 @@
 ---
 paths:
-  - 'app/Support/SelectedMonth.php, resources/views/filament/components/global-month-selector.blade.php, app/Http/Middleware/EncryptCookies.php'
+  - 'app/Support/SelectedMonth.php, resources/views/filament/components/global-month-selector.blade.php, app/Http/Middleware/EncryptCookies.php, bootstrap/app.php'
 ---
 
 # Http Middleware
 
 ## Topbar period selector: month, financial year (Apr–Mar) or all time; range() follows the mode, current() stays one month
 Since 2026-09-27 the topbar picks a period, not only a month: cookies `selected_month` ("Y-m") and `selected_period` ("month" default | "fy:2026" = April 2026–March 2027 | "all" = 2000-01-01 → now+5y), both unencrypted (EncryptCookies $except). SelectedMonth::range()/label()/isCurrentCalendarMonth()/elapsedDays()/remainingDays() follow the mode, so every listing filter and widget that scopes by range() covers the FY or all time automatically. SelectedMonth::current() ALWAYS returns one calendar month for monthly-by-nature callers (targets, incentives, calendars, AchievementCalculatorService): the selected month, or for FY/all the month today falls in (last month of a past period, first of a future one) — do not make it return a range. isCurrentCalendarMonth() now means "today is inside the selected period". Widgets must use elapsedDays()/remainingDays() rather than daysInMonth arithmetic (CustomerStats, PerformanceStats were changed). In tests park the selector with request()->cookies->set(...) — $this->call() does not leave its request bound. Covered by tests/Feature/SelectedPeriodTest.php.
+
+## A period cookie must be in BOTH encrypt-cookie except lists
+Livewire's update route runs under the plain `web` group, i.e. the framework's stock EncryptCookies, not App\Http\Middleware\EncryptCookies. A client-set cookie missing from `$middleware->encryptCookies(except: [...])` in bootstrap/app.php fails decryption there and is silently dropped, so the first page load follows the topbar but every Livewire round-trip (pagination, filters, table exports) falls back to month mode. That was the 2026-11-24 bug: `selected_period` was only in the panel's list, so My Leads / Customers exports always came out for the month whatever FY / All time was picked. Add any new topbar cookie to both lists. Livewire::test() builds its own request, so parking cookies on request() does not reach the component: use Livewire::withCookies([...])->test(...), which also carries them into later calls such as callAction. Covered by tests/Feature/SelectedPeriodListingExportTest.php.

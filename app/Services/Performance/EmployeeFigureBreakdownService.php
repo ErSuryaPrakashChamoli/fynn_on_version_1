@@ -105,7 +105,9 @@ class EmployeeFigureBreakdownService
             'team_leaders' => [],
         ];
 
-        if ($employee->designation === Employee::DESIGNATION_CALLER) {
+        // The position held at the end of the period: after a promotion the
+        // months before it are still listed, each at its own figure.
+        if (ReportingTimeline::designationOn($employee, self::categoryDay($period)) === Employee::DESIGNATION_CALLER) {
             foreach ($period->months() as $month) {
                 $result['months'][] = ['month' => $month, 'callers' => 0.0, 'top_up' => 0.0, 'total' => $this->calculator->getTarget($employee, $month)];
 

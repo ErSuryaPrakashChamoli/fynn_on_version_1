@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\CustomerDataFields\Pages;
 
+use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\CustomerDataFields\CustomerDataFieldResource;
 use App\Models\CustomerDataField;
 use Filament\Actions\CreateAction;
@@ -9,6 +10,8 @@ use Filament\Resources\Pages\ManageRecords;
 
 class ManageCustomerDataFields extends ManageRecords
 {
+    use HasColumnHeaderFilters;
+
     protected static string $resource = CustomerDataFieldResource::class;
 
     protected function getHeaderActions(): array

@@ -16,6 +16,7 @@ use App\Models\TargetCategory;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\UserLoginSession;
+use App\Services\EmployeePositionChangeService;
 use App\Services\Performance\EmployeeFigureBreakdownService;
 use App\Services\Performance\EmployeePerformanceMetricsService;
 use App\Support\EmployeeLookupAccess;
@@ -512,10 +513,14 @@ class EmployeeLookup extends Page implements HasTable
         $login = $employee->user;
         $lastLogin = UserLoginSession::query()->where('employee_id', $employee->id)->max('login_at');
 
+        $positionChanges = app(EmployeePositionChangeService::class);
+
         return [
             'Employee ID' => (string) ($employee->emp_id ?: '—'),
             'Name' => (string) $employee->emp_name,
             'Designation' => Employee::designationOptions()[$employee->designation] ?? '—',
+            // The effective date every figure follows, once a promotion or demotion is recorded.
+            ...(($since = $positionChanges->positionSince($employee)) !== null ? ['Designation Since' => $since] : []),
             'Position' => (string) ($employee->position ?: '—'),
             'Email' => (string) ($employee->email ?: '—'),
             'Status' => EmployeeLookupAccess::isExited($employee)

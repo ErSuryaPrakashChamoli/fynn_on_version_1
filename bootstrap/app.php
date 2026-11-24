@@ -26,12 +26,16 @@ return Application::configure(basePath: dirname(__DIR__))
         // loads. Without this, every Livewire round-trip (widget polling,
         // filter changes, the calendar's own event fetch) decrypts these
         // plain client-set cookies, fails, and silently drops them —
-        // making dashboard_theme/selected_month appear to "reset" on
-        // anything but the very first page load. This registers them
-        // globally so both middleware stacks skip encryption for them.
+        // making dashboard_theme/selected_month/selected_period appear to
+        // "reset" on anything but the very first page load. This registers
+        // them globally so both middleware stacks skip encryption for them.
+        // Keep this list in step with App\Http\Middleware\EncryptCookies:
+        // a period cookie missing here sends every table interaction and
+        // export back to the month (fixed 2026-11-24 for selected_period).
         $middleware->encryptCookies(except: [
             'dashboard_theme',
             'selected_month',
+            'selected_period',
         ]);
 
         // Academy/Demo portal users must not be able to reach the plain

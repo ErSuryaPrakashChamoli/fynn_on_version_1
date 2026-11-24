@@ -5,6 +5,7 @@ namespace App\Filament\Imports;
 use App\Models\Employee;
 use App\Services\EmployeeDependencyService;
 use App\Services\EmployeeInactivationService;
+use App\Services\EmployeePositionChangeService;
 use App\Services\EmployeeTransferService;
 use App\Services\ReportingLineService;
 use App\Support\HierarchyHelper;
@@ -77,6 +78,13 @@ class EmployeeImporter extends Importer
 
     /** The designation an updated employee held before this row changed it. */
     protected ?int $previousDesignation = null;
+
+    /**
+     * The day this row's promotion, demotion or move takes effect (Y-m-d):
+     * the effective_date cell, else the day of the upload. Every month
+     * figure follows it.
+     */
+    protected ?string $effectiveDate = null;
 
     /** The inactive_date of an employee this row takes off the rolls. */
     protected ?string $inactivateOn = null;
@@ -160,6 +168,15 @@ class EmployeeImporter extends Importer
                 ->castStateUsing(fn (mixed $state): mixed => static::normalizedDate($state))
                 ->rules(['nullable', 'date_format:Y-m-d'])
                 ->fillRecordUsing(fn (): null => null),
+            // The day a promotion, demotion or move in this row takes
+            // effect (blank: the day of the upload). Not a column: it
+            // dates the history rows every month figure follows.
+            ImportColumn::make('effective_date')
+                ->label('Effective Date (promotion / demotion / move)')
+                ->guess(['effective_from', 'change_date'])
+                ->castStateUsing(fn (mixed $state): mixed => static::normalizedDate($state))
+                ->rules(['nullable', 'date_format:Y-m-d'])
+                ->fillRecordUsing(fn (): null => null),
         ];
     }
 
@@ -192,7 +209,7 @@ class EmployeeImporter extends Importer
 
         $csv = Writer::fromString();
         $csv->setOutputBOM(Bom::Utf8);
-        $csv->insertOne(['emp_id', 'emp_name', 'email', 'designation', 'doj', 'reporting_date', 'reports_to', 'cost_center', 'unit_name', 'status', 'inactive_date']);
+        $csv->insertOne(['emp_id', 'emp_name', 'email', 'designation', 'doj', 'reporting_date', 'reports_to', 'cost_center', 'unit_name', 'status', 'inactive_date', 'effective_date']);
 
         Employee::query()
             ->get()
@@ -216,6 +233,7 @@ class EmployeeImporter extends Importer
                     $employee->unit_name,
                     $hasLeft ? 'Inactive' : 'Active',
                     $hasLeft ? $employee->exit_date : null,
+                    null,
                 ]);
             });
 
@@ -261,6 +279,7 @@ class EmployeeImporter extends Importer
             'reporting_date.date_format' => 'reporting_date must be a date such as 2025-01-15 or 15-01-2025.',
             'status.in' => 'status must be Active or Inactive.',
             'inactive_date.date_format' => 'inactive_date must be a date such as 2025-01-15 or 15-01-2025.',
+            'effective_date.date_format' => 'effective_date must be a date such as 2025-01-15 or 15-01-2025.',
         ];
     }
 
@@ -276,6 +295,7 @@ class EmployeeImporter extends Importer
         $this->directReportIds = [];
         $this->previousDesignation = null;
         $this->inactivateOn = null;
+        $this->effectiveDate = null;
         $reportingLines = app(ReportingLineService::class);
         $hadLeft = $this->recordExisted && static::hasLeft($this->record);
 
@@ -324,6 +344,8 @@ class EmployeeImporter extends Importer
             $this->straightMove = ! $hadLeft
                 && ! $this->record->isDirty('designation')
                 && $this->bossId !== $currentBossId;
+
+            $this->effectiveDate = $this->checkedEffectiveDate();
         }
 
         $designation = filled($this->record->designation) ? (int) $this->record->designation : null;
@@ -346,20 +368,31 @@ class EmployeeImporter extends Importer
 
     protected function afterSave(): void
     {
+        $effectiveDate = Carbon::parse($this->effectiveDate ?? today());
+        $reportingLines = app(ReportingLineService::class);
+
         if ($this->straightMove && ! $this->movesWithTeam()) {
             app(EmployeeTransferService::class)->transfer(
                 $this->record,
                 $this->bossId,
-                today(),
+                $effectiveDate,
                 'Moved by employee import.',
                 $this->import->user,
             );
         } elseif ($this->recordExisted && $this->reportingLineChanged) {
+            // A back-dated promotion or demotion replaces the rows after it
+            // that only re-filed them (and their team) under the same people.
+            if ($this->previousDesignation !== null) {
+                foreach ([$this->record->id, ...$this->directReportIds] as $employeeId) {
+                    $reportingLines->dropSupersededLines($employeeId, $effectiveDate);
+                }
+            }
+
             // reportTo() re-fills everyone below, so the team follows.
-            app(ReportingLineService::class)->reportTo(
+            $reportingLines->reportTo(
                 $this->record,
                 $this->bossId,
-                today(),
+                $effectiveDate,
                 $this->straightMove ? ReportingLineService::CHANGE_TRANSFER : ReportingLineService::CHANGE_REPORTING,
                 $this->straightMove ? 'Moved with their team by employee import.' : 'Reporting line updated by employee import.',
                 $this->import->user_id,
@@ -368,24 +401,30 @@ class EmployeeImporter extends Importer
             // A promotion or demotion is dated and re-slots their team, as
             // "Change Position / Target" does when the team stays with them.
             if ($this->previousDesignation !== null) {
-                app(ReportingLineService::class)->recordDesignationChange(
+                $reportingLines->recordDesignationChange(
                     $this->record,
                     $this->previousDesignation,
-                    today(),
+                    $effectiveDate,
                     'Designation changed by employee import.',
                     $this->import->user_id,
                 );
             }
 
             foreach (Employee::query()->whereIn('id', $this->directReportIds)->get() as $report) {
-                app(ReportingLineService::class)->reportTo(
+                $reportingLines->reportTo(
                     $report,
                     $this->record->id,
-                    today(),
+                    $effectiveDate,
                     ReportingLineService::CHANGE_REPORTING,
                     "Follows {$this->record->emp_name}'s designation change.",
                     $this->import->user_id,
                 );
+            }
+
+            if ($this->previousDesignation !== null) {
+                foreach ([$this->record->id, ...$this->directReportIds] as $employeeId) {
+                    $reportingLines->resequenceHistory($employeeId);
+                }
             }
         }
 
@@ -418,6 +457,36 @@ class EmployeeImporter extends Importer
                 .'Hand them over first, or upload again choosing "Move the employee with their team".',
             );
         }
+    }
+
+    /**
+     * The row's effective_date (Y-m-d), checked as "Change Position /
+     * Target" checks its own: not in the future, not before they joined,
+     * not before their last recorded move or position change. Blank: the
+     * day of the upload.
+     */
+    private function checkedEffectiveDate(): string
+    {
+        $cell = $this->data['effective_date'] ?? null;
+
+        if (blank($cell)) {
+            return today()->toDateString();
+        }
+
+        $day = Carbon::parse($cell)->startOfDay();
+        $empId = $this->record->emp_id;
+
+        if ($day->isAfter(today())) {
+            throw new RowImportFailedException("{$empId}: effective_date cannot be in the future.");
+        }
+
+        $earliest = app(EmployeePositionChangeService::class)->earliestEffectiveDate($this->record, designationChanges: true, categoryChanges: false);
+
+        if ($earliest !== null && $day->lt($earliest)) {
+            throw new RowImportFailedException("{$empId}: effective_date cannot be before {$earliest->format('d M Y')} — their joining date or last recorded change.");
+        }
+
+        return $day->toDateString();
     }
 
     private function movesWithTeam(): bool

@@ -11,6 +11,7 @@ use App\Support\ReportingTimeline;
 use App\Support\SelectedMonth;
 use App\Support\TargetCategoryTimeline;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -345,68 +346,23 @@ class AchievementCalculatorService
      * through the exact same business rules, month by month.
      *
      * A boss's month is counted on the reporting tree of each DAY of that
-     * month (ReportingTimeline), never today's tree: a caller's target is
-     * shared pro-rata to the days they reported into the branch, and the
-     * ₹30L understaffed-team top-up of a Team Leader likewise follows the
-     * days that Team Leader sat in it. With no reporting change in the
+     * month (ReportingTimeline), never today's tree: a caller counts in
+     * every team they spent ten days or more in (callerTargetShares()), and
+     * the ₹30L understaffed-team top-up of a Team Leader likewise follows
+     * the days that Team Leader sat in it. With no reporting change in the
      * month this is exactly the whole-month figure it always was.
+     *
+     * Each month is counted as the position held in it (designationFor(),
+     * the one held on its last day), so after a promotion or demotion the
+     * months before its effective date keep the old position: a caller
+     * promoted to Team Leader on 1 Nov carries their own caller target for
+     * October and their team's target from November.
      *
      * $within narrows the figure to the days $employee sat in $within's
      * branch — what $employee's team contributes to that boss.
      */
     public function getTargetForPeriod(Employee $employee, Carbon $start, Carbon $end, ?Employee $within = null): float
     {
-        /*
-    |--------------------------------------------------------------------------
-    | Caller
-    |--------------------------------------------------------------------------
-    |
-    | Their own target is the flat category value. Seen from inside a boss's
-    | team ($within), it is the share of their month that counts there.
-    |
-    */
-
-        if ($employee->designation === Employee::DESIGNATION_CALLER) {
-            if ($within === null) {
-                return $this->getCallerTarget($employee, $end);
-            }
-
-            $total = 0.0;
-
-            foreach ($this->monthsOf($start, $end) as $month) {
-                $total += $this->callerTargetShares($within, ReportingTimeline::forMonth($month))[$employee->id] ?? 0.0;
-            }
-
-            return $total;
-        }
-
-        /*
-    |--------------------------------------------------------------------------
-    | Team Leader, Manager, Cluster Manager, Business Head
-    |--------------------------------------------------------------------------
-    |
-    | Every caller the branch counts, plus the ₹30L understaffed-team top-up
-    | for each Team Leader in it — themselves included — with fewer than
-    | three callers. Levels may be skipped: a Team Leader reporting straight
-    | to a Cluster Manager carries their callers and their top-up into that
-    | Cluster Manager's target, and never into a Manager's.
-    |
-    */
-
-        if (Employee::designationRank($employee->designation) > 0) {
-
-            $target = 0.0;
-
-            foreach ($this->monthsOf($start, $end) as $month) {
-                $timeline = ReportingTimeline::forMonth($month);
-
-                $target += array_sum($this->callerTargetShares($employee, $timeline, $within));
-                $target += $this->understaffedTeamTopUps($employee, $timeline, $within);
-            }
-
-            return $target;
-        }
-
         /*
     |--------------------------------------------------------------------------
     | Admin
@@ -420,7 +376,52 @@ class AchievementCalculatorService
                 ->sum(fn (Employee $caller) => $this->getHierarchyCallerTargetForPeriod($caller, $start, $end));
         }
 
-        return 0;
+        $target = 0.0;
+
+        foreach ($this->monthsOf($start, $end) as $month) {
+            $designation = $this->designationFor($employee, $month);
+
+            /*
+        |--------------------------------------------------------------------------
+        | Caller
+        |--------------------------------------------------------------------------
+        |
+        | Their own target is the flat category value. Seen from inside a
+        | boss's team ($within), it is what their month counts there.
+        |
+        */
+
+            if ($designation === Employee::DESIGNATION_CALLER) {
+                $target += $within === null
+                    ? $this->getCallerTarget($employee, $month->copy()->endOfMonth())
+                    : $this->callerTargetShares($within, ReportingTimeline::forMonth($month))[$employee->id] ?? 0.0;
+
+                continue;
+            }
+
+            /*
+        |--------------------------------------------------------------------------
+        | Team Leader, Manager, Cluster Manager, Business Head
+        |--------------------------------------------------------------------------
+        |
+        | Every caller the branch counts, plus the ₹30L understaffed-team
+        | top-up for each Team Leader in it — themselves included — with
+        | fewer than three callers. Levels may be skipped: a Team Leader
+        | reporting straight to a Cluster Manager carries their callers and
+        | their top-up into that Cluster Manager's target, and never into a
+        | Manager's.
+        |
+        */
+
+            if (Employee::designationRank($designation) > 0) {
+                $timeline = ReportingTimeline::forMonth($month);
+
+                $target += array_sum($this->callerTargetShares($employee, $timeline, $within));
+                $target += $this->understaffedTeamTopUps($employee, $timeline, $within);
+            }
+        }
+
+        return $target;
     }
 
     /**
@@ -430,13 +431,13 @@ class AchievementCalculatorService
      * month carries their own month target (category, partial-month or nil
      * — see hierarchyCallerTargetForMonth()), counted 1st to month-end.
      *
-     * A caller who moved into or out of the branch inside that window is
-     * treated like a joiner or leaver of the team (user decision
-     * 2026-11-16): PARTIAL_MONTH_TARGET if they spent at least
-     * MIN_TARGET_DAYS calendar days in the branch, otherwise nothing. Each
-     * team judges its own days, so a caller moved on the 16th counts the
-     * partial target in both teams, and one moved on the 26th only in the
-     * old one.
+     * A caller who moved into or out of the branch inside that window
+     * carries that same full month target into it when they spent at least
+     * MIN_TARGET_DAYS calendar days in it while on the rolls, otherwise
+     * nothing (user decision 2026-11-24, replacing the flat part-month
+     * target for movers of 2026-11-16). Each team judges its own days, so a
+     * caller moved on the 2nd or the 16th counts their full target in both
+     * teams, and one moved on the 26th only in the old one.
      *
      * @return array<int, float> caller id => target counted for $boss
      */
@@ -476,9 +477,7 @@ class AchievementCalculatorService
                 continue;
             }
 
-            $shares[$caller->id] = $daysInBranch >= self::MIN_TARGET_DAYS
-                ? self::PARTIAL_MONTH_TARGET
-                : 0.0;
+            $shares[$caller->id] = $daysInBranch >= self::MIN_TARGET_DAYS ? $target : 0.0;
         }
 
         return $shares;
@@ -1207,14 +1206,35 @@ class AchievementCalculatorService
         if ($withRule) {
             $note .= ' Only cases disbursed on those days count here.';
 
-            if ($member->designation === Employee::DESIGNATION_CALLER) {
-                $note .= $days >= self::MIN_TARGET_DAYS
-                    ? ' With '.self::MIN_TARGET_DAYS.' or more days here, the part-month target of '.indianAmount(self::PARTIAL_MONTH_TARGET).' counts.'
-                    : ' Under '.self::MIN_TARGET_DAYS.' days here, so no target counts.';
+            if ($timeline->designation($member->id) === Employee::DESIGNATION_CALLER) {
+                $note .= ' '.$this->moverTargetRule($member, $spans, $timeline);
             }
         }
 
         return $note;
+    }
+
+    /**
+     * What a caller who moved into or out of a team brings to it — the
+     * wording of callerTargetShares()'s rule: their full month target with
+     * MIN_TARGET_DAYS or more days in the team while on the rolls, else
+     * nothing.
+     *
+     * @param  list<array{0: CarbonInterface, 1: CarbonInterface}>  $spans  the days they spent in the team
+     */
+    private function moverTargetRule(Employee $member, array $spans, ReportingTimeline $timeline): string
+    {
+        $monthStart = Carbon::parse($timeline->start()->toDateString());
+        $monthEnd = Carbon::parse($timeline->end()->toDateString());
+        $window = $this->activeWindowForMonth($member, $monthStart, $monthEnd);
+        $daysOnTheRolls = $window === null ? 0 : ReportingTimeline::overlapDays($spans, $window['start'], $window['end']);
+
+        if ($daysOnTheRolls < self::MIN_TARGET_DAYS) {
+            return 'Under '.self::MIN_TARGET_DAYS.' days here while on the rolls, so no target counts.';
+        }
+
+        return 'With '.self::MIN_TARGET_DAYS.' or more days here, their full target of '
+            .indianAmount($this->hierarchyCallerTargetForMonth($member, $monthStart, $monthEnd)).' counts.';
     }
 
     /**

@@ -22,8 +22,9 @@ use Illuminate\Support\Collection;
  * to B until 25 Oct and to C from 26 Oct,
  *  - achievement follows the tree on the day of the event: a case disbursed
  *    on 20 Oct counts for B, one disbursed on 28 Oct for C;
- *  - A's monthly target is shared pro-rata to the days A reported through
- *    each boss (B 25/31, C 6/31), so the shares add up to A's one target;
+ *  - A's full monthly target counts for every boss A reported through for
+ *    ten days or more (B, 25 days), and for none under ten (C, 6 days) —
+ *    AchievementCalculatorService::callerTargetShares();
  *  - headcounts (a Team Leader's caller count, the understaffed-team top-up,
  *    eligible callers) count A in every team A spent MIN_HEADCOUNT_DAYS or
  *    more days of the month in.

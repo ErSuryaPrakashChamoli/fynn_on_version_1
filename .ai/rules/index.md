@@ -28,7 +28,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/Filament/** | .ai/rules/filament.md |
 | app/Services/HelpDesk/** | .ai/rules/help-desk.md |
 | app/Filament/**, app/Providers/AppServiceProvider.php, app/Helpers/helpers.php | .ai/rules/helpers.md |
-| app/Support/SelectedMonth.php, resources/views/filament/components/global-month-selector.blade.php, app/Http/Middleware/EncryptCookies.php | .ai/rules/http-middleware.md |
+| app/Support/SelectedMonth.php, resources/views/filament/components/global-month-selector.blade.php, app/Http/Middleware/EncryptCookies.php, bootstrap/app.php | .ai/rules/http-middleware.md |
 | resources/js/**, resources/js/login-session-heartbeat.js | .ai/rules/js.md |
 | app/Services/CustomerAssignmentService.php, app/Filament/Resources/AssignedLeads/**, app/Filament/Resources/LeadAssignmentReports/**, app/Support/LeadAssignmentFilters.php | .ai/rules/lead-assignment-reports-support.md |
 | app/Services/Voting/**, app/Filament/Resources/PollTypes/**, app/Filament/Resources/Polls/**, app/Livewire/PollPrompt.php, app/Filament/Pages/MyVotes.php | .ai/rules/livewire-filament-pages.md |
