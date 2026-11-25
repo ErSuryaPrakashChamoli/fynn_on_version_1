@@ -195,25 +195,33 @@ class ExitedEmployeeRecordVisibilityTest extends TestCase
     /**
      * The two tree walks are deliberately not the same, and this is the
      * guard against somebody "tidying" them back into one: the visibility
-     * walk carries an exited level, the maths walk stops at it.
+     * walk carries the exited level itself, the maths walk leaves it out
+     * and counts the people under it with the nearest boss still on the
+     * rolls on their own record (user decision 2026-11-24).
      */
     public function test_the_visibility_walk_and_the_maths_walk_differ_on_purpose(): void
     {
         $this->assertTrue(
-            HierarchyHelper::visibleSubordinateIds($this->manager)->contains($this->workingCaller->id)
+            HierarchyHelper::visibleSubordinateIds($this->manager)->contains($this->exitedTeamLeader->id)
         );
 
         $this->assertFalse(
-            HierarchyHelper::subordinateIds($this->manager)->contains($this->workingCaller->id)
+            HierarchyHelper::subordinateIds($this->manager)->contains($this->exitedTeamLeader->id)
         );
+
+        // The caller still working under the exited Team Leader counts with
+        // the Manager in both.
+        $this->assertTrue(HierarchyHelper::visibleSubordinateIds($this->manager)->contains($this->workingCaller->id));
+        $this->assertTrue(HierarchyHelper::subordinateIds($this->manager)->contains($this->workingCaller->id));
     }
 
     /**
      * Visibility and target maths are deliberately different questions:
-     * a Manager keeps SEEING an exited Team Leader's team, while their
-     * own target still stops at that exited level.
+     * a Manager keeps SEEING an exited Team Leader's team, and their target
+     * picks the still-working callers up directly — but never the exited
+     * Team Leader's ₹80L minimum.
      */
-    public function test_target_maths_still_stops_at_the_exited_team_leader(): void
+    public function test_target_maths_counts_the_exited_team_leaders_callers_with_the_manager(): void
     {
         $activeTeamLeader = Employee::factory()->create([
             'designation' => Employee::DESIGNATION_TEAM_LEADER,
@@ -240,9 +248,11 @@ class ExitedEmployeeRecordVisibilityTest extends TestCase
             'exit_date' => now()->subMonthNoOverflow()->endOfMonth()->toDateString(),
         ])->save();
 
-        // Only the three callers under the ACTIVE team leader count.
+        // The ACTIVE team leader's three callers (₹75L) lifted to the ₹80L
+        // minimum, plus the working caller's ₹25L straight under the
+        // Manager. Nothing for the exited Team Leader.
         $this->assertSame(
-            7500000.0,
+            10500000.0,
             (new AchievementCalculatorService)->getTarget($this->manager)
         );
     }

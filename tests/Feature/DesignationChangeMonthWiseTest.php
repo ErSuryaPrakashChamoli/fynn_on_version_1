@@ -38,6 +38,9 @@ class DesignationChangeMonthWiseTest extends TestCase
 
     private const CALLER_TARGET = 2500000.0;
 
+    /** T's three callers (₹75L), lifted to the ₹80L Team Leader minimum. */
+    private const TEAM_TARGET = 8000000.0;
+
     private const PROMOTION_DAY = '2026-11-16';
 
     private const BACKFILL_MIGRATION = 'migrations/2026_11_16_105540_backfill_designation_changes_in_employee_reporting_history.php';
@@ -182,7 +185,7 @@ class DesignationChangeMonthWiseTest extends TestCase
         $this->promote($this->manager, Employee::DESIGNATION_CLUSTER, $this->businessHead);
 
         $this->assertSame(Employee::DESIGNATION_CLUSTER, $this->manager->designation);
-        $this->assertSame(3 * self::CALLER_TARGET, $this->calculator->getTarget($this->manager, $this->october()));
+        $this->assertSame(self::TEAM_TARGET, $this->calculator->getTarget($this->manager, $this->october()));
         $this->assertSame(9000000.0, $this->calculator->getCountAchievement($this->manager, $this->october()));
     }
 
@@ -192,7 +195,7 @@ class DesignationChangeMonthWiseTest extends TestCase
 
         $this->promote($this->manager, Employee::DESIGNATION_CLUSTER, $this->businessHead);
 
-        $this->assertSame(3 * self::CALLER_TARGET, $this->calculator->getTarget($this->cluster, $this->october()));
+        $this->assertSame(self::TEAM_TARGET, $this->calculator->getTarget($this->cluster, $this->october()));
         $this->assertSame(9000000.0, $this->calculator->getCountAchievement($this->cluster, $this->october()));
         $this->assertContains($this->teamLeader->id, ReportingTree::load($this->october())->childIds($this->manager->id));
         $this->assertSame($this->cluster->id, ReportingTree::load($this->october())->bossId($this->manager->id));
@@ -207,9 +210,9 @@ class DesignationChangeMonthWiseTest extends TestCase
         $summary = app(EmployeeFigureBreakdownService::class)
             ->summary($this->manager, EmployeeLookupPeriod::forMonth($this->october()));
 
-        $this->assertSame(3 * self::CALLER_TARGET, $summary['target']);
+        $this->assertSame(self::TEAM_TARGET, $summary['target']);
         $this->assertSame(9000000.0, $summary['count_achievement']);
-        $this->assertSame(120.0, $summary['percentage']);
+        $this->assertSame(112.5, $summary['percentage']);
         // October is paid as a Manager, over the Manager's own team, on the
         // PPP scheme (₹90L over 3 eligible callers = ₹30L PPP → 0.06%).
         $this->assertEqualsWithDelta(5400.0, $summary['incentive'], 0.01);
@@ -235,7 +238,7 @@ class DesignationChangeMonthWiseTest extends TestCase
         $this->promote($this->callerThree, Employee::DESIGNATION_TEAM_LEADER, $this->manager);
 
         $this->assertSame(self::CALLER_TARGET, $this->calculator->getTarget($this->callerThree, $this->october()));
-        $this->assertSame(3 * self::CALLER_TARGET, $this->calculator->getTarget($this->teamLeader, $this->october()));
+        $this->assertSame(self::TEAM_TARGET, $this->calculator->getTarget($this->teamLeader, $this->october()));
     }
 
     /*
@@ -300,7 +303,7 @@ class DesignationChangeMonthWiseTest extends TestCase
         $this->assertSame(Employee::DESIGNATION_TEAM_LEADER, $designationRow->old_designation);
         $this->assertSame(Employee::DESIGNATION_MANAGER, $designationRow->new_designation);
         $this->assertSame(self::PROMOTION_DAY, $designationRow->effective_date->toDateString());
-        $this->assertSame(3 * self::CALLER_TARGET, $this->calculator->getTarget($this->teamLeader->refresh(), $this->october()));
+        $this->assertSame(self::TEAM_TARGET, $this->calculator->getTarget($this->teamLeader->refresh(), $this->october()));
     }
 
     public function test_the_lifecycle_shows_the_promotion(): void
@@ -344,7 +347,7 @@ class DesignationChangeMonthWiseTest extends TestCase
         $this->assertSame(Employee::DESIGNATION_CLUSTER, $row->new_designation);
         $this->assertSame(self::PROMOTION_DAY, $row->effective_date->toDateString());
 
-        $this->assertSame(3 * self::CALLER_TARGET, $this->calculator->getTarget($this->manager, $this->october()));
+        $this->assertSame(self::TEAM_TARGET, $this->calculator->getTarget($this->manager, $this->october()));
         $this->assertSame(9000000.0, $this->calculator->getCountAchievement($this->manager, $this->october()));
         $this->assertSame(9000000.0, $this->calculator->getCountAchievement($this->cluster, $this->october()));
     }

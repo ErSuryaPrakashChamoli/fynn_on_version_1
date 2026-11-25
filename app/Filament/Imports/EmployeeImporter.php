@@ -3,6 +3,7 @@
 namespace App\Filament\Imports;
 
 use App\Models\Employee;
+use App\Models\TargetCategory;
 use App\Services\EmployeeDependencyService;
 use App\Services\EmployeeInactivationService;
 use App\Services\EmployeePositionChangeService;
@@ -125,6 +126,17 @@ class EmployeeImporter extends Importer
                     static::updatesExisting($options) ? 'nullable' : 'required',
                     Rule::in(array_keys(Employee::designationOptions())),
                 ]),
+            // A caller's Target Category, by name (e.g. "Silver") or code.
+            // Required for a new caller (user decision 2026-11-24); ignored
+            // for other positions, which carry no category. An existing
+            // employee's category changes only through "Change Position /
+            // Target", which dates it — see applyTargetCategory().
+            ImportColumn::make('target_category')
+                ->label('Target Category (callers)')
+                ->guess(['category'])
+                ->castStateUsing(fn (mixed $state): ?string => static::categoryCodeFor($state))
+                ->rules(['nullable', 'string', 'max:255'])
+                ->fillRecordUsing(fn (): null => null),
             ImportColumn::make('doj')
                 ->ignoreBlankState(fn (array $options): bool => static::updatesExisting($options))
                 ->castStateUsing(fn (mixed $state): mixed => static::normalizedDate($state))
@@ -209,7 +221,7 @@ class EmployeeImporter extends Importer
 
         $csv = Writer::fromString();
         $csv->setOutputBOM(Bom::Utf8);
-        $csv->insertOne(['emp_id', 'emp_name', 'email', 'designation', 'doj', 'reporting_date', 'reports_to', 'cost_center', 'unit_name', 'status', 'inactive_date', 'effective_date']);
+        $csv->insertOne(['emp_id', 'emp_name', 'email', 'designation', 'target_category', 'doj', 'reporting_date', 'reports_to', 'cost_center', 'unit_name', 'status', 'inactive_date', 'effective_date']);
 
         Employee::query()
             ->get()
@@ -226,6 +238,7 @@ class EmployeeImporter extends Importer
                     $employee->emp_name,
                     $employee->email,
                     $designations[$employee->designation] ?? $employee->designation,
+                    $employee->designation === Employee::DESIGNATION_CALLER ? TargetCategory::labelFor($employee->category) : null,
                     $employee->doj,
                     $employee->reporting_date,
                     $bossId !== null ? $empIds->get($bossId) : null,
@@ -290,6 +303,7 @@ class EmployeeImporter extends Importer
         }
 
         $this->recordExisted = $this->record->exists;
+        $this->applyTargetCategory();
         $this->reportingLineChanged = false;
         $this->straightMove = false;
         $this->directReportIds = [];
@@ -364,6 +378,63 @@ class EmployeeImporter extends Importer
         // Filled before the insert, so the joining history row carries
         // the full reporting line.
         $this->record->forceFill($reportingLines->columnsUnder($this->bossId));
+    }
+
+    /**
+     * A new caller takes the row's Target Category, which must carry a
+     * monthly target; nobody else is given one. An existing employee keeps
+     * theirs — a different one in the row is refused, since only "Change
+     * Position / Target" dates a category change.
+     */
+    protected function applyTargetCategory(): void
+    {
+        $category = filled($this->data['target_category'] ?? null) ? (string) $this->data['target_category'] : null;
+
+        if ($this->recordExisted) {
+            if ($category !== null && $category !== (string) $this->record->getOriginal('category')) {
+                throw new RowImportFailedException("{$this->record->emp_id}: change a Target Category with “Change Position / Target” on the employee — it dates the change.");
+            }
+
+            return;
+        }
+
+        if ((int) $this->record->designation !== Employee::DESIGNATION_CALLER) {
+            return;
+        }
+
+        $options = TargetCategory::callerOptionsIncluding(null);
+
+        if ($category === null || ! array_key_exists($category, $options)) {
+            throw new RowImportFailedException("{$this->record->emp_id}: a caller needs a Target Category with a monthly target — one of ".implode(', ', $options).'.');
+        }
+
+        $this->record->category = $category;
+    }
+
+    /**
+     * The stored code of a Target Category given by code or name, or the
+     * value as given when it names none (refused in applyTargetCategory()).
+     */
+    protected static function categoryCodeFor(mixed $state): ?string
+    {
+        if (blank($state)) {
+            return null;
+        }
+
+        $value = trim((string) $state);
+        $options = TargetCategory::options();
+
+        if (array_key_exists($value, $options)) {
+            return $value;
+        }
+
+        foreach ($options as $code => $name) {
+            if (strcasecmp(trim($name), $value) === 0) {
+                return (string) $code;
+            }
+        }
+
+        return $value;
     }
 
     protected function afterSave(): void

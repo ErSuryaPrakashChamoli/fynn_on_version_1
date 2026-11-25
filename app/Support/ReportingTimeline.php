@@ -22,12 +22,12 @@ use Illuminate\Support\Collection;
  * to B until 25 Oct and to C from 26 Oct,
  *  - achievement follows the tree on the day of the event: a case disbursed
  *    on 20 Oct counts for B, one disbursed on 28 Oct for C;
- *  - A's full monthly target counts for every boss A reported through for
- *    ten days or more (B, 25 days), and for none under ten (C, 6 days) —
- *    AchievementCalculatorService::callerTargetShares();
- *  - headcounts (a Team Leader's caller count, the understaffed-team top-up,
- *    eligible callers) count A in every team A spent MIN_HEADCOUNT_DAYS or
- *    more days of the month in.
+ *  - A's monthly target is split by days between the bosses A sat under,
+ *    a boss with under ten days getting none (B gets it all: 25 days vs
+ *    C's 6) — TargetLedger (user decision 2026-11-24);
+ *  - headcounts (a Team Leader's caller count and tier, eligible callers)
+ *    count A in every team A spent MIN_HEADCOUNT_DAYS or more days of the
+ *    month in.
  *
  * Reading the history: a joining row sets the line from the start of time;
  * any other change sets it from its effective date (the line before an
@@ -51,7 +51,7 @@ final class ReportingTimeline
     /**
      * Days of a month somebody must spend in a team to count in its
      * headcount — the same ten days a joiner needs before their target
-     * counts (AchievementCalculatorService::MIN_TARGET_DAYS).
+     * counts (TargetLedger::MIN_TARGET_DAYS).
      */
     public const MIN_HEADCOUNT_DAYS = 10;
 

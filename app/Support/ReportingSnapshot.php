@@ -33,10 +33,11 @@ use Illuminate\Support\Facades\DB;
 final class ReportingSnapshot
 {
     /**
-     * Tables a reporting tree is built from. A write to any of them
-     * retires the memo.
+     * Tables a reporting tree — and the month targets built on it
+     * (TargetLedger, TargetCategory::targetAmountFor()) — are read from. A
+     * write to any of them retires the memo.
      */
-    public const TABLES = ['employees', 'employee_reporting_history'];
+    public const TABLES = ['employees', 'employee_reporting_history', 'target_categories', 'target_category_amounts'];
 
     /**
      * @var array<string, array<string, mixed>> connection name => memo key => value
@@ -84,7 +85,7 @@ final class ReportingSnapshot
      */
     public static function changesReportingData(string $sql): bool
     {
-        if (stripos($sql, 'employee') === false) {
+        if (stripos($sql, 'employee') === false && stripos($sql, 'target_categor') === false) {
             return false;
         }
 

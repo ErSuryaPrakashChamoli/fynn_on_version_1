@@ -6,6 +6,7 @@ use App\Models\Employee;
 use App\Models\HierarchyTransferLog;
 use App\Support\ReportingTree;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -135,6 +136,125 @@ class HierarchyReassignmentService
             $this->writeActivityLogIfAvailable($log, $source, $target, $affectedIds, $transferType, $remarks);
 
             return $log->load(['sourceClusterManager', 'targetClusterManager', 'performedBy']);
+        }, 3);
+    }
+
+    /**
+     * Move a boss's team — every direct report, or only the ones picked —
+     * to another boss while the boss stays where they are. Any level: a
+     * Team Leader's callers, a Manager's Team Leaders, a Cluster Manager's
+     * Managers. Each moved employee takes everyone below them, and all their
+     * own work.
+     *
+     * The team is everybody on the rolls reporting straight to the boss,
+     * plus any who have left but still have people on the rolls below them,
+     * so those people are not split from their team (as a Full Cluster
+     * Transfer does).
+     *
+     * @param  list<int>|null  $memberIds  null moves the whole team
+     */
+    public function moveTeam(Employee $boss, ?array $memberIds, int $newBossId, CarbonInterface|string $effectiveDate, ?string $remarks, int $performedBy): HierarchyTransferLog
+    {
+        return DB::transaction(function () use ($boss, $memberIds, $newBossId, $effectiveDate, $remarks, $performedBy): HierarchyTransferLog {
+            $effective = Carbon::parse($effectiveDate)->startOfDay();
+            $remarks = filled($remarks) ? trim((string) $remarks) : null;
+
+            if ($effective->isFuture()) {
+                $this->validationError('effective_date', 'Effective date cannot be in the future.');
+            }
+
+            if ($newBossId === $boss->id) {
+                $this->validationError('target_id', "{$boss->emp_name}'s team already reports to them. Choose somebody else.");
+            }
+
+            $tree = ReportingTree::load();
+            $teamIds = $this->teamIds($tree, $boss->id);
+
+            if ($memberIds === null) {
+                $moveIds = $teamIds;
+            } else {
+                $moveIds = array_values(array_unique(array_map('intval', $memberIds)));
+
+                if ($moveIds === []) {
+                    $this->validationError('member_ids', 'Pick at least one person to move.');
+                }
+
+                if (array_diff($moveIds, $teamIds) !== []) {
+                    $this->validationError('member_ids', "Somebody picked no longer reports to {$boss->emp_name}. Open the pop-up again and pick again.");
+                }
+            }
+
+            if ($moveIds === []) {
+                $this->validationError('member_ids', "Nobody reports to {$boss->emp_name}.");
+            }
+
+            if (in_array($newBossId, $tree->descendantIds($boss->id), true)) {
+                $this->validationError('target_id', "The new boss cannot be somebody in {$boss->emp_name}'s own team.");
+            }
+
+            $target = Employee::query()->whereKey($newBossId)->lockForUpdate()->first();
+
+            if (! $target) {
+                $this->validationError('target_id', 'The selected new boss no longer exists.');
+            }
+
+            $members = Employee::query()->whereIn('id', $moveIds)->lockForUpdate()->get();
+
+            // Worked out before anything moves, so the log records where
+            // the team came from.
+            $sourceCluster = $this->clusterOf($tree, $boss->id);
+            $targetCluster = $this->clusterOf($tree, $target->id);
+
+            $historyRemarks = $remarks ?: "Moved from {$boss->emp_name}'s team to {$target->emp_name}.";
+
+            // reporting_date is deliberately left untouched: the team moves
+            // as existing employees, not new joiners.
+            $affectedIds = $members
+                ->flatMap(fn (Employee $member): Collection => $this->reportingLines->reportTo(
+                    $member,
+                    $target->id,
+                    $effective,
+                    ReportingLineService::CHANGE_TRANSFER,
+                    $historyRemarks,
+                    $performedBy,
+                ))
+                ->merge($members->pluck('id'))
+                ->map(fn ($id): int => (int) $id)
+                ->unique()
+                ->values();
+
+            /** @var HierarchyTransferLog $log */
+            $log = HierarchyTransferLog::query()->create([
+                'source_cluster_manager_id' => $sourceCluster,
+                'target_cluster_manager_id' => $targetCluster,
+                'transfer_type' => $memberIds === null ? 'whole_team' : 'part_team',
+                'selected_employee_ids' => ['from' => $boss->id, 'to' => $target->id, 'members' => $members->pluck('id')->all()],
+                'affected_employee_ids' => $affectedIds->all(),
+                'affected_count' => $affectedIds->count(),
+                'effective_date' => $effective->toDateString(),
+                'performed_by' => $performedBy,
+                'remarks' => $remarks,
+            ]);
+
+            if (function_exists('activity')) {
+                try {
+                    activity('hierarchy')
+                        ->causedBy(auth()->user())
+                        ->performedOn($log)
+                        ->withProperties([
+                            'from_boss_id' => $boss->id,
+                            'to_boss_id' => $target->id,
+                            'member_ids' => $members->pluck('id')->all(),
+                            'affected_count' => $affectedIds->count(),
+                            'remarks' => $remarks,
+                        ])
+                        ->log($memberIds === null ? 'Whole team moved' : 'Part of a team moved');
+                } catch (Throwable) {
+                    // Dedicated transfer log remains authoritative.
+                }
+            }
+
+            return $log;
         }, 3);
     }
 
@@ -332,6 +452,21 @@ class HierarchyReassignmentService
         }
 
         return $selected;
+    }
+
+    /**
+     * Who a team move takes: direct reports on the rolls, and those who
+     * have left but still have somebody on the rolls below them.
+     *
+     * @return list<int>
+     */
+    private function teamIds(ReportingTree $tree, int $bossId): array
+    {
+        return array_values(array_filter(
+            $tree->childIds($bossId),
+            fn (int $id): bool => ! $tree->isExited($id)
+                || array_filter($tree->descendantIds($id), fn (int $belowId): bool => ! $tree->isExited($belowId)) !== [],
+        ));
     }
 
     /** The Cluster Manager an employee sits under — or is. */

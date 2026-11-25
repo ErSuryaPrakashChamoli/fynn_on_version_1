@@ -6,6 +6,7 @@ use App\Models\Employee;
 use App\Services\AchievementCalculatorService;
 use App\Support\ReportingTimeline;
 use App\Support\ReportingTree;
+use App\Support\TargetLedger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -138,9 +139,9 @@ class OctoberRestructureCorrectionTest extends TestCase
         $calculator = new AchievementCalculatorService;
 
         foreach ([10, 11] as $month) {
-            $timeline = ReportingTimeline::forMonth(Carbon::create(2026, $month, 1));
+            $ledger = TargetLedger::forMonth(Carbon::create(2026, $month, 1));
 
-            $this->assertSame(self::CALLER_TARGET, $calculator->callerTargetShares($this->people['anuj'], $timeline)[$this->id('aarish')]);
+            $this->assertSame(self::CALLER_TARGET, $ledger->contribution($this->id('aarish'), $this->people['anuj']->id));
             $this->assertNull($calculator->reportingSpanNote($this->people['aarish'], $this->people['anuj'], Carbon::create(2026, $month, 1)));
         }
     }

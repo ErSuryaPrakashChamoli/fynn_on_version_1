@@ -94,24 +94,36 @@ class AchievementCalculatorTeamLeaderIncentiveTest extends TestCase
         $this->assertSame(7200.0, $breakdown['incentive']);
     }
 
-    public function test_understaffed_team_is_not_hard_zeroed_only_the_existing_target_topup_applies(): void
+    public function test_a_small_team_is_judged_against_the_team_leaders_eighty_lakh_minimum(): void
     {
-        // 2 callers, each exceeding their own target -> team achievement
-        // (6,000,000) exceeds team target (5,000,000). There is no <3
-        // hard-zero gate here (only the existing 30L target top-up on the
-        // TL's own target elsewhere handles understaffed teams) — with
-        // achievement above target, this team must still earn a nonzero
-        // incentive via the "excess revenue" share.
+        // 2 callers (₹50L of targets), so the Team Leader's own target is
+        // the ₹80L minimum — and the incentive gate uses that same figure
+        // (user decision 2026-11-24). ₹60L achieved is only 75%.
         $teamLeader = $this->teamLeaderWithCallers(2, [3000000, 3000000]);
+
+        $breakdown = (new AchievementCalculatorService)->getTeamLeaderIncentiveBreakdown($teamLeader);
+
+        $this->assertSame(8000000.0, $breakdown['team_target']);
+        $this->assertSame(75.0, $breakdown['achievement_percentage']);
+        $this->assertFalse($breakdown['meets_gate']);
+        $this->assertSame(0.0, $breakdown['incentive']);
+    }
+
+    public function test_a_small_team_over_the_minimum_is_not_hard_zeroed(): void
+    {
+        // 2 callers, ₹90L achieved against the ₹80L minimum. There is no <3
+        // hard-zero gate — with achievement above target, this team still
+        // earns via the "excess revenue" share.
+        $teamLeader = $this->teamLeaderWithCallers(2, [4500000, 4500000]);
 
         $breakdown = (new AchievementCalculatorService)->getTeamLeaderIncentiveBreakdown($teamLeader);
 
         $this->assertTrue($breakdown['meets_gate']);
 
-        // revenue = 120,000; grossRevenue = max(0, 120,000 - 2*30,000) = 60,000;
+        // revenue = 180,000; grossRevenue = max(0, 180,000 - 2*30,000) = 120,000;
         // grossRevenuePercent (2 callers, below the 3/4/5+ bands) = 0%;
-        // extraRevenue = max(0, 120,000 - 100,000) = 20,000;
-        // base = 60,000*0 + 20,000*0.05 = 1,000. No bonus (< 3 callers).
+        // extraRevenue = max(0, 180,000 - 160,000) = 20,000;
+        // base = 120,000*0 + 20,000*0.05 = 1,000. No bonus (< 3 callers).
         $this->assertSame(1000.0, $breakdown['incentive']);
     }
 

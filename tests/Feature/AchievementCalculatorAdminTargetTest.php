@@ -11,7 +11,7 @@ class AchievementCalculatorAdminTargetTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_company_wide_target_applies_hierarchy_proration_like_every_other_level(): void
+    public function test_company_wide_target_applies_the_ten_day_rule_like_every_other_level(): void
     {
         $this->travelTo(now()->startOfMonth()->addDays(14));
 
@@ -27,9 +27,9 @@ class AchievementCalculatorAdminTargetTest extends TestCase
             'exit_status' => 'no',
         ]);
 
-        // New joiner this month, still on the rolls: contributes the flat
-        // partial-month target, NOT its inflated category value — the
-        // proration is what this test is guarding.
+        // New joiner this month, still on the rolls and projected to 10+
+        // days: brings their full category target (user decision
+        // 2026-11-24), exactly as they do in any Team Leader's target.
         Employee::factory()->create([
             'designation' => Employee::DESIGNATION_CALLER,
             'category' => '9999999',
@@ -39,7 +39,7 @@ class AchievementCalculatorAdminTargetTest extends TestCase
 
         $target = (new AchievementCalculatorService)->getTarget($admin);
 
-        $this->assertSame(3000000.0 + 1500000.0, $target);
+        $this->assertSame(3000000.0 + 9999999.0, $target);
     }
 
     /**

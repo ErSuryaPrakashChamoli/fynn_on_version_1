@@ -39,7 +39,8 @@ class SkipLevelReportingTest extends TestCase
 
     private const CALLER_TARGET = 2500000.0;
 
-    private const TOP_UP = 3000000.0;
+    /** Every Team Leader here has one caller, so carries the ₹80L minimum. */
+    private const TEAM_LEADER_MIN = 8000000.0;
 
     private Employee $businessHead;
 
@@ -234,46 +235,49 @@ class SkipLevelReportingTest extends TestCase
     |--------------------------------------------------------------------------
     */
 
-    public function test_a_cluster_managers_target_carries_the_skip_level_team_and_its_top_up(): void
+    public function test_a_cluster_managers_target_carries_the_skip_level_team(): void
     {
-        // C1, C3 and C2, plus a top-up each for TL and T2 (one caller apiece).
+        // M (TL's ₹80L minimum + C3) and T2's ₹80L minimum (C2 inside it).
         $this->assertSame(
-            3 * self::CALLER_TARGET + 2 * self::TOP_UP,
+            2 * self::TEAM_LEADER_MIN + self::CALLER_TARGET,
             (new AchievementCalculatorService)->getTarget($this->cluster),
         );
     }
 
     public function test_a_managers_target_leaves_out_the_team_that_skips_them(): void
     {
-        // C1 and C3, plus TL's top-up. Nothing from T2.
+        // TL's ₹80L (C1 inside it) and C3. Nothing from T2.
         $this->assertSame(
-            2 * self::CALLER_TARGET + self::TOP_UP,
+            self::TEAM_LEADER_MIN + self::CALLER_TARGET,
             (new AchievementCalculatorService)->getTarget($this->manager),
         );
     }
 
     public function test_a_business_heads_target_rolls_up_every_level_below_them(): void
     {
-        // C1, C2, C3 and C4, plus top-ups for TL, T2 and T3.
+        // TL, T2 and T3 at the ₹80L minimum (C1, C2, C4 inside them) and C3.
         $this->assertSame(
-            4 * self::CALLER_TARGET + 3 * self::TOP_UP,
+            3 * self::TEAM_LEADER_MIN + self::CALLER_TARGET,
             (new AchievementCalculatorService)->getTarget($this->businessHead),
         );
     }
 
-    public function test_an_exited_skip_level_team_leader_stops_counting_but_stays_visible(): void
+    public function test_an_exited_skip_level_team_leaders_caller_counts_with_the_next_boss_on_their_record(): void
     {
-        // Left before this month began, so none of this month counts.
+        // Left before this month began: C2 counts straight under the
+        // Cluster Manager their own record names (user decision 2026-11-24)
+        // — and T2's ₹80L minimum is gone.
         $this->skipLevelTeamLeader->forceFill([
             'exit_status' => 'yes',
             'exit_date' => now()->subMonthNoOverflow()->endOfMonth()->toDateString(),
         ])->save();
 
         $this->assertSame(
-            2 * self::CALLER_TARGET + self::TOP_UP,
+            self::TEAM_LEADER_MIN + 2 * self::CALLER_TARGET,
             (new AchievementCalculatorService)->getTarget($this->cluster),
         );
-        $this->assertFalse(HierarchyHelper::subordinateIds($this->cluster)->contains($this->callerUnderSkipLevel->id));
+        $this->assertTrue(HierarchyHelper::subordinateIds($this->cluster)->contains($this->callerUnderSkipLevel->id));
+        $this->assertFalse(HierarchyHelper::subordinateIds($this->cluster)->contains($this->skipLevelTeamLeader->id));
         $this->assertTrue(HierarchyHelper::visibleSubordinateIds($this->cluster)->contains($this->callerUnderSkipLevel->id));
     }
 
@@ -283,18 +287,20 @@ class SkipLevelReportingTest extends TestCase
 
         $this->skipLevelTeamLeader->forceFill(['exit_status' => 'yes', 'exit_date' => '2026-10-15'])->save();
 
-        // 15 of October's 31 days — ten or more: their caller counts their
-        // full target and their understaffed top-up counts in full for the
-        // Cluster Manager.
+        // T2 sat 15 of October's 31 days, so keeps the ₹80L minimum. C2 was
+        // under T2 for 15 days and straight under the Cluster Manager for
+        // 16: their ₹25L splits 15/31 to T2 (inside T2's ₹80L) and 16/31 to
+        // the Cluster Manager directly.
         $this->assertEqualsWithDelta(
-            2 * self::CALLER_TARGET + self::TOP_UP + self::CALLER_TARGET + self::TOP_UP,
+            self::TEAM_LEADER_MIN + self::CALLER_TARGET + self::TEAM_LEADER_MIN + 1290322.58,
             (new AchievementCalculatorService)->getTarget($this->cluster, Carbon::create(2026, 10, 1)),
             0.01,
         );
 
-        // A month they never worked in counts nothing of their team.
+        // A month they never worked in: C2 counts straight under the
+        // Cluster Manager for all of it.
         $this->assertSame(
-            2 * self::CALLER_TARGET + self::TOP_UP,
+            self::TEAM_LEADER_MIN + 2 * self::CALLER_TARGET,
             (new AchievementCalculatorService)->getTarget($this->cluster, Carbon::create(2026, 11, 1)),
         );
     }

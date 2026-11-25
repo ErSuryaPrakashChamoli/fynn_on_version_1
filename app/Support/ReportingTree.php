@@ -34,16 +34,29 @@ use Illuminate\Support\Collection;
  * never restated with the new team. Anything period-based — targets,
  * achievement, incentives, team listings for a month — must walk the tree
  * of the day it is counting, never today's.
+ *
+ * Every node carries two links upward. boss_id is the direct boss on record,
+ * exited or not — the walk record visibility uses. count_boss_id is the
+ * nearest boss STILL ON THE ROLLS that day, found by reading up the
+ * employee's own reporting columns (user decision 2026-11-24): a caller
+ * whose Team Leader and Cluster Manager have both left counts under the
+ * Business Head their record still names. The counting walk (targets,
+ * achievement, headcount, incentives — $skipExitedLevels) follows
+ * count_boss_id, so nobody still working falls out of every branch; with
+ * nobody active on their record they hang off no one and are counted only
+ * in the company total (TargetLedger::brokenLineIds()).
  */
 final class ReportingTree
 {
     /**
-     * @param  array<int, array{designation: int, exited: bool, boss_id: ?int, name: string}>  $nodes
+     * @param  array<int, array{designation: int, exited: bool, boss_id: ?int, count_boss_id: ?int, name: string}>  $nodes
      * @param  array<int, array<int, int>>  $children  boss id => direct report ids
+     * @param  array<int, array<int, int>>  $countChildren  active boss id => ids counted straight under them
      */
     private function __construct(
         private readonly array $nodes,
         private readonly array $children,
+        private readonly array $countChildren = [],
     ) {}
 
     /**
@@ -93,26 +106,39 @@ final class ReportingTree
         }
 
         $asOfDate = $asOf?->toDateString();
+        $exited = [];
+
+        foreach ($rows as $row) {
+            $exited[(int) $row->id] = self::exitedOn($row, $asOfDate);
+        }
+
         $nodes = [];
         $children = [];
+        $countChildren = [];
 
         foreach ($rows as $row) {
             $id = (int) $row->id;
             $bossId = self::resolveBossId($row, $designations);
+            $countBossId = self::resolveBossId($row, $designations, $exited);
 
             $nodes[$id] = [
                 'designation' => $designations[$id],
-                'exited' => self::exitedOn($row, $asOfDate),
+                'exited' => $exited[$id],
                 'boss_id' => $bossId,
+                'count_boss_id' => $countBossId,
                 'name' => (string) $row->emp_name,
             ];
 
             if ($bossId !== null) {
                 $children[$bossId][] = $id;
             }
+
+            if ($countBossId !== null) {
+                $countChildren[$countBossId][] = $id;
+            }
         }
 
-        return new self($nodes, $children);
+        return new self($nodes, $children, $countChildren);
     }
 
     /**
@@ -144,20 +170,32 @@ final class ReportingTree
     }
 
     /**
+     * The boss the employee counts under: the nearest one on their own
+     * record who is still on the rolls (null when nobody is).
+     */
+    public function countBossId(int $employeeId): ?int
+    {
+        return $this->nodes[$employeeId]['count_boss_id'] ?? null;
+    }
+
+    /**
      * The people reporting straight to the employee.
+     *
+     * With $skipExitedLevels, the people COUNTED straight under them: their
+     * own direct reports, plus anyone whose nearer bosses have all left and
+     * whose record names them next — never an exited Team Leader, Manager,
+     * Cluster Manager or Business Head.
      *
      * @return array<int, int>
      */
     public function childIds(int $employeeId, bool $skipExitedLevels = false): array
     {
-        $childIds = $this->children[$employeeId] ?? [];
-
         if (! $skipExitedLevels) {
-            return $childIds;
+            return $this->children[$employeeId] ?? [];
         }
 
         return array_values(array_filter(
-            $childIds,
+            $this->countChildren[$employeeId] ?? [],
             fn (int $childId): bool => ! $this->isExitedLevel($childId),
         ));
     }
@@ -166,10 +204,12 @@ final class ReportingTree
      * Everyone below the employee, nearest level first.
      *
      * $skipExitedLevels is the split between the two walks in
-     * .ai/rules/support.md: target, incentive and target-duty maths stops
-     * at an exited Team Leader, Manager, Cluster Manager or Business Head
-     * and leaves out everyone under them, while record visibility carries
-     * on through. An exited caller counts either way, as it always has.
+     * .ai/rules/support.md: target, incentive and target-duty maths leaves
+     * out an exited Team Leader, Manager, Cluster Manager or Business Head
+     * and counts the people under them with the nearest boss still on the
+     * rolls (count_boss_id), while record visibility walks the direct
+     * links straight through. An exited caller counts either way, as it
+     * always has.
      *
      * @return array<int, int>
      */
@@ -251,9 +291,14 @@ final class ReportingTree
     }
 
     /**
+     * The nearest reporting column pointing at an employee of that column's
+     * designation above the row's own level. With $exited, a boss who has
+     * left is passed over and the next column up is read instead.
+     *
      * @param  array<int, int>  $designations  employee id => designation
+     * @param  array<int, bool>|null  $exited  employee id => exited that day
      */
-    private static function resolveBossId(object $row, array $designations): ?int
+    private static function resolveBossId(object $row, array $designations, ?array $exited = null): ?int
     {
         $ownRank = Employee::designationRank((int) $row->designation);
 
@@ -268,7 +313,7 @@ final class ReportingTree
                 continue;
             }
 
-            if (($designations[$bossId] ?? null) === $bossDesignation) {
+            if (($designations[$bossId] ?? null) === $bossDesignation && ! ($exited[$bossId] ?? false)) {
                 return $bossId;
             }
         }

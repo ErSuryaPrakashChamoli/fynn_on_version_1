@@ -3,8 +3,14 @@
 namespace App\Filament\Pages;
 
 use App\Enums\EmployeeLookupSection;
+use App\Filament\Actions\ChangeEmployeePositionAction;
+use App\Filament\Actions\CorrectPositionChangeDateAction;
+use App\Filament\Actions\InactivateEmployeeAction;
+use App\Filament\Actions\MoveTeamAction;
+use App\Filament\Actions\TransferEmployeeAction;
 use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\Customers\CustomerResource;
+use App\Filament\Resources\Employees\EmployeeResource;
 use App\Models\CostCenter;
 use App\Models\Customer;
 use App\Models\CustomerAssignment;
@@ -387,11 +393,65 @@ class EmployeeLookup extends Page implements HasTable
             ->all();
 
         return [
+            ...$this->manageActions(),
             ActionGroup::make($groups)
                 ->label('Actions')
                 ->icon(Heroicon::OutlinedSquares2x2)
                 ->button()
                 ->color('primary')
+                ->dropdownPlacement('bottom-end'),
+        ];
+    }
+
+    /**
+     * "Manage employee" — the Admin moves, promotes, re-targets or exits
+     * the employee right here, through the same pop-ups as the Employee
+     * page, instead of going to the Employees module. Each pop-up runs on
+     * the employee being looked up; once it has done its job the page
+     * reloads so every card shows the change.
+     *
+     * @return list<ActionGroup>
+     */
+    protected function manageActions(): array
+    {
+        if (! $this->viewer()?->hasRole('Admin')) {
+            return [];
+        }
+
+        $reload = fn (): mixed => $this->redirect($this->sectionUrl($this->currentSection()));
+
+        return [
+            ActionGroup::make([
+                ActionGroup::make([
+                    TransferEmployeeAction::make()->record(fn (): ?Employee => $this->employee)->after($reload),
+                    MoveTeamAction::make()->record(fn (): ?Employee => $this->employee)->after($reload),
+                    ChangeEmployeePositionAction::make()->record(fn (): ?Employee => $this->employee)->after($reload),
+                    CorrectPositionChangeDateAction::make()->record(fn (): ?Employee => $this->employee)->after($reload),
+                ])->dropdown(false),
+                ActionGroup::make([
+                    // The hand-over step re-opens this pop-up; reload only
+                    // once they are actually off the rolls.
+                    InactivateEmployeeAction::make()
+                        ->record(fn (): ?Employee => $this->employee)
+                        ->after(fn (): mixed => $this->employee && EmployeeResource::hasLeft($this->employee) ? $reload() : null),
+                ])->dropdown(false),
+                ActionGroup::make([
+                    Action::make('editEmployeeRecord')
+                        ->label('Edit Employee Details')
+                        ->icon(Heroicon::OutlinedPencilSquare)
+                        ->color('gray')
+                        ->url(fn (): ?string => $this->employee ? EmployeeResource::getUrl('edit', ['record' => $this->employee]) : null),
+                    Action::make('viewEmployeeRecord')
+                        ->label('Employee Record & Lifecycle')
+                        ->icon(Heroicon::OutlinedIdentification)
+                        ->color('gray')
+                        ->url(fn (): ?string => $this->employee ? EmployeeResource::getUrl('view', ['record' => $this->employee]) : null),
+                ])->dropdown(false),
+            ])
+                ->label('Manage Employee')
+                ->icon(Heroicon::OutlinedAdjustmentsHorizontal)
+                ->button()
+                ->color('warning')
                 ->dropdownPlacement('bottom-end'),
         ];
     }

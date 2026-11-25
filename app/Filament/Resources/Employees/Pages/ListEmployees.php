@@ -6,18 +6,21 @@ use App\Filament\Actions\EmployeeDependencyStep;
 use App\Filament\Actions\ReopenAction;
 use App\Filament\Concerns\HasColumnHeaderFilters;
 use App\Filament\Resources\Employees\EmployeeResource;
+use App\Filament\Resources\Employees\Widgets\TargetDataWarnings;
 use App\Models\Employee;
 use App\Services\EmployeeDependencyService;
 use App\Services\EmployeeTransferService;
-use App\Services\HierarchyReassignmentService;
 use App\Services\ReportingLineService;
+use App\Support\EmployeeOptions;
 use App\Support\ReportingTree;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\ToggleButtons;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Utilities\Get;
@@ -32,7 +35,23 @@ class ListEmployees extends ListRecords
 {
     use HasColumnHeaderFilters;
 
+    /** All or part of one boss's team moves to another boss. */
+    public const MODE_MOVE_TEAM = 'move_team';
+
+    /** Person by person, each to their own destination. */
+    public const MODE_FLEXIBLE = 'flexible_reassignment';
+
     protected static string $resource = EmployeeResource::class;
+
+    /**
+     * Admin only: who makes this month's targets wrong (TargetDataWarnings).
+     */
+    protected function getHeaderWidgets(): array
+    {
+        return [
+            TargetDataWarnings::class,
+        ];
+    }
 
     protected function getHeaderActions(): array
     {
@@ -45,7 +64,7 @@ class ListEmployees extends ListRecords
                 ->color('warning')
                 ->visible(fn (): bool => auth()->user()?->hasRole('Admin') === true)
                 ->modalHeading('Transfer / Reassign Employees')
-                ->modalDescription('Use Full Cluster to move a Cluster Manager\'s direct reports, with their teams, to another Cluster Manager. Use Flexible Reassignment to move any employee to anyone more senior — levels in between may be skipped, and each row can have a different destination. Everyone takes all their own customers and leads along. Anyone reporting to them stays behind, keeps their own work and is given a new boss first, right here.')
+                ->modalDescription('Move a Team: all or part of anybody\'s team (a Team Leader\'s callers, a Manager\'s Team Leaders, a Cluster Manager\'s Managers) moves to another boss while that boss stays put. Flexible Reassignment: move any employees to anyone more senior — levels in between may be skipped, each row can have its own destination, and each chooses whether their team moves with them or stays behind. Everyone takes all their own customers and leads along.')
                 ->modalSubmitActionLabel('Confirm Transfer')
                 ->modalWidth('5xl')
                 // Back from the hand-over step with the rows as they were.
@@ -54,54 +73,69 @@ class ListEmployees extends ListRecords
                     Select::make('transfer_type')
                         ->label('Transfer Mode')
                         ->options([
-                            'full_cluster' => 'Full Cluster Transfer',
-                            'flexible_reassignment' => 'Flexible Reassignment',
+                            self::MODE_MOVE_TEAM => 'Move a Team (whole or part, any level)',
+                            self::MODE_FLEXIBLE => 'Flexible Reassignment (person by person)',
                         ])
-                        ->default('flexible_reassignment')
+                        ->default(self::MODE_FLEXIBLE)
                         ->native(false)
                         ->live()
                         ->required()
-                        ->helperText('Recommended: Flexible Reassignment for splitting a Manager team across different Managers / Team Leaders.'),
+                        ->helperText('A Team Leader, Manager, Cluster Manager or Business Head can hand over their whole team or part of it with Move a Team.'),
 
-                    Select::make('source_cluster_manager_id')
-                        ->label('Source Cluster Manager')
-                        ->options(fn (): array => $this->clusterManagerOptions())
+                    Select::make('team_boss_id')
+                        ->label('Whose team')
+                        ->options(fn (): array => $this->teamOwnerOptions())
                         ->searchable()
-                        ->preload()
                         ->live()
-                        ->required(fn (Get $get): bool => $get('transfer_type') === 'full_cluster')
-                        ->visible(fn (Get $get): bool => $get('transfer_type') === 'full_cluster')
+                        ->required(fn (Get $get): bool => $get('transfer_type') === self::MODE_MOVE_TEAM)
+                        ->visible(fn (Get $get): bool => $get('transfer_type') === self::MODE_MOVE_TEAM)
                         ->afterStateUpdated(function (Set $set): void {
-                            $set('target_cluster_manager_id', null);
-                            $set('selected_employee_ids', []);
-                        }),
+                            $set('team_member_ids', []);
+                            $set('team_target_id', null);
+                        })
+                        ->helperText('They stay where they are; only the people below move.'),
 
-                    Select::make('target_cluster_manager_id')
-                        ->label('Target / Destination Cluster Manager')
-                        ->options(fn (Get $get): array => $this->clusterManagerOptions(
-                            exceptId: (int) ($get('source_cluster_manager_id') ?: 0),
-                        ))
-                        ->searchable()
-                        ->preload()
-                        ->required(fn (Get $get): bool => $get('transfer_type') === 'full_cluster')
-                        ->visible(fn (Get $get): bool => $get('transfer_type') === 'full_cluster'),
+                    ToggleButtons::make('team_scope')
+                        ->label('Who moves')
+                        ->options([
+                            EmployeeTransferService::TEAM_WHOLE => 'Whole team',
+                            EmployeeTransferService::TEAM_PART => 'Only the people I tick',
+                        ])
+                        ->default(EmployeeTransferService::TEAM_WHOLE)
+                        ->inline()
+                        ->live()
+                        ->required(fn (Get $get): bool => $get('transfer_type') === self::MODE_MOVE_TEAM)
+                        ->visible(fn (Get $get): bool => $get('transfer_type') === self::MODE_MOVE_TEAM && filled($get('team_boss_id')))
+                        ->afterStateUpdated(fn (Set $set): mixed => $set('team_target_id', null)),
 
-                    Select::make('selected_employee_ids')
-                        ->label('Managers / Team Leaders to Transfer (with their teams)')
-                        ->options(fn (Get $get): array => $this->selectableHierarchyOptions(
-                            (int) ($get('source_cluster_manager_id') ?: 0),
-                        ))
-                        ->multiple()
+                    CheckboxList::make('team_member_ids')
+                        ->label('Moving')
+                        ->options(fn (Get $get): array => ($boss = $this->teamOwner($get)) ? app(EmployeeTransferService::class)->teamChecklist($boss)['options'] : [])
+                        ->descriptions(fn (Get $get): array => ($boss = $this->teamOwner($get)) ? app(EmployeeTransferService::class)->teamChecklist($boss)['descriptions'] : [])
+                        ->bulkToggleable()
                         ->searchable()
-                        ->preload()
+                        ->columns(2)
+                        ->live()
+                        ->required(fn (Get $get): bool => $get('transfer_type') === self::MODE_MOVE_TEAM && $get('team_scope') === EmployeeTransferService::TEAM_PART)
+                        ->visible(fn (Get $get): bool => $get('transfer_type') === self::MODE_MOVE_TEAM && $get('team_scope') === EmployeeTransferService::TEAM_PART && filled($get('team_boss_id'))),
+
+                    Select::make('team_target_id')
+                        ->label('Move them to')
+                        ->options(fn (Get $get): array => ($boss = $this->teamOwner($get))
+                            ? app(EmployeeTransferService::class)->moveTeamTargetOptions($boss, $get('team_scope') === EmployeeTransferService::TEAM_PART
+                                ? array_map('intval', (array) ($get('team_member_ids') ?? []))
+                                : null)
+                            : [])
+                        ->searchable()
                         ->native(false)
-                        ->visible(fn (Get $get): bool => $get('transfer_type') === 'full_cluster')
-                        ->dehydrated(false),
+                        ->required(fn (Get $get): bool => $get('transfer_type') === self::MODE_MOVE_TEAM)
+                        ->visible(fn (Get $get): bool => $get('transfer_type') === self::MODE_MOVE_TEAM && filled($get('team_boss_id')))
+                        ->helperText('Anyone more senior than everybody moving; the levels in between can be skipped.'),
 
                     Repeater::make('assignments')
                         ->label('Flexible Reassignment')
-                        ->visible(fn (Get $get): bool => $get('transfer_type') === 'flexible_reassignment')
-                        ->required(fn (Get $get): bool => $get('transfer_type') === 'flexible_reassignment')
+                        ->visible(fn (Get $get): bool => $get('transfer_type') === self::MODE_FLEXIBLE)
+                        ->required(fn (Get $get): bool => $get('transfer_type') === self::MODE_FLEXIBLE)
                         ->minItems(1)
                         ->defaultItems(1)
                         ->addActionLabel('Add Another Transfer')
@@ -137,8 +171,11 @@ class ListEmployees extends ListRecords
                                         ->filter(fn (int $id): bool => $id === $currentId)
                                         ->count() > 1;
                                 })
-                                ->afterStateUpdated(fn (Set $set): mixed => $set('target_id', null))
-                                ->helperText('Their own work goes with them (above a caller: only what they created). Their team is handed over to a new boss first.'),
+                                ->afterStateUpdated(function (Set $set): void {
+                                    $set('target_id', null);
+                                    $set('team', null);
+                                })
+                                ->helperText('All their own customers and leads go with them.'),
 
                             Select::make('target_id')
                                 ->label('Move To')
@@ -156,7 +193,22 @@ class ListEmployees extends ListRecords
                                 ->helperText(fn (Get $get): string => filled($get('employee_id'))
                                     ? 'Choose anyone more senior. The levels in between can be skipped.'
                                     : 'Select an employee first.'),
+
+                            ToggleButtons::make('team')
+                                ->label('Their team')
+                                ->options([
+                                    EmployeeTransferService::TEAM_WHOLE => 'Moves with them',
+                                    EmployeeTransferService::TEAM_NONE => 'Stays behind',
+                                ])
+                                ->inline()
+                                ->required(fn (Get $get): bool => $this->hasTeam($get('employee_id')))
+                                ->visible(fn (Get $get): bool => $this->hasTeam($get('employee_id')))
+                                ->helperText(fn (Get $get): string => $get('team') === EmployeeTransferService::TEAM_NONE
+                                    ? 'Their team is given a new boss in the next step and keeps its own work.'
+                                    : 'Everyone below them moves too — except anybody another row moves elsewhere, so add a row per person going somewhere else to split the team.')
+                                ->columnSpanFull(),
                         ])
+                        ->columns(2)
                         ->columnSpanFull(),
 
                     DatePicker::make('effective_date')
@@ -176,9 +228,18 @@ class ListEmployees extends ListRecords
                 ->requiresConfirmation()
                 ->action(function (array $data): void {
                     try {
-                        $service = app(HierarchyReassignmentService::class);
-
-                        if (($data['transfer_type'] ?? null) === 'flexible_reassignment') {
+                        if (($data['transfer_type'] ?? null) === self::MODE_MOVE_TEAM) {
+                            $log = app(EmployeeTransferService::class)->moveTeam(
+                                Employee::query()->findOrFail((int) $data['team_boss_id']),
+                                ($data['team_scope'] ?? null) === EmployeeTransferService::TEAM_PART
+                                    ? array_map('intval', (array) ($data['team_member_ids'] ?? []))
+                                    : null,
+                                (int) $data['team_target_id'],
+                                $data['effective_date'] ?? today()->toDateString(),
+                                $data['remarks'] ?? null,
+                                (int) auth()->id(),
+                            );
+                        } else {
                             $transfers = app(EmployeeTransferService::class);
                             $blockers = $transfers->blockers($data['assignments'] ?? []);
 
@@ -196,11 +257,6 @@ class ListEmployees extends ListRecords
                                 performedBy: (int) auth()->id(),
                                 effectiveDate: $data['effective_date'] ?? null,
                                 remarks: $data['remarks'] ?? null,
-                            );
-                        } else {
-                            $log = $service->transfer(
-                                data: $data,
-                                performedBy: (int) auth()->id(),
                             );
                         }
 
@@ -288,46 +344,57 @@ class ListEmployees extends ListRecords
             });
     }
 
-    private function clusterManagerOptions(int $exceptId = 0): array
+    /**
+     * Everybody on the rolls with somebody reporting to them — whose team
+     * a "Move a Team" can move — grouped by position, most senior first.
+     *
+     * @return array<string, array<int, string>>
+     */
+    private function teamOwnerOptions(): array
     {
+        $tree = ReportingTree::load();
+        $positions = Employee::designationOptions();
+
+        $ownerIds = array_filter(
+            $tree->employeeIds(),
+            fn (int $id): bool => ! $tree->isExited($id)
+                && array_filter($tree->childIds($id), fn (int $childId): bool => ! $tree->isExited($childId)) !== [],
+        );
+
         return Employee::query()
-            ->where('designation', Employee::DESIGNATION_CLUSTER)
-            ->where('exit_status', '!=', 'yes')
-            ->when($exceptId > 0, fn ($query) => $query->where('id', '!=', $exceptId))
+            ->whereIn('id', $ownerIds)
             ->orderBy('emp_name')
-            ->get()
-            ->mapWithKeys(fn (Employee $employee): array => [
-                $employee->id => "{$employee->emp_name} - ({$employee->emp_id})",
-            ])
+            ->get(['id', 'emp_name', 'emp_id', 'designation'])
+            ->sortByDesc(fn (Employee $employee): int => Employee::designationRank($employee->designation))
+            ->groupBy(fn (Employee $employee): string => $positions[$employee->designation] ?? 'Other')
+            ->map(fn ($group): array => $group
+                ->mapWithKeys(fn (Employee $employee): array => [$employee->id => EmployeeOptions::label($employee)])
+                ->all())
             ->all();
     }
 
     /**
-     * The Managers and Team Leaders reporting straight to the source
-     * Cluster Manager — the only ones a selective transfer can move.
+     * The employee whose team the "Move a Team" form is moving.
      */
-    private function selectableHierarchyOptions(int $sourceId): array
+    private function teamOwner(Get $get): ?Employee
     {
-        if ($sourceId <= 0) {
-            return [];
+        $bossId = (int) ($get('team_boss_id') ?: 0);
+
+        return $bossId > 0 ? Employee::query()->find($bossId) : null;
+    }
+
+    /**
+     * Whether somebody on the rolls reports straight to the employee.
+     */
+    private function hasTeam(mixed $employeeId): bool
+    {
+        if (blank($employeeId)) {
+            return false;
         }
 
-        $labels = Employee::designationOptions();
+        $tree = ReportingTree::load();
 
-        return Employee::query()
-            ->whereIn('id', ReportingTree::load()->childIds($sourceId))
-            ->whereIn('designation', [
-                Employee::DESIGNATION_MANAGER,
-                Employee::DESIGNATION_TEAM_LEADER,
-            ])
-            ->where('exit_status', '!=', 'yes')
-            ->orderBy('designation')
-            ->orderBy('emp_name')
-            ->get()
-            ->mapWithKeys(fn (Employee $employee): array => [
-                (string) $employee->id => ($labels[$employee->designation] ?? 'Employee').": {$employee->emp_name} - ({$employee->emp_id})",
-            ])
-            ->all();
+        return array_filter($tree->childIds((int) $employeeId), fn (int $childId): bool => ! $tree->isExited($childId)) !== [];
     }
 
     /**

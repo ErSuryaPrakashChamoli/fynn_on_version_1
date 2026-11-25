@@ -190,13 +190,13 @@ class AchievementCalculatorDisbursalDateScopeTest extends TestCase
 
         /*
          * 14 Aug to 31 Aug is 18 days on the rolls, so August returns the
-         * partial-month target. July — the month the achievement fallback
+         * full category target (10+ days). July — the month the achievement fallback
          * would have shifted to — would return 0, because the caller had
          * not joined by the end of it. Asserting the August figure is
          * therefore what proves the boundary logic did not follow the
          * fallback.
          */
-        $this->assertSame(1500000.0, $target);
+        $this->assertSame(3000000.0, $target);
         $this->assertSame('2026-07', (new AchievementCalculatorService)->resolveReferenceMonth()->format('Y-m'));
     }
 }

@@ -204,8 +204,9 @@ class HierarchyHelper
     }
 
     /**
-     * Every caller $employee's figures count: their whole branch, stopping
-     * at an exited Team Leader, Manager or Cluster Manager.
+     * Every caller $employee's figures count: their whole branch, the
+     * callers of an exited Team Leader, Manager or Cluster Manager counted
+     * with the nearest boss still on the rolls on their own record.
      *
      * @return Collection<int, int>
      */
@@ -223,10 +224,9 @@ class HierarchyHelper
     }
 
     /**
-     * For every Team Leader $employee's target counts — themselves too, if
-     * they are one — how many callers report straight to them. Exited
-     * callers are included: the understaffed-team top-up has always counted
-     * them.
+     * For every Team Leader in $employee's counted branch — themselves too,
+     * if they are one — how many callers report straight to them, exited
+     * callers included.
      *
      * @return array<int, int> team leader id => caller count
      */
@@ -278,8 +278,10 @@ class HierarchyHelper
 
     /**
      * $employee plus everyone their target, incentive and target-setting
-     * maths counts. Stops at an exited Team Leader / Manager / Cluster
-     * Manager — see visibleSubordinateIds() for why the two walks differ.
+     * maths counts. Leaves out an exited Team Leader / Manager / Cluster
+     * Manager and counts the people under them with the nearest boss still
+     * on the rolls on their own record — see visibleSubordinateIds() for why
+     * the two walks differ.
      *
      * @return Collection<int, int>
      */
@@ -302,9 +304,8 @@ class HierarchyHelper
      * rolls has to be able to pick them up.
      *
      * Use this for visibility only. Target, incentive and target-setting
-     * maths deliberately stop at an exited level and must keep calling
-     * subordinateIds()/callerIds() — see AchievementCalculatorService and
-     * MonthlyTargetGate.
+     * maths deliberately leave an exited level out and must keep calling
+     * subordinateIds()/callerIds() — see TargetLedger and MonthlyTargetGate.
      *
      * @return Collection<int, int>
      */

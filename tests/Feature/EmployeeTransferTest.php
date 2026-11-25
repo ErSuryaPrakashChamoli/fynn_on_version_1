@@ -157,47 +157,39 @@ class EmployeeTransferTest extends TestCase
         $callerLead = $this->lead($this->caller);
         $handoverDate = today()->subDay()->toDateString();
 
-        $page = Livewire::test(EditEmployee::class, ['record' => $this->movingTeamLeader->id])
+        Livewire::test(EditEmployee::class, ['record' => $this->movingTeamLeader->id])
             ->mountAction('transferEmployee')
             ->assertMountedActionModalSee([
-                "{$this->movingTeamLeader->emp_name} has a team that stays behind",
-                'Still attached: 1 direct report.',
-                $this->caller->emp_name,
-                'Hand over & continue',
+                "Transfer {$this->movingTeamLeader->emp_name}",
+                '1 person reports straight to',
+                'Whole team moves with them',
+                'Move alone',
+                'New Boss',
             ])
             ->assertMountedActionModalDontSee([
                 $ownCustomer->customer_name,
                 $customerFromCaller->customer_name,
                 $leadFromCaller->customer_name,
-                'open customer',
-                'open lead',
+                'Open customers (',
+                'Open leads (',
                 'open assigned lead',
                 'live delegation',
-                'New Boss',
+                'Hand over & continue',
             ])
             ->setActionData([
-                'direct_reports_target' => $this->otherTeamLeader->id,
-                'handover_date' => $handoverDate,
+                'reports_to' => $this->otherManager->id,
+                'team' => EmployeeTransferService::TEAM_NONE,
+                'staying_team_boss' => $this->otherTeamLeader->id,
+                'effective_date' => $handoverDate,
             ])
-            ->callMountedAction()
-            ->assertHasNoActionErrors();
-
-        $this->assertSame($this->otherTeamLeader->id, HierarchyHelper::directBossId($this->caller->fresh()));
-        $this->assertSame($this->manager->id, HierarchyHelper::directBossId($this->movingTeamLeader->fresh()), 'Handing over must not move them by itself.');
-
-        // The same pop-up is back on the transfer itself, dated like the hand-over.
-        $this->assertSame('transferEmployee', $page->instance()->mountedActions[0]['name'] ?? null);
-
-        $page->assertMountedActionModalSee([
-            "Transfer {$this->movingTeamLeader->emp_name}",
-            'New Boss',
-            'Their open customers, leads and delegations go with them.',
-        ])
-            ->assertActionDataSet(['effective_date' => $handoverDate])
-            ->setActionData(['reports_to' => $this->otherManager->id])
             ->callMountedAction()
             ->assertHasNoActionErrors()
             ->assertNotified('Employee transferred successfully.');
+
+        $this->assertSame($handoverDate, EmployeeReportingHistory::query()
+            ->where('employee_id', $this->caller->id)
+            ->where('new_superviser_id', $this->otherTeamLeader->id)
+            ->value('effective_date')?->toDateString(), 'The team is handed over from the same effective date.');
 
         $this->assertSame($this->otherManager->id, HierarchyHelper::directBossId($this->movingTeamLeader->fresh()));
         $this->assertSame($this->otherTeamLeader->id, HierarchyHelper::directBossId($this->caller->fresh()), 'The team stays where it was handed over.');
@@ -304,7 +296,7 @@ class EmployeeTransferTest extends TestCase
             ->mountAction('transferCluster')
             ->setActionData([
                 'transfer_type' => 'flexible_reassignment',
-                'assignments' => [['employee_id' => $this->movingTeamLeader->id, 'target_id' => $this->otherManager->id]],
+                'assignments' => [['employee_id' => $this->movingTeamLeader->id, 'target_id' => $this->otherManager->id, 'team' => EmployeeTransferService::TEAM_NONE]],
                 'effective_date' => today()->toDateString(),
             ])
             ->callMountedAction()

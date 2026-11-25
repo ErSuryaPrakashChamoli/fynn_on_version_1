@@ -37,8 +37,9 @@ use Illuminate\Validation\ValidationException;
  *   (EmployeePositionChangeService). Work is never handed over while they
  *   stay: every customer, lead and assigned lead they hold, whoever created
  *   or gave it to them, stays theirs, and delegations run on. Only their
- *   team is asked about — it never moves with them, so anyone reporting to
- *   them is given a new boss and keeps their own work.
+ *   team is asked about: whoever does not move with them (a transfer may
+ *   take all, part or none of it along — EmployeeTransferService) is given
+ *   a new boss and keeps their own work.
  *
  * Finished work — disbursed or dropped customers, converted or closed
  * leads — stays with them on purpose: achievement and lead reports credit

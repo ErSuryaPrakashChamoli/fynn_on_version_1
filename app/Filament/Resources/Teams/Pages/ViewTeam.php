@@ -135,18 +135,19 @@ class ViewTeam extends Page implements HasTable
                     | Why a partial-month figure looks the way it does
                     |--------------------------------------------------------------------------
                     |
-                    | A caller who joined (or left) mid-month carries the flat
-                    | partial-month target rather than their category, and while
-                    | they are still on the rolls that figure rests on them
-                    | staying to month-end. Saying so here is the point of the
-                    | 2026-09-10 change: a Team Leader was previously left
-                    | guessing whether a 0 meant "no target set" or "genuinely
-                    | nil". The wording lives on the service, next to the rule.
+                    | A caller who joined (or left) mid-month brings their full
+                    | category target only with 10+ days on the rolls, and while
+                    | they are still on the rolls that rests on them staying to
+                    | month-end; a mover's target is split by days between teams.
+                    | Saying so here is the point of the 2026-09-10 change: a Team
+                    | Leader was previously left guessing whether a 0 meant "no
+                    | target set" or "genuinely nil". The wording lives on the
+                    | service, next to the rule (TargetLedger).
                     |
                     */
                     ->tooltip(function (Employee $record) use ($calculator, $team): ?string {
 
-                        // The caller's own row shows their flat category
+                        // The caller's own row shows their full category
                         // target, which the notes would not describe.
                         if (auth()->user()?->employee?->id === $record->id) {
                             return null;

@@ -2,7 +2,11 @@
 
 namespace App\Filament\Resources\Employees;
 
+use App\Filament\Actions\ChangeEmployeePositionAction;
 use App\Filament\Actions\DataDownloadApproval;
+use App\Filament\Actions\InactivateEmployeeAction;
+use App\Filament\Actions\MoveTeamAction;
+use App\Filament\Actions\TransferEmployeeAction;
 use App\Filament\Imports\EmployeeImporter;
 use App\Filament\Imports\EmployeeUpdateImporter;
 use App\Filament\Resources\Employees\Pages\CreateEmployee;
@@ -131,24 +135,23 @@ class EmployeeResource extends Resource
 
                     Select::make('category')
                         ->label('Target Category')
-                        ->options(fn (?Employee $record): array => TargetCategory::optionsIncluding($record?->category))
-                        // Only in-tree seats carry an LMS target. Admin and
-                        // Other Bank Support sit outside the hierarchy
-                        // (designationRank 0) and never read this value —
-                        // Other Bank Support targets live in their own module.
-                        ->required(fn (Get $get, ?Employee $record): bool => ! self::isOnTheRolls($record)
-                            && Employee::designationRank(self::designationOf($get('designation'))) > 0)
+                        // Only a caller carries a category (user decision
+                        // 2026-11-24): every leader's target is built from
+                        // their team, and Admin / Other Bank Support carry
+                        // no LMS target at all. Offered: categories with a
+                        // real monthly amount (TargetCategory::callerOptionsIncluding).
+                        ->options(fn (?Employee $record): array => TargetCategory::callerOptionsIncluding($record?->category))
+                        ->visible(fn (Get $get): bool => self::designationOf($get('designation')) === Employee::DESIGNATION_CALLER)
+                        ->required(fn (?Employee $record): bool => ! self::isOnTheRolls($record))
                         // A new target is dated through "Change Position /
                         // Target", so earlier months keep the old one.
                         ->disabled(fn (?Employee $record): bool => self::isOnTheRolls($record))
                         ->dehydrated(fn (?Employee $record): bool => ! self::isOnTheRolls($record))
-                        ->helperText(fn (Get $get, ?Employee $record): ?string => collect([
+                        ->helperText(fn (?Employee $record): ?string => collect([
                             $record?->exists ? app(EmployeePositionChangeService::class)->categorySince($record) : null,
-                            match (true) {
-                                self::isOnTheRolls($record) => 'Use “Change Position / Target” at the top of this page — the new target applies from its effective date and earlier months keep the old one.',
-                                Employee::designationRank(self::designationOf($get('designation'))) > 0 => null,
-                                default => 'Not used for this position — it carries no LMS target.',
-                            },
+                            self::isOnTheRolls($record)
+                                ? 'Use “Change Position / Target” at the top of this page — the new target applies from its effective date and earlier months keep the old one.'
+                                : null,
                         ])->filter()->implode(' ') ?: null)
                         ->native(false),
 
@@ -277,8 +280,9 @@ class EmployeeResource extends Resource
     /**
      * Why the form cannot move $employee to $bossId, or null when it can.
      *
-     * A straight move (same position, different boss) is a transfer: like
-     * the "Transfer Employee" action it needs their team handed over first
+     * A straight move (same position, different boss) is a transfer, and
+     * this form cannot say what happens to their team: anybody with a team
+     * is sent to the "Transfer Employee" action
      * (EmployeeDependencyService::SCOPE_MOVE); all their own work goes with
      * them. The
      * Position field is locked for anyone on the rolls ("Change Position /
@@ -300,7 +304,7 @@ class EmployeeResource extends Resource
         return $dependencies === []
             ? null
             : "{$employee->emp_name} still has ".app(EmployeeDependencyService::class)->describe($dependencies)
-                .'. Use “Transfer Employee” at the top of this page — it gives them a new boss and moves '.$employee->emp_name.' with their own work on the spot.';
+                .'. Use “Transfer Employee” at the top of this page — '.$employee->emp_name.' can take the whole team, part of it or nobody along, and whoever stays behind gets a new boss in the same step.';
     }
 
     /**
@@ -444,6 +448,17 @@ class EmployeeResource extends Resource
                 EditAction::make(),
                 DeleteAction::make(),
                 ViewAction::make(),
+                // The day-to-day moves, without opening the employee first.
+                ActionGroup::make([
+                    TransferEmployeeAction::make(),
+                    MoveTeamAction::make(),
+                    ChangeEmployeePositionAction::make(),
+                    InactivateEmployeeAction::make(),
+                ])
+                    ->label('Move / Promote')
+                    ->icon(Heroicon::OutlinedArrowsRightLeft)
+                    ->dropdownPlacement('bottom-start')
+                    ->visible(fn (): bool => auth()->user()?->hasRole('Admin') === true),
             ])
             ->headerActions([
                 ActionGroup::make([

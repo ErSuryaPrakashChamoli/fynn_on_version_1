@@ -4,6 +4,8 @@ namespace App\Filament\Resources\Employees\Pages;
 
 use App\Filament\Actions\ChangeEmployeePositionAction;
 use App\Filament\Actions\CorrectPositionChangeDateAction;
+use App\Filament\Actions\MoveTeamAction;
+use App\Filament\Actions\TransferEmployeeAction;
 use App\Filament\Resources\Employees\EmployeeResource;
 use App\Support\HierarchyHelper;
 use Filament\Actions\Action;
@@ -66,6 +68,8 @@ class ViewEmployee extends ViewRecord
                     ]);
                 }),
 
+            TransferEmployeeAction::make(),
+            MoveTeamAction::make(),
             ChangeEmployeePositionAction::make(),
             CorrectPositionChangeDateAction::make(),
             EditAction::make(),

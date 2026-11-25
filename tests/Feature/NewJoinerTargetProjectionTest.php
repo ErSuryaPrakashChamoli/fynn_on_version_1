@@ -14,7 +14,11 @@ use Tests\TestCase;
  * This is the case the rule change of 2026-09-10 was made for: a caller
  * reported on the 7th, and on the 10th their Team Leader's rollup still
  * showed nothing against them — indistinguishable from a target nobody
- * had set. See AchievementCalculatorService::activeWindowForMonth().
+ * had set. With 10+ days the joiner brings their full category target
+ * (user decision 2026-11-24; it was a flat ₹15L). See TargetLedger.
+ *
+ * Four established callers (₹1 Cr) keep every team above the ₹80L Team
+ * Leader minimum, so the arithmetic below is just the callers' targets.
  */
 class NewJoinerTargetProjectionTest extends TestCase
 {
@@ -66,30 +70,28 @@ class NewJoinerTargetProjectionTest extends TestCase
 
     public function test_a_team_leaders_target_includes_a_caller_who_joined_three_days_ago(): void
     {
-        // Three established callers keeps the team off the understaffed
-        // top-up, so the arithmetic below is just the callers' targets.
-        $teamLeader = $this->teamLeaderWithCallers(3);
+        $teamLeader = $this->teamLeaderWithCallers(4);
 
         $before = $this->calculator->getTarget($teamLeader);
-        $this->assertSame(7500000.0, $before, 'Three established callers at 25L each.');
+        $this->assertSame(10000000.0, $before, 'Four established callers at 25L each.');
 
         $this->joinerUnder($teamLeader);
 
         $after = $this->calculator->getTarget($teamLeader->refresh());
 
         $this->assertSame(
-            9000000.0,
+            12500000.0,
             $after,
-            'The joiner must add the 15L partial-month target straight away, not 0.',
+            'The joiner must add their full 25L category target straight away, not 0.',
         );
     }
 
     public function test_the_joiners_own_contribution_is_visible_on_the_day_they_report(): void
     {
-        $teamLeader = $this->teamLeaderWithCallers(3);
+        $teamLeader = $this->teamLeaderWithCallers(4);
         $joiner = $this->joinerUnder($teamLeader);
 
-        $this->assertSame(1500000.0, $this->calculator->getHierarchyCallerTarget($joiner));
+        $this->assertSame(2500000.0, $this->calculator->getHierarchyCallerTarget($joiner));
     }
 
     /**
@@ -98,7 +100,7 @@ class NewJoinerTargetProjectionTest extends TestCase
      */
     public function test_the_joiners_own_target_screen_is_unaffected(): void
     {
-        $teamLeader = $this->teamLeaderWithCallers(3);
+        $teamLeader = $this->teamLeaderWithCallers(4);
         $joiner = $this->joinerUnder($teamLeader);
 
         $this->assertSame(2500000.0, $this->calculator->getTarget($joiner));
@@ -106,10 +108,10 @@ class NewJoinerTargetProjectionTest extends TestCase
 
     public function test_the_team_leaders_target_drops_back_when_the_joiner_leaves_early(): void
     {
-        $teamLeader = $this->teamLeaderWithCallers(3);
+        $teamLeader = $this->teamLeaderWithCallers(4);
         $joiner = $this->joinerUnder($teamLeader);
 
-        $this->assertSame(9000000.0, $this->calculator->getTarget($teamLeader));
+        $this->assertSame(12500000.0, $this->calculator->getTarget($teamLeader));
 
         // Leaves on the 12th — six days on the rolls, under the minimum.
         $joiner->update([
@@ -118,7 +120,7 @@ class NewJoinerTargetProjectionTest extends TestCase
         ]);
 
         $this->assertSame(
-            7500000.0,
+            10000000.0,
             $this->calculator->getTarget($teamLeader->refresh()),
             'An early exit must take the projected target back out automatically.',
         );
@@ -126,7 +128,7 @@ class NewJoinerTargetProjectionTest extends TestCase
 
     public function test_the_team_leaders_target_stands_when_the_joiner_stays_past_ten_days(): void
     {
-        $teamLeader = $this->teamLeaderWithCallers(3);
+        $teamLeader = $this->teamLeaderWithCallers(4);
         $joiner = $this->joinerUnder($teamLeader);
 
         // Leaves on the 17th — eleven days on the rolls.
@@ -135,7 +137,7 @@ class NewJoinerTargetProjectionTest extends TestCase
             'exit_date' => now()->startOfMonth()->addDays(16),
         ]);
 
-        $this->assertSame(9000000.0, $this->calculator->getTarget($teamLeader->refresh()));
+        $this->assertSame(12500000.0, $this->calculator->getTarget($teamLeader->refresh()));
     }
 
     /**
@@ -150,7 +152,7 @@ class NewJoinerTargetProjectionTest extends TestCase
             'exit_status' => 'no',
         ]);
 
-        $teamLeader = $this->teamLeaderWithCallers(3);
+        $teamLeader = $this->teamLeaderWithCallers(4);
         $teamLeader->update(['manager_id' => $manager->id]);
 
         $before = $this->calculator->getTarget($manager);
@@ -159,7 +161,7 @@ class NewJoinerTargetProjectionTest extends TestCase
 
         $after = $this->calculator->getTarget($manager->refresh());
 
-        $this->assertSame(1500000.0, $after - $before);
+        $this->assertSame(2500000.0, $after - $before);
     }
 
     /**
@@ -168,7 +170,7 @@ class NewJoinerTargetProjectionTest extends TestCase
      */
     public function test_the_projected_target_carries_an_explanatory_note(): void
     {
-        $teamLeader = $this->teamLeaderWithCallers(3);
+        $teamLeader = $this->teamLeaderWithCallers(4);
         $joiner = $this->joinerUnder($teamLeader);
 
         $note = $this->calculator->hierarchyCallerTargetNote($joiner);

@@ -28,7 +28,8 @@ class AchievementCalculatorHierarchyTargetBoundaryTest extends TestCase
      * than a 0 that silently turns into a target on day ten.
      *
      * Reporting on day 7 leaves only 9 elapsed days by the 15th — the old
-     * rule returned 0 here.
+     * rule returned 0 here. With 10+ days the joiner brings their full
+     * category target (user decision 2026-11-24; it was a flat ₹15L).
      */
     public function test_new_joiner_still_on_the_rolls_is_targeted_from_the_day_they_report(): void
     {
@@ -40,7 +41,7 @@ class AchievementCalculatorHierarchyTargetBoundaryTest extends TestCase
 
         $target = (new AchievementCalculatorService)->getHierarchyCallerTarget($employee);
 
-        $this->assertSame(1500000.0, $target);
+        $this->assertSame(3000000.0, $target);
     }
 
     /**
@@ -66,7 +67,7 @@ class AchievementCalculatorHierarchyTargetBoundaryTest extends TestCase
         $this->assertSame(0.0, $target);
     }
 
-    public function test_new_joiner_with_exactly_ten_days_left_in_the_month_gets_the_partial_target(): void
+    public function test_new_joiner_with_exactly_ten_days_left_in_the_month_gets_the_full_category_target(): void
     {
         // 10 days inclusive: reporting day .. month end.
         $reportingDate = now()->endOfMonth()->startOfDay()->subDays(9);
@@ -81,7 +82,7 @@ class AchievementCalculatorHierarchyTargetBoundaryTest extends TestCase
 
         $target = (new AchievementCalculatorService)->getHierarchyCallerTarget($employee);
 
-        $this->assertSame(1500000.0, $target);
+        $this->assertSame(3000000.0, $target);
     }
 
     /**
@@ -99,7 +100,7 @@ class AchievementCalculatorHierarchyTargetBoundaryTest extends TestCase
 
         $calculator = new AchievementCalculatorService;
 
-        $this->assertSame(1500000.0, $calculator->getHierarchyCallerTarget($employee));
+        $this->assertSame(3000000.0, $calculator->getHierarchyCallerTarget($employee));
 
         // Left on day 12 — six days on the rolls (7th to 12th inclusive).
         $employee->update([
@@ -110,7 +111,7 @@ class AchievementCalculatorHierarchyTargetBoundaryTest extends TestCase
         $this->assertSame(0.0, $calculator->getHierarchyCallerTarget($employee->refresh()));
     }
 
-    public function test_a_joiner_who_leaves_after_completing_ten_days_keeps_the_partial_target(): void
+    public function test_a_joiner_who_leaves_after_completing_ten_days_keeps_the_full_category_target(): void
     {
         $employee = Employee::factory()->create([
             'category' => '3000000',
@@ -121,13 +122,13 @@ class AchievementCalculatorHierarchyTargetBoundaryTest extends TestCase
 
         $target = (new AchievementCalculatorService)->getHierarchyCallerTarget($employee);
 
-        $this->assertSame(1500000.0, $target);
+        $this->assertSame(3000000.0, $target);
     }
 
     /**
      * The exit window now starts at the reporting date rather than at day
      * 1 of the month. Before this change a caller who joined on the 7th
-     * and left on the 12th was credited a full partial-month target,
+     * and left on the 12th was credited a part-month target,
      * because the rule only looked at the exit date's day-of-month (12
      * >= 10) and never at when they actually started.
      */
@@ -184,7 +185,7 @@ class AchievementCalculatorHierarchyTargetBoundaryTest extends TestCase
 
         $target = (new AchievementCalculatorService)->getHierarchyCallerTarget($employee);
 
-        $this->assertSame(1500000.0, $target);
+        $this->assertSame(3000000.0, $target);
     }
 
     public function test_exit_before_the_current_month_gets_zero_target(): void

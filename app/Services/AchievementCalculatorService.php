@@ -6,12 +6,11 @@ use App\Models\Customer;
 use App\Models\Employee;
 use App\Models\TargetCategory;
 use App\Support\HierarchyHelper;
-use App\Support\OnRollsWindow;
 use App\Support\ReportingTimeline;
 use App\Support\SelectedMonth;
 use App\Support\TargetCategoryTimeline;
+use App\Support\TargetLedger;
 use Carbon\Carbon;
-use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -35,32 +34,6 @@ class AchievementCalculatorService
      * @var list<string>
      */
     public const IN_HOUSE_SPLIT_BANKS = ['BFL Prime', 'BFL Growth', 'BFL SOL'];
-
-    /**
-     * Calendar days a caller must be on the rolls within a month before
-     * their target is counted into the hierarchy above them.
-     */
-    private const MIN_TARGET_DAYS = 10;
-
-    /**
-     * The flat target a caller carries for a month they were only on the
-     * rolls for part of — a joiner, a leaver, or both.
-     */
-    private const PARTIAL_MONTH_TARGET = 1500000.0;
-
-    /**
-     * A Team Leader with fewer callers than this adds UNDERSTAFFED_TEAM_TOP_UP
-     * to every target that counts them.
-     */
-    private const UNDERSTAFFED_TEAM_CALLERS = 3;
-
-    public const UNDERSTAFFED_TEAM_TOP_UP = 3000000.0;
-
-    /**
-     * Fallback when employees.category is blank or names a category with
-     * no target amount (e.g. 'team_leader').
-     */
-    private const DEFAULT_CATEGORY_TARGET = 2500000.0;
 
     /**
      * The incentive schemes, as returned by incentiveSchemeFor().
@@ -339,190 +312,37 @@ class AchievementCalculatorService
     }
 
     /**
-     * Single authoritative target engine, for an arbitrary period.
+     * Single authoritative target engine, for an arbitrary period: the sum
+     * of the calendar months it touches, each read off that month's
+     * TargetLedger, where every target rule lives (consolidated with the
+     * user 2026-11-24).
      *
-     * getTarget() (current month) is a thin wrapper around this method —
-     * both current-month and historical-period target calculations go
-     * through the exact same business rules, month by month.
+     * Admin: the company target. Anyone else on their own: the target on
+     * their own screen — a caller's full category amount for any month they
+     * were on the rolls, a leader's team target. With $within: the part of
+     * their month target that counts in $within's (a caller's team target
+     * or a leader's target, split by the days spent in it), so the rows of
+     * a team listing add up to the boss's own figure.
      *
-     * A boss's month is counted on the reporting tree of each DAY of that
-     * month (ReportingTimeline), never today's tree: a caller counts in
-     * every team they spent ten days or more in (callerTargetShares()), and
-     * the ₹30L understaffed-team top-up of a Team Leader likewise follows
-     * the days that Team Leader sat in it. With no reporting change in the
-     * month this is exactly the whole-month figure it always was.
-     *
-     * Each month is counted as the position held in it (designationFor(),
-     * the one held on its last day), so after a promotion or demotion the
-     * months before its effective date keep the old position: a caller
-     * promoted to Team Leader on 1 Nov carries their own caller target for
-     * October and their team's target from November.
-     *
-     * $within narrows the figure to the days $employee sat in $within's
-     * branch — what $employee's team contributes to that boss.
+     * Each month is counted as the position held on its last day, so after
+     * a promotion or demotion the months before its effective date keep the
+     * old position.
      */
     public function getTargetForPeriod(Employee $employee, Carbon $start, Carbon $end, ?Employee $within = null): float
     {
-        /*
-    |--------------------------------------------------------------------------
-    | Admin
-    |--------------------------------------------------------------------------
-    */
-
-        if ($employee->designation === Employee::DESIGNATION_ADMIN) {
-
-            return Employee::where('designation', Employee::DESIGNATION_CALLER)
-                ->get()
-                ->sum(fn (Employee $caller) => $this->getHierarchyCallerTargetForPeriod($caller, $start, $end));
-        }
-
         $target = 0.0;
 
         foreach ($this->monthsOf($start, $end) as $month) {
-            $designation = $this->designationFor($employee, $month);
+            $ledger = TargetLedger::forMonth($month);
 
-            /*
-        |--------------------------------------------------------------------------
-        | Caller
-        |--------------------------------------------------------------------------
-        |
-        | Their own target is the flat category value. Seen from inside a
-        | boss's team ($within), it is what their month counts there.
-        |
-        */
-
-            if ($designation === Employee::DESIGNATION_CALLER) {
-                $target += $within === null
-                    ? $this->getCallerTarget($employee, $month->copy()->endOfMonth())
-                    : $this->callerTargetShares($within, ReportingTimeline::forMonth($month))[$employee->id] ?? 0.0;
-
-                continue;
-            }
-
-            /*
-        |--------------------------------------------------------------------------
-        | Team Leader, Manager, Cluster Manager, Business Head
-        |--------------------------------------------------------------------------
-        |
-        | Every caller the branch counts, plus the ₹30L understaffed-team
-        | top-up for each Team Leader in it — themselves included — with
-        | fewer than three callers. Levels may be skipped: a Team Leader
-        | reporting straight to a Cluster Manager carries their callers and
-        | their top-up into that Cluster Manager's target, and never into a
-        | Manager's.
-        |
-        */
-
-            if (Employee::designationRank($designation) > 0) {
-                $timeline = ReportingTimeline::forMonth($month);
-
-                $target += array_sum($this->callerTargetShares($employee, $timeline, $within));
-                $target += $this->understaffedTeamTopUps($employee, $timeline, $within);
-            }
+            $target += match (true) {
+                $employee->designation === Employee::DESIGNATION_ADMIN => $ledger->companyTarget(),
+                $within !== null => $ledger->contribution($employee->id, $within->id),
+                default => $ledger->ownTarget($employee->id),
+            };
         }
 
-        return $target;
-    }
-
-    /**
-     * Each caller's month target as it counts for $boss.
-     *
-     * A caller in $boss's branch for every day they were on the rolls that
-     * month carries their own month target (category, partial-month or nil
-     * — see hierarchyCallerTargetForMonth()), counted 1st to month-end.
-     *
-     * A caller who moved into or out of the branch inside that window
-     * carries that same full month target into it when they spent at least
-     * MIN_TARGET_DAYS calendar days in it while on the rolls, otherwise
-     * nothing (user decision 2026-11-24, replacing the flat part-month
-     * target for movers of 2026-11-16). Each team judges its own days, so a
-     * caller moved on the 2nd or the 16th counts their full target in both
-     * teams, and one moved on the 26th only in the old one.
-     *
-     * @return array<int, float> caller id => target counted for $boss
-     */
-    public function callerTargetShares(Employee $boss, ReportingTimeline $timeline, ?Employee $within = null): array
-    {
-        $spans = $timeline->branchSpans(
-            $boss->id,
-            skipExitedLevels: true,
-            includeBoss: true,
-            withinId: $within?->id,
-            onlyDesignation: Employee::DESIGNATION_CALLER,
-        );
-
-        if ($spans === []) {
-            return [];
-        }
-
-        $monthStart = Carbon::parse($timeline->start()->toDateString());
-        $monthEnd = Carbon::parse($timeline->end()->toDateString());
-        $shares = [];
-
-        foreach (Employee::query()->whereIn('id', array_keys($spans))->get() as $caller) {
-            $window = $this->activeWindowForMonth($caller, $monthStart, $monthEnd);
-            $target = $this->hierarchyCallerTargetForMonth($caller, $monthStart, $monthEnd);
-
-            if ($window === null || $target <= 0 || $window['days'] <= 0) {
-                $shares[$caller->id] = 0.0;
-
-                continue;
-            }
-
-            $daysInBranch = ReportingTimeline::overlapDays($spans[$caller->id], $window['start'], $window['end']);
-
-            if ($daysInBranch >= $window['days']) {
-                $shares[$caller->id] = $target;
-
-                continue;
-            }
-
-            $shares[$caller->id] = $daysInBranch >= self::MIN_TARGET_DAYS ? $target : 0.0;
-        }
-
-        return $shares;
-    }
-
-    /**
-     * The ₹30L top-up for every Team Leader whose top-up counts in $boss's
-     * branch that month — see understaffedTeamLeaderIds().
-     */
-    private function understaffedTeamTopUps(Employee $boss, ReportingTimeline $timeline, ?Employee $within = null): float
-    {
-        return count($this->understaffedTeamLeaderIds($boss, $timeline, $within)) * self::UNDERSTAFFED_TEAM_TOP_UP;
-    }
-
-    /**
-     * Team Leaders in $boss's branch — $boss too, if they are one — who add
-     * the full UNDERSTAFFED_TEAM_TOP_UP to it that month: their headcount
-     * (ReportingTimeline::headcountCallerIds(), callers reporting straight
-     * to them for ten days on the rolls) is under UNDERSTAFFED_TEAM_CALLERS,
-     * and they themselves spent at least MIN_TARGET_DAYS days in the branch
-     * while on the rolls.
-     *
-     * The same ten-day rule as a caller's target (user decision 2026-11-16,
-     * replacing pro-rata by days): a Team Leader moved in on the 25th, or
-     * who joined then, adds nothing; one there for ten days or more adds
-     * the whole top-up, in each team that qualifies.
-     *
-     * @return list<int>
-     */
-    public function understaffedTeamLeaderIds(Employee $boss, ReportingTimeline $timeline, ?Employee $within = null): array
-    {
-        $teamLeaderDays = $timeline->daysOnTheRolls($timeline->branchSpans(
-            $boss->id,
-            skipExitedLevels: true,
-            includeBoss: true,
-            withinId: $within?->id,
-            onlyDesignation: Employee::DESIGNATION_TEAM_LEADER,
-        ));
-
-        return array_keys(array_filter(
-            $teamLeaderDays,
-            fn (int $days, int $teamLeaderId): bool => $days >= self::MIN_TARGET_DAYS
-                && count($timeline->headcountCallerIds($teamLeaderId, directOnly: true)) < self::UNDERSTAFFED_TEAM_CALLERS,
-            ARRAY_FILTER_USE_BOTH,
-        ));
+        return round($target, 2);
     }
 
     /**
@@ -575,13 +395,10 @@ class AchievementCalculatorService
     | A caller is eligible if they count in this branch's headcount for the
     | month — at least ReportingTimeline::MIN_HEADCOUNT_DAYS in it, so a
     | caller moved mid-month can count in both teams — AND their target for
-    | the month is greater than zero. The target must be the same
-    | reporting-date/exit-status aware one (getHierarchyCallerTarget) as the
-    | rest of this service — getCallerTarget() only returns the caller's
-    | static category value (or a 2,500,000 default) and is never zero, so
-    | it would count a not-yet-eligible new joiner (<10 days into the month)
-    | or an already-exited caller as "eligible", inflating the PPP
-    | denominator.
+    | the month is greater than zero. That is their TEAM target
+    | (TargetLedger::target()), never the full category amount on their own
+    | screen, which would count a not-yet-eligible new joiner (<10 days
+    | into the month) as "eligible", inflating the PPP denominator.
     |
     */
 
@@ -593,10 +410,9 @@ class AchievementCalculatorService
             return 0;
         }
 
-        return Employee::whereIn('id', $callerIds)
-            ->get()
-            ->filter(fn (Employee $caller) => $this->getHierarchyCallerTarget($caller, $referenceMonth) > 0)
-            ->count();
+        $ledger = TargetLedger::forMonth($referenceMonth);
+
+        return count(array_filter($callerIds, fn (int $callerId): bool => $ledger->target($callerId) > 0));
     }
 
     public function getPPPMultiplier(float $ppp): float
@@ -667,19 +483,18 @@ class AchievementCalculatorService
      * Manager PPP formula:
      *
      * - Team target/achievement reuse the same canonical engines as
-     *   everywhere else (getHierarchyCallerTarget() per caller,
-     *   computeAchievementTotals() for net bank-aware/MIS-aware
-     *   achievement) rather than a separate reimplementation.
+     *   everywhere else (the Team Leader's own TargetLedger target, ₹80L
+     *   minimum included; computeAchievementTotals() for net
+     *   bank-aware/MIS-aware achievement) rather than a separate
+     *   reimplementation.
      * - Gate: team achievement must reach 90% of team target once the team
      *   has more than 4 callers, otherwise (4 or fewer callers) it must
      *   reach 100% — below the gate, incentive is 0.
-     * - Below the gate aside, an understaffed team (< 3 callers) is NOT
-     *   separately zeroed here — the existing ₹30L target top-up for
-     *   understaffed teams (see getTargetForPeriod()'s Team Leader branch)
-     *   is what makes an understaffed team's target harder to hit; this
-     *   method does not duplicate that as a second, independent gate. The
-     *   ONE exception is a single eligible caller (see below), which IS a
-     *   hard zero.
+     * - Below the gate aside, a small team is NOT separately zeroed here —
+     *   the ₹80L Team Leader minimum in the target is what makes a small
+     *   team's target harder to hit; this method does not duplicate that as
+     *   a second, independent gate. The ONE exception is a single eligible
+     *   caller (see below), which IS a hard zero.
      * - Hard zero: a Team Leader with exactly one eligible caller (current
      *   month target > 0, via getEligibleCallerCount()) earns no incentive
      *   at all, regardless of achievement — checked before, and
@@ -700,7 +515,7 @@ class AchievementCalculatorService
         // The month is read off the reporting tree of each of its days: a
         // caller is in this team's headcount if they spent at least
         // ReportingTimeline::MIN_HEADCOUNT_DAYS in it, the team target is
-        // each caller's pro-rata share, and the achievement is the cases
+        // the Team Leader's own month target, and the achievement is the cases
         // disbursed while each caller was in the team.
         $timeline = ReportingTimeline::forMonth($referenceMonth);
 
@@ -708,13 +523,19 @@ class AchievementCalculatorService
 
         $callerCount = $callers->count();
 
+        $ledger = TargetLedger::forMonth($referenceMonth);
+
         $eligibleCallers = $callers
-            ->filter(fn (Employee $caller) => $this->getHierarchyCallerTarget($caller, $referenceMonth) > 0)
+            ->filter(fn (Employee $caller) => $ledger->target($caller->id) > 0)
             ->count();
 
-        $targetShares = $this->callerTargetShares($teamLeader, $timeline);
+        // Each caller's share of their team target that counts here.
+        $targetShares = $ledger->contributions($teamLeader->id, Employee::DESIGNATION_CALLER);
 
-        $teamTarget = array_sum($targetShares);
+        // The gate and the over-target bonus judge the team on the Team
+        // Leader's own target — the callers' shares plus the ₹80L minimum
+        // (user decision 2026-11-24), the same figure on their screen.
+        $teamTarget = $ledger->target($teamLeader->id);
 
         $teamAchievement = $this->computeAchievementTotals(
             $this->disbursedCustomersFor($teamLeader, $monthStart, $monthEnd, callersOnly: true)
@@ -882,17 +703,10 @@ class AchievementCalculatorService
 
         if ($isCompanyView) {
 
-            // Admin dashboard: sum of all caller targets, hierarchy-adjusted
-            // for new joiners/exits so it matches the drill-down totals.
-            $target = Employee::query()
-                ->where(
-                    'designation',
-                    Employee::DESIGNATION_CALLER
-                )
-                ->get()
-                ->sum(
-                    fn (Employee $caller) => $this->getHierarchyCallerTarget($caller, $referenceMonth)
-                );
+            // Admin dashboard: everything that reaches the top of the tree —
+            // every branch, Team Leader minimums included, plus anybody with
+            // no boss on the rolls (TargetLedger::brokenLineIds()).
+            $target = TargetLedger::forMonth($referenceMonth)->companyTarget();
         } else {
 
             // Teams table / employee dashboard:
@@ -1040,140 +854,47 @@ class AchievementCalculatorService
         return null;
     }
 
-    private function getCallerTarget(Employee $employee, Carbon $periodEnd): float
-    {
-
-        /*
-    |--------------------------------------------------------------------------
-    | CALLER OWN TARGET
-    |--------------------------------------------------------------------------
-    |
-    | Caller target is ALWAYS based on assigned category — the one held in
-    | the month the period ends in, split by days when it changed inside
-    | that month (see categoryTarget()).
-    |
-    | DOJ, reporting_date, joining date and exit date do NOT affect
-    | the caller's own target.
-    |
-    */
-
-        return $this->categoryTarget($employee, $periodEnd->copy()->startOfMonth(), $periodEnd->copy()->endOfMonth());
-    }
-
+    /**
+     * A caller's TEAM target for the month — what they bring to their
+     * bosses: their category amount once on the rolls TargetLedger::
+     * MIN_TARGET_DAYS days, else nothing. Not the figure on their own
+     * screen (getTarget()), which ignores joining and leaving.
+     */
     public function getHierarchyCallerTarget(Employee $employee, ?Carbon $referenceMonth = null): float
     {
         // See getTarget() above — target boundary logic must anchor to the
         // real requested month, never the achievement-driven fallback.
         $referenceMonth ??= SelectedMonth::current();
 
-        return $this->getHierarchyCallerTargetForPeriod(
-            $employee,
-            $referenceMonth->copy()->startOfMonth(),
-            $referenceMonth->copy()->endOfMonth()
-        );
+        return $this->callerTeamTargetForMonth($employee, $referenceMonth);
     }
 
     /**
-     * Single authoritative per-caller hierarchy target engine, for an
-     * arbitrary period. getHierarchyCallerTarget() (current month) is a
-     * thin wrapper around this — decomposes the period into full calendar
-     * months and evaluates each with the identical joining/exit business
-     * rules, so a month never produces a different target depending on
-     * whether it's viewed as "the current month" or as a historical period.
+     * getHierarchyCallerTarget() summed over the calendar months
+     * [$start, $end] touches.
      */
     public function getHierarchyCallerTargetForPeriod(Employee $employee, Carbon $start, Carbon $end): float
     {
         $total = 0.0;
-        $cursor = $start->copy()->startOfMonth();
-        $periodEnd = $end->copy();
 
-        while ($cursor->lte($periodEnd)) {
-            $total += $this->hierarchyCallerTargetForMonth(
-                $employee,
-                $cursor->copy()->startOfMonth(),
-                $cursor->copy()->endOfMonth()
-            );
-
-            $cursor = $cursor->copy()->addMonthNoOverflow()->startOfMonth();
+        foreach ($this->monthsOf($start, $end) as $month) {
+            $total += $this->callerTeamTargetForMonth($employee, $month);
         }
 
-        return $total;
+        return round($total, 2);
     }
 
     /**
-     * Evaluates one caller's hierarchy target for a single full calendar
-     * month [$monthStart, $monthEnd].
-     *
-     * The month is reduced to the window the caller is actually on the
-     * rolls for, and the target follows from that window alone:
-     *
-     *   - on the rolls for the whole month  -> their category target;
-     *   - a partial month (joined and/or left inside it) -> the flat
-     *     partial-month target if the window spans at least
-     *     MIN_TARGET_DAYS calendar days, otherwise nothing.
-     *
-     * The window's END is the key business rule (changed 2026-09-10, see
-     * activeWindowForMonth()): for a caller who is still on the rolls it
-     * runs to month-end, NOT to today.
+     * The ledger's figure for somebody it counts as a caller that month;
+     * the same rule applied directly to anybody else.
      */
-    private function hierarchyCallerTargetForMonth(Employee $employee, Carbon $monthStart, Carbon $monthEnd): float
+    private function callerTeamTargetForMonth(Employee $employee, Carbon $month): float
     {
-        $window = $this->activeWindowForMonth($employee, $monthStart, $monthEnd);
+        $ledger = TargetLedger::forMonth($month);
 
-        if ($window === null) {
-            return 0.0;
-        }
-
-        if (! $window['is_partial']) {
-            return $this->categoryTarget($employee, $monthStart, $monthEnd);
-        }
-
-        return $window['days'] >= self::MIN_TARGET_DAYS
-            ? self::PARTIAL_MONTH_TARGET
-            : 0.0;
-    }
-
-    /**
-     * The slice of [$monthStart, $monthEnd] a caller is on the rolls for —
-     * see OnRollsWindow, which also feeds the headcount.
-     *
-     * @return array{start: Carbon, end: Carbon, days: int, is_partial: bool, is_projected: bool}|null
-     */
-    private function activeWindowForMonth(Employee $employee, Carbon $monthStart, Carbon $monthEnd): ?array
-    {
-        return OnRollsWindow::forMonth($employee, $monthStart, $monthEnd);
-    }
-
-    /**
-     * The category target for the calendar month [$monthStart, $monthEnd],
-     * from the category held on each day of it (TargetCategoryTimeline):
-     * a change inside the month splits it by days (user decision
-     * 2026-11-16) — the old amount for the days before the effective date,
-     * the new one from it — and every other month keeps the one category
-     * it was held in, so a change never restates a past month.
-     */
-    private function categoryTarget(Employee $employee, Carbon $monthStart, Carbon $monthEnd): float
-    {
-        $spans = TargetCategoryTimeline::spans($employee, $monthStart, $monthEnd);
-
-        if (count($spans) <= 1) {
-            return $this->categoryAmount($spans[0]['category'] ?? $employee->category);
-        }
-
-        $daysInMonth = (int) $monthStart->daysInMonth;
-        $target = 0.0;
-
-        foreach ($spans as $span) {
-            $target += $this->categoryAmount($span['category']) * $span['days'] / $daysInMonth;
-        }
-
-        return round($target, 2);
-    }
-
-    private function categoryAmount(?string $category): float
-    {
-        return TargetCategory::targetAmountFor($category)
-            ?? self::DEFAULT_CATEGORY_TARGET;
+        return $ledger->designation($employee->id) === Employee::DESIGNATION_CALLER
+            ? $ledger->target($employee->id)
+            : TargetLedger::callerTeamTarget($employee, $month);
     }
 
     /**
@@ -1183,7 +904,8 @@ class AchievementCalculatorService
      */
     public function reportingSpanNote(Employee $member, Employee $boss, ?Carbon $referenceMonth = null, bool $withRule = false): ?string
     {
-        $timeline = ReportingTimeline::forMonth($referenceMonth ?? SelectedMonth::current());
+        $referenceMonth ??= SelectedMonth::current();
+        $timeline = ReportingTimeline::forMonth($referenceMonth);
 
         $spans = $timeline->branchSpans($boss->id, skipExitedLevels: true, includeBoss: false)[$member->id] ?? [];
         $days = ReportingTimeline::overlapDays($spans, $timeline->start(), $timeline->end());
@@ -1204,81 +926,80 @@ class AchievementCalculatorService
         $note = "In this team {$stretches} ({$days} of {$timeline->days()} days).";
 
         if ($withRule) {
-            $note .= ' Only cases disbursed on those days count here.';
-
-            if ($timeline->designation($member->id) === Employee::DESIGNATION_CALLER) {
-                $note .= ' '.$this->moverTargetRule($member, $spans, $timeline);
-            }
+            $note .= ' Only cases disbursed on those days count here. '.$this->moverTargetRule($member, $boss, TargetLedger::forMonth($referenceMonth));
         }
 
         return $note;
     }
 
     /**
-     * What a caller who moved into or out of a team brings to it — the
-     * wording of callerTargetShares()'s rule: their full month target with
-     * MIN_TARGET_DAYS or more days in the team while on the rolls, else
-     * nothing.
-     *
-     * @param  list<array{0: CarbonInterface, 1: CarbonInterface}>  $spans  the days they spent in the team
+     * What somebody who moved into or out of a team brings to it — the
+     * wording of TargetLedger's split rule.
      */
-    private function moverTargetRule(Employee $member, array $spans, ReportingTimeline $timeline): string
+    private function moverTargetRule(Employee $member, Employee $boss, TargetLedger $ledger): string
     {
-        $monthStart = Carbon::parse($timeline->start()->toDateString());
-        $monthEnd = Carbon::parse($timeline->end()->toDateString());
-        $window = $this->activeWindowForMonth($member, $monthStart, $monthEnd);
-        $daysOnTheRolls = $window === null ? 0 : ReportingTimeline::overlapDays($spans, $window['start'], $window['end']);
+        $target = $ledger->target($member->id);
+        $counted = $ledger->contribution($member->id, $boss->id);
 
-        if ($daysOnTheRolls < self::MIN_TARGET_DAYS) {
-            return 'Under '.self::MIN_TARGET_DAYS.' days here while on the rolls, so no target counts.';
+        if ($target <= 0) {
+            return 'No target counts for them this month.';
         }
 
-        return 'With '.self::MIN_TARGET_DAYS.' or more days here, their full target of '
-            .indianAmount($this->hierarchyCallerTargetForMonth($member, $monthStart, $monthEnd)).' counts.';
+        if ($counted <= 0) {
+            return 'Under '.TargetLedger::MIN_TARGET_DAYS.' days here, so their target of '.indianAmount($target)
+                .' counts with the team(s) where they spent '.TargetLedger::MIN_TARGET_DAYS.' days or more.';
+        }
+
+        if ($counted >= $target) {
+            return 'Their full target of '.indianAmount($target).' counts here.';
+        }
+
+        return 'Their target of '.indianAmount($target).' is split by days between the teams they sat in, so '
+            .indianAmount($counted).' counts here.';
     }
 
     /**
-     * A one-line explanation of a caller's hierarchy target, for the
-     * screens a Team Leader reads it on — or null when the figure is the
-     * plain full-month category target and needs no explaining.
+     * A one-line explanation of a caller's team target, for the screens a
+     * Team Leader reads it on — or null when the figure is the plain
+     * full-month category target and needs no explaining.
      *
-     * This exists so the wording of the projection lives in the same class
-     * as the rule itself; see activeWindowForMonth().
+     * This exists so the wording of the rule lives next to it; see
+     * TargetLedger.
      */
     public function hierarchyCallerTargetNote(Employee $employee, ?Carbon $referenceMonth = null): ?string
     {
         $referenceMonth ??= SelectedMonth::current();
-
-        $window = $this->activeWindowForMonth(
-            $employee,
-            $referenceMonth->copy()->startOfMonth(),
-            $referenceMonth->copy()->endOfMonth(),
-        );
+        $ledger = TargetLedger::forMonth($referenceMonth);
+        $window = $ledger->window($employee->id);
+        $minimum = TargetLedger::MIN_TARGET_DAYS;
 
         if ($window === null) {
             return 'Not on the rolls this month, so no target is counted.';
         }
 
+        $notes = [];
+
+        if ($ledger->hasMissingCategory($employee->id)) {
+            $notes[] = 'No Target Category with an amount — set one on the employee; nothing counts for the days without it.';
+        }
+
         if (! $window['is_partial']) {
-            return $this->categoryChangeNote($employee, $referenceMonth);
+            $notes[] = $this->categoryChangeNote($employee, $referenceMonth);
+
+            return implode(' ', array_filter($notes)) ?: null;
         }
 
         $days = $window['days'];
         $span = $window['start']->format('d M').' to '.$window['end']->format('d M');
 
-        if ($days < self::MIN_TARGET_DAYS) {
-            return "Only {$days} day(s) on the rolls this month ({$span}) — under the "
-                .self::MIN_TARGET_DAYS.'-day minimum, so no target is counted.';
-        }
+        $notes[] = match (true) {
+            $days < $minimum => "Only {$days} day(s) on the rolls this month ({$span}) — under the {$minimum}-day minimum, so nothing counts for the team.",
+            $window['is_projected'] => "{$days} days on the rolls this month ({$span}), counted on the basis that they stay to month-end, so their full category target counts. "
+                ."If they leave before completing {$minimum} days, this target drops to zero automatically.",
+            default => "{$days} days on the rolls this month ({$span}) — at or above the {$minimum}-day minimum, so their full category target counts.",
+        };
 
-        if ($window['is_projected']) {
-            return "{$days} days on the rolls this month ({$span}), counted on the basis that "
-                .'they stay to month-end. If they leave before completing '
-                .self::MIN_TARGET_DAYS.' days, this target drops to zero automatically.';
-        }
-
-        return "{$days} days on the rolls this month ({$span}) — at or above the "
-            .self::MIN_TARGET_DAYS.'-day minimum.';
+        return implode(' ', $notes);
     }
 
     /**
@@ -1302,7 +1023,7 @@ class AchievementCalculatorService
         return 'Target category changed this month, so the target is split by days: '
             .collect($spans)
                 ->map(fn (array $span): string => (TargetCategory::labelFor($span['category']) ?? 'no category')
-                    .' ('.indianCurrencyFormat($this->categoryAmount($span['category'])).') for '
+                    .' ('.indianCurrencyFormat(TargetCategory::targetAmountFor($span['category'], $referenceMonth) ?? 0).') for '
                     .$span['days'].' day(s) from '.$span['start']->format('d M'))
                 ->join(', ', ' and ')
             .'.';

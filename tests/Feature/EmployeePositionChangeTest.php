@@ -363,12 +363,49 @@ class EmployeePositionChangeTest extends TestCase
         $this->assertSame($this->caller->id, (int) $lead->fresh()->employee_id);
     }
 
-    public function test_a_target_change_alone_leaves_their_team_where_it_is(): void
+    /**
+     * Only a caller carries a Target Category (user decision 2026-11-24): a
+     * leader's target is built from their team, so a category on its own
+     * changes nothing for them and their team stays where it is.
+     */
+    public function test_a_team_leader_carries_no_category_so_a_category_only_change_is_refused(): void
     {
-        $this->service()->change($this->teamLeader, Employee::DESIGNATION_TEAM_LEADER, null, self::GOLD, Carbon::parse(self::TODAY), null, $this->admin);
+        $before = $this->teamLeader->category;
 
-        $this->assertSame(self::GOLD, $this->teamLeader->fresh()->category);
+        try {
+            $this->service()->change($this->teamLeader, Employee::DESIGNATION_TEAM_LEADER, null, self::GOLD, Carbon::parse(self::TODAY), null, $this->admin);
+            $this->fail('A category-only change for a Team Leader was accepted.');
+        } catch (ValidationException $exception) {
+            $this->assertStringContainsString('nothing would change', $exception->errors()['designation'][0]);
+        }
+
+        $this->assertSame($before, $this->teamLeader->fresh()->category);
         $this->assertSame($this->teamLeader->id, HierarchyHelper::directBossId($this->caller->fresh()));
+    }
+
+    public function test_a_caller_may_only_be_given_a_category_carrying_a_monthly_target(): void
+    {
+        try {
+            $this->service()->change($this->otherCaller, Employee::DESIGNATION_CALLER, null, 'team_leader', Carbon::parse(self::TODAY), null, $this->admin);
+            $this->fail('A caller was given a category with no monthly target.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('category', $exception->errors());
+        }
+
+        $this->assertSame(self::SILVER, $this->otherCaller->fresh()->category);
+    }
+
+    public function test_a_promotion_keeps_the_category_on_record_untouched(): void
+    {
+        $this->service()->change($this->otherCaller, Employee::DESIGNATION_TEAM_LEADER, $this->manager->id, self::GOLD, Carbon::parse(self::TODAY), null, $this->admin);
+
+        // A leader is never given a category; the caller's one stays on
+        // record for a later demotion, with no category change dated.
+        $this->assertSame(self::SILVER, $this->otherCaller->fresh()->category);
+        $this->assertFalse(EmployeeReportingHistory::query()
+            ->where('employee_id', $this->otherCaller->id)
+            ->where('change_type', ReportingLineService::CHANGE_TARGET_CATEGORY)
+            ->exists());
     }
 
     public function test_a_caller_with_open_work_is_promoted_and_takes_it_along(): void

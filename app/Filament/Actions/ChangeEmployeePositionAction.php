@@ -197,10 +197,13 @@ class ChangeEmployeePositionAction
                 ->required()
                 ->native(false),
 
+            // Only a caller carries a category (user decision 2026-11-24);
+            // a leader's target is built from their team.
             Select::make('category')
                 ->label('Target Category')
-                ->options(TargetCategory::optionsIncluding($employee->category))
-                ->required(fn (Get $get): bool => Employee::designationRank($newDesignation($get)) > 0)
+                ->options(TargetCategory::callerOptionsIncluding($employee->category))
+                ->visible(fn (Get $get): bool => $newDesignation($get) === Employee::DESIGNATION_CALLER)
+                ->required(fn (Get $get): bool => $newDesignation($get) === Employee::DESIGNATION_CALLER)
                 ->helperText(fn (Get $get): string => $categoryChanges($get)
                     ? 'The new target applies from the effective date: earlier months keep the old one, and the month it falls in is split by days.'
                     : 'Unchanged.')

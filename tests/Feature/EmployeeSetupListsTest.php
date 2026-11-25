@@ -29,7 +29,6 @@ use Filament\Actions\Testing\TestAction;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
-use ReflectionMethod;
 use RuntimeException;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -303,18 +302,53 @@ class EmployeeSetupListsTest extends TestCase
         $caller = Employee::factory()->create(['designation' => Employee::DESIGNATION_CALLER, 'category' => $platinum->code]);
         $this->assertSame(4000000, $caller->target_amount);
 
-        // Raising an existing category raises everyone in it.
+        // Raising an existing category raises everyone in it — from the
+        // month chosen (the current one by default), never earlier.
         $gold = TargetCategory::query()->where('code', '3000000')->sole();
 
         Livewire::test(ManageTargetCategories::class)
             ->callAction(TestAction::make(EditAction::class)->table($gold), ['name' => 'Gold', 'target_amount' => '32,00,000'])
             ->assertHasNoActionErrors();
 
-        $goldCaller = Employee::factory()->create(['designation' => Employee::DESIGNATION_CALLER, 'category' => '3000000']);
+        $goldCaller = Employee::factory()->create(['designation' => Employee::DESIGNATION_CALLER, 'category' => '3000000', 'reporting_date' => '2025-01-01']);
         $this->assertSame(3200000, $goldCaller->target_amount);
 
-        $categoryTarget = new ReflectionMethod(AchievementCalculatorService::class, 'categoryTarget');
-        $this->assertSame(3200000.0, $categoryTarget->invoke(app(AchievementCalculatorService::class), $goldCaller, now()->startOfMonth(), now()->endOfMonth()));
+        $calculator = app(AchievementCalculatorService::class);
+        $this->assertSame(3200000.0, $calculator->getTarget($goldCaller, now()->startOfMonth()));
+        $this->assertSame(3000000.0, $calculator->getTarget($goldCaller, now()->subMonthNoOverflow()->startOfMonth()), 'Last month keeps the amount it had.');
+    }
+
+    public function test_a_target_category_amount_can_be_dated_from_a_later_month(): void
+    {
+        $this->actingAs($this->admin());
+
+        $silver = TargetCategory::query()->where('code', '2500000')->sole();
+        $nextMonth = now()->addMonthNoOverflow()->startOfMonth();
+
+        Livewire::test(ManageTargetCategories::class)
+            ->callAction(TestAction::make(EditAction::class)->table($silver), [
+                'name' => 'Silver',
+                'target_amount' => '28,00,000',
+                'effective_from' => $nextMonth->toDateString(),
+            ])
+            ->assertHasNoActionErrors();
+
+        $this->assertSame(2500000.0, TargetCategory::targetAmountFor('2500000', now()));
+        $this->assertSame(2800000.0, TargetCategory::targetAmountFor('2500000', $nextMonth));
+        $this->assertSame(2500000.0, TargetCategory::targetAmountFor('2500000', now()->subYear()));
+        $this->assertSame(
+            ['2000-01-01' => 2500000, $nextMonth->toDateString() => 2800000],
+            collect($silver->refresh()->amountHistory())->pluck('amount', 'from')->all(),
+        );
+    }
+
+    public function test_a_caller_is_offered_only_categories_carrying_a_monthly_target(): void
+    {
+        $options = TargetCategory::callerOptionsIncluding('team_leader');
+
+        $this->assertArrayHasKey('2500000', $options);
+        $this->assertArrayNotHasKey('team_leader', $options, 'Alpha has no amount, so a caller can never hold it.');
+        $this->assertArrayNotHasKey('nil', $options, 'NIL is a ₹1 placeholder, not a target.');
     }
 
     public function test_the_employee_form_offers_the_managed_lists(): void

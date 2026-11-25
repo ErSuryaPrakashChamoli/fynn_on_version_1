@@ -48,7 +48,20 @@ class AchievementCalculatorTargetForPeriodTest extends TestCase
     {
         return Employee::factory()->create(array_merge([
             'designation' => Employee::DESIGNATION_CALLER,
+            'category' => '2500000',
         ], $attributes));
+    }
+
+    /**
+     * A caller with no Target Category carrying an amount counts as ₹0
+     * (user decision 2026-11-24) — never a silent ₹25L default.
+     */
+    public function test_a_caller_without_a_target_category_counts_nothing(): void
+    {
+        $employee = $this->caller(['category' => null, 'reporting_date' => '2025-01-01', 'exit_status' => 'no']);
+
+        $this->assertSame(0.0, $this->calculator->getHierarchyCallerTargetForPeriod($employee, $this->augustStart(), $this->augustEnd()));
+        $this->assertSame(0.0, $this->calculator->getTargetForPeriod($employee, $this->augustStart(), $this->augustEnd()));
     }
 
     // 1. Full-month active caller
@@ -71,7 +84,7 @@ class AchievementCalculatorTargetForPeriodTest extends TestCase
         $employee = $this->caller(['reporting_date' => '2026-08-01', 'exit_status' => 'no']);
 
         // (31 - 1) + 1 = 31 worked days
-        $this->assertSame(1500000.0, $this->calculator->getHierarchyCallerTargetForPeriod($employee, $this->augustStart(), $this->augustEnd()));
+        $this->assertSame(2500000.0, $this->calculator->getHierarchyCallerTargetForPeriod($employee, $this->augustStart(), $this->augustEnd()));
     }
 
     public function test_new_joiner_on_day_nine_of_historical_month(): void
@@ -79,7 +92,7 @@ class AchievementCalculatorTargetForPeriodTest extends TestCase
         $employee = $this->caller(['reporting_date' => '2026-08-09', 'exit_status' => 'no']);
 
         // (31 - 9) + 1 = 23 worked days
-        $this->assertSame(1500000.0, $this->calculator->getHierarchyCallerTargetForPeriod($employee, $this->augustStart(), $this->augustEnd()));
+        $this->assertSame(2500000.0, $this->calculator->getHierarchyCallerTargetForPeriod($employee, $this->augustStart(), $this->augustEnd()));
     }
 
     public function test_new_joiner_on_day_ten_of_historical_month(): void
@@ -87,7 +100,7 @@ class AchievementCalculatorTargetForPeriodTest extends TestCase
         $employee = $this->caller(['reporting_date' => '2026-08-10', 'exit_status' => 'no']);
 
         // (31 - 10) + 1 = 22 worked days
-        $this->assertSame(1500000.0, $this->calculator->getHierarchyCallerTargetForPeriod($employee, $this->augustStart(), $this->augustEnd()));
+        $this->assertSame(2500000.0, $this->calculator->getHierarchyCallerTargetForPeriod($employee, $this->augustStart(), $this->augustEnd()));
     }
 
     public function test_new_joiner_on_day_twenty_of_historical_month(): void
@@ -95,7 +108,7 @@ class AchievementCalculatorTargetForPeriodTest extends TestCase
         $employee = $this->caller(['reporting_date' => '2026-08-20', 'exit_status' => 'no']);
 
         // (31 - 20) + 1 = 12 worked days
-        $this->assertSame(1500000.0, $this->calculator->getHierarchyCallerTargetForPeriod($employee, $this->augustStart(), $this->augustEnd()));
+        $this->assertSame(2500000.0, $this->calculator->getHierarchyCallerTargetForPeriod($employee, $this->augustStart(), $this->augustEnd()));
     }
 
     // 6-9. Exit on various days of the historical month
@@ -129,7 +142,7 @@ class AchievementCalculatorTargetForPeriodTest extends TestCase
             'exit_date' => '2026-08-10',
         ]);
 
-        $this->assertSame(1500000.0, $this->calculator->getHierarchyCallerTargetForPeriod($employee, $this->augustStart(), $this->augustEnd()));
+        $this->assertSame(2500000.0, $this->calculator->getHierarchyCallerTargetForPeriod($employee, $this->augustStart(), $this->augustEnd()));
     }
 
     public function test_exit_on_day_twenty_of_historical_month(): void
@@ -140,7 +153,7 @@ class AchievementCalculatorTargetForPeriodTest extends TestCase
             'exit_date' => '2026-08-20',
         ]);
 
-        $this->assertSame(1500000.0, $this->calculator->getHierarchyCallerTargetForPeriod($employee, $this->augustStart(), $this->augustEnd()));
+        $this->assertSame(2500000.0, $this->calculator->getHierarchyCallerTargetForPeriod($employee, $this->augustStart(), $this->augustEnd()));
     }
 
     // 10. Exited before the historical period
@@ -196,7 +209,7 @@ class AchievementCalculatorTargetForPeriodTest extends TestCase
 
         // (31 - 22) + 1 = 10 worked days -> meets the threshold.
         $this->assertSame(
-            1500000.0,
+            2500000.0,
             $this->calculator->getHierarchyCallerTargetForPeriod($employeeAtBoundary, $this->augustStart(), $this->augustEnd())
         );
 
@@ -226,13 +239,13 @@ class AchievementCalculatorTargetForPeriodTest extends TestCase
 
         $target = $this->calculator->getHierarchyCallerTargetForPeriod($employee, $julyStart, $this->augustEnd());
 
-        // July: not yet joined -> 0. August: (31-20)+1=12 worked days -> 1,500,000.
-        $this->assertSame(1500000.0, $target);
+        // July: not yet joined -> 0. August: (31-20)+1=12 days -> the full 2,500,000.
+        $this->assertSame(2500000.0, $target);
     }
 
-    // 12. Historical Team Leader target — including the ₹30L top-up, which
-    // the pre-fix implementation never applied historically at all.
-    public function test_historical_team_leader_target_includes_the_topup(): void
+    // 12. Historical Team Leader target — including the ₹80L Team Leader
+    // minimum (user decision 2026-11-24).
+    public function test_historical_team_leader_target_includes_the_minimum(): void
     {
         $teamLeader = Employee::factory()->create(['designation' => Employee::DESIGNATION_TEAM_LEADER]);
 
@@ -246,12 +259,12 @@ class AchievementCalculatorTargetForPeriodTest extends TestCase
 
         $target = $this->calculator->getTargetForPeriod($teamLeader, $this->augustStart(), $this->augustEnd());
 
-        // 2 callers x 2,500,000 = 5,000,000, understaffed (< 3 callers) -> +3,000,000
+        // 2 callers x 2,500,000 = 5,000,000, lifted to the 8,000,000 minimum.
         $this->assertSame(8000000.0, $target);
     }
 
     // 13. Historical Manager target
-    public function test_historical_manager_target_includes_the_topup(): void
+    public function test_historical_manager_target_includes_the_team_leader_minimum(): void
     {
         $manager = Employee::factory()->create(['designation' => Employee::DESIGNATION_MANAGER]);
 
@@ -276,7 +289,7 @@ class AchievementCalculatorTargetForPeriodTest extends TestCase
     }
 
     // 14. Historical Cluster target
-    public function test_historical_cluster_target_includes_the_topup(): void
+    public function test_historical_cluster_target_includes_the_team_leader_minimum(): void
     {
         $cluster = Employee::factory()->create(['designation' => Employee::DESIGNATION_CLUSTER]);
 
@@ -308,9 +321,9 @@ class AchievementCalculatorTargetForPeriodTest extends TestCase
         $this->assertSame(8000000.0, $target);
     }
 
-    // 15. Historical Admin/company target — flat sum of every caller's
-    // period-aware target, no top-up (matches current-month Admin behavior).
-    public function test_historical_admin_target_sums_every_caller_with_no_topup(): void
+    // 15. Historical Admin/company target — everything that reaches the top:
+    // here two callers with no boss at all, so straight to the company.
+    public function test_historical_admin_target_counts_callers_with_no_boss(): void
     {
         $admin = Employee::factory()->create(['designation' => Employee::DESIGNATION_ADMIN]);
 

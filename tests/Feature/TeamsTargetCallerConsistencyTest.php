@@ -129,7 +129,7 @@ class TeamsTargetCallerConsistencyTest extends TestCase
             'designation' => Employee::DESIGNATION_TEAM_LEADER,
         ]);
 
-        // Exited this month (day >= 10) -> half-target.
+        // Exited this month (day >= 10) -> the full category target.
         $exitedThisMonth = Employee::factory()->create([
             'designation' => Employee::DESIGNATION_CALLER,
             'superviser_id' => $teamLeader->id,
@@ -153,13 +153,13 @@ class TeamsTargetCallerConsistencyTest extends TestCase
 
         $calculator = app(AchievementCalculatorService::class);
 
-        $this->assertSame(1500000.0, $calculator->getHierarchyCallerTarget($exitedThisMonth));
+        $this->assertSame(2500000.0, $calculator->getHierarchyCallerTarget($exitedThisMonth));
         $this->assertSame(0.0, $calculator->getHierarchyCallerTarget($exitedEarlier));
 
         $this->actingAsAdmin();
 
         Livewire::test(ViewTeam::class, ['record' => $teamLeader])
-            ->assertTableColumnStateSet('target', 1500000.0, $exitedThisMonth)
+            ->assertTableColumnStateSet('target', 2500000.0, $exitedThisMonth)
             ->assertTableColumnStateSet('target', 0.0, $exitedEarlier);
 
         Carbon::setTestNow();
@@ -191,13 +191,13 @@ class TeamsTargetCallerConsistencyTest extends TestCase
         $this->actingAsTeamLeader($teamLeader);
 
         Livewire::test(ListTeams::class)
-            ->assertTableColumnStateSet('target', 1500000.0, $joiner)
+            ->assertTableColumnStateSet('target', 2500000.0, $joiner)
             ->assertSee('stay to month-end');
 
         $this->actingAsAdmin();
 
         Livewire::test(ViewTeam::class, ['record' => $teamLeader])
-            ->assertTableColumnStateSet('target', 1500000.0, $joiner)
+            ->assertTableColumnStateSet('target', 2500000.0, $joiner)
             ->assertSee('stay to month-end');
 
         Carbon::setTestNow();

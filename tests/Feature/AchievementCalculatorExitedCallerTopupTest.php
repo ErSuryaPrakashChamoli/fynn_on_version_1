@@ -4,22 +4,19 @@ namespace Tests\Feature;
 
 use App\Models\Employee;
 use App\Services\AchievementCalculatorService;
+use App\Support\TargetLedger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 /**
- * The ₹30L understaffed-team top-up's caller headcount and exited callers.
+ * Exited callers under an otherwise-active Team Leader.
  *
- * Decided with the user 2026-11-16, superseding the 2026-08 rule that every
- * exited caller still counted: a caller counts toward a Team Leader's
- * "< 3 callers" threshold only with ten or more days reporting to them while
- * on the rolls that month (ReportingTimeline::headcountCallerIds()). So a
- * caller who left during the month still counts if they had ten days, and
- * one who left before the month began does not. This is distinct from
- * AchievementCalculatorManagerTargetTest, which covers an EXITED TL's whole
- * team being excluded — this covers an exited CALLER under an
- * otherwise-ACTIVE TL.
+ * Since 2026-11-24 there is no headcount threshold in the target: every
+ * Team Leader in the seat ten days carries at least ₹80L (TargetLedger), and
+ * a caller who left brings their full category target only with ten or
+ * more days on the rolls that month. A caller who left before the month
+ * began brings nothing.
  */
 class AchievementCalculatorExitedCallerTopupTest extends TestCase
 {
@@ -39,7 +36,7 @@ class AchievementCalculatorExitedCallerTopupTest extends TestCase
         ]);
     }
 
-    public function test_a_caller_who_left_before_the_month_no_longer_counts_toward_the_threshold(): void
+    public function test_a_caller_who_left_before_the_month_brings_nothing(): void
     {
         $manager = $this->manager();
         $teamLeader = $this->activeTeamLeaderUnder($manager);
@@ -66,13 +63,12 @@ class AchievementCalculatorExitedCallerTopupTest extends TestCase
 
         $target = (new AchievementCalculatorService)->getTarget($manager);
 
-        // The third caller left last month: no days on the rolls this month,
-        // so only 2 count -> understaffed -> +3,000,000 top-up. The 2 active
-        // callers bring 2,500,000 each; the one who left brings 0.
+        // The third caller left last month and brings 0. The 2 active
+        // callers bring 2,500,000 each, lifted to the 8,000,000 minimum.
         $this->assertSame(8000000.0, $target);
     }
 
-    public function test_a_caller_who_left_after_ten_days_this_month_still_counts(): void
+    public function test_a_caller_who_left_after_ten_days_this_month_brings_their_full_target(): void
     {
         $this->travelTo(Carbon::create(2026, 11, 25));
 
@@ -81,12 +77,13 @@ class AchievementCalculatorExitedCallerTopupTest extends TestCase
         $this->callersUnder($teamLeader, $manager, 2);
         $this->callersUnder($teamLeader, $manager, 1, ['exit_status' => 'yes', 'exit_date' => '2026-11-20']);
 
-        // 20 days on the rolls: 3 callers count, so no top-up. The one who
-        // left brings the part-month target (10+ days).
-        $this->assertSame(5000000.0 + 1500000.0, (new AchievementCalculatorService)->getTarget($manager));
+        // 20 days on the rolls: the one who left brings their full ₹25L
+        // (10+ days). ₹75L in all, lifted to the ₹80L minimum.
+        $this->assertSame(8000000.0, (new AchievementCalculatorService)->getTarget($manager));
+        $this->assertSame(7500000.0, TargetLedger::forMonth(now())->teamSum($teamLeader->id));
     }
 
-    public function test_a_caller_who_left_inside_the_first_ten_days_does_not_count(): void
+    public function test_a_caller_who_left_inside_the_first_ten_days_brings_nothing(): void
     {
         $this->travelTo(Carbon::create(2026, 11, 25));
 
@@ -95,9 +92,10 @@ class AchievementCalculatorExitedCallerTopupTest extends TestCase
         $this->callersUnder($teamLeader, $manager, 2);
         $this->callersUnder($teamLeader, $manager, 1, ['exit_status' => 'yes', 'exit_date' => '2026-11-05']);
 
-        // 5 days on the rolls: only 2 count, so the top-up applies; the one
-        // who left brings no target (under ten days).
-        $this->assertSame(5000000.0 + 3000000.0, (new AchievementCalculatorService)->getTarget($manager));
+        // 5 days on the rolls: the one who left brings no target (under ten
+        // days), so ₹50L, lifted to the ₹80L minimum.
+        $this->assertSame(8000000.0, (new AchievementCalculatorService)->getTarget($manager));
+        $this->assertSame(5000000.0, TargetLedger::forMonth(now())->teamSum($teamLeader->id));
     }
 
     /**
@@ -116,7 +114,7 @@ class AchievementCalculatorExitedCallerTopupTest extends TestCase
         ]);
     }
 
-    public function test_with_only_active_callers_the_same_headcount_correctly_triggers_the_topup(): void
+    public function test_a_small_team_is_lifted_to_the_team_leader_minimum(): void
     {
         $manager = $this->manager();
         $teamLeader = $this->activeTeamLeaderUnder($manager);
@@ -132,7 +130,7 @@ class AchievementCalculatorExitedCallerTopupTest extends TestCase
 
         $target = (new AchievementCalculatorService)->getTarget($manager);
 
-        // Only 2 callers total -> understaffed -> +3,000,000 top-up.
+        // Only 2 callers (₹50L) -> lifted to the ₹80L minimum.
         $this->assertSame(8000000.0, $target);
     }
 }

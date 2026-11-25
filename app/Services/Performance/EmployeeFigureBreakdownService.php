@@ -10,6 +10,7 @@ use App\Support\EmployeeLookupPeriod;
 use App\Support\ReportingTimeline;
 use App\Support\ReportingTree;
 use App\Support\TargetCategoryTimeline;
+use App\Support\TargetLedger;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -116,7 +117,24 @@ class EmployeeFigureBreakdownService
                 }
             }
 
-            return [...$result, 'kind' => 'caller', 'total' => array_sum(array_column($result['months'], 'total'))];
+            $teamTotal = 0.0;
+            $missingCategory = false;
+
+            foreach ($period->months() as $month) {
+                $ledger = TargetLedger::forMonth($month);
+                $teamTotal += $ledger->target($employee->id);
+                $missingCategory = $missingCategory || $ledger->hasMissingCategory($employee->id);
+            }
+
+            return [
+                ...$result,
+                'kind' => 'caller',
+                'total' => array_sum(array_column($result['months'], 'total')),
+                // What the caller brings to their bosses: nothing for a month
+                // with under TargetLedger::MIN_TARGET_DAYS days on the rolls.
+                'team_total' => $teamTotal,
+                'missing_category' => $missingCategory,
+            ];
         }
 
         $isCompany = $employee->designation === Employee::DESIGNATION_ADMIN;
@@ -125,31 +143,30 @@ class EmployeeFigureBreakdownService
             return $result;
         }
 
+        $bossId = $isCompany ? TargetLedger::COMPANY : $employee->id;
         $shares = [];
         $monthsCounted = [];
         $teamLeaderMonths = [];
 
         foreach ($period->months() as $month) {
-            $monthTotal = $this->calculator->getTarget($employee, $month);
+            $ledger = TargetLedger::forMonth($month);
+            $monthTotal = $isCompany ? $ledger->companyTarget() : $this->calculator->getTarget($employee, $month);
+            $monthShares = $ledger->contributions($bossId, Employee::DESIGNATION_CALLER);
 
-            if ($isCompany) {
-                $monthShares = Employee::query()
-                    ->where('designation', Employee::DESIGNATION_CALLER)
-                    ->get()
-                    ->mapWithKeys(fn (Employee $caller): array => [$caller->id => $this->calculator->getHierarchyCallerTarget($caller, $month)])
-                    ->all();
-            } else {
-                $timeline = ReportingTimeline::forMonth($month);
-                $monthShares = $this->calculator->callerTargetShares($employee, $timeline);
+            if (! $isCompany) {
+                $floors = $ledger->floorContributions($bossId);
+                $teamLeaderIds = $ledger->memberIds($bossId, Employee::DESIGNATION_TEAM_LEADER);
 
-                $teamLeaderDays = $timeline->branchDays($employee->id, skipExitedLevels: true, includeBoss: true, onlyDesignation: Employee::DESIGNATION_TEAM_LEADER);
-                $toppedUp = $this->calculator->understaffedTeamLeaderIds($employee, $timeline);
+                if ($ledger->designation($bossId) === Employee::DESIGNATION_TEAM_LEADER) {
+                    $teamLeaderIds[] = $bossId;
+                }
 
-                foreach (array_keys($teamLeaderDays) as $teamLeaderId) {
+                foreach ($teamLeaderIds as $teamLeaderId) {
                     $teamLeaderMonths[$teamLeaderId]['months'] = ($teamLeaderMonths[$teamLeaderId]['months'] ?? 0) + 1;
 
-                    if (in_array($teamLeaderId, $toppedUp, true)) {
-                        $teamLeaderMonths[$teamLeaderId]['understaffed'] = ($teamLeaderMonths[$teamLeaderId]['understaffed'] ?? 0) + 1;
+                    if (($floors[$teamLeaderId] ?? 0.0) > 0) {
+                        $teamLeaderMonths[$teamLeaderId]['floored'] = ($teamLeaderMonths[$teamLeaderId]['floored'] ?? 0) + 1;
+                        $teamLeaderMonths[$teamLeaderId]['floor'] = ($teamLeaderMonths[$teamLeaderId]['floor'] ?? 0.0) + $floors[$teamLeaderId];
                     }
                 }
             }
@@ -215,7 +232,9 @@ class EmployeeFigureBreakdownService
                     ? count(ReportingTimeline::forMonth($period->start)->headcountCallerIds($teamLeader->id, directOnly: true))
                     : null,
                 'months_in_team' => $teamLeaderMonths[$teamLeader->id]['months'] ?? 0,
-                'months_understaffed' => $teamLeaderMonths[$teamLeader->id]['understaffed'] ?? 0,
+                'months_floored' => $teamLeaderMonths[$teamLeader->id]['floored'] ?? 0,
+                'floor' => $teamLeaderMonths[$teamLeader->id]['floor'] ?? 0.0,
+                'team_sum' => $singleMonth ? TargetLedger::forMonth($period->start)->teamSum($teamLeader->id) : null,
             ])
             ->all();
 
@@ -244,8 +263,9 @@ class EmployeeFigureBreakdownService
 
     /**
      * The callers split by the Team Leader they sat under, each team with
-     * the part of the callers' targets it brings and its understaffed-team
-     * top-up; callers with no Team Leader in between come last.
+     * the part of the callers' targets it brings and what the Team Leader
+     * minimum (TargetLedger::TEAM_LEADER_MIN_TARGET) added; callers with no
+     * Team Leader in between come last.
      *
      * @param  list<array<string, mixed>>  $callers
      * @param  array<int, ?int>  $mainTeamLeaderIds  caller id => Team Leader id
@@ -262,7 +282,7 @@ class EmployeeFigureBreakdownService
             ->whereIn('id', $missingIds)
             ->get()
             ->each(function (Employee $teamLeader) use ($teamLeaderRows, $period): void {
-                $teamLeaderRows->put($teamLeader->id, [...$this->person($teamLeader, $period, null), 'months_understaffed' => 0]);
+                $teamLeaderRows->put($teamLeader->id, [...$this->person($teamLeader, $period, null), 'months_floored' => 0, 'floor' => 0.0]);
             });
 
         return collect($callers)
@@ -273,7 +293,7 @@ class EmployeeFigureBreakdownService
                 return [
                     'team_leader' => $teamLeader,
                     ...$this->groupFigures($groupCallers->values()->all()),
-                    'top_up' => ($teamLeader['months_understaffed'] ?? 0) * AchievementCalculatorService::UNDERSTAFFED_TEAM_TOP_UP,
+                    'top_up' => (float) ($teamLeader['floor'] ?? 0.0),
                 ];
             })
             ->sortBy(fn (array $group): string => $group['team_leader'] === null ? "\u{FFFF}" : mb_strtolower($group['team_leader']['name']))
@@ -638,7 +658,7 @@ class EmployeeFigureBreakdownService
     private function teamLeaderCallers(Employee $teamLeader, EmployeeLookupPeriod $period): array
     {
         $timeline = ReportingTimeline::forMonth($period->start);
-        $shares = $this->calculator->callerTargetShares($teamLeader, $timeline);
+        $shares = TargetLedger::forMonth($period->start)->contributions($teamLeader->id, Employee::DESIGNATION_CALLER);
         $spans = $this->teamSpans($teamLeader, $period, Employee::DESIGNATION_CALLER);
 
         return Employee::query()
@@ -676,7 +696,7 @@ class EmployeeFigureBreakdownService
             ->get()
             ->map(fn (Employee $caller): array => [
                 ...$this->person($caller, $period, $spans[$caller->id] ?? []),
-                'target' => $this->calculator->getHierarchyCallerTarget($caller, $period->start),
+                'target' => TargetLedger::forMonth($period->start)->target($caller->id),
             ])
             ->map(fn (array $row): array => [...$row, 'eligible' => $row['target'] > 0])
             ->all();

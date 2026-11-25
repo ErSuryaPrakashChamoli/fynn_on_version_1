@@ -44,8 +44,8 @@ class EmployeePositionChangeService
     ) {}
 
     /**
-     * Give $employee $designation (reporting to $bossId) and $category from
-     * $effectiveDate. $position, the designation title, is updated alongside
+     * Give $employee $designation (reporting to $bossId) and — for a caller —
+     * $category from $effectiveDate; anyone else keeps the category on record. $position, the designation title, is updated alongside
      * when given. When the position changes, anyone reporting to them
      * moves to $teamBossId from the same date, or stays with them when
      * $teamBossId is null and the new position is still senior to them all.
@@ -76,6 +76,14 @@ class EmployeePositionChangeService
 
             $previousDesignation = (int) $employee->designation;
             $previousCategory = filled($employee->category) ? (string) $employee->category : null;
+
+            // Only a caller carries a category (user decision 2026-11-24):
+            // anyone else keeps whatever is on record, untouched, so a later
+            // demotion back to caller finds it again.
+            if ($designation !== Employee::DESIGNATION_CALLER) {
+                $category = $previousCategory;
+            }
+
             $designationChanges = $designation !== $previousDesignation;
             $categoryChanges = $category !== $previousCategory;
 
@@ -485,12 +493,9 @@ class EmployeePositionChangeService
             $this->fail('designation', 'Choose an active position from the list.');
         }
 
-        if ($category === null && Employee::designationRank($designation) > 0) {
-            $this->fail('category', 'Choose a target category: this position carries a target.');
-        }
-
-        if ($category !== null && ! array_key_exists($category, TargetCategory::optionsIncluding($employee->category))) {
-            $this->fail('category', 'Choose an active target category from the list.');
+        if ($designation === Employee::DESIGNATION_CALLER
+            && ($category === null || ! array_key_exists($category, TargetCategory::callerOptionsIncluding($employee->category)))) {
+            $this->fail('category', 'Choose a target category with a monthly target: a caller carries one.');
         }
 
         if ($position !== null && ! array_key_exists($position, Designation::optionsIncluding($employee->position))) {

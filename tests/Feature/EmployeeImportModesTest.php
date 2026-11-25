@@ -213,6 +213,59 @@ class EmployeeImportModesTest extends TestCase
         $this->assertFalse(Employee::query()->where('emp_id', 'XX01')->exists());
     }
 
+    public function test_upload_new_refuses_a_caller_without_a_target_category(): void
+    {
+        $failures = $this->import([[
+            'emp_id' => 'XX03',
+            'emp_name' => 'No Category',
+            'email' => 'no.category@example.com',
+            'designation' => 'Caller',
+            'reports_to' => $this->teamLeader->emp_id,
+        ]], EmployeeImporter::MODE_CREATE);
+
+        $this->assertStringContainsString('a caller needs a Target Category with a monthly target', $failures[0]);
+        $this->assertFalse(Employee::query()->where('emp_id', 'XX03')->exists());
+    }
+
+    public function test_upload_new_takes_a_callers_target_category_by_name(): void
+    {
+        $failures = $this->import([[
+            'emp_id' => 'XX04',
+            'emp_name' => 'Gold Caller',
+            'email' => 'gold.caller@example.com',
+            'designation' => 'Caller',
+            'target_category' => 'gold',
+            'reports_to' => $this->teamLeader->emp_id,
+        ]], EmployeeImporter::MODE_CREATE);
+
+        $this->assertSame([], $failures);
+        $this->assertSame('3000000', Employee::query()->where('emp_id', 'XX04')->sole()->category);
+    }
+
+    public function test_upload_new_refuses_a_category_without_a_monthly_target_for_a_caller(): void
+    {
+        $failures = $this->import([[
+            'emp_id' => 'XX05',
+            'emp_name' => 'Alpha Caller',
+            'email' => 'alpha.caller@example.com',
+            'designation' => 'Caller',
+            'target_category' => 'Alpha',
+            'reports_to' => $this->teamLeader->emp_id,
+        ]], EmployeeImporter::MODE_CREATE);
+
+        $this->assertStringContainsString('a caller needs a Target Category with a monthly target', $failures[0]);
+    }
+
+    public function test_an_update_row_never_changes_a_category_undated(): void
+    {
+        $failures = $this->import([
+            $this->updateRow($this->caller, ['target_category' => 'Diamond']),
+        ], EmployeeImporter::MODE_UPDATE);
+
+        $this->assertStringContainsString('Change Position / Target', $failures[0]);
+        $this->assertSame('2500000', $this->caller->fresh()->category);
+    }
+
     public function test_an_impossible_date_is_refused(): void
     {
         $failures = $this->import([[
@@ -640,6 +693,7 @@ class EmployeeImportModesTest extends TestCase
             'emp_name' => 'Past Caller',
             'email' => 'past.caller@example.com',
             'designation' => 'Caller',
+            'target_category' => 'Silver',
             'doj' => '2025-01-01',
             'reports_to' => $this->teamLeader->emp_id,
             'status' => 'Inactive',
@@ -667,9 +721,10 @@ class EmployeeImportModesTest extends TestCase
         $rows = collect($this->downloadedRows())->keyBy('emp_id');
 
         $this->assertSame(
-            ['emp_id', 'emp_name', 'email', 'designation', 'doj', 'reporting_date', 'reports_to', 'cost_center', 'unit_name', 'status', 'inactive_date', 'effective_date'],
+            ['emp_id', 'emp_name', 'email', 'designation', 'target_category', 'doj', 'reporting_date', 'reports_to', 'cost_center', 'unit_name', 'status', 'inactive_date', 'effective_date'],
             array_keys($rows->first()),
         );
+        $this->assertSame('', $rows['TL01']['target_category'], 'Only a caller carries a Target Category.');
         $this->assertSame('Caller', $rows['CL01']['designation']);
         $this->assertSame('TL01', $rows['CL01']['reports_to']);
         $this->assertSame('', $rows['BH01']['reports_to']);

@@ -69,6 +69,7 @@ class EmployeeLookupPeriodTest extends TestCase
             'exit_date' => null,
             'doj' => '2026-01-01',
             'reporting_date' => '2026-01-01',
+            'category' => '2500000',
             ...$attributes,
         ]);
     }

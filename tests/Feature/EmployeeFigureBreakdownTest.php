@@ -72,6 +72,7 @@ class EmployeeFigureBreakdownTest extends TestCase
             'designation' => $designation,
             'doj' => '2025-01-01',
             'reporting_date' => '2025-01-01',
+            'category' => '2500000',
             ...$attributes,
         ]);
     }
@@ -120,9 +121,9 @@ class EmployeeFigureBreakdownTest extends TestCase
         $this->assertSame(app(AchievementCalculatorService::class)->getTarget($this->callers[0], $this->month), $target['total']);
     }
 
-    public function test_a_team_target_is_its_callers_shares_plus_the_understaffed_top_ups(): void
+    public function test_a_team_target_is_its_callers_shares_plus_the_team_leader_minimum_top_ups(): void
     {
-        // A second Team Leader with a single caller: understaffed.
+        // A second Team Leader with a single caller.
         $smallTeamLeader = $this->employee('Small Leader', Employee::DESIGNATION_TEAM_LEADER, ['manager_id' => $this->manager->id]);
         $this->employee('Dev', Employee::DESIGNATION_CALLER, ['superviser_id' => $smallTeamLeader->id, 'manager_id' => $this->manager->id]);
 
@@ -131,10 +132,11 @@ class EmployeeFigureBreakdownTest extends TestCase
         $this->assertSame('team', $target['kind']);
         $this->assertCount(4, $target['callers']);
         $this->assertEqualsWithDelta($target['total'], $target['callers_total'] + $target['top_up'], 0.01);
-        $this->assertEqualsWithDelta(3000000.0, $target['top_up'], 0.01);
+        // Tarun: ₹75L lifted by ₹5L; Small Leader: ₹25L lifted by ₹55L.
+        $this->assertEqualsWithDelta(6000000.0, $target['top_up'], 0.01);
 
-        $understaffed = collect($target['team_leaders'])->where('months_understaffed', '>', 0)->pluck('name')->all();
-        $this->assertSame(['Small Leader'], $understaffed);
+        $floors = collect($target['team_leaders'])->where('months_floored', '>', 0)->pluck('floor', 'name')->all();
+        $this->assertEqualsWithDelta(['Small Leader' => 5500000.0, 'Tarun Leader' => 500000.0], $floors, 0.01);
     }
 
     public function test_a_managers_callers_are_split_by_the_team_leader_they_sat_under(): void
@@ -152,8 +154,8 @@ class EmployeeFigureBreakdownTest extends TestCase
 
         $this->assertEqualsWithDelta($target['callers_total'], $groups->sum('total'), 0.01, 'The teams add up to the callers\' targets.');
         $this->assertSame(count($target['callers']), $groups->sum(fn (array $group): int => count($group['callers'])), 'Every caller sits in exactly one team.');
-        $this->assertEqualsWithDelta(3000000.0, $groups[0]['top_up'], 0.01, 'The understaffed team carries its top-up.');
-        $this->assertSame(0.0, $groups[1]['top_up']);
+        $this->assertEqualsWithDelta(5500000.0, $groups[0]['top_up'], 0.01, 'The one-caller team is lifted to the ₹80L minimum.');
+        $this->assertEqualsWithDelta(500000.0, $groups[1]['top_up'], 0.01);
     }
 
     public function test_a_caller_moved_between_team_leaders_goes_with_the_one_they_had_longest(): void

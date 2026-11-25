@@ -186,43 +186,43 @@
                 </div>
             </div>
             <ul class="fynn-rules">
-                @if ($target['category_amount'] === null)
-                    <li>No target amount is set for this category (or no category is assigned), so the default caller target applies.</li>
-                @else
-                    <li>The amount comes from Employee Setup &rarr; Target Categories ({{ $target['category'] }} = {{ $money($target['category_amount']) }} a month).</li>
+                @if ($target['missing_category'] ?? false)
+                    <li class="text-danger-600 dark:text-danger-400">No Target Category with a monthly amount is set for {{ $multiMonth ? 'some of this period' : 'this month' }}, so nothing is counted for those days. Set one on the employee.</li>
+                @elseif ($target['category_amount'] !== null)
+                    <li>The amount comes from Employee Setup &rarr; Target Categories ({{ $target['category'] }} = {{ $money($target['category_amount']) }} a month). A changed amount applies only from the month chosen when it was changed.</li>
                 @endif
                 @foreach ($target['category_notes'] ?? [] as $categoryNote)
                     <li>{{ $categoryNote }}</li>
                 @endforeach
-                <li>A target category change only applies from its effective date: earlier months keep the category held then.</li>
-                <li>Joining and exit dates never reduce a caller's own target. They only change how much of it counts in their Team Leader's and Manager's team target.</li>
+                <li>A target category change only applies from its effective date: earlier months keep the category held then, and the month of the change is split by days.</li>
+                <li>Joining and exit dates never reduce a caller's own target. They only decide whether it counts in their team: in full with {{ \App\Support\TargetLedger::MIN_TARGET_DAYS }} or more days on the rolls in the month, and not at all below that.</li>
+                @if (abs(($target['team_total'] ?? $target['total']) - $target['total']) >= 1)
+                    <li>Counted in their team{{ $multiMonth ? ' over the period' : ' this month' }}: <span class="font-semibold">{{ $money($target['team_total']) }}</span>.</li>
+                @endif
             </ul>
         @elseif (in_array($target['kind'], ['team', 'company'], true))
             <div class="fynn-callout">
                 <div class="text-sm text-gray-600 dark:text-gray-400">
                     @if ($target['kind'] === 'company')
-                        The company target is every caller's target added together{{ $multiMonth ? ', month by month' : '' }}.
+                        The company target is everything that reaches the top of the tree — every branch with its Team Leader minimums, plus anybody whose bosses have all left{{ $multiMonth ? ', month by month' : '' }}.
                     @else
-                        A {{ $designation }}'s target is built from the callers in their team, plus a top-up for every short-staffed Team Leader in it{{ $multiMonth ? ' — worked out for each month on that month\'s team, then added up' : '' }}.
+                        A {{ $designation }}'s target is what their team brings: the callers' targets, plus what the ₹{{ indianNumberFormat(\App\Support\TargetLedger::TEAM_LEADER_MIN_TARGET) }} Team Leader minimum adds{{ $multiMonth ? ' — worked out for each month on that month\'s team, then added up' : '' }}.
                     @endif
                 </div>
                 <div class="fynn-formula">
                     {{ $money($target['callers_total']) }} callers' targets
-                    @if ($target['kind'] === 'team')
-                        + {{ $money($target['top_up']) }} understaffed-team top-ups
-                    @endif
+                    + {{ $money($target['top_up']) }} Team Leader minimum top-ups
                     = <span class="fynn-formula-result">{{ $money($target['total']) }}</span>
                 </div>
             </div>
 
             <ul class="fynn-rules">
-                <li>Each caller brings their target category amount for a full month on the rolls.</li>
-                <li>A caller who joined or left during a month brings the flat partial-month target if they were on the rolls 10 days or more that month, and nothing below 10 days.</li>
-                @if ($target['kind'] === 'team')
-                    <li>A caller who moved into or out of the team during the month brings their full target if they reported into it 10 days or more while on the rolls, and nothing below 10 days — so a caller moved mid-month can count in both teams. They are marked <span class="font-semibold">Moved in</span> or <span class="font-semibold">Moved out</span> with the date. A caller in the team for the whole month brings their full target.</li>
-                    <li>A promotion or demotion counts from its effective date: the months before it keep the old position.</li>
-                    <li>Every Team Leader in the team with fewer than 3 callers adds ₹30,00,000 that month, if they were in the team for 10 days or more while on the rolls. A caller counts towards those 3 only with 10 or more days reporting to them while on the rolls (from their joining date to their exit date), so a caller who left during the month still counts if they had 10 days.</li>
-                @endif
+                <li>Each caller brings their target category amount once they are on the rolls {{ \App\Support\TargetLedger::MIN_TARGET_DAYS }} calendar days or more in the month (a joiner still on the rolls is counted to month-end), and nothing below that.</li>
+                <li>A caller who moved teams during the month has their target split by the days spent in each team while on the rolls. A team with fewer than {{ \App\Support\TargetLedger::MIN_TARGET_DAYS }} days gets nothing and the other teams share it; if no team reached {{ \App\Support\TargetLedger::MIN_TARGET_DAYS }} days, they all share it by days. So the teams always add up to the level above. Movers are marked <span class="font-semibold">Moved in</span> or <span class="font-semibold">Moved out</span> with the date.</li>
+                <li>A Team Leader's target is never below ₹{{ indianNumberFormat(\App\Support\TargetLedger::TEAM_LEADER_MIN_TARGET) }} once they held the seat {{ \App\Support\TargetLedger::MIN_TARGET_DAYS }} days or more that month, whatever the number of callers. A Team Leader who moves is split between bosses by days the same way as a caller.</li>
+                <li>A Manager, Cluster Manager and Business Head carry exactly what their team brings — no minimum of their own.</li>
+                <li>Whoever's boss has left counts under the next boss on their own record who is still on the rolls.</li>
+                <li>A promotion or demotion counts the whole month as the position held on its last day; earlier months keep the old position.</li>
             </ul>
 
             @if ($multiMonth)
@@ -296,13 +296,13 @@
                                                     <span class="fynn-chip">{{ count($group['callers']) }} {{ \Illuminate\Support\Str::plural('caller', count($group['callers'])) }}</span>
                                                     <span class="fynn-chip">{{ $group['counted'] }} counted</span>
                                                     @if ($group['top_up'] > 0)
-                                                        <span class="fynn-chip fynn-chip--accent">+ {{ $money($group['top_up']) }} top-up</span>
+                                                        <span class="fynn-chip fynn-chip--accent">+ {{ $money($group['top_up']) }} minimum top-up</span>
                                                     @endif
                                                 </div>
                                             </div>
                                         </th>
                                         <td class="{{ $tdNumber }} font-bold">{{ $money($group['total']) }}</td>
-                                        <td class="text-xs font-normal text-gray-500 dark:text-gray-400">Callers' targets in this team{{ $group['top_up'] > 0 ? ', before the top-up' : '' }}</td>
+                                        <td class="text-xs font-normal text-gray-500 dark:text-gray-400">Callers' targets in this team{{ $group['top_up'] > 0 ? ', before the Team Leader minimum' : '' }}</td>
                                     </tr>
                                 @endif
 
@@ -375,22 +375,24 @@
                                     @if (! $multiMonth)
                                         <th class="{{ $thClass }} text-end">Callers</th>
                                     @endif
-                                    <th class="{{ $thClass }}">Top-up</th>
+                                    <th class="{{ $thClass }}">₹{{ indianNumberFormat(\App\Support\TargetLedger::TEAM_LEADER_MIN_TARGET) }} minimum</th>
                                     <th class="{{ $thClass }}">Notes</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach ($target['team_leaders'] as $teamLeader)
-                                    <tr @class([$highlight => $teamLeader['months_understaffed'] > 0])>
+                                    <tr @class([$highlight => $teamLeader['months_floored'] > 0])>
                                         <td class="{{ $tdClass }}">@include('filament.pages.employee-lookup-explain-person', ['person' => $teamLeader])</td>
                                         @if (! $multiMonth)
                                             <td class="{{ $tdNumber }}">{{ $teamLeader['callers'] }}</td>
                                         @endif
                                         <td class="{{ $tdClass }}">
                                             @if ($multiMonth)
-                                                Understaffed in {{ $teamLeader['months_understaffed'] }} of {{ $teamLeader['months_in_team'] }} {{ \Illuminate\Support\Str::plural('month', $teamLeader['months_in_team']) }} in the team
+                                                Applied in {{ $teamLeader['months_floored'] }} of {{ $teamLeader['months_in_team'] }} {{ \Illuminate\Support\Str::plural('month', $teamLeader['months_in_team']) }} in the team{{ $teamLeader['floor'] > 0 ? ' (+ '.$money($teamLeader['floor']).')' : '' }}
+                                            @elseif ($teamLeader['months_floored'] > 0)
+                                                Yes — callers bring {{ $money($teamLeader['team_sum'] ?? 0) }}, lifted by {{ $money($teamLeader['floor']) }}
                                             @else
-                                                {{ $teamLeader['months_understaffed'] > 0 ? 'Yes — fewer than 3 callers' : 'No' }}
+                                                No
                                             @endif
                                         </td>
                                         <td class="text-xs text-gray-600 dark:text-gray-400">{{ $teamLeader['note'] ?? '—' }}</td>
@@ -399,7 +401,7 @@
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <td colspan="{{ $multiMonth ? 2 : 3 }}" class="{{ $tdClass }} font-semibold">Understaffed-team top-ups</td>
+                                    <td colspan="{{ $multiMonth ? 2 : 3 }}" class="{{ $tdClass }} font-semibold">Team Leader minimum top-ups</td>
                                     <td class="{{ $tdNumber }} font-bold">{{ $money($target['top_up']) }}</td>
                                 </tr>
                             </tfoot>
@@ -567,7 +569,7 @@
         </div>
         @if ($employee->designation === Employee::DESIGNATION_TEAM_LEADER)
             <p class="text-sm text-gray-700 dark:text-gray-300">
-                The incentive gate uses a slightly different percentage — the callers' cases against the callers' targets only, without the understaffed-team top-up. See the incentive breakdown.
+                The incentive gate uses a slightly different percentage — only the callers' cases, against this same target (₹{{ indianNumberFormat(\App\Support\TargetLedger::TEAM_LEADER_MIN_TARGET) }} minimum included). See the incentive breakdown.
             </p>
         @endif
         <div class="flex flex-wrap gap-2">
@@ -686,7 +688,7 @@
             <div class="fynn-callout">
                 <div class="text-sm text-gray-600 dark:text-gray-400">
                     A Team Leader earns a share of their callers' business, once the team reaches its gate.
-                    Team figures here are the callers only: callers in the team for at least 10 days, their targets (no top-up) and the cases they disbursed while in the team.
+                    Team figures here are: callers in the team for at least 10 days, the Team Leader's own target (₹{{ indianNumberFormat(\App\Support\TargetLedger::TEAM_LEADER_MIN_TARGET) }} minimum included) and the cases the callers disbursed while in the team.
                 </div>
                 <dl class="fynn-dl mt-3">
                     @foreach ([

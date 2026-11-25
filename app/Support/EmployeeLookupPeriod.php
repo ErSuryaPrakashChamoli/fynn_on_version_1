@@ -205,7 +205,7 @@ final class EmployeeLookupPeriod
     /**
      * The days of the period the employee was on the rolls, or null when
      * they were not on the rolls on any of them. Mirrors the target engine
-     * (AchievementCalculatorService::activeWindowForMonth): joined on their
+     * (OnRollsWindow, as TargetLedger reads it): joined on their
      * reporting date (else date of joining), gone after a recorded exit
      * date. An exit with no date recorded cannot be placed, so — as in the
      * engine — it does not end the window.

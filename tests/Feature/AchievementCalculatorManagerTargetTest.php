@@ -11,7 +11,7 @@ class AchievementCalculatorManagerTargetTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_manager_target_excludes_understaffed_topup_for_exited_team_leader(): void
+    public function test_an_exited_team_leader_carries_no_minimum_and_their_caller_counts_with_the_manager(): void
     {
         $manager = Employee::factory()->create([
             'designation' => Employee::DESIGNATION_MANAGER,
@@ -37,9 +37,10 @@ class AchievementCalculatorManagerTargetTest extends TestCase
             'exit_status' => 'yes',
         ]);
 
-        // Understaffed (1 caller), but the Team Leader has exited, so this
-        // team must not contribute a top-up to the Manager's target.
-        Employee::factory()->create([
+        // The Team Leader has left: their caller counts straight under the
+        // Manager their own record names (user decision 2026-11-24), and
+        // the exited Team Leader brings no ₹80L minimum.
+        $orphan = Employee::factory()->create([
             'designation' => Employee::DESIGNATION_CALLER,
             'superviser_id' => $exitedTeamLeader->id,
             'manager_id' => $manager->id,
@@ -47,11 +48,12 @@ class AchievementCalculatorManagerTargetTest extends TestCase
             'reporting_date' => null,
         ]);
 
-        $target = (new AchievementCalculatorService)->getTarget($manager);
+        $calculator = new AchievementCalculatorService;
 
-        // 3 active callers @ 2500000 each = 7500000, no top-up because the
-        // active team leader has >= 3 callers and the exited team leader's
-        // understaffed team is excluded entirely.
-        $this->assertSame(7500000.0, $target);
+        // The active Team Leader's 3 callers (₹75L) lifted to the ₹80L
+        // minimum, plus the orphaned caller's ₹25L.
+        $this->assertSame(10500000.0, $calculator->getTarget($manager));
+        $this->assertSame(0.0, $calculator->getTarget($exitedTeamLeader));
+        $this->assertSame(2500000.0, $calculator->getTarget($orphan, null, $manager));
     }
 }

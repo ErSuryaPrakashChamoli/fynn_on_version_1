@@ -15,6 +15,7 @@ use App\Services\ReportingLineService;
 use App\Support\EmployeeLookupPeriod;
 use App\Support\ReportingTimeline;
 use App\Support\ReportingTree;
+use App\Support\TargetLedger;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -44,7 +45,8 @@ class PositionChangeEffectiveDateTest extends TestCase
 
     private const CALLER_TARGET = 2500000.0;
 
-    private const TOP_UP = 3000000.0;
+    /** Every Team Leader here has three callers or fewer: the ₹80L minimum. */
+    private const TEAM_LEADER_MIN = 8000000.0;
 
     private Employee $cluster;
 
@@ -109,15 +111,17 @@ class PositionChangeEffectiveDateTest extends TestCase
         $october = Carbon::create(2026, 10, 1);
         $november = Carbon::create(2026, 11, 1);
 
-        // October: still a caller in V's full team.
+        // October: still a caller in V's full team (₹75L, lifted to ₹80L).
         $this->assertSame(self::CALLER_TARGET, $calculator->getTarget($this->punit, $october));
-        $this->assertSame(3 * self::CALLER_TARGET, $calculator->getTarget($this->teamLeader, $october));
+        $this->assertSame(3 * self::CALLER_TARGET, TargetLedger::forMonth($october)->teamSum($this->teamLeader->id));
+        $this->assertSame(self::TEAM_LEADER_MIN, $calculator->getTarget($this->teamLeader, $october));
 
-        // November: a Team Leader with no callers yet, and V down to two.
-        $this->assertSame(self::TOP_UP, $calculator->getTarget($this->punit, $november));
-        $this->assertSame(2 * self::CALLER_TARGET + self::TOP_UP, $calculator->getTarget($this->teamLeader, $november));
-        // K: X2 and X3, plus the top-ups of V (2 callers), P (none) and V2 (none).
-        $this->assertSame(2 * self::CALLER_TARGET + 3 * self::TOP_UP, $calculator->getTarget($this->cluster, $november));
+        // November: a Team Leader with no callers yet, and V down to two —
+        // both at the ₹80L minimum.
+        $this->assertSame(self::TEAM_LEADER_MIN, $calculator->getTarget($this->punit, $november));
+        $this->assertSame(self::TEAM_LEADER_MIN, $calculator->getTarget($this->teamLeader, $november));
+        // K: V (X2 and X3 inside), P and V2, each at the minimum.
+        $this->assertSame(3 * self::TEAM_LEADER_MIN, $calculator->getTarget($this->cluster, $november));
     }
 
     public function test_the_employee_lookup_explains_each_month_as_the_position_held_then(): void
@@ -132,7 +136,7 @@ class PositionChangeEffectiveDateTest extends TestCase
         $this->assertSame('caller', $october['kind']);
         $this->assertSame(self::CALLER_TARGET, $october['total']);
         $this->assertSame('team', $november['kind']);
-        $this->assertSame(self::TOP_UP, $november['total']);
+        $this->assertSame(self::TEAM_LEADER_MIN, $november['total']);
     }
 
     public function test_a_real_move_after_the_date_still_holds_a_promotion_back(): void
@@ -164,7 +168,7 @@ class PositionChangeEffectiveDateTest extends TestCase
 
         $calculator = new AchievementCalculatorService;
 
-        $this->assertSame(3 * self::CALLER_TARGET, $calculator->getTarget($this->teamLeader->refresh(), Carbon::create(2026, 10, 1)));
+        $this->assertSame(self::TEAM_LEADER_MIN, $calculator->getTarget($this->teamLeader->refresh(), Carbon::create(2026, 10, 1)));
         $this->assertSame(self::CALLER_TARGET, $calculator->getTarget($this->teamLeader, Carbon::create(2026, 11, 1)));
     }
 
@@ -205,8 +209,8 @@ class PositionChangeEffectiveDateTest extends TestCase
         $this->assertNull($lines->last()->effective_to);
 
         $calculator = new AchievementCalculatorService;
-        $this->assertSame(self::TOP_UP, $calculator->getTarget($this->punit->refresh(), Carbon::create(2026, 11, 1)));
-        $this->assertSame(2 * self::CALLER_TARGET + self::TOP_UP, $calculator->getTarget($this->teamLeader, Carbon::create(2026, 11, 1)));
+        $this->assertSame(self::TEAM_LEADER_MIN, $calculator->getTarget($this->punit->refresh(), Carbon::create(2026, 11, 1)));
+        $this->assertSame(self::TEAM_LEADER_MIN, $calculator->getTarget($this->teamLeader, Carbon::create(2026, 11, 1)));
     }
 
     public function test_correcting_a_promotion_moves_the_team_that_stayed_with_them(): void
@@ -304,7 +308,7 @@ class PositionChangeEffectiveDateTest extends TestCase
         $this->runPunitCorrection();
 
         $this->assertSame('2026-11-01', $this->designationRow($this->punit)->effective_date->toDateString());
-        $this->assertSame(self::TOP_UP, (new AchievementCalculatorService)->getTarget($this->punit->refresh(), Carbon::create(2026, 11, 1)));
+        $this->assertSame(self::TEAM_LEADER_MIN, (new AchievementCalculatorService)->getTarget($this->punit->refresh(), Carbon::create(2026, 11, 1)));
 
         // Run again: nothing left to correct.
         $rows = EmployeeReportingHistory::query()->count();

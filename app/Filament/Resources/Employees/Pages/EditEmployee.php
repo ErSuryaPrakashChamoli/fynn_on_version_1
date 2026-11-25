@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Employees\Pages;
 use App\Filament\Actions\ChangeEmployeePositionAction;
 use App\Filament\Actions\CorrectPositionChangeDateAction;
 use App\Filament\Actions\InactivateEmployeeAction;
+use App\Filament\Actions\MoveTeamAction;
 use App\Filament\Actions\TransferEmployeeAction;
 use App\Filament\Resources\Employees\EmployeeResource;
 use App\Models\Employee;
@@ -156,6 +157,7 @@ class EditEmployee extends EditRecord
             ViewAction::make(),
             InactivateEmployeeAction::make(),
             TransferEmployeeAction::make(),
+            MoveTeamAction::make(),
             ChangeEmployeePositionAction::make(),
             CorrectPositionChangeDateAction::make(),
             DeleteAction::make(),

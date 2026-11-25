@@ -12,6 +12,7 @@ use App\Services\ReportingLineService;
 use App\Support\HierarchyHelper;
 use App\Support\ReportingTimeline;
 use App\Support\ReportingTree;
+use App\Support\TargetLedger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Livewire\Livewire;
@@ -24,10 +25,11 @@ use Tests\TestCase;
  * Caller A reports to Team Leader B (Manager M1) until 25 Oct 2026 and to
  * Team Leader C (Manager M2) from 26 Oct. The move is keyed in on 14 Nov.
  * Months before the change must stay with B and October is split by date.
- * The target follows the 10-day rule (user decision 2026-11-24): a team the
- * caller was in for their whole month counts their own target; a team they
- * moved into or out of counts that same full target for 10+ days in it,
- * otherwise 0.
+ * The target is split by days (user decision 2026-11-24, TargetLedger): a
+ * team the caller was in for their whole month counts their full target; a
+ * caller who moved splits it by the days spent in each team, a team with
+ * under 10 days getting nothing, so the teams always add up to the boss
+ * above them. Every Team Leader carries at least ₹80L.
  */
 class ReportingChangeMonthWiseTest extends TestCase
 {
@@ -35,7 +37,7 @@ class ReportingChangeMonthWiseTest extends TestCase
 
     private const CALLER_TARGET = 2500000.0;
 
-    private const TOP_UP = 3000000.0;
+    private const TEAM_LEADER_MIN = 8000000.0;
 
     private Employee $managerOne;
 
@@ -187,32 +189,37 @@ class ReportingChangeMonthWiseTest extends TestCase
 
     /*
     |--------------------------------------------------------------------------
-    | Target: a move counts the full target in every team with 10+ days
+    | Target: a move splits the target by days, teams under 10 days get none
     |--------------------------------------------------------------------------
     */
+
+    private function share(Employee $member, Employee $boss, int $month = 10): float
+    {
+        return TargetLedger::forMonth($this->month($month))->contribution($member->id, $boss->id);
+    }
 
     public function test_a_late_month_move_counts_the_full_target_only_in_the_old_team(): void
     {
         $this->moveCallerAToTeamLeaderC();
 
-        $timeline = ReportingTimeline::forMonth($this->month(10));
-
-        // 25 days with B (10+), 6 days with C (under 10).
-        $this->assertSame(self::CALLER_TARGET, $this->calculator->callerTargetShares($this->teamLeaderB, $timeline)[$this->callerA->id]);
-        $this->assertSame(self::CALLER_TARGET, $this->calculator->callerTargetShares($this->managerOne, $timeline)[$this->callerA->id]);
-        $this->assertSame(0.0, $this->calculator->callerTargetShares($this->teamLeaderC, $timeline)[$this->callerA->id]);
-        $this->assertSame(0.0, $this->calculator->callerTargetShares($this->managerTwo, $timeline)[$this->callerA->id]);
+        // 25 days with B (10+), 6 days with C (under 10): C's share goes to B.
+        $this->assertSame(self::CALLER_TARGET, $this->share($this->callerA, $this->teamLeaderB));
+        $this->assertSame(self::CALLER_TARGET, $this->share($this->callerA, $this->managerOne));
+        $this->assertSame(0.0, $this->share($this->callerA, $this->teamLeaderC));
+        $this->assertSame(0.0, $this->share($this->callerA, $this->managerTwo));
     }
 
-    public function test_a_mid_month_move_counts_the_full_target_in_both_teams(): void
+    public function test_a_mid_month_move_splits_the_target_by_days_between_both_teams(): void
     {
         $this->moveCallerAToTeamLeaderC('2026-10-16');
 
-        $timeline = ReportingTimeline::forMonth($this->month(10));
-
-        // 15 days with B and 16 with C: both are 10+.
-        $this->assertSame(self::CALLER_TARGET, $this->calculator->callerTargetShares($this->teamLeaderB, $timeline)[$this->callerA->id]);
-        $this->assertSame(self::CALLER_TARGET, $this->calculator->callerTargetShares($this->teamLeaderC, $timeline)[$this->callerA->id]);
+        // 15 days with B and 16 with C: both are 10+, so 15/31 and 16/31.
+        $this->assertSame(1209677.42, $this->share($this->callerA, $this->teamLeaderB));
+        $this->assertSame(1290322.58, $this->share($this->callerA, $this->teamLeaderC));
+        $this->assertSame(
+            self::CALLER_TARGET,
+            $this->share($this->callerA, $this->teamLeaderB) + $this->share($this->callerA, $this->teamLeaderC),
+        );
     }
 
     public function test_a_caller_moved_in_on_the_second_counts_their_full_target_in_the_new_team(): void
@@ -220,29 +227,48 @@ class ReportingChangeMonthWiseTest extends TestCase
         // Moved on 2 Oct: 30 of 31 days with C, 1 day with B.
         $this->moveCallerAToTeamLeaderC('2026-10-02');
 
-        $timeline = ReportingTimeline::forMonth($this->month(10));
-
-        $this->assertSame(self::CALLER_TARGET, $this->calculator->callerTargetShares($this->teamLeaderC, $timeline)[$this->callerA->id]);
-        $this->assertSame(0.0, $this->calculator->callerTargetShares($this->teamLeaderB, $timeline)[$this->callerA->id]);
-        $this->assertSame(self::CALLER_TARGET + self::TOP_UP, $this->calculator->getTarget($this->teamLeaderC, $this->month(10)));
+        $this->assertSame(self::CALLER_TARGET, $this->share($this->callerA, $this->teamLeaderC));
+        $this->assertSame(0.0, $this->share($this->callerA, $this->teamLeaderB));
+        // C's callers bring ₹25L, lifted to the ₹80L Team Leader minimum.
+        $this->assertSame(self::TEAM_LEADER_MIN, $this->calculator->getTarget($this->teamLeaderC, $this->month(10)));
         $this->assertSame(self::CALLER_TARGET, $this->calculator->getTarget($this->callerA, $this->month(10), $this->teamLeaderC));
         $this->assertStringEndsWith(
-            'With 10 or more days here, their full target of ₹25,00,000 counts.',
+            'Their full target of ₹25,00,000 counts here.',
             $this->calculator->reportingSpanNote($this->callerA, $this->teamLeaderC, $this->month(10), withRule: true),
         );
     }
 
-    public function test_a_joiner_who_moved_carries_their_part_month_target_not_the_full_one(): void
+    public function test_a_joiner_who_moved_splits_their_full_target_by_their_days_on_the_rolls(): void
     {
-        // Joined on 5 Oct, so their own month is the ₹15L part-month target;
+        // Joined on 5 Oct (27 days on the rolls, so their full ₹25L counts);
         // moved on 20 Oct with 15 days in B and 12 in C.
         $this->callerA->forceFill(['doj' => '2026-10-05', 'reporting_date' => '2026-10-05'])->save();
         $this->moveCallerAToTeamLeaderC('2026-10-20');
 
-        $timeline = ReportingTimeline::forMonth($this->month(10));
+        $this->assertSame(1388888.89, $this->share($this->callerA, $this->teamLeaderB));
+        $this->assertSame(1111111.11, $this->share($this->callerA, $this->teamLeaderC));
+    }
 
-        $this->assertSame(1500000.0, $this->calculator->callerTargetShares($this->teamLeaderB, $timeline)[$this->callerA->id]);
-        $this->assertSame(1500000.0, $this->calculator->callerTargetShares($this->teamLeaderC, $timeline)[$this->callerA->id]);
+    public function test_a_caller_with_no_team_reaching_ten_days_is_split_between_all_of_them(): void
+    {
+        // Joined 15 Oct (17 days on the rolls), with B to the 21st (7 days)
+        // and C from the 22nd (10 days): C qualifies, so C carries it all.
+        $this->callerA->forceFill(['doj' => '2026-10-15', 'reporting_date' => '2026-10-15'])->save();
+        $this->moveCallerAToTeamLeaderC('2026-10-22');
+
+        $this->assertSame(0.0, $this->share($this->callerA, $this->teamLeaderB));
+        $this->assertSame(self::CALLER_TARGET, $this->share($this->callerA, $this->teamLeaderC));
+
+        // Joined 16 Oct instead (16 days on the rolls), back with B from the
+        // 22nd and with C from the 23rd.
+        $this->callerA->forceFill(['doj' => '2026-10-16', 'reporting_date' => '2026-10-16'])->save();
+        app(ReportingLineService::class)->reportTo($this->callerA, $this->teamLeaderB->id, '2026-10-22', ReportingLineService::CHANGE_TRANSFER);
+        app(ReportingLineService::class)->reportTo($this->callerA, $this->teamLeaderC->id, '2026-10-23', ReportingLineService::CHANGE_TRANSFER);
+
+        // 16–22 Oct with B (7 days), 23–31 Oct with C (9 days): nobody has
+        // 10, so both share it by days — and nothing is lost.
+        $this->assertSame(1093750.0, $this->share($this->callerA, $this->teamLeaderB));
+        $this->assertSame(1406250.0, $this->share($this->callerA, $this->teamLeaderC));
     }
 
     public function test_a_boss_the_caller_never_left_counts_their_full_month_target(): void
@@ -251,23 +277,17 @@ class ReportingChangeMonthWiseTest extends TestCase
 
         // Both teams sit under the same Cluster Manager, so for them it is
         // no move at all: 1st to 31st, the full category target.
-        $this->assertSame(
-            self::CALLER_TARGET,
-            $this->calculator->callerTargetShares($this->managerOne->cluster, ReportingTimeline::forMonth($this->month(10)))[$this->callerA->id],
-        );
+        $this->assertSame(self::CALLER_TARGET, $this->share($this->callerA, $this->managerOne->cluster));
     }
 
     public function test_whole_months_on_either_side_carry_the_full_target(): void
     {
         $this->moveCallerAToTeamLeaderC();
 
-        $septemberB = ReportingTimeline::forMonth($this->month(9));
-        $novemberC = ReportingTimeline::forMonth($this->month(11));
-
-        $this->assertSame(self::CALLER_TARGET, $this->calculator->callerTargetShares($this->teamLeaderB, $septemberB)[$this->callerA->id]);
-        $this->assertArrayNotHasKey($this->callerA->id, $this->calculator->callerTargetShares($this->teamLeaderC, $septemberB));
-        $this->assertSame(self::CALLER_TARGET, $this->calculator->callerTargetShares($this->teamLeaderC, $novemberC)[$this->callerA->id]);
-        $this->assertArrayNotHasKey($this->callerA->id, $this->calculator->callerTargetShares($this->teamLeaderB, $novemberC));
+        $this->assertSame(self::CALLER_TARGET, $this->share($this->callerA, $this->teamLeaderB, 9));
+        $this->assertNotContains($this->callerA->id, TargetLedger::forMonth($this->month(9))->memberIds($this->teamLeaderC->id));
+        $this->assertSame(self::CALLER_TARGET, $this->share($this->callerA, $this->teamLeaderC, 11));
+        $this->assertNotContains($this->callerA->id, TargetLedger::forMonth($this->month(11))->memberIds($this->teamLeaderB->id));
     }
 
     /*
@@ -325,65 +345,54 @@ class ReportingChangeMonthWiseTest extends TestCase
         $this->assertNotContains($leftOnThe3rd->id, $october->headcountCallerIds($this->teamLeaderB->id, directOnly: true));
     }
 
-    public function test_a_team_leader_moved_in_late_adds_no_top_up_to_the_new_team(): void
+    public function test_a_team_leader_moved_in_late_brings_nothing_to_the_new_manager(): void
     {
         app(ReportingLineService::class)->reportTo($this->teamLeaderC, $this->managerOne->id, '2026-10-25', ReportingLineService::CHANGE_TRANSFER);
 
-        $october = ReportingTimeline::forMonth($this->month(10));
-
-        // C: 24 days with M2 (10+), 7 with M1 (under 10). The top-up is whole, never split.
-        $this->assertSame([$this->teamLeaderB->id], $this->calculator->understaffedTeamLeaderIds($this->managerOne, $october));
-        $this->assertSame([$this->teamLeaderC->id], $this->calculator->understaffedTeamLeaderIds($this->managerTwo, $october));
-        $this->assertSame(self::CALLER_TARGET + self::TOP_UP, $this->calculator->getTarget($this->managerOne, $this->month(10)));
-        $this->assertSame(self::TOP_UP, $this->calculator->getTarget($this->managerTwo, $this->month(10)));
+        // C: 24 days with M2 (10+), 7 with M1 (under 10), so all of C's ₹80L
+        // stays with M2. M1 has B's ₹80L (A's ₹25L lifted to the minimum).
+        $this->assertSame(0.0, $this->share($this->teamLeaderC, $this->managerOne));
+        $this->assertSame(self::TEAM_LEADER_MIN, $this->share($this->teamLeaderC, $this->managerTwo));
+        $this->assertSame(self::TEAM_LEADER_MIN, $this->calculator->getTarget($this->managerOne, $this->month(10)));
+        $this->assertSame(self::TEAM_LEADER_MIN, $this->calculator->getTarget($this->managerTwo, $this->month(10)));
     }
 
-    public function test_a_team_leader_moved_mid_month_adds_the_whole_top_up_to_both_teams(): void
+    public function test_a_team_leader_moved_mid_month_is_split_between_both_managers(): void
     {
         app(ReportingLineService::class)->reportTo($this->teamLeaderC, $this->managerOne->id, '2026-10-16', ReportingLineService::CHANGE_TRANSFER);
 
-        $october = ReportingTimeline::forMonth($this->month(10));
-
-        $this->assertEqualsCanonicalizing([$this->teamLeaderB->id, $this->teamLeaderC->id], $this->calculator->understaffedTeamLeaderIds($this->managerOne, $october));
-        $this->assertSame([$this->teamLeaderC->id], $this->calculator->understaffedTeamLeaderIds($this->managerTwo, $october));
+        // C: 15 days with M2, 16 with M1 — the ₹80L is split by days.
+        $this->assertSame(4129032.26, $this->share($this->teamLeaderC, $this->managerOne));
+        $this->assertSame(3870967.74, $this->share($this->teamLeaderC, $this->managerTwo));
+        $this->assertSame(self::TEAM_LEADER_MIN + 4129032.26, $this->calculator->getTarget($this->managerOne, $this->month(10)));
+        $this->assertSame(3870967.74, $this->calculator->getTarget($this->managerTwo, $this->month(10)));
     }
 
-    public function test_a_team_leader_who_joined_late_in_the_month_adds_no_top_up(): void
+    public function test_a_team_leader_in_the_seat_under_ten_days_gets_no_minimum(): void
     {
-        $this->employee(Employee::DESIGNATION_TEAM_LEADER, [
+        $joinedLate = $this->employee(Employee::DESIGNATION_TEAM_LEADER, [
             'doj' => '2026-10-25',
             'reporting_date' => '2026-10-25',
             'manager_id' => $this->managerOne->id,
             'cluster_id' => $this->managerOne->cluster_id,
         ]);
 
-        $this->assertSame(
-            [$this->teamLeaderB->id],
-            $this->calculator->understaffedTeamLeaderIds($this->managerOne, ReportingTimeline::forMonth($this->month(10))),
-        );
+        $this->assertSame(0.0, $this->calculator->getTarget($joinedLate, $this->month(10)));
+        $this->assertSame(self::TEAM_LEADER_MIN, $this->calculator->getTarget($this->managerOne, $this->month(10)));
     }
 
-    public function test_the_understaffed_top_up_follows_the_headcount_of_the_month(): void
+    public function test_every_team_leader_in_the_seat_ten_days_carries_at_least_the_minimum(): void
     {
-        // B's headcount for September: A only (< 3 callers) — so the top-up
-        // applies there; C has no callers before October either.
         $this->moveCallerAToTeamLeaderC();
 
-        $this->assertSame(
-            self::CALLER_TARGET + self::TOP_UP,
-            $this->calculator->getTarget($this->teamLeaderB, $this->month(9)),
-        );
+        // September: B has A (₹25L), lifted to ₹80L.
+        $this->assertSame(self::TEAM_LEADER_MIN, $this->calculator->getTarget($this->teamLeaderB, $this->month(9)));
 
         // October: B keeps A's full target for their 25 days, C gets
-        // nothing for 6, and both Team Leaders are understaffed all month.
-        $this->assertSame(
-            self::CALLER_TARGET + self::TOP_UP,
-            $this->calculator->getTarget($this->teamLeaderB, $this->month(10)),
-        );
-        $this->assertSame(
-            self::TOP_UP,
-            $this->calculator->getTarget($this->teamLeaderC, $this->month(10)),
-        );
+        // nothing for 6 — and both carry the ₹80L minimum regardless.
+        $this->assertSame(self::TEAM_LEADER_MIN, $this->calculator->getTarget($this->teamLeaderB, $this->month(10)));
+        $this->assertSame(self::TEAM_LEADER_MIN, $this->calculator->getTarget($this->teamLeaderC, $this->month(10)));
+        $this->assertSame(5500000.0, TargetLedger::forMonth($this->month(10))->floorTopUp($this->teamLeaderB->id));
     }
 
     /*
@@ -469,12 +478,12 @@ class ReportingChangeMonthWiseTest extends TestCase
         );
         $this->assertSame(
             'In this team 01 Oct – 25 Oct (25 of 31 days). Only cases disbursed on those days count here.'
-                .' With 10 or more days here, their full target of ₹25,00,000 counts.',
+                .' Their full target of ₹25,00,000 counts here.',
             $this->calculator->reportingSpanNote($this->callerA, $this->teamLeaderB, $this->month(10), withRule: true),
         );
         $this->assertSame(
             'In this team 26 Oct – 31 Oct (6 of 31 days). Only cases disbursed on those days count here.'
-                .' Under 10 days here while on the rolls, so no target counts.',
+                .' Under 10 days here, so their target of ₹25,00,000 counts with the team(s) where they spent 10 days or more.',
             $this->calculator->reportingSpanNote($this->callerA, $this->teamLeaderC, $this->month(10), withRule: true),
         );
     }
@@ -508,7 +517,7 @@ class ReportingChangeMonthWiseTest extends TestCase
         $this->disburse($this->callerA, '2026-10-10', 1000000);
 
         $this->assertSame(1000000.0, $this->calculator->getCountAchievement($this->teamLeaderB, $this->month(10)));
-        $this->assertSame(self::CALLER_TARGET + self::TOP_UP, $this->calculator->getTarget($this->teamLeaderB, $this->month(10)));
+        $this->assertSame(self::TEAM_LEADER_MIN, $this->calculator->getTarget($this->teamLeaderB, $this->month(10)));
         $this->assertSame(1, $this->calculator->getEligibleCallerCount($this->teamLeaderB, $this->month(10)));
     }
 }
